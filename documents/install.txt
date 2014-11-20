@@ -8,6 +8,7 @@ Dependencias:
 - Pip
 - ecdsa => 0.11
 - jws
+- nose (Para la ejecución de tests unitarios)
 
 
 Instalación de “virtualenv” con pip3
@@ -28,4 +29,8 @@ keygeneration.py:
 - El script genera una clave ECDSA de tipo NIST384p y la guarda en formato PEM con codificación UTF-8. El nombre del fichero es el sha1 de la clave.
 
 
- 
+Ejecución de tests:
+
+$ nosetest --no-byte-compile -v tests/
+
+
