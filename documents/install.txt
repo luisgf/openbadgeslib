@@ -1,0 +1,31 @@
+﻿Guía de instalación:
+
+El siguiente documento muestra los pasos necesarios para instalar el producto así como las dependencias necesarias para su correcto funcionamiento. 
+
+Dependencias:
+
+- Python >= 3.4.0
+- Pip
+- ecdsa => 0.11
+- jws
+
+
+Instalación de “virtualenv” con pip3
+
+$ sudo pip3 install virtualenv
+$ sudo virtualenv -p /usr/bin/python3 venv-openbadges
+
+Activación del virtualenv
+$ source venv-openbadges/bin/activate
+
+Una vez hallamos activado el entorno virtual, procedemos a instalar las dependencias de Pypi.
+
+(venv-openbadges)luisgf@NCC1701B:~$ sudo pip install ecdsa
+
+
+keygeneration.py:
+
+- El script genera una clave ECDSA de tipo NIST384p y la guarda en formato PEM con codificación UTF-8. El nombre del fichero es el sha1 de la clave.
+
+
+ 
