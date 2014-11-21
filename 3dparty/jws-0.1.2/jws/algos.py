@@ -31,8 +31,7 @@ class HMAC(HasherBase):
     """
     def sign(self, msg, key):
         import hmac
-        utfkey = unicode(key).encode('utf8')
-        return hmac.new(utfkey, msg, self.hasher).digest()
+        return hmac.new(key.encode('utf-8'), msg.encode('utf-8'), self.hasher).digest()
 
     def verify(self, msg, crypto, key):
         if not self.sign(msg, key) == crypto:
@@ -181,7 +180,7 @@ def resolve(endpoint, match):
     try:
         assert callable(crypt['sign'])
         assert callable(crypt['verify'])
-    except AssertionError, e:
+    except AssertionError:
         raise RouteEndpointError('sign, verify of endpoint must be callable')
     return crypt
 

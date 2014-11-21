@@ -1,5 +1,4 @@
 import json
-
 import utils
 
 # local
@@ -20,7 +19,7 @@ def sign(head, payload, key=None, is_json=False):
     # TODO: re-evaluate whether to pass ``data`` by reference, or to copy and reassign
     header.process(data, 'sign')
     if not data['key']:
-        raise MissingKey("Key was not passed as a param and a key could not be found from the header")
+        raise MissingKey(b"Key was not passed as a param and a key could not be found from the header")
     if not data['signer']:
         raise MissingSigner("Header was processed, but no algorithm was found to sign the message")
     signer = data['signer']

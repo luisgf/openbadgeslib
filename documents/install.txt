@@ -7,7 +7,7 @@ Dependencias:
 - Python >= 3.4.0
 - Pip
 - ecdsa => 0.1.2
-- jws 0.11 (Dependencia: utils 0.6)
+- jws 0.11 (Dependencia: utils 0.6, hmac)
 - nose (Para la ejecución de tests unitarios)
 
 !!! Atencion, jws no se instala correctamente desde pypi !!!
@@ -20,6 +20,7 @@ Proceder a su instalacion desde la version contenida en "3dparty"
 URLs de Interes:
 
 - https://tools.ietf.org/html/draft-ietf-jose-json-web-signature-37
+- https://github.com/mozilla/openbadges/wiki/Badge-Baking
 - http://validator.openbadges.org/
 - https://github.com/openbadges/openbadges-specification/blob/master/Assertion/latest.md
 

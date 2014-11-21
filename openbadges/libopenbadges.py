@@ -135,9 +135,12 @@ class KeyFactory():
             raise HashError() 
 
 
+class SignerFactory():
+    """ JWS Signer Factory """
+    pass
+
 class VerifyFactory():
-    """ ECDSA Signature Verifier Factory """
-    
+    """ JWS Signature Verifier Factory """
     pass
                 
 if __name__ == '__main__':
