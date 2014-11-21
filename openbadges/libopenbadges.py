@@ -8,9 +8,9 @@ import hashlib
 import os
 import sys
 
-from ecdsa.util import PRNG
-from ecdsa import SigningKey,VerifyingKey,NIST256p
+from ecdsa import SigningKey, VerifyingKey, NIST256p
 from config import badgesconf
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/jws/")))
 
 class ECDSAPrivateKeyGenError(Exception):
     pass

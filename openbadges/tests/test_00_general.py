@@ -10,6 +10,7 @@ import unittest
 import os.path
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../3dparty")))
 
 class SelfTestGeneral(unittest.TestCase):
     def test_01_python_version(self):
