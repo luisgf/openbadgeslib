@@ -175,7 +175,7 @@ def resolve(endpoint, match):
     except TypeError:
         try:
             crypt = { 'sign': endpoint.sign, 'verify': endpoint.verify }
-        except AttributeError, e:
+        except AttributeError:
             raise RouteEndpointError('route enpoint must have sign, verify as attributes or items of dict')
     # verify callability
     try:

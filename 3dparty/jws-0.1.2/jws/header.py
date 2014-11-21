@@ -29,7 +29,7 @@ class Algorithm(HeaderBase):
     def clean(self, value):
         try:
             self.methods = algos.route(value)
-        except RouteMissingError, e:
+        except RouteMissingError:
             raise AlgorithmNotImplemented('"%s" not implemented.' % value)
     
     def sign(self):
