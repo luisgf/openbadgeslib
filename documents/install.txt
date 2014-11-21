@@ -7,11 +7,16 @@ Dependencias:
 - Python >= 3.4.0
 - Pip
 - ecdsa => 0.11
-- jws
+- jws (Dependencia: utils)
 - nose (Para la ejecución de tests unitarios)
 
-!!! Atencion, jws no se instala correctamente desde pypi, hay que instalarlo
-desde el .tar.gz !!!
+!!! Atencion, jws no se instala correctamente desde pypi !!!
+Proceder a su instalacion desde la version contenida en "3dparty"
+
+!!! Atencion, utils no se instala correctamente desde pypi !!!
+Proceder a su instalacion desde la version contenida en "3dparty"
+
+
 
 Instalación de “virtualenv” con pip3
 

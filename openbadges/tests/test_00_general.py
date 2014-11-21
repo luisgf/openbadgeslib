@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-#description     : Library for dealing with signing of badges
+#description     : Test file of general options
 #author          : Luis G.F
 #date            : 20141121
 #version         : 0.1 
