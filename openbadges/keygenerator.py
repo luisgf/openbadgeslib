@@ -16,7 +16,9 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    kf = KeyFactory(args.issuer)   
+    kf = KeyFactory(args.issuer)  
+    print(u"[!] Generating Issuer key for '%s'..." % self.issuer.decode('UTF-8'))
+    
     kf.generate_keypair()
     kf.save_keypair()
     

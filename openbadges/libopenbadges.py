@@ -9,7 +9,7 @@ import os
 import sys
 
 from ecdsa.util import PRNG
-from ecdsa import SigningKey, NIST256p
+from ecdsa import SigningKey,VerifyingKey,NIST256p
 from config import badgesconf
 
 class ECDSAPrivateKeyGenError(Exception):
@@ -53,7 +53,12 @@ class ECDSAKeyExists(Exception):
 
     def __str__(self):
         return repr(self.msg)
-    
+
+class ECDSAReadPrivKeyError(Exception):
+    pass
+
+class ECDSAReadPubKeyError(Exception):
+    pass
     
 class KeyFactory():
         
@@ -65,20 +70,19 @@ class KeyFactory():
         self.public_key_file = badgesconf['public_key_path']
 
         self.issuer = issuer.encode('UTF-8')
-        print(u"[!] Generating Issuer key for '%s'..." % self.issuer.decode('UTF-8'))
-
-        # If the issuer has a key, stop a new key generation
-        self.has_key()
 
     def has_key(self):
-        """ Forbid issuers with 2 active keys """
+        """ Check if a issuer has a private key generated """
         
-        key_path = self.private_key_file + self.key_file
+        key_path = self.private_key_file + self.sha1_string(self.issuer) + '.pem'
         if os.path.isfile(key_path):
             raise ECDSAKeyExists(key_path)        
 
     def generate_keypair(self):
-        """ Generate a ECDSA keypair """
+        """ Generate a ECDSA keypair """       
+
+        # If the issuer has a key, stop a new key generation
+        self.has_key()
         
         # Private key generation
         try:
@@ -94,16 +98,45 @@ class KeyFactory():
         except:
             raise ECDSAPublicKeyGenError()
 
-    def save_keypair(self):      
-        """ Save keypair to file """
-        
+    def read_private_key(self, private_key_file): 
+        """ Read the private key from files """
         try:
-            open(self.private_key_file, "wb").write(self.get_private_pem())        
+            with open(private_key_file, "r") as priv:
+                self.private_key_file = private_key_file
+                self.private_key = SigningKey.from_pem(priv.read())
+                priv.close()
+                
+            return True 
+        except:
+            raise ECDSAReadPrivKeyError('Error reading private key: %s' % self.private_key_file)
+            return False
+        
+    def read_public_key(self, public_key_file): 
+        """ Read the public key from files """
+        try:
+            with open(public_key_file, "r") as pub:
+                self.public_key_file = public_key_file
+                self.public_key = VerifyingKey.from_pem(pub.read())
+                pub.close()
+                
+            return True 
+        except:
+            raise ECDSAReadPubKeyError('Error reading public key: %s' % self.public_key_file)
+            return False        
+                        
+    def save_keypair(self):      
+        """ Save keypair to file """        
+        try:
+            with open(self.private_key_file, "wb") as priv:
+                priv.write(self.get_private_pem())
+                priv.close()                
         except:
              raise ECDSASaveErrorPrivate()
          
         try:
-            open(self.public_key_file, "wb").write(self.get_public_pem())        
+            with open(self.public_key_file, "wb") as pub:
+                pub.write(self.get_public_pem())                    
+                pub.close()                
         except:
              raise ECDSASaveErrorPublic() 
 
@@ -125,4 +158,4 @@ class KeyFactory():
             raise HashError() 
                 
 if __name__ == '__main__':
-    pass
+    unittest.main()

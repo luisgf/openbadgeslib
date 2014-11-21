@@ -12,6 +12,22 @@ from config import badgesconf
  
 class TestKeyGenerator(unittest.TestCase):
     
+    #def setUp(self):
+        #""" Delete all keys before run the tests """
+        #try:
+            #filelist = [ f for f in os.listdir(badgesconf['private_key_path']) if f.endswith(".pem") ]
+            #for f in filelist:
+                #os.remove(badgesconf['private_key_path'] + f)
+        #except:
+            #self.fail('Error in purging private key folder')
+            
+        #try:
+            #filelist = [ f for f in os.listdir(badgesconf['public_key_path']) if f.endswith(".pem") ]
+            #for f in filelist:
+                #os.remove(badgesconf['public_key_path'] + f)
+        #except:
+            #self.fail('Error in purging public key folder')    
+    
     def test_10_create_factory_object(self):
         try:
             kf = KeyFactory('TEST')
@@ -25,23 +41,51 @@ class TestKeyGenerator(unittest.TestCase):
         if not os.path.isdir(badgesconf['public_key_path']):
             self.fail('Public key folder not exist %s' % badgesconf['public_key_path'])
 
-    def test_12_gen_keypair(self):
-        kf = KeyFactory('TEST')
-        try:
-            kf.generate_keypair()
-        except:
-            self.fail('Error during keypair generation')
-
-    def test_13_check_private_key(self):  
+    def test_12_gen_keypair(self):        
         try:
             kf = KeyFactory('TEST')
-            kf.private_key_file += kf.issuer_hash + '.pem'
-        
-            if not os.path.isfile(kf.private_key_file):
-                raise
+            kf.generate_keypair()            
         except:
-            self.fail('Error, private key not found in %s' % kf.private_key_file)   
+            self.fail('Error during keypair generation')            
+    
+    def test_13_save_keypair(self):        
+        try:
+            kf = KeyFactory('TEST')
+            kf.generate_keypair()            
+            kf.save_keypair()
+        except:
+            self.fail('Error saving keypair to files')            
+    
+    def test_14_check_key_file_presence(self): 
+        try:
+            kf = KeyFactory('TEST')
+            kf.private_key_file += kf.sha1_string(kf.issuer) + '.pem'
+            
+            if os.path.isfile(kf.private_key_file):
+                pass
+        except:
+            self.fail('Error verifying private key presence')
+        
+    def test_15_check_private_key(self):  
+        try:
+            kf = KeyFactory('TEST')
+            kf.private_key_file += kf.sha1_string(kf.issuer) + '.pem'
+            
+            if kf.read_private_key(kf.private_key_file) is not True:
+                self.fail('Error, reading private key file %s' % kf.private_key_file)   
+        except:
+            self.fail('Error, reading private key file')   
 
+    def test_16_check_pub_keys(self):
+        try:
+            kf = KeyFactory('TEST')
+            filelist = [ f for f in os.listdir(badgesconf['public_key_path']) if f.endswith(".pem") ]
+            for f in filelist:
+                if kf.read_public_key(badgesconf['public_key_path'] + f) is not True:
+                    self.fail('Error, reading public key file %s' % kf.public_key_file)   
+        except:
+            self.fail('Error, reading public key files') 
+    
             
 if __name__ == '__main__':
     unittest.main()
