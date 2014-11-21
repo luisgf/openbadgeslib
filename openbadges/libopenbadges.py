@@ -37,7 +37,8 @@ class ECDSAReadPubKeyError(Exception):
     pass
     
 class KeyFactory():
-        
+    """ ECDSA Factory class """
+    
     def __init__(self, issuer):
         self.private_key = None
         self.public_key = None
@@ -132,6 +133,12 @@ class KeyFactory():
             return hash.hexdigest()
         except:
             raise HashError() 
+
+
+class VerifyFactory():
+    """ ECDSA Signature Verifier Factory """
+    
+    pass
                 
 if __name__ == '__main__':
     unittest.main()
