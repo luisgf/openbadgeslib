@@ -10,23 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from libopenbadges import KeyFactory
 from config import badgesconf
  
-class TestKeyGenerator(unittest.TestCase):
-    
-    #def setUp(self):
-        #""" Delete all keys before run the tests """
-        #try:
-            #filelist = [ f for f in os.listdir(badgesconf['private_key_path']) if f.endswith(".pem") ]
-            #for f in filelist:
-                #os.remove(badgesconf['private_key_path'] + f)
-        #except:
-            #self.fail('Error in purging private key folder')
-            
-        #try:
-            #filelist = [ f for f in os.listdir(badgesconf['public_key_path']) if f.endswith(".pem") ]
-            #for f in filelist:
-                #os.remove(badgesconf['public_key_path'] + f)
-        #except:
-            #self.fail('Error in purging public key folder')    
+class TestKeyGenerator(unittest.TestCase):           
     
     def test_10_create_factory_object(self):
         try:
