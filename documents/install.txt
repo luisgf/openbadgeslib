@@ -25,6 +25,14 @@ Una vez hallamos activado el entorno virtual, procedemos a instalar las dependen
 (venv-openbadges)luisgf@NCC1701B:~$ sudo pip install ecdsa
 
 
+Carpeta tests/*
+Bajo este repertorio se encuentran los tests unitarios de la aplicacion. Estos tests tienen como finalidad
+asegurar que el desarrollo es seguro antes de su despliegue. Para ejecutar los tests basta con ejecutar el
+siguiente comando.
+
+$ rm private/* && rm public/* && /home/luisgf/venv-openbadges/bin/python3 -m unittest discover -s tests/ 
+
+
 keygeneration.py:
 
 Este script crea un par de claves ECDSA (publica y privada) del tipo NIST256p y las guarda en disco en formato PEM.
@@ -33,11 +41,4 @@ que firmara los badges. Cada emisor SOLO puede tener una clave privada pero mult
 
     * El nombre de la clave privada se genera codificando en SHA-1 el nombre del "issuer".
     * El nombre de la clave publica se genera calculando el SHA-1 de la clave publica.
-
-
-Ejecución de tests:
-
-$ rm private/* && rm public/* && /home/luisgf/venv-openbadges/bin/python3 -m unittest discover -s tests/ 
-
-
 
