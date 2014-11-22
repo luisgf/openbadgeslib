@@ -11,13 +11,16 @@ issuer = dict(
 
 """ Badge Catalog, You can add more creating dict() at the end """
 badges = [
+    dict(),  # For start badgedid at position 1
     dict(
         name = 'Badge Test',
         description = 'A badge test example',
         image = 'https://openbadges.luisgf.es/issuer/badges/image.png',
         criteria = 'https://openbadges.luisgf.es/issuer/criteria.html',
         issuer = 'https://openbadges.luisgf.es/issuer/organization.json',
-        alignment = ''
+        json_url = 'https://openbadges.luisgf.es/issuer/badge-luisgf.json',
+        evidence = '',
+        url_key_verif = 'https://openbadges.luisgf.es/issuer/pubkeys/verify.pem'
     )
 ]
 

@@ -4,8 +4,6 @@
 #date            : 20141122
 #version         : 0.2 
 
-""" ECDSA Key Generator """
-
 import argparse
 
 # Local Imports

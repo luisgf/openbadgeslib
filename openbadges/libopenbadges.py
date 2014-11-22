@@ -9,9 +9,10 @@ import os
 import sys
 
 from ecdsa import SigningKey, VerifyingKey, NIST256p
-#from config import badgesconf
 
+# Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/jws/")))
+import utils
 
 class ECDSAPrivateKeyGenError(Exception):
     pass
@@ -135,19 +136,88 @@ class KeyFactory():
         except:
             raise HashError() 
 
+""" Signer Exceptions """
+
+class BadgeIdNotFound():
+    pass
 
 class SignerFactory():
     """ JWS Signer Factory """
     
-    def __init__(self):
-        self.uid = '0000000001'   # Assertion uid
-        self.assertion = None     # Assertion in plaintext
-        self.kf = None            # KeyFactory() object
+    def __init__(self, conf, receptor):
+        self.conf = conf              # Access to config.py values
+        #self.uid = None               # Assertion uid
+        self.assertion = None         # Assertion in plaintext
+        self.receptor = receptor      # Receptor of the badge
         
+    def generate_uid(self, badgeconfid):
+        """ Generate a UID for a signed badge """
+        try:
+            if self.conf.badges[badgeconfid]:
+                return sha1_string(self.conf.issuer['name'] + self.conf.badges[badgeconfid]['name'] + self.receptor)
+            
+        except IndexError:
+            raise BadgeIdNotFound()
+        
+    def generate_assertion(self, badgeconfid):
+        badgeconf = self.conf.badges[badgeconfid]
+        recipient_data = dict (
+            identity = 'sha256$' + sha256_string(self.receptor),
+            type = 'email',
+            hashed = 'true'
+        )
+        image_data = badgeconf['image']
+        badge_def_data = badgeconf['json_url']
+        
+        verify_data = dict(
+            type = 'signed',
+            url = badgeconf['url_key_verif']
+        )
+        
+        assertion = dict(
+                        uid = self.generate_uid(badgeconfid),
+                        recipient = recipient_data,
+                        image = image_data,
+                        badge = badge_def_data,
+                        verify = verify_data
+                     )
+        
+        return utils.to_json(assertion)
+        
+    def generate_jws_signature(self, badgeconfid):
+        import jws, ecdsa
+        header = { 'alg': 'ES256' }
+        payload = self.generate_assertion(badgeconfid).decode('utf-8')
+        sk256 = ecdsa.SigningKey.generate(curve=ecdsa.NIST256p)
+        print(type(header))
+        print(type(payload))
+        signature = jws.sign(header, payload, sk256)
+            
 
 class VerifyFactory():
     """ JWS Signature Verifier Factory """
     pass
+
+
+""" Shared Utils """
+
+def sha1_string(string):
+    """ Calculate SHA1 digest of a string """
+    try:
+        hash = hashlib.new('sha1')
+        hash.update(string.encode('utf-8'))
+        return hash.hexdigest()
+    except:
+        raise HashError() 
+
+def sha256_string(string):
+    """ Calculate SHA256 digest of a string """
+    try:
+        hash = hashlib.new('sha256')
+        hash.update(string.encode('utf-8'))
+        return hash.hexdigest()
+    except:
+        raise HashError() 
                 
 if __name__ == '__main__':
     unittest.main()
