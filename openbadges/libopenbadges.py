@@ -9,7 +9,8 @@ import os
 import sys
 
 from ecdsa import SigningKey, VerifyingKey, NIST256p
-from config import badgesconf
+#from config import badgesconf
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/jws/")))
 
 class ECDSAPrivateKeyGenError(Exception):
@@ -39,14 +40,14 @@ class ECDSAReadPubKeyError(Exception):
 class KeyFactory():
     """ ECDSA Factory class """
     
-    def __init__(self, issuer):
+    def __init__(self, conf):
         self.private_key = None
         self.public_key = None
         self.issuer = None
-        self.private_key_file = badgesconf['private_key_path']
-        self.public_key_file = badgesconf['public_key_path']
+        self.private_key_file = conf.keygen['private_key_path']
+        self.public_key_file = conf.keygen['public_key_path']
 
-        self.issuer = issuer.encode('UTF-8')
+        self.issuer = conf.issuer['name'].encode('UTF-8')
 
     def has_key(self):
         """ Check if a issuer has a private key generated """
@@ -137,7 +138,12 @@ class KeyFactory():
 
 class SignerFactory():
     """ JWS Signer Factory """
-    pass
+    
+    def __init__(self):
+        self.uid = '0000000001'   # Assertion uid
+        self.assertion = None     # Assertion in plaintext
+        self.kf = None            # KeyFactory() object
+        
 
 class VerifyFactory():
     """ JWS Signature Verifier Factory """

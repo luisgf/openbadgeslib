@@ -12,7 +12,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../3dparty/jws/")))
 
-from libopenbadges import KeyFactory
+from libopenbadges import SignerFactory
 from config import badgesconf
 
 class TestVerifyFactory(unittest.TestCase): 
@@ -22,3 +22,4 @@ class TestVerifyFactory(unittest.TestCase):
             import jws
         except:
             self.fail('Python-jws library missing https://pypi.python.org/pypi/jws/0.1.2')
+    
