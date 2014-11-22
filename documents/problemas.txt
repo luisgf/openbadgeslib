@@ -1,0 +1,8 @@
+Problemas:
+
+Python-jws no soporta python3. He tenido que invertir una cantidad de tiempo importante
+parchelandola para soportar python3.
+
+json: Esta libreria espera entradas tipo "str", mientras que la mayoria de modulos trabajan en unicode.
+Esto hace necesario hacer una codificacion recodificacion de los datos.
+

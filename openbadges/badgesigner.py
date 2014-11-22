@@ -25,7 +25,6 @@ if __name__ == '__main__':
         print(u"[!] Generating signature for badge '%d'..." % args.badge)
         
         signature = sf.generate_jws_signature(args.badge)
-        
         print(u"Signature: %s" % signature)
 
     else:

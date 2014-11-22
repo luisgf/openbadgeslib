@@ -23,6 +23,7 @@ URLs de Interes:
 - https://github.com/mozilla/openbadges/wiki/Badge-Baking
 - http://validator.openbadges.org/
 - https://github.com/openbadges/openbadges-specification/blob/master/Assertion/latest.md
+- https://github.com/mozilla/openbadges/wiki/Creating-Signed-Assertions
 
 Instalación de “virtualenv” con pip3
 

@@ -7,6 +7,7 @@
 import hashlib
 import os
 import sys
+import time
 
 from ecdsa import SigningKey, VerifyingKey, NIST256p
 
@@ -174,24 +175,34 @@ class SignerFactory():
             url = badgeconf['url_key_verif']
         )
         
+        issue_date = int(time.time())
+        
         assertion = dict(
                         uid = self.generate_uid(badgeconfid),
                         recipient = recipient_data,
                         image = image_data,
                         badge = badge_def_data,
-                        verify = verify_data
+                        verify = verify_data,
+                        issuedOn = issue_date
                      )
         
-        return utils.to_json(assertion)
-        
+        return assertion
+    
     def generate_jws_signature(self, badgeconfid):
-        import jws, ecdsa
+        import jws
+        
+        priv_key = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + '.pem'
+        pub_key = self.conf.keygen['public_key_path'] + '0a4f33d6f7376dc3bea83b60fe4cc1b325375d30.pem'
+        
         header = { 'alg': 'ES256' }
-        payload = self.generate_assertion(badgeconfid).decode('utf-8')
-        sk256 = ecdsa.SigningKey.generate(curve=ecdsa.NIST256p)
-        print(type(header))
-        print(type(payload))
-        signature = jws.sign(header, payload, sk256)
+        payload = self.generate_assertion(badgeconfid)
+        
+        sign_key = SigningKey.from_pem(open(priv_key, "r").read())
+        verf_key = VerifyingKey.from_pem(open(pub_key, "r").read())
+        
+        signature = jws.sign(header, payload, sign_key).decode()
+
+        return  "%s.%s.%s" % (utils.encode(header).decode(), utils.encode(payload).decode(), jws.sign(header, payload, sign_key).decode())
             
 
 class VerifyFactory():
