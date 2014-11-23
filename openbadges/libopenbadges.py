@@ -9,7 +9,7 @@ import os
 import sys
 import time
 
-from ecdsa import SigningKey, VerifyingKey, NIST256p
+from ecdsa import SigningKey, NIST256p
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/jws/")))
@@ -192,17 +192,23 @@ class SignerFactory():
         import jws
         
         priv_key = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + '.pem'
-        pub_key = self.conf.keygen['public_key_path'] + '0a4f33d6f7376dc3bea83b60fe4cc1b325375d30.pem'
         
         header = { 'alg': 'ES256' }
         payload = self.generate_assertion(badgeconfid)
-        
-        sign_key = SigningKey.from_pem(open(priv_key, "r").read())
-        verf_key = VerifyingKey.from_pem(open(pub_key, "r").read())
+        print(payload)
+        try:
+             sign_key = SigningKey.from_pem(open(priv_key, "r").read())
+        except:
+            raise ECDSAReadPrivKeyError()
+       
         
         signature = jws.sign(header, payload, sign_key).decode()
+        
+        print("Payload: %s" % jws._signing_input(header, payload, False))
+        print("Firma: %s " % signature)
 
-        return  "%s.%s.%s" % (utils.encode(header).decode(), utils.encode(payload).decode(), jws.sign(header, payload, sign_key).decode())
+        
+        return  "%s.%s.%s" % (utils.encode(header).decode(), utils.encode(payload).decode(), signature)
             
 
 class VerifyFactory():
