@@ -6,7 +6,7 @@ def base64url_decode(input):
     return base64.urlsafe_b64decode(input)
 
 def base64url_encode(input):
-    return base64.urlsafe_b64encode(input).decode('utf-8').replace('=', '').encode('utf-8')
+    return base64.urlsafe_b64encode(input).replace(b'=', b'')
 
 def to_json(a): return json.dumps(a).encode('utf-8')
 def from_json(a): return json.loads(a)
