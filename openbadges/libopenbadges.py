@@ -139,45 +139,48 @@ class KeyFactory():
 
 """ Signer Exceptions """
 
-class BadgeIdNotFound():
+class BadgeNotFound(Exception):
     pass
 
 class SignerFactory():
     """ JWS Signer Factory """
     
-    def __init__(self, conf, receptor):
-        self.conf = conf              # Access to config.py values
-        self.assertion = None         # Assertion in plaintext
+    def __init__(self, conf, badgename, receptor):
+        self.conf = conf              # Access to config.py values                
         self.receptor = receptor      # Receptor of the badge
         
-    def generate_uid(self, badgeconfid):
-        """ Generate a UID for a signed badge """
         try:
-            if self.conf.badges[badgeconfid]:
-                return sha1_string(self.conf.issuer['name'] + self.conf.badges[badgeconfid]['name'] + self.receptor)
-            
-        except IndexError:
-            raise BadgeIdNotFound()
+            if conf.badges[badgename]:
+                self.badge = conf.badges[badgename]
+        except KeyError:
+            raise BadgeNotFound()
         
-    def generate_assertion(self, badgeconfid):
-        badgeconf = self.conf.badges[badgeconfid]
+    def generate_uid(self):
+        """ Generate a UID for a signed badge """
+        
+        return sha1_string(self.conf.issuer['name'] + self.badge['name'] + self.receptor)
+
+        
+    def generate_assertion(self): 
+        """ Generate JWS Assertion """
+        
         recipient_data = dict (
             identity = 'sha256$' + sha256_string(self.receptor),
             type = 'email',
             hashed = 'true'
         )
-        image_data = badgeconf['image']
-        badge_def_data = badgeconf['json_url']
+        image_data = self.badge['image']
+        badge_def_data = self.badge['json_url']
         
         verify_data = dict(
             type = 'signed',
-            url = badgeconf['url_key_verif']
+            url = self.badge['url_key_verif']
         )
         
         issue_date = int(time.time())
         
         assertion = dict(
-                        uid = self.generate_uid(badgeconfid),
+                        uid = self.generate_uid(),
                         recipient = recipient_data,
                         image = image_data,
                         badge = badge_def_data,
@@ -187,13 +190,13 @@ class SignerFactory():
         
         return assertion
     
-    def generate_openbadge_assertion(self, badgeconfid):
+    def generate_openbadge_assertion(self):
         import jws
         
         priv_key = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + '.pem'
         
         header = { 'alg': 'ES256' }
-        payload = self.generate_assertion(badgeconfid)
+        payload = self.generate_assertion()
 
         try:
              sign_key = SigningKey.from_pem(open(priv_key, "r").read())
