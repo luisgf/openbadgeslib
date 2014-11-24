@@ -194,7 +194,7 @@ class SignerFactory():
         except:
             raise ECDSAReadPrivKeyError()
        
-        
+        print(payload)
         signature = jws.sign(header, payload, sign_key).decode()
         
         # DEBUG
