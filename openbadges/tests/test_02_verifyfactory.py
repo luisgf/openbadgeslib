@@ -10,10 +10,10 @@ import unittest
 import os.path
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../3dparty/jws/")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../3dparty/")))
 
 from libopenbadges import SignerFactory
-from config import badgesconf
+import config
 
 class TestVerifyFactory(unittest.TestCase): 
             

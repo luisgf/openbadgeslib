@@ -13,10 +13,6 @@ Dependencias:
 !!! Atencion, jws no se instala correctamente desde pypi !!!
 Proceder a su instalacion desde la version contenida en "3dparty"
 
-!!! Atencion, utils no se instala correctamente desde pypi !!!
-Proceder a su instalacion desde la version contenida en "3dparty"
-
-
 URLs de Interes:
 
 - https://tools.ietf.org/html/draft-ietf-jose-json-web-signature-37
@@ -34,7 +30,7 @@ Activación del virtualenv
 $ source venv-openbadges/bin/activate
 
 Una vez hallamos activado el entorno virtual, procedemos a instalar las dependencias de Pypi.
-(venv-openbadges)luisgf@NCC1701B:~$ sudo pip install ecdsa
+(venv-openbadges)luisgf@NCC1701B:~$ sudo pip3 install ecdsa
 
 
 Carpeta tests/*
@@ -42,8 +38,14 @@ Bajo este repertorio se encuentran los tests unitarios de la aplicacion. Estos t
 asegurar que el desarrollo es seguro antes de su despliegue. Para ejecutar los tests basta con ejecutar el
 siguiente comando.
 
-$ rm private/* && rm public/* && /home/luisgf/venv-openbadges/bin/python3 -m unittest discover -s tests/ 
+$ ./runtests.sh
 
+Inhibicion de la creacion de byte:
+
+Si deseas que no se genere __pycache__ y los ficheros *.pyc, configura la variable de entornor PYTHONDONTWRITEBYTECODE
+con el valor 1:
+
+$ export PYTHONDONTWRITEBYTECODE=1
 
 keygeneration.py:
 

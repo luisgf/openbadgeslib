@@ -9,7 +9,7 @@ import os
 import sys
 import time
 
-from ecdsa import SigningKey, NIST256p
+from ecdsa import SigningKey, VerifyingKey, NIST256p
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/")))
