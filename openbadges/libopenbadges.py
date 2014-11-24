@@ -13,7 +13,7 @@ from ecdsa import SigningKey, VerifyingKey, NIST256p
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/")))
-import utils
+import jws.utils
 
 class ECDSAPrivateKeyGenError(Exception):
     pass
