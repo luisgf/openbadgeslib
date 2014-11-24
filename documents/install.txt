@@ -7,8 +7,8 @@ Dependencias:
 - Python >= 3.4.0
 - Pip
 - ecdsa => 0.1.2
-- jws 0.11 (Dependencia: utils 0.6, hmac)
-- nose (Para la ejecución de tests unitarios)
+- jws 0.11 (Dependencia: ecdsa, hashlib, hmac)
+
 
 !!! Atencion, jws no se instala correctamente desde pypi !!!
 Proceder a su instalacion desde la version contenida en "3dparty"

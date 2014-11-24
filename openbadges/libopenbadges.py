@@ -147,7 +147,6 @@ class SignerFactory():
     
     def __init__(self, conf, receptor):
         self.conf = conf              # Access to config.py values
-        #self.uid = None               # Assertion uid
         self.assertion = None         # Assertion in plaintext
         self.receptor = receptor      # Receptor of the badge
         
