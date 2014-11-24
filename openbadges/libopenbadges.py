@@ -49,12 +49,14 @@ class KeyFactory():
         self.private_key_file = conf.keygen['private_key_path']
         self.public_key_file = conf.keygen['public_key_path']
 
-        self.issuer = conf.issuer['name'].encode('UTF-8')
+        self.issuer = conf.issuer['name']
 
     def has_key(self):
         """ Check if a issuer has a private key generated """
         
-        key_path = self.private_key_file + sha1_string(self.issuer) + '.pem'
+        print(self.private_key_file + sha1_string(self.issuer.encode()) + b'.pem')
+        key_path = self.private_key_file + sha1_string(self.issuer.encode()) + b'.pem'
+        
         if os.path.isfile(key_path):
             raise ECDSAKeyExists(key_path)        
 
@@ -67,14 +69,14 @@ class KeyFactory():
         # Private key generation
         try:
             self.private_key = SigningKey.generate(curve=NIST256p)
-            self.private_key_file += sha1_string(self.issuer) + '.pem'
+            self.private_key_file += sha1_string(self.issuer) + b'.pem'
         except:
             raise ECDSAPrivateKeyGenError()
         
         # Public Key name is the hash of the public key
         try:
             self.public_key = self.private_key.get_verifying_key()
-            self.public_key_file += sha1_string(self.get_public_pem()) + '.pem'
+            self.public_key_file += sha1_string(self.get_public_pem()) + b'.pem'
         except:
             raise ECDSAPublicKeyGenError()
 
@@ -149,7 +151,7 @@ class SignerFactory():
     def generate_uid(self):
         """ Generate a UID for a signed badge """
         
-        return sha1_string(str(self.conf.issuer['name'] + self.badge['name'] + self.receptor).encode())
+        return sha1_string(self.conf.issuer['name'] + self.badge['name'] + self.receptor)
 
         
     def generate_assertion(self): 
@@ -184,7 +186,7 @@ class SignerFactory():
     def generate_openbadge_assertion(self):
         import jws
         
-        priv_key = self.conf.keygen['private_key_path'] + sha1_string(str(self.conf.issuer['name']).encode()) + '.pem'
+        priv_key = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + b'.pem'
         
         header = { 'alg': 'ES256' }
         payload = self.generate_assertion()
@@ -210,7 +212,7 @@ class VerifyFactory():
 
 """ Shared Utils """
 
-def sha1_string(string, is_binary=False):
+def sha1_string(string):
     """ Calculate SHA1 digest of a string """
     try:
         hash = hashlib.new('sha1')

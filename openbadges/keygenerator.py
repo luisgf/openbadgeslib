@@ -19,7 +19,7 @@ if __name__ == '__main__':
     
     if args.genkey:
         kf = KeyFactory(config)  
-        print(u"[!] Generating Issuer key for '%s'..." % kf.issuer.decode('UTF-8'))
+        print("[!] Generating Issuer key for '%s'..." % kf.issuer)
     
         kf.generate_keypair()
         kf.save_keypair()
