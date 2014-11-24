@@ -1,6 +1,6 @@
 import re
 
-from exceptions import SignatureError, RouteMissingError, RouteEndpointError
+from jws.exceptions import SignatureError, RouteMissingError, RouteEndpointError
 
 class AlgorithmBase(object):
     """Base for algorithm support classes."""

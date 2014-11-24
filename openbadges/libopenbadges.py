@@ -12,7 +12,7 @@ import time
 from ecdsa import SigningKey, NIST256p
 
 # Local imports
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/jws/")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/")))
 import utils
 
 class ECDSAPrivateKeyGenError(Exception):
@@ -187,14 +187,14 @@ class SignerFactory():
         
         return assertion
     
-    def generate_jws_signature(self, badgeconfid):
+    def generate_openbadge_assertion(self, badgeconfid):
         import jws
         
         priv_key = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + '.pem'
         
         header = { 'alg': 'ES256' }
         payload = self.generate_assertion(badgeconfid)
-        print(payload)
+
         try:
              sign_key = SigningKey.from_pem(open(priv_key, "r").read())
         except:
@@ -203,11 +203,11 @@ class SignerFactory():
         
         signature = jws.sign(header, payload, sign_key).decode()
         
+        # DEBUG
         print("Payload: %s" % jws._signing_input(header, payload, False))
         print("Firma: %s " % signature)
-
         
-        return  "%s.%s.%s" % (utils.encode(header).decode(), utils.encode(payload).decode(), signature)
+        return  "%s.%s.%s" % (jws.utils.encode(header).decode(), jws.utils.encode(payload).decode(), signature)
             
 
 class VerifyFactory():

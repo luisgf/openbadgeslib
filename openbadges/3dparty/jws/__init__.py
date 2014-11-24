@@ -1,10 +1,10 @@
 import json
-import utils
 
 # local
-import algos
-import header
-from exceptions import *
+import jws.algos
+import jws.header
+import jws.utils
+from jws.exceptions import *
 
 ##############
 # public api #
@@ -24,7 +24,7 @@ def sign(head, payload, key=None, is_json=False):
         raise MissingSigner("Header was processed, but no algorithm was found to sign the message")
     signer = data['signer']
     signature = signer(_signing_input(head, payload, is_json), key)
-    return utils.to_base64(signature)
+    return jws.utils.to_base64(signature)
 
 
 def verify(head, payload, encoded_signature, key=None, is_json=False):
@@ -41,13 +41,13 @@ def verify(head, payload, encoded_signature, key=None, is_json=False):
     if not data['verifier']:
         raise MissingVerifier("Header was processed, but no algorithm was found to sign the message")
     verifier = data['verifier']
-    signature = utils.from_base64(encoded_signature)
+    signature = jws.utils.from_base64(encoded_signature)
     return verifier(_signing_input(head, payload, is_json), signature, key)
 
 ####################
 # semi-private api #
 ####################
 def _signing_input(head, payload, is_json=False):
-    enc = utils.to_base64 if is_json else utils.encode
+    enc = jws.utils.to_base64 if is_json else jws.utils.encode
     head_input, payload_input = map(enc, [head, payload])
     return "%s.%s" % (head_input, payload_input)

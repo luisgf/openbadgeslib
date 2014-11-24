@@ -22,10 +22,8 @@ if __name__ == '__main__':
     
     if args.badge:
         sf = SignerFactory(config, args.receptor)  
-        print(u"[!] Generating signature for badge '%d'..." % args.badge)
-        
-        signature = sf.generate_jws_signature(args.badge)
-        print(u"Signature: %s" % signature)
+        print("[!] Generating signature for badge '%d'..." % args.badge)        
+        print("Assertion: %s" % sf.generate_openbadge_assertion(args.badge))
 
     else:
         parser.print_help()

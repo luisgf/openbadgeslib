@@ -1,5 +1,5 @@
-import algos
-from exceptions import AlgorithmNotImplemented, ParameterNotImplemented, ParameterNotUnderstood, RouteMissingError
+import jws.algos
+from jws.exceptions import AlgorithmNotImplemented, ParameterNotImplemented, ParameterNotUnderstood, RouteMissingError
 class HeaderBase(object):
     def __init__(self, name, value, data):
         self.name = name
@@ -28,7 +28,7 @@ class NotImplemented(HeaderBase):
 class Algorithm(HeaderBase):
     def clean(self, value):
         try:
-            self.methods = algos.route(value)
+            self.methods = jws.algos.route(value)
         except RouteMissingError:
             raise AlgorithmNotImplemented('"%s" not implemented.' % value)
     
