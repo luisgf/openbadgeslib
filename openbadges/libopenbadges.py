@@ -54,7 +54,7 @@ class KeyFactory():
     def has_key(self):
         """ Check if a issuer has a private key generated """
         
-        key_path = self.private_key_file + self.sha1_string(self.issuer) + '.pem'
+        key_path = self.private_key_file + sha1_string(self.issuer) + '.pem'
         if os.path.isfile(key_path):
             raise ECDSAKeyExists(key_path)        
 
@@ -67,14 +67,14 @@ class KeyFactory():
         # Private key generation
         try:
             self.private_key = SigningKey.generate(curve=NIST256p)
-            self.private_key_file += self.sha1_string(self.issuer) + '.pem'
+            self.private_key_file += sha1_string(self.issuer) + '.pem'
         except:
             raise ECDSAPrivateKeyGenError()
         
         # Public Key name is the hash of the public key
         try:
             self.public_key = self.private_key.get_verifying_key()
-            self.public_key_file += self.sha1_string(self.get_public_pem()) + '.pem'
+            self.public_key_file += sha1_string(self.get_public_pem()) + '.pem'
         except:
             raise ECDSAPublicKeyGenError()
 
@@ -126,16 +126,7 @@ class KeyFactory():
     
     def get_public_pem(self):
         """ Return public key in PEM format """
-        return self.public_key.to_pem()
-    
-    def sha1_string(self, string):
-        """ Calculate digest of a string """
-        try:
-            hash = hashlib.new('sha1')
-            hash.update(string)
-            return hash.hexdigest()
-        except:
-            raise HashError() 
+        return self.public_key.to_pem()    
 
 """ Signer Exceptions """
 
@@ -158,7 +149,7 @@ class SignerFactory():
     def generate_uid(self):
         """ Generate a UID for a signed badge """
         
-        return sha1_string(self.conf.issuer['name'] + self.badge['name'] + self.receptor)
+        return sha1_string(str(self.conf.issuer['name'] + self.badge['name'] + self.receptor).encode())
 
         
     def generate_assertion(self): 
@@ -193,7 +184,7 @@ class SignerFactory():
     def generate_openbadge_assertion(self):
         import jws
         
-        priv_key = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + '.pem'
+        priv_key = self.conf.keygen['private_key_path'] + sha1_string(str(self.conf.issuer['name']).encode()) + '.pem'
         
         header = { 'alg': 'ES256' }
         payload = self.generate_assertion()
@@ -220,11 +211,11 @@ class VerifyFactory():
 
 """ Shared Utils """
 
-def sha1_string(string):
+def sha1_string(string, is_binary=False):
     """ Calculate SHA1 digest of a string """
     try:
         hash = hashlib.new('sha1')
-        hash.update(string.encode('utf-8'))
+        hash.update(string)
         return hash.hexdigest()
     except:
         raise HashError() 

@@ -12,7 +12,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../3dparty/")))
 
-from libopenbadges import KeyFactory
+from libopenbadges import KeyFactory, sha1_string
 import config
  
 class TestKeyGenerator(unittest.TestCase):           
@@ -48,7 +48,7 @@ class TestKeyGenerator(unittest.TestCase):
     def test_14_check_key_file_presence(self): 
         try:
             kf = KeyFactory(config)
-            kf.private_key_file += kf.sha1_string(kf.issuer) + '.pem'
+            kf.private_key_file += sha1_string(kf.issuer) + '.pem'
             
             if os.path.isfile(kf.private_key_file):
                 pass
@@ -58,7 +58,7 @@ class TestKeyGenerator(unittest.TestCase):
     def test_15_check_private_key(self):  
         try:
             kf = KeyFactory(config)
-            kf.private_key_file += kf.sha1_string(kf.issuer) + '.pem'
+            kf.private_key_file += sha1_string(kf.issuer) + '.pem'
             
             if kf.read_private_key(kf.private_key_file) is not True:
                 self.fail('Error, reading private key file %s' % kf.private_key_file)   
