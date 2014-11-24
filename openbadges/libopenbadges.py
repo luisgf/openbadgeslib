@@ -196,11 +196,14 @@ class SignerFactory():
        
         signature = jws.sign(header, payload, sign_key)
         
-        # DEBUG
-        print("Payload: %s" % jws._signing_input(header, payload, False))
-        print("Firma: %s " % signature)
+        verify = VerifyingKey.from_pem(open("/home/luisgf/sources/openbadges/openbadges/public/eef34d60413959fda8c5ccadc3c4335e0642fe2f.pem", "r").read())
         
-        return  "%s.%s.%s" % (jws.utils.encode(header), jws.utils.encode(payload), signature)
+        
+        # DEBUG
+        print('Payload: ', jws._signing_input(header, payload, False))
+        print('Firma: ', signature)
+        
+        return jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + signature
             
 
 class VerifyFactory():
