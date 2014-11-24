@@ -30,7 +30,7 @@ Activación del virtualenv
 $ source venv-openbadges/bin/activate
 
 Una vez hallamos activado el entorno virtual, procedemos a instalar las dependencias de Pypi.
-(venv-openbadges)luisgf@NCC1701B:~$ sudo pip3 install ecdsa
+(venv-openbadges):~$ sudo pip3 install ecdsa
 
 
 Carpeta tests/*
@@ -47,6 +47,10 @@ con el valor 1:
 
 $ export PYTHONDONTWRITEBYTECODE=1
 
+
+config.py:
+<TODO>
+
 keygeneration.py:
 
 Este script crea un par de claves ECDSA (publica y privada) del tipo NIST256p y las guarda en disco en formato PEM.
@@ -56,3 +60,5 @@ que firmara los badges. Cada emisor SOLO puede tener una clave privada pero mult
     * El nombre de la clave privada se genera codificando en SHA-1 el nombre del "issuer".
     * El nombre de la clave publica se genera calculando el SHA-1 de la clave publica.
 
+badgsigner.py:
+<TODO>
