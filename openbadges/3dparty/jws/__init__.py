@@ -17,7 +17,8 @@ def sign(head, payload, key=None, is_json=False):
         'signer': None
     }
     # TODO: re-evaluate whether to pass ``data`` by reference, or to copy and reassign
-    header.process(data, 'sign')
+    print(header.process)
+    jws.header.process(data, 'sign')
     if not data['key']:
         raise MissingKey("Key was not passed as a param and a key could not be found from the header")
     if not data['signer']:
