@@ -53,9 +53,8 @@ class KeyFactory():
 
     def has_key(self):
         """ Check if a issuer has a private key generated """
-        
-        print(self.private_key_file + sha1_string(self.issuer.encode()) + b'.pem')
-        key_path = self.private_key_file + sha1_string(self.issuer.encode()) + b'.pem'
+       
+        key_path = self.private_key_file + sha1_string(self.issuer) + b'.pem'
         
         if os.path.isfile(key_path):
             raise ECDSAKeyExists(key_path)        
@@ -68,7 +67,7 @@ class KeyFactory():
         
         # Private key generation
         try:
-            self.private_key = SigningKey.generate(curve=NIST256p)
+            self.private_key = SigningKey.generate(curve=NIST256p)            
             self.private_key_file += sha1_string(self.issuer) + b'.pem'
         except:
             raise ECDSAPrivateKeyGenError()
@@ -217,7 +216,7 @@ def sha1_string(string):
     try:
         hash = hashlib.new('sha1')
         hash.update(string)
-        return hash.hexdigest()
+        return hash.hexdigest().encode('utf-8')     # hexdigest() return an 'str' not bytes.
     except:
         raise HashError() 
 

@@ -2,7 +2,7 @@
 
 """ Issuer Configuration """
 issuer = dict(
-    name = 'Luis G.F Badge Issuer',
+    name = b'Luis G.F Badge Issuer',
     image = 'https://openbadges.luisgf.es/issuer/logo.png',
     url = 'https://www.luisgf.es',
     email = 'openbadges@luisgf.es',

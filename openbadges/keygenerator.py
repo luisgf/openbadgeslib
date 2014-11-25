@@ -24,8 +24,8 @@ if __name__ == '__main__':
         kf.generate_keypair()
         kf.save_keypair()
     
-        print("Private Key Generated: %s" % kf.private_key_file)
-        print("Public Key Generated: %s" % kf.public_key_file)
+        print(b'Private Key Generated: ', kf.private_key_file)
+        print(b'Public Key Generated: ', kf.public_key_file)
     else:
         parser.print_help()
 
