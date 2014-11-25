@@ -27,7 +27,6 @@ badges = {
 keygen = dict(   
     private_key_path = b'./private/',
     public_key_path = b'./public/',
-    url_verif = 'https://openbadges.luisgf.es',
-    url_path_keys = '/issuer/pubkeys/'
+    url_verif = 'https://openbadges.luisgf.es'
 )
 
