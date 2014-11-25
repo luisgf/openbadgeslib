@@ -48,7 +48,7 @@ class TestKeyGenerator(unittest.TestCase):
     def test_14_check_key_file_presence(self): 
         try:
             kf = KeyFactory(config)
-            kf.private_key_file += sha1_string(kf.issuer) + '.pem'
+            kf.private_key_file += sha1_string(kf.issuer) + b'.pem'
             
             if os.path.isfile(kf.private_key_file):
                 pass
@@ -58,7 +58,7 @@ class TestKeyGenerator(unittest.TestCase):
     def test_15_check_private_key(self):  
         try:
             kf = KeyFactory(config)
-            kf.private_key_file += sha1_string(kf.issuer) + '.pem'
+            kf.private_key_file += sha1_string(kf.issuer) + b'.pem'
             
             if kf.read_private_key(kf.private_key_file) is not True:
                 self.fail('Error, reading private key file %s' % kf.private_key_file)   
@@ -68,7 +68,7 @@ class TestKeyGenerator(unittest.TestCase):
     def test_16_check_pub_keys(self):
         try:
             kf = KeyFactory(config)
-            filelist = [ f for f in os.listdir(config.keygen['public_key_path']) if f.endswith(".pem") ]
+            filelist = [ f for f in os.listdir(config.keygen['public_key_path']) if f.endswith(b".pem") ]
             for f in filelist:
                 if kf.read_public_key(config.keygen['public_key_path'] + f) is not True:
                     self.fail('Error, reading public key file %s' % kf.public_key_file)   
