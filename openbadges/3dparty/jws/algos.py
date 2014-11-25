@@ -31,7 +31,7 @@ class HMAC(HasherBase):
     """
     def sign(self, msg, key):
         import hmac
-        return hmac.new(key.encode('utf-8'), msg.encode('utf-8'), self.hasher).digest()
+        return hmac.new(key, msg, self.hasher).digest()
 
     def verify(self, msg, crypto, key):
         if not self.sign(msg, key) == crypto:
@@ -128,7 +128,7 @@ class ECDSA(HasherBase):
         ##  assume the signing key is already a real key
         # curve = getattr(ecdsa, self.bits_to_curve[self.bits])
         # signing_key = ecdsa.SigningKey.from_string(key, curve=curve)
-        return key.sign_deterministic(msg, hashfunc=self.hasher)
+        return key.sign(msg, hashfunc=self.hasher)
 
     def verify(self, msg, crypto, key):
         """
@@ -143,7 +143,7 @@ class ECDSA(HasherBase):
         if not isinstance(vk, ecdsa.VerifyingKey):
             vk = ecdsa.VerifyingKey.from_string(key, curve=curve)
         try:
-            vk.verify(crypto, msg.encode(), hashfunc=self.hasher)
+            vk.verify(crypto, msg, hashfunc=self.hasher)
         except ecdsa.BadSignatureError:
             raise SignatureError("Could not validate signature")
         except AssertionError:

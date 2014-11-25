@@ -24,7 +24,8 @@ def sign(head, payload, key=None, is_json=False):
         raise MissingSigner("Header was processed, but no algorithm was found to sign the message")
     signer = data['signer']
     signature = signer(_signing_input(head, payload, is_json), key)
-    return jws.utils.to_base64(signature)
+    #return jws.utils.to_base64(signature)
+    return signature
 
 
 def verify(head, payload, encoded_signature, key=None, is_json=False):

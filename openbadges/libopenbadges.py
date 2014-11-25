@@ -156,31 +156,27 @@ class SignerFactory():
     def generate_assertion(self): 
         """ Generate JWS Assertion """        
         
+        # All this data MUST be a Str string in order to be converted to json properly.
+        
         recipient_data = dict (
             identity = (b'sha256$' + sha256_string(self.receptor)).decode('utf-8'),
             type = 'email',
             hashed = 'true'
-        )
-        image_data = self.badge['image']
-        badge_def_data = self.badge['json_url']
+        )                
         
         verify_data = dict(
             type = 'signed',
             url = self.badge['url_key_verif']
-        )
+        )                
         
-        issue_date = int(time.time())
-        
-        assertion = dict(
+        return dict(
                         uid = self.generate_uid(),
                         recipient = recipient_data,
-                        image = image_data,
-                        badge = badge_def_data,
+                        image = self.badge['image'],
+                        badge = self.badge['json_url'],
                         verify = verify_data,
-                        issuedOn = issue_date
-                     )
-        
-        return assertion
+                        issuedOn = 1416912645 #int(time.time())
+                     )  
     
     def generate_openbadge_assertion(self):
         import jws
@@ -194,14 +190,15 @@ class SignerFactory():
              sign_key = SigningKey.from_pem(open(priv_key, "r").read())
         except:
             raise ECDSAReadPrivKeyError()
-       
+        
         signature = jws.sign(header, payload, sign_key)
-        
-        # DEBUG
-        print('Payload: ', jws._signing_input(header, payload, False))
-        print('Firma: ', signature)
-        
-        return jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + signature
+
+        # Hack, save signature to file
+        with open("/tmp/signature.txt", "wb") as sig:
+                sig.write(signature)                
+                sig.close()
+                
+        return jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + jws.utils.to_base64(signature)
             
 
 class VerifyFactory():
