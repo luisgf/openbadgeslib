@@ -11,8 +11,8 @@ issuer = dict(
 
 """ Badge Catalog, You can add more creating new dict() entrys at end """
 badges = {
-    "BADGETEST": dict(
-                name = 'Badge Test',
+    'BADGETEST': dict(
+                name = b'Badge Test',
                 description = 'A badge test example',
                 image = 'https://openbadges.luisgf.es/issuer/badges/image.png',
                 criteria = 'https://openbadges.luisgf.es/issuer/criteria.html',

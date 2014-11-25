@@ -138,8 +138,8 @@ class SignerFactory():
     """ JWS Signer Factory """
     
     def __init__(self, conf, badgename, receptor):
-        self.conf = conf              # Access to config.py values                
-        self.receptor = receptor      # Receptor of the badge
+        self.conf = conf                              # Access to config.py values                
+        self.receptor = receptor                      # Receptor of the badge
         
         try:
             if conf.badges[badgename]:
@@ -148,16 +148,16 @@ class SignerFactory():
             raise BadgeNotFound()
         
     def generate_uid(self):
-        """ Generate a UID for a signed badge """
+        """ Generate a UID for a signed badge, Return a str """
         
-        return sha1_string(self.conf.issuer['name'] + self.badge['name'] + self.receptor)
+        return sha1_string(self.conf.issuer['name'] + self.badge['name'] + self.receptor).decode('utf-8')
 
         
     def generate_assertion(self): 
-        """ Generate JWS Assertion """
+        """ Generate JWS Assertion """        
         
         recipient_data = dict (
-            identity = 'sha256$' + sha256_string(self.receptor),
+            identity = (b'sha256$' + sha256_string(self.receptor)).decode('utf-8'),
             type = 'email',
             hashed = 'true'
         )
@@ -224,8 +224,8 @@ def sha256_string(string):
     """ Calculate SHA256 digest of a string """
     try:
         hash = hashlib.new('sha256')
-        hash.update(string.encode('utf-8'))
-        return hash.hexdigest()
+        hash.update(string)
+        return hash.hexdigest().encode('utf-8')     # hexdigest() return an 'str' not bytes.
     except:
         raise HashError() 
                 
