@@ -128,7 +128,9 @@ class ECDSA(HasherBase):
         ##  assume the signing key is already a real key
         # curve = getattr(ecdsa, self.bits_to_curve[self.bits])
         # signing_key = ecdsa.SigningKey.from_string(key, curve=curve)
-        return key.sign(msg, hashfunc=self.hasher)
+        print('Vamos a Generar la firma de :')
+        print(msg)
+        return key.sign_deterministic(msg, hashfunc=self.hasher)
 
     def verify(self, msg, crypto, key):
         """
@@ -143,6 +145,8 @@ class ECDSA(HasherBase):
         if not isinstance(vk, ecdsa.VerifyingKey):
             vk = ecdsa.VerifyingKey.from_string(key, curve=curve)
         try:
+            print('Vamos a verificar la firma de: ')
+            print(msg)
             vk.verify(crypto, msg, hashfunc=self.hasher)
         except ecdsa.BadSignatureError:
             raise SignatureError("Could not validate signature")

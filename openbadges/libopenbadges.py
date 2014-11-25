@@ -9,7 +9,7 @@ import os
 import sys
 import time
 
-from ecdsa import SigningKey, VerifyingKey, NIST256p
+from ecdsa import SigningKey, VerifyingKey, NIST256p, BadSignatureError
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/")))
@@ -82,7 +82,7 @@ class KeyFactory():
     def read_private_key(self, private_key_file): 
         """ Read the private key from files """
         try:
-            with open(private_key_file, "r") as priv:
+            with open(private_key_file, "rb") as priv:
                 self.private_key_file = private_key_file
                 self.private_key = SigningKey.from_pem(priv.read())
                 priv.close()
@@ -95,7 +95,7 @@ class KeyFactory():
     def read_public_key(self, public_key_file): 
         """ Read the public key from files """
         try:
-            with open(public_key_file, "r") as pub:
+            with open(public_key_file, "rb") as pub:
                 self.public_key_file = public_key_file
                 self.public_key = VerifyingKey.from_pem(pub.read())
                 pub.close()
@@ -184,28 +184,63 @@ class SignerFactory():
         priv_key = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + b'.pem'
         
         header = { 'alg': 'ES256' }
-        payload = self.generate_assertion()
+        #payload = self.generate_assertion()
+        payload = {} # DEBUG
 
         try:
-             sign_key = SigningKey.from_pem(open(priv_key, "r").read())
+             sign_key = SigningKey.from_pem(open(priv_key, "rb").read())
         except:
             raise ECDSAReadPrivKeyError()
         
         signature = jws.sign(header, payload, sign_key)
-
+            
         # Hack, save signature to file
         with open("/tmp/signature.txt", "wb") as sig:
                 sig.write(signature)                
                 sig.close()
-                
-        return jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + jws.utils.to_base64(signature)
-            
+        
+        assertion = jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + jws.utils.to_base64(signature)
+        
+        # Verificamos en local
+        vf = VerifyFactory(self.conf, "public/664840c05c440bb83ae99971a4e244e8fa5cfb0c.pem")
+        vf.verify_signature(assertion)
+        
+        return assertion
+
+class PayloadFormatIncorrect(Exception):
+    pass
 
 class VerifyFactory():
     """ JWS Signature Verifier Factory """
-    pass
-
-
+    
+    def __init__(self, conf, pub_key):
+        self.conf = conf                              # Access to config.py values  
+        try:
+             self.vk = VerifyingKey.from_pem(open(pub_key).read())
+        except:
+            raise ECDSAReadPubKeyError()
+        
+    def verify_signature(self, assertion):
+        """ Verify the JWS Signature """
+        
+        print('Verificando Firma...')
+        
+        try:
+            head_encoded, payload_encoded, signature_encoded = assertion.split(b'.')
+        except ValueError:
+            raise PayloadFormatIncorrect()
+        
+        signature = jws.utils.base64url_decode(signature_encoded)
+        
+        try:
+            print('Voy a verificar la firma: ')
+            print(head_encoded + b'.' + payload_encoded)
+            self.vk.verify(signature, head_encoded + b'.' + payload_encoded)
+            
+            print('FIRMA ECDSA CORRECTA')
+        except BadSignatureError:
+            print('FIRMA ECDSA INCORRECTA')
+       
 """ Shared Utils """
 
 def sha1_string(string):

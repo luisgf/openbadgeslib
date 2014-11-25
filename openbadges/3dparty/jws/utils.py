@@ -2,7 +2,7 @@ import base64
 import json
 
 def base64url_decode(input):
-    input += '=' * (4 - (len(input) % 4))
+    input += b'=' * (4 - (len(input) % 4))
     return base64.urlsafe_b64decode(input)
 
 def base64url_encode(input):
