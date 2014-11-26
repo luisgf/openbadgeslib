@@ -124,23 +124,17 @@ class ECDSA(HasherBase):
         Signs a message with an ECDSA SigningKey and hash method matching the
         bit depth of curve algorithm.
         """
-        import ecdsa, hashlib
+        import ecdsa
         ##  assume the signing key is already a real key
         # curve = getattr(ecdsa, self.bits_to_curve[self.bits])
-<<<<<<< local
         # signing_key = ecdsa.SigningKey.from_string(key, curve=curve)
-        print('Vamos a Generar la firma de :')
-        print(msg)
-        print(self.hasher)
-=======
         # signing_key = ecdsa.SigningKey.from_string(key, curve=curve) 
->>>>>>> other
-        return key.sign_deterministic(msg, hashfunc=self.hasher)
+        return key.sign_deterministic(msg, hashfunc=self.hasher, sigencode=ecdsa.util.sigencode_der)
 
     def verify(self, msg, crypto, key):
         """
         Verifies a message using ECDSA cryptographic signature and key.
-
+ecdsa signture encapsulation
         ``crypto`` is the cryptographic signature
         ``key`` is the verifying key. Can be a real key object or a string.
         """
@@ -150,7 +144,7 @@ class ECDSA(HasherBase):
         if not isinstance(vk, ecdsa.VerifyingKey):
             vk = ecdsa.VerifyingKey.from_string(key, curve=curve)
         try:
-            vk.verify(crypto, msg, hashfunc=self.hasher)
+            vk.verify(crypto, msg, hashfunc=self.hasher, sigdecode=ecdsa.util.sigdecode_der)
         except ecdsa.BadSignatureError:
             raise SignatureError("Could not validate signature")
         except AssertionError:
