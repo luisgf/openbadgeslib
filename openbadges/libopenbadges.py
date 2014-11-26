@@ -192,18 +192,14 @@ class SignerFactory():
         except:
             raise ECDSAReadPrivKeyError()
         
-        signature = jws.sign(header, payload, sign_key)
-            
-        # Hack, save signature to file
-        with open("/tmp/signature.txt", "wb") as sig:
-                sig.write(signature)                
-                sig.close()
+        signature = jws.sign(header, payload, sign_key)                    
+        assertion = jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + jws.utils.to_base64(signature)                      
         
-        assertion = jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + jws.utils.to_base64(signature)
-        
-        # Verificamos en local
-        vf = VerifyFactory(self.conf, "public/664840c05c440bb83ae99971a4e244e8fa5cfb0c.pem")
-        vf.verify_signature(assertion)
+        # Verificamos en local        
+        if jws.verify_block(assertion, sign_key.get_verifying_key()):
+            print('Firma ECDSA Correcta')
+        else:
+            print('Firma ECDSA incorrecta')
         
         return assertion
 
@@ -215,6 +211,7 @@ class VerifyFactory():
     
     def __init__(self, conf, pub_key):
         self.conf = conf                              # Access to config.py values  
+        
         try:
              self.vk = VerifyingKey.from_pem(open(pub_key).read())
         except:
@@ -222,20 +219,17 @@ class VerifyFactory():
         
     def verify_signature(self, assertion):
         """ Verify the JWS Signature """
-        
-        print('Verificando Firma...')
-        
+      
         try:
             head_encoded, payload_encoded, signature_encoded = assertion.split(b'.')
         except ValueError:
             raise PayloadFormatIncorrect()
         
+        # b64urlsafe -> binary
         signature = jws.utils.base64url_decode(signature_encoded)
-        
-        try:
-            print('Voy a verificar la firma: ')
-            print(head_encoded + b'.' + payload_encoded)
-            self.vk.verify(signature, head_encoded + b'.' + payload_encoded)
+        l
+        try:                        
+            self.vk.verify(signature, head_encoded + b'.' + payload_encoded, hashfunc=hashlib.sha256)
             
             print('FIRMA ECDSA CORRECTA')
         except BadSignatureError:
