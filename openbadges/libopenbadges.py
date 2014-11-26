@@ -184,8 +184,8 @@ class SignerFactory():
         priv_key = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + b'.pem'
         
         header = { 'alg': 'ES256' }
-        #payload = self.generate_assertion()
-        payload = {} # DEBUG
+        payload = self.generate_assertion()
+        #payload = {} # DEBUG
 
         try:
              sign_key = SigningKey.from_pem(open(priv_key, "rb").read())
