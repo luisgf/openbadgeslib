@@ -65,7 +65,6 @@ def verify_block(msg, key=None):
         raise MissingVerifier("Header was processed, but no algorithm was found to sign the message")
     verifier = data['verifier']
     signature = jws.utils.from_base64(signature_encoded)    
-    
     return verifier(head_encoded + b'.' + payload_encoded, signature, key)
      
 
@@ -76,13 +75,3 @@ def _signing_input(head, payload, is_json=False):
     enc = jws.utils.to_base64 if is_json else jws.utils.encode
     head_input, payload_input = map(enc, [head, payload])
     return head_input + b'.' + payload_input
-
-def sha1_string(string):
-    """ Calculate SHA1 digest of a string """
-    try:
-        import hashlib
-        hash = hashlib.new('sha1')
-        hash.update(string)
-        return hash.hexdigest().encode('utf-8')     # hexdigest() return an 'str' not bytes.
-    except:
-        raise HashError() 

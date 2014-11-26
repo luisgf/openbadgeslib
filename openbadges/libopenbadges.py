@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #description     : Library for dealing with signing of badges
 #author          : Luis G.F
-#date            : 20141120
+#date            : 20141125
 #version         : 0.1 
 
 import hashlib
@@ -194,8 +194,14 @@ class SignerFactory():
         
         signature = jws.sign(header, payload, sign_key)                    
         assertion = jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + jws.utils.to_base64(signature)                      
-        
-        # Verificamos en local        
+
+        print(signature)
+       
+        with open("/tmp/signature.txt","wb") as f:
+            f.write(signature)
+
+        print(assertion)
+
         if jws.verify_block(assertion, sign_key.get_verifying_key()):
             print('Firma ECDSA Correcta')
         else:
@@ -219,21 +225,7 @@ class VerifyFactory():
         
     def verify_signature(self, assertion):
         """ Verify the JWS Signature """
-      
-        try:
-            head_encoded, payload_encoded, signature_encoded = assertion.split(b'.')
-        except ValueError:
-            raise PayloadFormatIncorrect()
-        
-        # b64urlsafe -> binary
-        signature = jws.utils.base64url_decode(signature_encoded)
-        l
-        try:                        
-            self.vk.verify(signature, head_encoded + b'.' + payload_encoded, hashfunc=hashlib.sha256)
-            
-            print('FIRMA ECDSA CORRECTA')
-        except BadSignatureError:
-            print('FIRMA ECDSA INCORRECTA')
+        pass
        
 """ Shared Utils """
 

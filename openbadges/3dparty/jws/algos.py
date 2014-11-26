@@ -127,7 +127,14 @@ class ECDSA(HasherBase):
         import ecdsa, hashlib
         ##  assume the signing key is already a real key
         # curve = getattr(ecdsa, self.bits_to_curve[self.bits])
+<<<<<<< local
+        # signing_key = ecdsa.SigningKey.from_string(key, curve=curve)
+        print('Vamos a Generar la firma de :')
+        print(msg)
+        print(self.hasher)
+=======
         # signing_key = ecdsa.SigningKey.from_string(key, curve=curve) 
+>>>>>>> other
         return key.sign_deterministic(msg, hashfunc=self.hasher)
 
     def verify(self, msg, crypto, key):

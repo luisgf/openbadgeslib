@@ -62,3 +62,11 @@ que firmara los badges. Cada emisor SOLO puede tener una clave privada pero mult
 
 badgsigner.py:
 <TODO>
+
+
+- Como generar un par de claves RSA usando openssl:
+$ openssl genrsa -out private.pem 2048
+$ openssl rsa -pubout -in private.pem -out public.pem
+
+
+
