@@ -75,7 +75,7 @@ class KeyFactory():
         # Public Key name is the hash of the public key
         try:
             self.public_key = self.private_key.get_verifying_key()
-            self.public_key_file += sha1_string(self.get_public_pem()) + b'.pem'
+            self.public_key_file += sha1_string(self.get_public_key_pem()) + b'.pem'
         except:
             raise GenPublicKeyError()
 
@@ -109,23 +109,23 @@ class KeyFactory():
         """ Save keypair to file """        
         try:
             with open(self.private_key_file, "wb") as priv:
-                priv.write(self.get_private_pem())
+                priv.write(self.get_private_key_pem())
                 priv.close()                
         except:
              raise PrivateKeySaveError()
          
         try:
             with open(self.public_key_file, "wb") as pub:
-                pub.write(self.get_public_pem())                    
+                pub.write(self.get_public_key_pem())                    
                 pub.close()                
         except:
              raise PublicKeySaveError() 
 
-    def get_private_pem(self):
+    def get_private_key_pem(self):
         """ Return private key in PEM format """
         return self.private_key.to_pem()
     
-    def get_public_pem(self):
+    def get_public_key_pem(self):
         """ Return public key in PEM format """
         return self.public_key.to_pem()    
 
