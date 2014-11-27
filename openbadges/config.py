@@ -14,7 +14,7 @@ badges = {
     'BADGETEST': dict(
                 name = 'Badge Test',
                 description = 'A badge test example',
-                image = 'https://openbadges.luisgf.es/issuer/badges/image.png',
+                image = 'https://openbadges.luisgf.es/issuer/badges/badge.svg',
                 criteria = 'https://openbadges.luisgf.es/issuer/criteria.html',
                 issuer = 'https://openbadges.luisgf.es/issuer/organization.json',
                 json_url = 'https://openbadges.luisgf.es/issuer/badge-luisgf.json',

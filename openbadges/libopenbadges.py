@@ -238,11 +238,13 @@ class SignerFactory():
             svg_doc = parse(file_in)  
             
             # Adding XML header
-            header = svg_doc.getElementsByTagName("svg")
-            header[0].attributes['xmlns:openbadges'] = 'http://openbadges.org'
+            #header = svg_doc.getElementsByTagName("svg")
+            #header[0].attributes['xmlns:openbadges'] = 'http://openbadges.org'
         
             # Assertion
             xml_tag = svg_doc.createElement("openbadges:assertion")
+            xml_tag.attributes['xmlns:openbadges'] = 'http://openbadges.org'
+            svg_doc.childNodes[1].appendChild(xml_tag) 
             xml_tag.attributes['verify']= assertion_data.decode('utf-8')
             svg_doc.childNodes[1].appendChild(xml_tag) 
             
@@ -310,7 +312,7 @@ class VerifyFactory():
      
     def verify_signature_inverse(self, assertion):
          """ Check the assertion signature With the Key specified in JWS Paload """
-         
+
          # The assertion MUST have a string like head.payload.signature         
          try:
             head_encoded, payload_encoded, signature_encoded = assertion.split(b'.')
@@ -330,13 +332,15 @@ class VerifyFactory():
          
          if u.scheme != 'https':
              print('[!] Warning! The public key is in a server that\'s lacks TLS support.')
-         
+         else:
+             print('[+] The public key is in a server with TLS support. Good!')
+             
          if u.hostname == b'':
              raise AssertionFormatIncorrect('The URL thats point to public key not exists in this assertion')
                                             
          # OK, is time to download the pubkey
          try:
-            pub_key_pem = download_pubkey(payload['verify']['url'])
+            pub_key_pem = self.download_pubkey(payload['verify']['url'])
          except HTTPError as e:
             print('[!] And error has occurred during PubKey download. HTTP Error: ', e.code, e.reason)
          except URLError as e:
@@ -344,7 +348,7 @@ class VerifyFactory():
             
             
          # Ok, is time to verify the assertion againts the key downloaded.
-         vf = VerifyFactory(config, pub_key_pem, key_inline=True)
+         vf = VerifyFactory(self.conf, pub_key_pem, key_inline=True)
          return vf.verify_signature(assertion)
      
     def download_pubkey(self, url):
@@ -361,7 +365,33 @@ class VerifyFactory():
             pub_key_pem = kd.read()
         
         return pub_key_pem
-         
+    
+    def extract_svg_signature(self, file_in):
+        """ Extract the signature embeded in a SVG file. """
+        
+        if not os.path.exists(file_in):
+            raise FileToSignNotExists()
+        
+        try:
+            # Parse de SVG XML
+            svg_doc = parse(file_in)  
+            
+            # Extract the assertion
+            assertion = svg_doc.getElementsByTagName("openbadges:assertion")
+            return assertion[0].attributes['verify'].nodeValue.encode('utf-8')
+            
+        except:
+            raise ErrorParsingFile('Error Parsing SVG file: ', file_in)
+        finally:
+            svg_doc.unlink()
+     
+    def is_svg_signature_valid(self, file_in):
+        """ This function return True/False if the signature in the
+             file is correct or no """
+            
+        assertion = self.extract_svg_signature(file_in)
+        return self.verify_signature_inverse(assertion)
+
      
 """ Shared Utils """
 
