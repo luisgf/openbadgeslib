@@ -48,8 +48,9 @@ def verify(head, payload, encoded_signature, key=None, is_json=False):
 def verify_block(msg, key=None):
     try:
         head_encoded, payload_encoded, signature_encoded = msg.split(b'.')
-    except:
-        raise AssertionFormatError()
+    except ValueError:
+        # The block has an incorrect format.
+        raise SignatureError()
     
     data = {
         'key': key,
@@ -63,10 +64,9 @@ def verify_block(msg, key=None):
         raise MissingKey("Key was not passed as a param and a key could not be found from the header")
     if not data['verifier']:
         raise MissingVerifier("Header was processed, but no algorithm was found to sign the message")
-    verifier = data['verifier']
+    verifier = data['verifier']    
     signature = jws.utils.from_base64(signature_encoded)    
-    return verifier(head_encoded + b'.' + payload_encoded, signature, key)
-     
+    return verifier(head_encoded + b'.' + payload_encoded, signature, key)     
 
 ####################
 # semi-private api #

@@ -38,7 +38,7 @@ class ECDSAReadPrivKeyError(Exception):
 
 class ECDSAReadPubKeyError(Exception):
     pass
-    
+   
 class KeyFactory():
     """ ECDSA Factory class """
     
@@ -175,7 +175,7 @@ class SignerFactory():
                         image = self.badge['image'],
                         badge = self.badge['json_url'],
                         verify = verify_data,
-                        issuedOn = 1416912645 #int(time.time())
+                        issuedOn = int(time.time())
                      )  
     
     def generate_openbadge_assertion(self):
@@ -185,47 +185,65 @@ class SignerFactory():
         
         header = { 'alg': 'ES256' }
         payload = self.generate_assertion()
-        #payload = {} # DEBUG
 
         try:
              sign_key = SigningKey.from_pem(open(priv_key, "rb").read())
         except:
             raise ECDSAReadPrivKeyError()
         
-        signature = jws.sign(header, payload, sign_key)                    
+        signature = jws.sign(header, payload, sign_key)             
         assertion = jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + jws.utils.to_base64(signature)                      
-
-        print(signature)
-       
-        with open("/tmp/signature.txt","wb") as f:
-            f.write(signature)
-
-        print(assertion)
-
-        if jws.verify_block(assertion, sign_key.get_verifying_key()):
-            print('Firma ECDSA Correcta')
-        else:
-            print('Firma ECDSA incorrecta')
         
-        return assertion
+        # Signature Verification
+        vf = VerifyFactory(self.conf)  
+        
+        if not vf.verify_signature(assertion):
+            return None
+        else:
+            return assertion
+
+class BadAssertionSignature(Exception):
+    pass
 
 class PayloadFormatIncorrect(Exception):
     pass
 
+""" Signature Verification Factory """
 class VerifyFactory():
     """ JWS Signature Verifier Factory """
     
-    def __init__(self, conf, pub_key):
+    def __init__(self, conf, pub_key=None):
         self.conf = conf                              # Access to config.py values  
-        
-        try:
-             self.vk = VerifyingKey.from_pem(open(pub_key).read())
-        except:
-            raise ECDSAReadPubKeyError()
+        self.pub_key = pub_key
+        self.vk = None                                # VerifyingKey() Object
+                
+        # If the pubkey is not passed as parameter, i can obtaint it via private_key
+        if pub_key:        
+            try:
+                self.vk = VerifyingKey.from_pem(open(self.pub_key).read())
+            except:
+                raise ECDSAReadPubKeyError()
+        else:
+            # Pubkey not passed.
+            try:
+                priv_key = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + b'.pem'
+                sign_key = SigningKey.from_pem(open(priv_key, "rb").read())
+                self.vk = sign_key.get_verifying_key()
+            except:
+                raise ECDSAReadPrivKeyError()
         
     def verify_signature(self, assertion):
-        """ Verify the JWS Signature """
-        pass
+        """ Verify the JWS Signature, Return True if the signature block is Good
+            Otherwise raise the BadAssertionSignature() exception
+        """
+        
+        try:
+            return jws.verify_block(assertion, self.vk)            
+        except:
+            print('Wrong Assertion Signature') 
+            return False
+            
+
        
 """ Shared Utils """
 

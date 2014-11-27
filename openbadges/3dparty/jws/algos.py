@@ -147,8 +147,6 @@ ecdsa signture encapsulation
             vk.verify(crypto, msg, hashfunc=self.hasher, sigdecode=ecdsa.util.sigdecode_der)
         except ecdsa.BadSignatureError:
             raise SignatureError("Could not validate signature")
-        except AssertionError:
-            raise SignatureError("Could not validate signature")
         return True
 
 # algorithm routing
