@@ -78,6 +78,9 @@ class KeyFactory():
             self.public_key_file += sha1_string(self.get_public_key_pem()) + b'.pem'
         except:
             raise GenPublicKeyError()
+        
+        # Save the keypair
+        self.save_keypair()
 
     def read_private_key(self, private_key_file): 
         """ Read the private key from files """
@@ -154,7 +157,7 @@ class SignerFactory():
 
     
     def generate_jose_header(self):
-        """ Generate de JOSE Header """
+        """ Generate JOSE Header """
         
         return { 'alg': 'ES256' }
     

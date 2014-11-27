@@ -22,7 +22,6 @@ if __name__ == '__main__':
         print("[!] Generating Issuer key for '%s'..." % kf.issuer)
     
         kf.generate_keypair()
-        kf.save_keypair()
     
         print(b'Private Key Generated: ', kf.private_key_file)
         print(b'Public Key Generated: ', kf.public_key_file)
