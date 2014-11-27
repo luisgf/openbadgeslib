@@ -1,4 +1,17 @@
 syntax: glob
+<<<<<<< local
+
+=======
 *.pyc
 *.pyo
+>>>>>>> other
 __pycache__
+<<<<<<< local
+*.pyc
+*.py3
+*.egg
+build/*
+private/*
+public/*
+=======
+>>>>>>> other

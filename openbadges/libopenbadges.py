@@ -49,7 +49,7 @@ class KeyFactory():
         self.private_key_file = conf.keygen['private_key_path']
         self.public_key_file = conf.keygen['public_key_path']
 
-        self.issuer = conf.issuer['name']
+        self.issuer = conf.issuer['name'].encode('utf-8')
 
     def has_key(self):
         """ Check if a issuer has a private key generated """
@@ -257,7 +257,7 @@ class VerifyFactory():
             print('[!] Wrong Assertion Signature') 
             return False            
      
-     def verify_signature_inverse(self, assertion):
+    def verify_signature_inverse(self, assertion):
          """ Check the assertion signature With the Key specified in JWS Paload """
          
          # The assertion MUST have a string like head.payload.signature
@@ -281,7 +281,7 @@ class VerifyFactory():
                 self.download_pubkey()
              except NotPubKeyInServer:                                    
                 print('This badge has a reference to a private key that NOT exist. ', payload['verify']['url'])
-                returl False
+                return False
          
      
 """ Shared Utils """
