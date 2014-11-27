@@ -10,6 +10,12 @@ import sys
 import time
 
 from ecdsa import SigningKey, VerifyingKey, NIST256p, BadSignatureError
+from urllib import request
+from urllib.error import HTTPError, URLError
+from urllib.request import HTTPSHandler
+from urllib.parse import urlparse
+from ssl import SSLContext, CERT_NONE, VERIFY_CRL_CHECK_CHAIN, PROTOCOL_TLSv1, SSLError
+from xml.dom.minidom import parse, parseString
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/")))
@@ -137,6 +143,12 @@ class KeyFactory():
 class BadgeNotFound(Exception):
     pass
 
+class FileToSignNotExists(Exception):
+    pass
+
+class ErrorSigningFile(Exception):
+    pass
+
 class SignerFactory():
     """ JWS Signer Factory """
     
@@ -212,6 +224,37 @@ class SignerFactory():
             return None
         else:
             return assertion
+        
+    def sign_file(self, file_in, file_out, assertion_data):
+        """ Add the Assertion information into the SVG file
+        assertion_data MUST by a str. The assertion_data input
+        as bytes but MUST be converted tu str """
+    
+        if not os.path.exists(file_in):
+            raise FileToSignNotExists()
+    
+        try:
+            # Parse de SVG XML
+            svg_doc = parse(file_in)  
+            
+            # Adding XML header
+            header = svg_doc.getElementsByTagName("svg")
+            header[0].attributes['xmlns:openbadges'] = 'http://openbadges.org'
+        
+            # Assertion
+            xml_tag = svg_doc.createElement("openbadges:assertion")
+            xml_tag.attributes['verify']= assertion_data.decode('utf-8')
+            svg_doc.childNodes[1].appendChild(xml_tag) 
+            
+            with open(file_out, "w") as f:
+                svg_doc.writexml(f)
+
+        except:
+            raise ErrorSigningFile('Error Signing file: ', file_in)
+        finally:
+            svg_doc.unlink()
+            
+        return True
 
 class PayloadFormatIncorrect(Exception):
     pass
@@ -223,19 +266,28 @@ class AssertionFormatIncorrect(Exception):
 class VerifyFactory():
     """ JWS Signature Verifier Factory """
     
-    def __init__(self, conf, pub_key=None):
+    def __init__(self, conf, pub_key=None, key_inline=False):
         self.conf = conf                              # Access to config.py values  
         self.pub_key = pub_key
         self.vk = None                                # VerifyingKey() Object
                 
         # If the pubkey is not passed as parameter, i can obtaint it via private_key
-        if pub_key:        
+        if pub_key and not key_inline:
+            # The pubkey is in a file
             try:
                 with open(pub_key, "rb") as key_file:
                     self.vk = VerifyingKey.from_pem(key_file.read())
                 
             except:
                 raise PublicKeyReadError()
+            
+        elif pub_key and key_inline:
+            # The pub key is passed as string
+            try:
+                self.vk = VerifyingKey.from_pem(pub_key)
+            except:
+                raise PublicKeyReadError()
+            
         else:
             # Pubkey not passed. Using the private key to obtain one.
             try:                
@@ -253,35 +305,62 @@ class VerifyFactory():
         
         try:
             return jws.verify_block(assertion, self.vk)            
-        except:
-            print('[!] Wrong Assertion Signature') 
+        except: 
             return False            
      
     def verify_signature_inverse(self, assertion):
          """ Check the assertion signature With the Key specified in JWS Paload """
          
-         # The assertion MUST have a string like head.payload.signature
-         
+         # The assertion MUST have a string like head.payload.signature         
          try:
             head_encoded, payload_encoded, signature_encoded = assertion.split(b'.')
          except:
              raise AssertionFormatIncorrect()
          
+         # Try to decode the payload
          try:
-            payload = jws.utils.decode(payload_encoded)
+             payload = jws.utils.decode(payload_encoded)
          except:
              raise AssertionFormatIncorrect('Payload deserialization error')
          
-         # payload is a dict() that contains the badge info.
-         if not payload['verify']['url']:
-             raise AssertionFormatIncorrect('Public key URL not exist in this assertion')
-         else:
-             # Bajar clave
-             try:
-                self.download_pubkey()
-             except NotPubKeyInServer:                                    
-                print('This badge has a reference to a private key that NOT exist. ', payload['verify']['url'])
-                return False
+         """ Parse URL to detect that has a correct format and a secure source.
+             Warning User otherwise """
+            
+         u = urlparse(payload['verify']['url'])
+         
+         if u.scheme != 'https':
+             print('[!] Warning! The public key is in a server that\'s lacks TLS support.')
+         
+         if u.hostname == b'':
+             raise AssertionFormatIncorrect('The URL thats point to public key not exists in this assertion')
+                                            
+         # OK, is time to download the pubkey
+         try:
+            pub_key_pem = download_pubkey(payload['verify']['url'])
+         except HTTPError as e:
+            print('[!] And error has occurred during PubKey download. HTTP Error: ', e.code, e.reason)
+         except URLError as e:
+            print('[!] And error has occurred during PubKey download. Reason: ', e.reason)
+            
+            
+         # Ok, is time to verify the assertion againts the key downloaded.
+         vf = VerifyFactory(config, pub_key_pem, key_inline=True)
+         return vf.verify_signature(assertion)
+     
+    def download_pubkey(self, url):
+        """ This function return the Key in pem format from server """
+        
+        # SSL Context
+        sslctx = SSLContext(PROTOCOL_TLSv1)
+        sslctx.verify_mode = CERT_NONE   
+        sslctx_handler = HTTPSHandler(context=sslctx, check_hostname=False)
+        
+        request.install_opener(request.build_opener(sslctx_handler))
+        
+        with request.urlopen(url, timeout=30) as kd:
+            pub_key_pem = kd.read()
+        
+        return pub_key_pem
          
      
 """ Shared Utils """
