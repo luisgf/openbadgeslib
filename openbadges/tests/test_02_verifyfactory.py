@@ -28,3 +28,4 @@ class TestVerifyFactory(unittest.TestCase):
             vf = VerifyFactory(config)
         except:
             self.fail('VerifyFactory() object creation failed')
+            
