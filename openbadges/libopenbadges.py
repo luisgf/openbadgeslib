@@ -331,9 +331,9 @@ class VerifyFactory():
          u = urlparse(payload['verify']['url'])
          
          if u.scheme != 'https':
-             print('[!] Warning! The public key is in a server that\'s lacks TLS support.')
+             print('[!] Warning! The public key is in a server that\'s lacks TLS support.', payload['verify']['url'])
          else:
-             print('[+] The public key is in a server with TLS support. Good!')
+             print('[+] The public key is in a server with TLS support. Good!', payload['verify']['url'])
              
          if u.hostname == b'':
              raise AssertionFormatIncorrect('The URL thats point to public key not exists in this assertion')
@@ -346,7 +346,9 @@ class VerifyFactory():
          except URLError as e:
             print('[!] And error has occurred during PubKey download. Reason: ', e.reason)
             
-            
+         print('This is the assertion content:')
+         print(payload)
+         
          # Ok, is time to verify the assertion againts the key downloaded.
          vf = VerifyFactory(self.conf, pub_key_pem, key_inline=True)
          return vf.verify_signature(assertion)
