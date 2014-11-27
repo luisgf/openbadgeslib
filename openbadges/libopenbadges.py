@@ -225,7 +225,7 @@ class SignerFactory():
         else:
             return assertion
         
-    def sign_file(self, file_in, file_out, assertion_data):
+    def sign_svg_file(self, file_in, file_out, assertion_data):
         """ Add the Assertion information into the SVG file
         assertion_data MUST by a str. The assertion_data input
         as bytes but MUST be converted tu str """

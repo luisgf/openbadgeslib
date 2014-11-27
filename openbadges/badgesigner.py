@@ -27,7 +27,7 @@ if __name__ == '__main__':
         print("[!] Generating signature for badge '%s'..." % args.badge)        
         assertion = sf.generate_openbadge_assertion()
         
-        if sf.sign_file(args.filein, args.fileout, assertion):
+        if sf.sign_svg_file(args.filein, args.fileout, assertion):
             print('[+] Badge Signed succesfully at: ', args.fileout)
 
     else:
