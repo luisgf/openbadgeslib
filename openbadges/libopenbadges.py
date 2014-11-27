@@ -152,9 +152,14 @@ class SignerFactory():
         
         return sha1_string(self.conf.issuer['name'] + self.badge['name'] + self.receptor).decode('utf-8')
 
+    
+    def generate_jose_header(self):
+        """ Generate de JOSE Header """
         
-    def generate_assertion(self): 
-        """ Generate JWS Assertion """        
+        return { 'alg': 'ES256' }
+    
+    def generate_jws_payload(self): 
+        """ Generate JWS Payload """        
         
         # All this data MUST be a Str string in order to be converted to json properly.
         
@@ -183,8 +188,8 @@ class SignerFactory():
         
         priv_key = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + b'.pem'
         
-        header = { 'alg': 'ES256' }
-        payload = self.generate_assertion()
+        header = self.generate_jose_header()
+        payload = self.generate_jws_payload()
 
         try:
              sign_key = SigningKey.from_pem(open(priv_key, "rb").read())
@@ -201,9 +206,6 @@ class SignerFactory():
             return None
         else:
             return assertion
-
-class BadAssertionSignature(Exception):
-    pass
 
 class PayloadFormatIncorrect(Exception):
     pass
@@ -233,17 +235,13 @@ class VerifyFactory():
                 raise PrivateKeyReadError()
         
     def verify_signature(self, assertion):
-        """ Verify the JWS Signature, Return True if the signature block is Good
-            Otherwise raise the BadAssertionSignature() exception
-        """
+        """ Verify the JWS Signature, Return True if the signature block is Good """
         
         try:
             return jws.verify_block(assertion, self.vk)            
         except:
-            print('Wrong Assertion Signature') 
-            return False
-            
-
+            print('[!] Wrong Assertion Signature') 
+            return False            
        
 """ Shared Utils """
 
