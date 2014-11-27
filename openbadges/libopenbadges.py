@@ -15,28 +15,28 @@ from ecdsa import SigningKey, VerifyingKey, NIST256p, BadSignatureError
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/")))
 import jws.utils
 
-class ECDSAPrivateKeyGenError(Exception):
+class GenPrivateKeyError(Exception):
     pass
 
-class ECDSAPublicKeyGenError(Exception):
+class GenPublicKeyError(Exception):
     pass
 
 class HashError(Exception):
     pass
 
-class ECDSASaveErrorPrivate(Exception):
+class PrivateKeySaveError(Exception):
     pass
     
-class ECDSASaveErrorPublic(Exception):
+class PublicKeySaveError(Exception):
     pass
     
-class ECDSAKeyExists(Exception):
+class PrivateKeyExists(Exception):
     pass
 
-class ECDSAReadPrivKeyError(Exception):
+class PrivateKeyReadError(Exception):
     pass
 
-class ECDSAReadPubKeyError(Exception):
+class PublicKeyReadError(Exception):
     pass
    
 class KeyFactory():
@@ -57,7 +57,7 @@ class KeyFactory():
         key_path = self.private_key_file + sha1_string(self.issuer) + b'.pem'
         
         if os.path.isfile(key_path):
-            raise ECDSAKeyExists(key_path)        
+            raise PrivateKeyExists(key_path)        
 
     def generate_keypair(self):
         """ Generate a ECDSA keypair """       
@@ -70,14 +70,14 @@ class KeyFactory():
             self.private_key = SigningKey.generate(curve=NIST256p)            
             self.private_key_file += sha1_string(self.issuer) + b'.pem'
         except:
-            raise ECDSAPrivateKeyGenError()
+            raise GenPrivateKeyError()
         
         # Public Key name is the hash of the public key
         try:
             self.public_key = self.private_key.get_verifying_key()
             self.public_key_file += sha1_string(self.get_public_pem()) + b'.pem'
         except:
-            raise ECDSAPublicKeyGenError()
+            raise GenPublicKeyError()
 
     def read_private_key(self, private_key_file): 
         """ Read the private key from files """
@@ -89,7 +89,7 @@ class KeyFactory():
                 
             return True 
         except:
-            raise ECDSAReadPrivKeyError('Error reading private key: %s' % self.private_key_file)
+            raise PrivateKeyReadError('Error reading private key: %s' % self.private_key_file)
             return False
         
     def read_public_key(self, public_key_file): 
@@ -102,7 +102,7 @@ class KeyFactory():
                 
             return True 
         except:
-            raise ECDSAReadPubKeyError('Error reading public key: %s' % self.public_key_file)
+            raise PublicKeyReadError('Error reading public key: %s' % self.public_key_file)
             return False        
                         
     def save_keypair(self):      
@@ -112,14 +112,14 @@ class KeyFactory():
                 priv.write(self.get_private_pem())
                 priv.close()                
         except:
-             raise ECDSASaveErrorPrivate()
+             raise PrivateKeySaveError()
          
         try:
             with open(self.public_key_file, "wb") as pub:
                 pub.write(self.get_public_pem())                    
                 pub.close()                
         except:
-             raise ECDSASaveErrorPublic() 
+             raise PublicKeySaveError() 
 
     def get_private_pem(self):
         """ Return private key in PEM format """
@@ -189,7 +189,7 @@ class SignerFactory():
         try:
              sign_key = SigningKey.from_pem(open(priv_key, "rb").read())
         except:
-            raise ECDSAReadPrivKeyError()
+            raise PrivateKeyReadError()
         
         signature = jws.sign(header, payload, sign_key)             
         assertion = jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + jws.utils.to_base64(signature)                      
@@ -222,7 +222,7 @@ class VerifyFactory():
             try:
                 self.vk = VerifyingKey.from_pem(open(self.pub_key).read())
             except:
-                raise ECDSAReadPubKeyError()
+                raise PublicKeyReadError()
         else:
             # Pubkey not passed.
             try:
@@ -230,7 +230,7 @@ class VerifyFactory():
                 sign_key = SigningKey.from_pem(open(priv_key, "rb").read())
                 self.vk = sign_key.get_verifying_key()
             except:
-                raise ECDSAReadPrivKeyError()
+                raise PrivateKeyReadError()
         
     def verify_signature(self, assertion):
         """ Verify the JWS Signature, Return True if the signature block is Good
