@@ -12,7 +12,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../3dparty/")))
 
-from libopenbadges import SignerFactory
+from libopenbadges import VerifyFactory
 import config
 
 class TestVerifyFactory(unittest.TestCase): 
@@ -23,3 +23,8 @@ class TestVerifyFactory(unittest.TestCase):
         except:
             self.fail('Python-jws library missing https://pypi.python.org/pypi/jws/0.1.2')
     
+    def test_21_create_factory_object(self):
+        try:
+            vf = VerifyFactory(config)
+        except:
+            self.fail('VerifyFactory() object creation failed')

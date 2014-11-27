@@ -188,13 +188,15 @@ class SignerFactory():
         
         import jws
         
-        priv_key = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + b'.pem'
+        priv_key_file = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + b'.pem'
         
         header = self.generate_jose_header()
         payload = self.generate_jws_payload()
 
         try:
-             sign_key = SigningKey.from_pem(open(priv_key, "rb").read())
+            with open(priv_key_file, "rb") as key_file:
+                sign_key = SigningKey.from_pem(key_file.read())
+                
         except:
             raise PrivateKeyReadError()
         
@@ -224,15 +226,20 @@ class VerifyFactory():
         # If the pubkey is not passed as parameter, i can obtaint it via private_key
         if pub_key:        
             try:
-                self.vk = VerifyingKey.from_pem(open(self.pub_key).read())
+                with open(pub_key, "rb") as key_file:
+                    self.vk = VerifyingKey.from_pem(key_file.read())
+                
             except:
                 raise PublicKeyReadError()
         else:
-            # Pubkey not passed.
+            # Pubkey not passed. Using the private key to obtain one.
             try:
-                priv_key = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + b'.pem'
-                sign_key = SigningKey.from_pem(open(priv_key, "rb").read())
-                self.vk = sign_key.get_verifying_key()
+                priv_key_file = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + b'.pem'
+                
+                with open(priv_key_file, "rb") as key_file:
+                    sign_key = SigningKey.from_pem(key_file.read())
+                    self.vk = sign_key.get_verifying_key()
+                    
             except:
                 raise PrivateKeyReadError()
         
