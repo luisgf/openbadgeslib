@@ -312,7 +312,7 @@ class VerifyFactory():
      
     def verify_signature_inverse(self, assertion):
          """ Check the assertion signature With the Key specified in JWS Paload """
-
+         import json
          # The assertion MUST have a string like head.payload.signature         
          try:
             head_encoded, payload_encoded, signature_encoded = assertion.split(b'.')
@@ -347,7 +347,7 @@ class VerifyFactory():
             print('[!] And error has occurred during PubKey download. Reason: ', e.reason)
             
          print('This is the assertion content:')
-         print(payload)
+         print(json.dumps(payload, sort_keys=True, indent=4))
          
          # Ok, is time to verify the assertion againts the key downloaded.
          vf = VerifyFactory(self.conf, pub_key_pem, key_inline=True)
