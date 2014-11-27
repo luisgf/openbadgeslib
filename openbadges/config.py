@@ -2,7 +2,7 @@
 
 """ Issuer Configuration """
 issuer = dict(
-    name = b'Luis G.F Badge Issuer',
+    name = 'Luis G.F Badge Issuer',
     image = 'https://openbadges.luisgf.es/issuer/logo.png',
     url = 'https://www.luisgf.es',
     email = 'openbadges@luisgf.es',
@@ -12,7 +12,7 @@ issuer = dict(
 """ Badge Catalog, You can add more creating new dict() entrys at end """
 badges = {
     'BADGETEST': dict(
-                name = b'Badge Test',
+                name = 'Badge Test',
                 description = 'A badge test example',
                 image = 'https://openbadges.luisgf.es/issuer/badges/image.png',
                 criteria = 'https://openbadges.luisgf.es/issuer/criteria.html',

@@ -151,10 +151,9 @@ class SignerFactory():
             raise BadgeNotFound()
         
     def generate_uid(self):
-        """ Generate a UID for a signed badge, Return a str """
+        """ Generate a UID for a signed badge """
         
-        return sha1_string(self.conf.issuer['name'] + self.badge['name'] + self.receptor).decode('utf-8')
-
+        return sha1_string((self.conf.issuer['name'] + self.badge['name']).encode('utf-8') + self.receptor)
     
     def generate_jose_header(self):
         """ Generate JOSE Header """
@@ -178,7 +177,7 @@ class SignerFactory():
         )                
         
         return dict(
-                        uid = self.generate_uid(),
+                        uid = self.generate_uid().decode('utf-8'),
                         recipient = recipient_data,
                         image = self.badge['image'],
                         badge = self.badge['json_url'],
@@ -191,7 +190,7 @@ class SignerFactory():
         
         import jws
         
-        priv_key_file = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + b'.pem'
+        priv_key_file = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name'].encode('utf-8')) + b'.pem'
         
         header = self.generate_jose_header()
         payload = self.generate_jws_payload()
@@ -217,6 +216,9 @@ class SignerFactory():
 class PayloadFormatIncorrect(Exception):
     pass
 
+class AssertionFormatIncorrect(Exception):
+    pass
+
 """ Signature Verification Factory """
 class VerifyFactory():
     """ JWS Signature Verifier Factory """
@@ -236,13 +238,13 @@ class VerifyFactory():
                 raise PublicKeyReadError()
         else:
             # Pubkey not passed. Using the private key to obtain one.
-            try:
-                priv_key_file = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + b'.pem'
+            try:                
+                priv_key_file = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name'].encode('utf-8')) + b'.pem'
                 
                 with open(priv_key_file, "rb") as key_file:
                     sign_key = SigningKey.from_pem(key_file.read())
                     self.vk = sign_key.get_verifying_key()
-                    
+                
             except:
                 raise PrivateKeyReadError()
         
@@ -254,7 +256,34 @@ class VerifyFactory():
         except:
             print('[!] Wrong Assertion Signature') 
             return False            
-       
+     
+     def verify_signature_inverse(self, assertion):
+         """ Check the assertion signature With the Key specified in JWS Paload """
+         
+         # The assertion MUST have a string like head.payload.signature
+         
+         try:
+            head_encoded, payload_encoded, signature_encoded = assertion.split(b'.')
+         except:
+             raise AssertionFormatIncorrect()
+         
+         try:
+            payload = jws.utils.decode(payload_encoded)
+         except:
+             raise AssertionFormatIncorrect('Payload deserialization error')
+         
+         # payload is a dict() that contains the badge info.
+         if not payload['verify']['url']:
+             raise AssertionFormatIncorrect('Public key URL not exist in this assertion')
+         else:
+             # Bajar clave
+             try:
+                self.download_pubkey()
+             except NotPubKeyInServer:                                    
+                print('This badge has a reference to a private key that NOT exist. ', payload['verify']['url'])
+                returl False
+         
+     
 """ Shared Utils """
 
 def sha1_string(string):
