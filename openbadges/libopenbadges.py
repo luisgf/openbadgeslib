@@ -184,6 +184,8 @@ class SignerFactory():
                      )  
     
     def generate_openbadge_assertion(self):
+        """ Generate and Sign and OpenBadge assertion """
+        
         import jws
         
         priv_key = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name']) + b'.pem'
@@ -199,7 +201,7 @@ class SignerFactory():
         signature = jws.sign(header, payload, sign_key)             
         assertion = jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + jws.utils.to_base64(signature)                      
         
-        # Signature Verification
+        # Verify the assertion just after the generation.
         vf = VerifyFactory(self.conf)  
         
         if not vf.verify_signature(assertion):
