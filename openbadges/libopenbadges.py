@@ -53,101 +53,117 @@ class KeyFactoryBase(object):
         self.key_size = key_size
         self.hash_algo = hash_algo 
         self.curve_type = curve_type
-        self.private_key_file = self.conf.keygen['private_key_path']
-        self.public_key_file = self.conf.keygen['public_key_path']
+        self.priv_key = None              # crypto Object
+        self.pub_key = None               # crypto Object
+        self.private_key_file = ''
+        self.public_key_file = ''
 
     def generate_key_filenames(self):
         """ Generate the names for the keys files """
         
-        priv_path = self.private_key_file + sha1_string(self.conf.issuer['name'].encode('utf-8')) + b'.pem'
-        pub_path = self.public_key_file + sha1_string(self.conf.issuer['name'].encode('utf-8')) + b'_pub.pem'               
+        self.private_key_file = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name'].encode('utf-8')) + b'.pem'
+        self.public_key_file = self.conf.keygen['public_key_path'] + sha1_string(self.conf.issuer['name'].encode('utf-8')) + b'_pub.pem'               
 
+
+    def get_privkey_path(self):
+        """ Return de path to the private key """
+        return self.private_key_file.decode('utf-8')
+    
+    def get_pubkey_path(self):
+        """ Return de path to the public key """
+        return self.public_key_file.decode('utf-8')
+    
     def save_keypair(self, private_key_pem, public_key_pem):      
         """ Save keypair to file """        
         try:
-            with open(self.private_key_file, "wb") as priv:
+            with open(self.get_privkey_path(), "wb") as priv:
                 priv.write(private_key_pem)
                 priv.close()                
         except:
              raise PrivateKeySaveError()
          
         try:
-            with open(self.public_key_file, "wb") as pub:
+            with open(self.get_pubkey_path(), "wb") as pub:
                 pub.write(public_key_pem)                    
                 pub.close()                
         except:
              raise PublicKeySaveError() 
 
+    def has_key(self):
+        """ Check if a private key is already generated """
+        
+        if os.path.isfile(self.private_key_file):
+            raise PrivateKeyExists(self.get_privkey_path())   
+
 class KeyFactoryRSA(KeyFactoryBase):
     
     def __init__(self, config, key_type='RSA', key_size=2048, hash_algo='SHA256'):  
         KeyFactoryBase.__init__(self, config, key_type, key_size, hash_algo)      
-        from Crypto.PublicKey import RSA    
             
     def generate_keypair(self):
         """ Generate a RSA Key, returning in PEM Format """
+        from Crypto.PublicKey import RSA   
         
+        # Generation the names for the keys
+        self.generate_key_filenames() 
+        
+        # Check if a key exists
+        self.has_key()
+        
+        # RSA Key Generation
         try:
-            priv_key = RSA.generate(self.key_size) 
-            priv_key_pem = priv_key.exportKey('PEM')
+            self.priv_key = RSA.generate(self.key_size) 
+            priv_key_pem = self.priv_key.exportKey('PEM')
         except:
             raise GenPrivateKeyError()
         
         try:
-            pub_key = priv_key.publickey().exportKey("PEM")
-            pub_key_pem = pub_key.exportKey('PEM')
+            self.pub_key = self.priv_key.publickey()
+            pub_key_pem = self.pub_key.exportKey('PEM')
         except:
             raise GenPublicKeyError()
         
-        # Generation the names for the keys
-        self.generate_key_filenames()        
         self.save_keypair(priv_key_pem, pub_key_pem)
 
-        print('[+] RSA(%d) Private Key generated at %s' % (self.key_size, priv_path.decode('utf-8')))
-        print('[+] RSA(%d) Public Key generated at %s' % (self.key_size, pub_path.decode('utf-8')))                                
-   
-class KeyFactory():
-    """ ECDSA Factory class """
-    
-    def __init__(self, conf):
-        self.private_key = None
-        self.public_key = None
-        self.issuer = None
-        self.private_key_file = conf.keygen['private_key_path']
-        self.public_key_file = conf.keygen['public_key_path']
-
-        self.issuer = conf.issuer['name'].encode('utf-8')
-
-    def has_key(self):
-        """ Check if a issuer has a private key generated """
-       
-        key_path = self.private_key_file + sha1_string(self.issuer) + b'.pem'
+        print('[+] RSA(%d) Private Key generated at %s' % (self.key_size, self.get_privkey_path()))
+        print('[+] RSA(%d) Public Key generated at %s' % (self.key_size, self.get_pubkey_path()))  
         
-        if os.path.isfile(key_path):
-            raise PrivateKeyExists(key_path)        
+        return True
+   
+class KeyFactoryECC(KeyFactoryBase):
+    """ Elliptic Curve Cryptography Factory class """
+    
+    def __init__(self, config, key_type='EC', key_size=None, hash_algo='SHA256', curve_type=NIST256p):  
+        KeyFactoryBase.__init__(self, config, key_type, key_size, hash_algo, curve_type)            
 
     def generate_keypair(self):
         """ Generate a ECDSA keypair """       
+
+        # Generation the names for the keys
+        self.generate_key_filenames() 
 
         # If the issuer has a key, stop a new key generation
         self.has_key()
         
         # Private key generation
         try:
-            self.private_key = SigningKey.generate(curve=NIST256p)            
-            self.private_key += sha1_string(self.get_private_key_pem()) + b'.pem'
+            self.priv_key = SigningKey.generate(curve=NIST256p) 
+            priv_key_pem = self.priv_key.to_pem()
         except:
             raise GenPrivateKeyError()
         
         # Public Key name is the hash of the public key
         try:
-            self.public_key = self.private_key.get_verifying_key()
-            self.public_key_file += sha1_string(self.get_public_key_pem()) + b'.pem'
+            self.pub_key = self.priv_key.get_verifying_key()
+            pub_key_pem = self.pub_key.to_pem()
         except:
             raise GenPublicKeyError()
         
         # Save the keypair
-        self.save_keypair()
+        self.save_keypair(priv_key_pem, pub_key_pem)
+        
+        print('[+] ECC(%s) Private Key generated at %s' % (self.curve_type.name, self.get_privkey_path()))
+        print('[+] ECC(%s) Public Key generated at %s' % (self.curve_type.name, self.get_pubkey_path()))  
 
     def read_private_key(self, private_key_file): 
         """ Read the private key from files """
@@ -173,31 +189,7 @@ class KeyFactory():
             return True 
         except:
             raise PublicKeyReadError('Error reading public key: %s' % self.public_key_file)
-            return False        
-                        
-    def save_keypair(self):      
-        """ Save keypair to file """        
-        try:
-            with open(self.private_key_file, "wb") as priv:
-                priv.write(self.get_private_key_pem())
-                priv.close()                
-        except:
-             raise PrivateKeySaveError()
-         
-        try:
-            with open(self.public_key_file, "wb") as pub:
-                pub.write(self.get_public_key_pem())                    
-                pub.close()                
-        except:
-             raise PublicKeySaveError() 
-
-    def get_private_key_pem(self):
-        """ Return private key in PEM format """
-        return self.private_key.to_pem()
-    
-    def get_public_key_pem(self):
-        """ Return public key in PEM format """
-        return self.public_key.to_pem()    
+            return False                                
 
 """ Signer Exceptions """
 
