@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
 
+""" 
+    Please, don't enable this if you are not completly sure 
+    that your are doing.
+    Enabling this makes the program use
+    Elliptic Curve cryptography rather that RSA.
+    
+    JWS draft are not clear with ECC, don't use 
+    in production systems.
+"""
+PLEASE_ENABLE_ECC = True
+
+
 """ Issuer Configuration """
 issuer = dict(
     name = 'Luis G.F Badge Issuer',

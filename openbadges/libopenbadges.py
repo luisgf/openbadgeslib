@@ -48,7 +48,7 @@ class PublicKeyReadError(Exception):
     pass
 
 class KeyFactoryBase(object):       
-    def __init__(self, config, key_type, key_size, hash_algo, curve_type=None):        
+    def __init__(self, config, key_type=None, key_size=None, hash_algo=None, curve_type=None):        
         self.conf = config         
         self.key_type = key_type
         self.key_size = key_size
@@ -59,7 +59,7 @@ class KeyFactoryBase(object):
         self.private_key_file = ''
         self.public_key_file = ''
         self.generate_key_filenames()
-
+        
     def generate_key_filenames(self):
         """ Generate the names for the keys files """
         
@@ -131,12 +131,11 @@ class KeyFactoryBase(object):
 class KeyFactoryRSA(KeyFactoryBase):
     
     def __init__(self, config, key_type='RSA', key_size=2048, hash_algo='SHA256'):  
-        KeyFactoryBase.__init__(self, config, key_type, key_size, hash_algo)      
+        KeyFactoryBase.__init__(self, config, key_type, key_size, hash_algo)   
             
     def generate_keypair(self):
         """ Generate a RSA Key, returning in PEM Format """
          
-        
         # Check if a key exists
         self.has_key()
         

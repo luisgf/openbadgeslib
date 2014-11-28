@@ -14,22 +14,35 @@ from libopenbadges import KeyFactoryRSA, KeyFactoryECC
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Key Generation Parameters')
     parser.add_argument('-gr', '--genrsa', action='store_true', help='Generate a new RSA 2048 Key pair')
-    parser.add_argument('-ge', '--genecc', action="store_true", help='Generatte a new ECC NIST256p Key pair')
+    
+    if config.PLEASE_ENABLE_ECC:
+        parser.add_argument('-ge', '--genecc', action="store_true", help='Generate a new ECC NIST256p Key pair')
+
     parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.3' )
     args = parser.parse_args()
     
-    if not args.genrsa and not args.genecc:
-        print('You must specify a key type to generate, EC (--genecc) or RSA (--genrsa)')
-        parser.print_help()
+    if config.PLEASE_ENABLE_ECC:
+        if not args.genrsa and not args.genecc:
+            print('You must specify a key type to generate, EC (--genecc) or RSA (--genrsa)')
+            parser.print_help()
+        else:
+            if args.genrsa:
+                kf = KeyFactoryRSA(config)  
+            else:
+                kf = KeyFactoryECC(config)
+                
+            print("[!] Generating key pair for '%s'..." % config.issuer['name'])
+            kf.generate_keypair()  
+
     else:
         if args.genrsa:
-            kf = KeyFactoryRSA(config)  
+             kf = KeyFactoryRSA(config)  
+             print("[!] Generating key pair for '%s'..." % config.issuer['name'])
+             kf.generate_keypair()  
         else:
-            kf = KeyFactoryECC(config)
-            
-        print("[!] Generating key pair for '%s'..." % config.issuer['name'])
-        
-        kf.generate_keypair()
+            parser.print_help()
+             
+  
 
 
            
