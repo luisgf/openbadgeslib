@@ -21,8 +21,9 @@ if __name__ == '__main__':
     
     if args.filein and args.receptor:
         sf = VerifyFactory(config)
+        receptor = args.receptor.encode('utf-8')
         
-        if sf.is_svg_signature_valid(args.filein, args.receptor):
+        if sf.is_svg_signature_valid(args.filein, receptor):
             print('[+] The Badge Signature is Correct for the user:', args.receptor)
         else:
             print('[!] Badge signature is incorrect, corrupted or tampered for the user:', args.receptor)

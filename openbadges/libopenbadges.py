@@ -355,19 +355,19 @@ class VerifyFactory():
          # Ok, is time to verify the assertion againts the key downloaded.
          vf = VerifyFactory(self.conf, pub_key_pem, key_inline=True)
          signature_valid = vf.verify_signature(assertion)
-         
+                 
          if not signature_valid:
             return False
      
          # Ok, the signature is valid, now i check if the badge is emitted for this receptor
-         if payload['recipient']['identity'] != '':
-            email_hashed = (b'sha256$' + sha256_string(receptor.encode('utf-8'))).decode('utf-8')
+         try:            
+            email_hashed = (b'sha256$' + sha256_string(receptor)).decode('utf-8')
             if email_hashed == payload['recipient']['identity']:
                 # OK, the signature is valid and the badge is emitted for this user
                 return True
             else:
                 return False
-         else:
+         except:
              raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
      
     def download_pubkey(self, url):
