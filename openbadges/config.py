@@ -10,7 +10,7 @@
     in production systems.
 """
 PLEASE_ENABLE_ECC = True
-
+LOG_FILE = '/tmp/opnecbadges.log'
 
 """ Issuer Configuration """
 issuer = dict(

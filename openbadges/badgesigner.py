@@ -10,7 +10,7 @@ import argparse
 
 # Local Imports
 import config
-from libopenbadges import SignerFactory
+from libopenbadges import SignerFactory, log
 
 # Entry Point
 if __name__ == '__main__':
@@ -32,7 +32,10 @@ if __name__ == '__main__':
         badgeout = sf.generate_output_filename(badgein, args.output, args.receptor)
         
         if sf.sign_svg_file(badgein, badgeout, assertion):
+            log('Badge %s for receptor %s signed succesfully at %s' % (args.badge, args.receptor, badgeout))
             print('[+] Badge Signed succesfully at: ', badgeout)
+        else:
+            log('Badge %s for receptor %s signed failed.' % (args.badge, args.receptort))
 
     else:
         parser.print_help()

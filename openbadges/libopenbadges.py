@@ -21,6 +21,7 @@ from xml.dom.minidom import parse, parseString
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/")))
+import config
 import jws.utils
 
 class GenPrivateKeyError(Exception):
@@ -366,7 +367,7 @@ class SignerFactory():
             
             with open(file_out, "w") as f:
                 svg_doc.writexml(f)
-
+            
         except:
             raise ErrorSigningFile('Error Signing file: ', file_in)
         finally:
@@ -641,6 +642,13 @@ def sha256_string(string):
         return hash.hexdigest().encode('utf-8')     # hexdigest() return an 'str' not bytes.
     except:
         raise HashError() 
-                
+
+def log(msg):
+    """ Log in a file the signature event """
+        
+    with open(config.LOG_FILE, "ab") as log:
+        entry = time.strftime("%d/%m/%Y %H:%M:%S").encode('utf-8') + b' ' + msg.encode('utf-8') + b'\n'
+        log.write(entry)
+       
 if __name__ == '__main__':
     unittest.main()

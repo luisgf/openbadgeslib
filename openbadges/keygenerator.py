@@ -33,7 +33,6 @@ if __name__ == '__main__':
                 
             print("[!] Generating key pair for '%s'..." % config.issuer['name'])
             kf.generate_keypair()  
-
     else:
         if args.genrsa:
              kf = KeyFactoryRSA(config)  
