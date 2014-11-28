@@ -411,30 +411,37 @@ class VerifyFactory():
         
         return pub_key_pem
     
-    def extract_svg_signature(self, file_in):
+    def extract_svg_signature(self, svg_data):
         """ Extract the signature embeded in a SVG file. """
-        
-        if not os.path.exists(file_in):
-            raise FileToSignNotExists()
         
         try:
             # Parse de SVG XML
-            svg_doc = parse(file_in)  
+            svg_doc = parseString(svg_data)  
             
             # Extract the assertion
             assertion = svg_doc.getElementsByTagName("openbadges:assertion")
             return assertion[0].attributes['verify'].nodeValue.encode('utf-8')            
             
         except:
-            raise ErrorParsingFile('Error Parsing SVG file: ', file_in)
+            raise ErrorParsingFile('Error Parsing SVG file: ')
         finally:
             svg_doc.unlink()
      
-    def is_svg_signature_valid(self, file_in, receptor):
+    def is_svg_signature_valid(self, file_in, receptor, inline_data=False):
         """ This function return True/False if the signature in the
              file is correct or no """
+        
+        if not inline_data:
+            if not os.path.exists(file_in):
+                raise FileToSignNotExists()     
+            else:
+                with open(file_in, "rb") as f:
+                    svg_data = f.read()
+        else:    
+            svg_data = file_in
+             
         try:    
-            assertion = self.extract_svg_signature(file_in)  
+            assertion = self.extract_svg_signature(svg_data)  
             
             # If pub_key exist, the verification use the local key
             if self.pub_key:
