@@ -423,7 +423,7 @@ class VerifyFactory():
             
             # Extract the assertion
             assertion = svg_doc.getElementsByTagName("openbadges:assertion")
-            return assertion[0].attributes['verify'].nodeValue.encode('utf-8')
+            return assertion[0].attributes['verify'].nodeValue.encode('utf-8')            
             
         except:
             raise ErrorParsingFile('Error Parsing SVG file: ', file_in)
@@ -433,14 +433,17 @@ class VerifyFactory():
     def is_svg_signature_valid(self, file_in, receptor):
         """ This function return True/False if the signature in the
              file is correct or no """
+        try:    
+            assertion = self.extract_svg_signature(file_in)  
             
-        assertion = self.extract_svg_signature(file_in)
-        
-        # If pub_key exist, the verification use the local key
-        if self.pub_key:
-            return self.verify_signature_inlocal(assertion, receptor)
-        else:
-            return self.verify_signature_inverse(assertion, receptor)
+            # If pub_key exist, the verification use the local key
+            if self.pub_key:
+                return self.verify_signature_inlocal(assertion, receptor)
+            else:
+                return self.verify_signature_inverse(assertion, receptor)
+            
+        except ErrorParsingFile:
+           print('[!] SVG format incorrect or this badge has not assertion signature embeded')
 
      
 """ Shared Utils """
