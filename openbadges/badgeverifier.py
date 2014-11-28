@@ -9,7 +9,7 @@ import argparse
 
 # Local Imports
 import config
-from libopenbadges import VerifyFactory
+from libopenbadges import VerifyFactoryRSA
 
 # Entry Point
 if __name__ == '__main__':
@@ -22,9 +22,9 @@ if __name__ == '__main__':
     
     if args.filein and args.receptor:
         if args.localkey:
-            sf = VerifyFactory(config, args.localkey)
+            sf = VerifyFactoryRSA(config, args.localkey)
         else:
-            sf = VerifyFactory(config)
+            sf = VerifyFactoryRSA(config)
                 
         receptor = args.receptor.encode('utf-8')
             

@@ -10,6 +10,7 @@ import sys
 import time
 import json
 
+from Crypto.PublicKey import RSA  
 from ecdsa import SigningKey, VerifyingKey, NIST256p, BadSignatureError
 from urllib import request
 from urllib.error import HTTPError, URLError
@@ -57,6 +58,7 @@ class KeyFactoryBase(object):
         self.pub_key = None               # crypto Object
         self.private_key_file = ''
         self.public_key_file = ''
+        self.generate_key_filenames()
 
     def generate_key_filenames(self):
         """ Generate the names for the keys files """
@@ -93,8 +95,39 @@ class KeyFactoryBase(object):
         """ Check if a private key is already generated """
         
         if os.path.isfile(self.private_key_file):
-            raise PrivateKeyExists(self.get_privkey_path())   
+            raise PrivateKeyExists(self.get_privkey_path())  
+               
+    def get_priv_key_path(self):
+        """ Return the private key file path """
+        
+        if not self.private_key_file:
+            # The names isn't yet generated
+            self.generate_key_filenames()
+        
+        return self.private_key_file
+    
+    def get_pub_key_path(self):
+        """ Return the public key file path """
+        
+        if not self.public_key_file:
+            # The names isn't yet generated
+            self.generate_key_filenames()
+        return self.public_key_file
 
+    def get_priv_key(self):
+        """ Return the crypto object """
+        return self.priv_key
+    
+    def get_pub_key(self):
+        """ Return the crypto oject """
+        return self.pub_key
+    
+    def get_priv_key_pem(self):
+        return None
+    
+    def get_pub_key_pem(self):
+        return None
+            
 class KeyFactoryRSA(KeyFactoryBase):
     
     def __init__(self, config, key_type='RSA', key_size=2048, hash_algo='SHA256'):  
@@ -102,10 +135,7 @@ class KeyFactoryRSA(KeyFactoryBase):
             
     def generate_keypair(self):
         """ Generate a RSA Key, returning in PEM Format """
-        from Crypto.PublicKey import RSA   
-        
-        # Generation the names for the keys
-        self.generate_key_filenames() 
+         
         
         # Check if a key exists
         self.has_key()
@@ -129,6 +159,34 @@ class KeyFactoryRSA(KeyFactoryBase):
         print('[+] RSA(%d) Public Key generated at %s' % (self.key_size, self.get_pubkey_path()))  
         
         return True
+
+    def read_private_key(self): 
+        """ Read the private key from file """
+        try:
+            with open(self.private_key_file, "rb") as priv:
+                self.priv_key = RSA.importKey(priv.read())
+                priv.close()
+                
+            return True 
+        except:
+            raise PrivateKeyReadError('Error reading private key: %s' % self.private_key_file)
+
+    def read_public_key(self): 
+        """ Read the public key from file """
+        try:
+            with open(self.public_key_file, "rb") as pub:
+                self.pub_key = RSA.importKey(pub.read())
+                pub.close()
+                
+            return True 
+        except:
+            raise PrivateKeyReadError('Error reading public key: %s' % self.public_key_file)            
+
+    def get_priv_key_pem(self):
+        return self.priv_key.exportKey('PEM')
+    
+    def get_pub_key_pem(self):
+        return self.pub_key.exportKey('PEM')
    
 class KeyFactoryECC(KeyFactoryBase):
     """ Elliptic Curve Cryptography Factory class """
@@ -138,9 +196,6 @@ class KeyFactoryECC(KeyFactoryBase):
 
     def generate_keypair(self):
         """ Generate a ECDSA keypair """       
-
-        # Generation the names for the keys
-        self.generate_key_filenames() 
 
         # If the issuer has a key, stop a new key generation
         self.has_key()
@@ -169,8 +224,7 @@ class KeyFactoryECC(KeyFactoryBase):
         """ Read the private key from files """
         try:
             with open(private_key_file, "rb") as priv:
-                self.private_key_file = private_key_file
-                self.private_key = SigningKey.from_pem(priv.read())
+                self.priv_key = SigningKey.from_pem(priv.read())
                 priv.close()
                 
             return True 
@@ -182,14 +236,19 @@ class KeyFactoryECC(KeyFactoryBase):
         """ Read the public key from files """
         try:
             with open(public_key_file, "rb") as pub:
-                self.public_key_file = public_key_file
-                self.public_key = VerifyingKey.from_pem(pub.read())
+                self.pub_key = VerifyingKey.from_pem(pub.read())
                 pub.close()
                 
             return True 
         except:
             raise PublicKeyReadError('Error reading public key: %s' % self.public_key_file)
             return False                                
+
+    def get_priv_key_pem(self):
+        return self.priv_key.to_pem()
+    
+    def get_pub_key_pem(self):
+        return self.pub_key.to_pem()
 
 """ Signer Exceptions """
 
@@ -224,7 +283,8 @@ class SignerFactory():
     def generate_jose_header(self):
         """ Generate JOSE Header """
         
-        jose_header = { 'alg': 'ES256' }        
+        # ES256 for ECC Keys, RS256 for RSA Keys
+        jose_header = { 'alg': 'RS256' }        
         self.debug('JOSE HEADER %s ' % json.dumps(jose_header))
         
         return jose_header
@@ -263,24 +323,22 @@ class SignerFactory():
         
         import jws
         
-        priv_key_file = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name'].encode('utf-8')) + b'.pem'
-        
         header = self.generate_jose_header()
         payload = self.generate_jws_payload()
 
+        # Read the keys from files
+        kf = KeyFactoryRSA(self.conf)
         try:
-            with open(priv_key_file, "rb") as key_file:
-                sign_key = SigningKey.from_pem(key_file.read())
-                pub_key = sign_key.get_verifying_key()
-                
+            kf.read_private_key()
+            kf.read_public_key()
         except:
             raise PrivateKeyReadError()
         
-        signature = jws.sign(header, payload, sign_key)             
+        signature = jws.sign(header, payload, kf.get_priv_key())             
         assertion = jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + jws.utils.to_base64(signature)                      
         
         # Verify the assertion just after the generation.
-        vf = VerifyFactory(self.conf, pub_key.to_pem(), key_inline=True)  
+        vf = VerifyFactoryRSA(self.conf, kf.get_pub_key_pem(), key_inline=True)  
         
         if not vf.verify_signature(assertion):
             return None
@@ -355,31 +413,15 @@ class VerifyFactory():
     def __init__(self, conf, pub_key=None, key_inline=False):
         self.conf = conf                              # Access to config.py values  
         self.pub_key = pub_key                        # Local PubKey file
-        self.vk = None                                # VerifyingKey() Object
-                
-        # If the pubkey is not passed as parameter, i can obtaint it via private_key
-        if pub_key and not key_inline:
-            # The pubkey is in a file
-            try:
-                with open(pub_key, "rb") as key_file:
-                    self.vk = VerifyingKey.from_pem(key_file.read())
-                    
-                print('[+] Badge will be validated with local key:', pub_key)
-            except:
-                raise PublicKeyReadError()
-            
-        elif pub_key and key_inline:
-            # The pub key is passed as string in pub_key
-            try:
-                self.vk = VerifyingKey.from_pem(pub_key)
-            except:
-                raise PublicKeyReadError()            
-        
+        self.vk = None                                # Crypto Object
+                 
+    # Base    
     def verify_signature(self, assertion):
         """ Verify the JWS Signature, Return True if the signature block is Good """
                 
         return jws.verify_block(assertion, self.vk)                               
     
+    # Base
     def verify_signature_inlocal(self, assertion, receptor):
         """ Verify that a signature is valid and has emitted for a given receptor """
         import json
@@ -451,8 +493,8 @@ class VerifyFactory():
          print('[+] This is the assertion content:')
          print(json.dumps(payload, sort_keys=True, indent=4))
          
-         # Ok, is time to verify the assertion againts the key downloaded.
-         self.vk = VerifyingKey.from_pem(pub_key_pem)         
+         # Ok, is time to verify the assertion againts the key downloaded.        
+         self.vk = self.get_crypto_object(pub_key_pem)
          
          try:
             signature_valid = self.verify_signature(assertion)
@@ -469,7 +511,8 @@ class VerifyFactory():
                 return False
          except:
              raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
-     
+   
+   # Base 
     def download_pubkey(self, url):
         """ This function return the Key in pem format from server """
         
@@ -485,6 +528,7 @@ class VerifyFactory():
         
         return pub_key_pem
     
+    # Base
     def extract_svg_signature(self, svg_data):
         """ Extract the signature embeded in a SVG file. """
         
@@ -526,6 +570,58 @@ class VerifyFactory():
         except ErrorParsingFile:
            print('[!] SVG format incorrect or this badge has not assertion signature embeded')
 
+""" RSA Verify Factory """
+class VerifyFactoryRSA(VerifyFactory):  
+    def __init__(self, config, pub_key=None, key_inline=False):
+        VerifyFactory.__init__(self, config, pub_key=pub_key, key_inline=key_inline)
+        
+        # If the pubkey is not passed as parameter, i can obtaint it via private_key
+        if pub_key and not key_inline:
+            # The pubkey is in a file
+            try:
+                with open(pub_key, "rb") as key_file:
+                    self.vk = RSA.importKey(key_file.read())
+                    
+                print('[+] Badge will be validated with local RSA key:', pub_key)
+            except:
+                raise PublicKeyReadError()
+            
+        elif pub_key and key_inline:
+            # The pub key is passed as string in pub_key
+            try:
+                self.vk = RSA.importKey(pub_key)
+            except:
+                raise PublicKeyReadError()  
+            
+    def get_crypto_object(self, pem_data):
+        """ Return an instance of a crypto object """
+        return RSA.importKey(pem_data)
+
+class VerifyFactoryECC(VerifyFactory):
+    def __init__(self, conf, pub_key=None, key_inline=False):
+        VerifyFactory.__init__(self, config, pub_key=pub_key, key_inline=key_inline)
+         
+        # If the pubkey is not passed as parameter, i can obtaint it via private_key
+        if pub_key and not key_inline:
+            # The pubkey is in a file
+            try:
+                with open(pub_key, "rb") as key_file:
+                    self.vk = VerifyingKey.from_pem(key_file.read())
+                    
+                print('[+] Badge will be validated with local ECC key:', pub_key)
+            except:
+                raise PublicKeyReadError()
+            
+        elif pub_key and key_inline:
+            # The pub key is passed as string in pub_key
+            try:
+                self.vk = VerifyingKey.from_pem(pub_key)
+            except:
+                raise PublicKeyReadError()            
+
+    def get_crypto_object(self, pem_data):
+        """ Return an instance of a crypto object """
+        return VerifyingKey.from_pem(pem_data)
      
 """ Shared Utils """
 
