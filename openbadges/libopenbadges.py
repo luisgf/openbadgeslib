@@ -45,6 +45,66 @@ class PrivateKeyReadError(Exception):
 
 class PublicKeyReadError(Exception):
     pass
+
+class KeyFactoryBase(object):       
+    def __init__(self, config, key_type, key_size, hash_algo, curve_type=None):        
+        self.conf = config         
+        self.key_type = key_type
+        self.key_size = key_size
+        self.hash_algo = hash_algo 
+        self.curve_type = curve_type
+        self.private_key_file = self.conf.keygen['private_key_path']
+        self.public_key_file = self.conf.keygen['public_key_path']
+
+    def generate_key_filenames(self):
+        """ Generate the names for the keys files """
+        
+        priv_path = self.private_key_file + sha1_string(self.conf.issuer['name'].encode('utf-8')) + b'.pem'
+        pub_path = self.public_key_file + sha1_string(self.conf.issuer['name'].encode('utf-8')) + b'_pub.pem'               
+
+    def save_keypair(self, private_key_pem, public_key_pem):      
+        """ Save keypair to file """        
+        try:
+            with open(self.private_key_file, "wb") as priv:
+                priv.write(private_key_pem)
+                priv.close()                
+        except:
+             raise PrivateKeySaveError()
+         
+        try:
+            with open(self.public_key_file, "wb") as pub:
+                pub.write(public_key_pem)                    
+                pub.close()                
+        except:
+             raise PublicKeySaveError() 
+
+class KeyFactoryRSA(KeyFactoryBase):
+    
+    def __init__(self, config, key_type='RSA', key_size=2048, hash_algo='SHA256'):  
+        KeyFactoryBase.__init__(self, config, key_type, key_size, hash_algo)      
+        from Crypto.PublicKey import RSA    
+            
+    def generate_keypair(self):
+        """ Generate a RSA Key, returning in PEM Format """
+        
+        try:
+            priv_key = RSA.generate(self.key_size) 
+            priv_key_pem = priv_key.exportKey('PEM')
+        except:
+            raise GenPrivateKeyError()
+        
+        try:
+            pub_key = priv_key.publickey().exportKey("PEM")
+            pub_key_pem = pub_key.exportKey('PEM')
+        except:
+            raise GenPublicKeyError()
+        
+        # Generation the names for the keys
+        self.generate_key_filenames()        
+        self.save_keypair(priv_key_pem, pub_key_pem)
+
+        print('[+] RSA(%d) Private Key generated at %s' % (self.key_size, priv_path.decode('utf-8')))
+        print('[+] RSA(%d) Public Key generated at %s' % (self.key_size, pub_path.decode('utf-8')))                                
    
 class KeyFactory():
     """ ECDSA Factory class """
@@ -75,7 +135,7 @@ class KeyFactory():
         # Private key generation
         try:
             self.private_key = SigningKey.generate(curve=NIST256p)            
-            self.private_key_file += sha1_string(self.issuer) + b'.pem'
+            self.private_key += sha1_string(self.get_private_key_pem()) + b'.pem'
         except:
             raise GenPrivateKeyError()
         
