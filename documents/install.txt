@@ -42,7 +42,7 @@ siguiente comando.
 
 $ ./runtests.sh
 
-Inhibicion de la creacion de byte:
+Inhibicion de la creacion de bytecode:
 
 Si deseas que no se genere __pycache__ y los ficheros *.pyc, configura la variable de entornor PYTHONDONTWRITEBYTECODE
 con el valor 1:
@@ -51,7 +51,16 @@ $ export PYTHONDONTWRITEBYTECODE=1
 
 
 config.py:
-<TODO>
+
+
+En este fichero se encuentra la configuración del programa que está compuesta por 3 diccionarios llamados 'issuer', 'badge' y 'keygen'.
+
+El diccionario 'issuer' contiene la información del emisor de los badges. Esta información debe ser estática puesto que el nombre de la clave privada se genera a partir del emisor.
+
+El diccionario 'keygen' contiene la información de las rutas donde se guardarán las claves públicas y privadas.
+
+La lista 'badge' es una lista de diccionarios, de manera que un emisor puede expedir y firmar diferentes badges especificando su nombre. 
+
 
 keygeneration.py:
 
@@ -65,10 +74,10 @@ que firmara los badges. Cada emisor SOLO puede tener una clave privada pero mult
 badgsigner.py:
 <TODO>
 
+badgeverifier.py
+<TODO>
 
-- Como generar un par de claves RSA usando openssl:
-$ openssl genrsa -out private.pem 2048
-$ openssl rsa -pubout -in private.pem -out public.pem
+
 
 
 

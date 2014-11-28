@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #description     : This program will verify the signature of a SVG file
 #author          : Luis G.F
-#date            : 20141127
+#date            : 20141128
 #version         : 0.1 
 
 
@@ -15,15 +15,16 @@ from libopenbadges import VerifyFactory
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Badge Signer Parameters')
     parser.add_argument('-i', '--filein', required=True, help='Specify the input SVG file to verify the signature')
+    parser.add_argument('-r', '--receptor', required=True, help='Specify the email of the receptor of the badge')
     parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.1' )
     args = parser.parse_args()
     
-    if args.filein:
+    if args.filein and args.receptor:
         sf = VerifyFactory(config)
         
-        if sf.is_svg_signature_valid(args.filein):
-            print('[+] The Badge Signature is Correct!')
+        if sf.is_svg_signature_valid(args.filein, args.receptor):
+            print('[+] The Badge Signature is Correct for the user:', args.receptor)
         else:
-            print('[!] Badge signature is incorrect, corrupted or tampered.')
+            print('[!] Badge signature is incorrect, corrupted or tampered for the user:', args.receptor)
     else:
         parser.print_help()

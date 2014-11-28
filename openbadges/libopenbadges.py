@@ -264,6 +264,9 @@ class PayloadFormatIncorrect(Exception):
 class AssertionFormatIncorrect(Exception):
     pass
 
+class NotIdentityInAssertion(Exception):
+    pass
+
 """ Signature Verification Factory """
 class VerifyFactory():
     """ JWS Signature Verifier Factory """
@@ -310,7 +313,7 @@ class VerifyFactory():
         except: 
             return False            
      
-    def verify_signature_inverse(self, assertion):
+    def verify_signature_inverse(self, assertion, receptor):
          """ Check the assertion signature With the Key specified in JWS Paload """
          import json
          # The assertion MUST have a string like head.payload.signature         
@@ -344,14 +347,28 @@ class VerifyFactory():
          except HTTPError as e:
             print('[!] And error has occurred during PubKey download. HTTP Error: ', e.code, e.reason)
          except URLError as e:
-            print('[!] And error has occurred during PubKey download. Reason: ', e.reason)
-            
-         print('This is the assertion content:')
+            print('[!] And error has occurred during PubKey download. Reason: ', e.reason)                  
+         
+         print('[+] This is the assertion content:')
          print(json.dumps(payload, sort_keys=True, indent=4))
          
          # Ok, is time to verify the assertion againts the key downloaded.
          vf = VerifyFactory(self.conf, pub_key_pem, key_inline=True)
-         return vf.verify_signature(assertion)
+         signature_valid = vf.verify_signature(assertion)
+         
+         if not signature_valid:
+            return False
+     
+         # Ok, the signature is valid, now i check if the badge is emitted for this receptor
+         if payload['recipient']['identity'] != '':
+            email_hashed = (b'sha256$' + sha256_string(receptor.encode('utf-8'))).decode('utf-8')
+            if email_hashed == payload['recipient']['identity']:
+                # OK, the signature is valid and the badge is emitted for this user
+                return True
+            else:
+                return False
+         else:
+             raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
      
     def download_pubkey(self, url):
         """ This function return the Key in pem format from server """
@@ -387,12 +404,12 @@ class VerifyFactory():
         finally:
             svg_doc.unlink()
      
-    def is_svg_signature_valid(self, file_in):
+    def is_svg_signature_valid(self, file_in, receptor):
         """ This function return True/False if the signature in the
              file is correct or no """
             
         assertion = self.extract_svg_signature(file_in)
-        return self.verify_signature_inverse(assertion)
+        return self.verify_signature_inverse(assertion, receptor)
 
      
 """ Shared Utils """
