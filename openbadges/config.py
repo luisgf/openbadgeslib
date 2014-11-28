@@ -19,7 +19,8 @@ badges = {
                 issuer = 'https://openbadges.luisgf.es/issuer/organization.json',
                 json_url = 'https://openbadges.luisgf.es/issuer/badge-luisgf.json',
                 evidence = '',
-                url_key_verif = 'https://openbadges.luisgf.es/issuer/pubkeys/verify.pem'
+                url_key_verif = 'https://openbadges.luisgf.es/issuer/pubkeys/verify.pem',
+                local_badge_path = '../images/badge.svg'
             )
 }
 

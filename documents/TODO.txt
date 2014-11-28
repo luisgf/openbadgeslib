@@ -1,10 +1,6 @@
 TODO LIST
 
-<<<<<<< local
-23/11/2014:
-
-En el proceso de firma, se debe especificar como parámetro la evidencia de emisión del badge.
-En el momento de firma, grabar un registro en un txt de los badges firmados.
+- En el momento de firma, grabar un registro en un txt de los badges firmados.
 
 Ejemplo de simulacion de firma desde la linea de comandos con openssl:
 
@@ -17,7 +13,11 @@ con el contenido en el assertion.
 - Gerarquia de excepciones
 - Mover excepciones a modulo independiente
 - Documentar el uso del API
->>>>>>> other
 
 - La configuracion debe estar en un fichero .cfg o .ini no en un fichero .py, la idea con esto
 es sacar la configuracion del sistema de control de versiones.
+- Modo DEBUG, que permita seguir paso a paso que se hace.
+- Ver posibilidad de especificar el fichero a firmar en la configuarcion y que la salida fuese una direccion de correo.
+- el validador debería sacarte algo de info de algoritmos
+    "validando badge hospedado"
+    "validando badge firmado con RSA de 2048 bits y SHA256"

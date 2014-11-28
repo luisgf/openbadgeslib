@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 #description     : Library for dealing with signing of badges
 #author          : Luis G.F
-#date            : 20141125
-#version         : 0.1 
+#date            : 20141127
+#version         : 0.2 
 
 import hashlib
 import os
 import sys
 import time
+import json
 
 from ecdsa import SigningKey, VerifyingKey, NIST256p, BadSignatureError
 from urllib import request
@@ -152,9 +153,10 @@ class ErrorSigningFile(Exception):
 class SignerFactory():
     """ JWS Signer Factory """
     
-    def __init__(self, conf, badgename, receptor):
+    def __init__(self, conf, badgename, receptor, debug_enabled=False):
         self.conf = conf                              # Access to config.py values                
         self.receptor = receptor                      # Receptor of the badge
+        self.in_debug = debug_enabled
         
         try:
             if conf.badges[badgename]:
@@ -170,7 +172,10 @@ class SignerFactory():
     def generate_jose_header(self):
         """ Generate JOSE Header """
         
-        return { 'alg': 'ES256' }
+        jose_header = { 'alg': 'ES256' }        
+        self.debug('JOSE HEADER %s ' % json.dumps(jose_header))
+        
+        return jose_header
     
     def generate_jws_payload(self): 
         """ Generate JWS Payload """        
@@ -188,7 +193,7 @@ class SignerFactory():
             url = self.badge['url_key_verif']
         )                
         
-        return dict(
+        payload = dict(
                         uid = self.generate_uid().decode('utf-8'),
                         recipient = recipient_data,
                         image = self.badge['image'],
@@ -196,6 +201,10 @@ class SignerFactory():
                         verify = verify_data,
                         issuedOn = int(time.time())
                      )  
+        
+        self.debug('JWS Payload %s ' % json.dumps(payload))
+        
+        return payload
     
     def generate_openbadge_assertion(self):
         """ Generate and Sign and OpenBadge assertion """
@@ -224,6 +233,7 @@ class SignerFactory():
         if not vf.verify_signature(assertion):
             return None
         else:
+            self.debug('Assertion %s' % assertion)
             return assertion
         
     def sign_svg_file(self, file_in, file_out, assertion_data):
@@ -237,11 +247,7 @@ class SignerFactory():
         try:
             # Parse de SVG XML
             svg_doc = parse(file_in)  
-            
-            # Adding XML header
-            #header = svg_doc.getElementsByTagName("svg")
-            #header[0].attributes['xmlns:openbadges'] = 'http://openbadges.org'
-        
+                    
             # Assertion
             xml_tag = svg_doc.createElement("openbadges:assertion")
             xml_tag.attributes['xmlns:openbadges'] = 'http://openbadges.org'
@@ -258,6 +264,22 @@ class SignerFactory():
             svg_doc.unlink()
             
         return True
+        
+    def debug(self, msg):
+        """ Show debug messages if debug mode is enabled """
+        
+        if self.in_debug:
+            print('DEBUG:', msg)
+            
+    def generate_output_filename(self, file_in, output_dir, receptor):
+        """ Generate an output filename based on the source
+            name and the receptor email """
+        
+        fbase = os.path.basename(file_in)
+        fname, fext = os.path.splitext(fbase)
+        fsuffix = receptor.replace('@','_').replace('.','_')
+        
+        return output_dir + fname + '_'+ fsuffix + fext
 
 class PayloadFormatIncorrect(Exception):
     pass
