@@ -210,6 +210,7 @@ class SignerFactory():
         try:
             with open(priv_key_file, "rb") as key_file:
                 sign_key = SigningKey.from_pem(key_file.read())
+                pub_key = sign_key.get_verifying_key()
                 
         except:
             raise PrivateKeyReadError()
@@ -218,7 +219,7 @@ class SignerFactory():
         assertion = jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + jws.utils.to_base64(signature)                      
         
         # Verify the assertion just after the generation.
-        vf = VerifyFactory(self.conf)  
+        vf = VerifyFactory(self.conf, pub_key.to_pem(), key_inline=True)  
         
         if not vf.verify_signature(assertion):
             return None
@@ -267,13 +268,19 @@ class AssertionFormatIncorrect(Exception):
 class NotIdentityInAssertion(Exception):
     pass
 
+class NoPubKeySpecified(Exception):
+    pass
+
+class ErrorParsingFile(Exception):
+    pass
+
 """ Signature Verification Factory """
 class VerifyFactory():
     """ JWS Signature Verifier Factory """
     
     def __init__(self, conf, pub_key=None, key_inline=False):
         self.conf = conf                              # Access to config.py values  
-        self.pub_key = pub_key
+        self.pub_key = pub_key                        # Local PubKey file
         self.vk = None                                # VerifyingKey() Object
                 
         # If the pubkey is not passed as parameter, i can obtaint it via private_key
@@ -282,37 +289,55 @@ class VerifyFactory():
             try:
                 with open(pub_key, "rb") as key_file:
                     self.vk = VerifyingKey.from_pem(key_file.read())
-                
+                    
+                print('[+] Badge will be validated with local key:', pub_key)
             except:
                 raise PublicKeyReadError()
             
         elif pub_key and key_inline:
-            # The pub key is passed as string
+            # The pub key is passed as string in pub_key
             try:
                 self.vk = VerifyingKey.from_pem(pub_key)
             except:
-                raise PublicKeyReadError()
-            
-        else:
-            # Pubkey not passed. Using the private key to obtain one.
-            try:                
-                priv_key_file = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name'].encode('utf-8')) + b'.pem'
-                
-                with open(priv_key_file, "rb") as key_file:
-                    sign_key = SigningKey.from_pem(key_file.read())
-                    self.vk = sign_key.get_verifying_key()
-                
-            except:
-                raise PrivateKeyReadError()
+                raise PublicKeyReadError()            
         
     def verify_signature(self, assertion):
         """ Verify the JWS Signature, Return True if the signature block is Good """
+                
+        return jws.verify_block(assertion, self.vk)                               
+    
+    def verify_signature_inlocal(self, assertion, receptor):
+        """ Verify that a signature is valid and has emitted for a given receptor """
+        import json
         
+        # Check if the JWS assertion is valid
         try:
-            return jws.verify_block(assertion, self.vk)            
-        except: 
-            return False            
-     
+            self.verify_signature(assertion) 
+        except:            
+            return False
+        
+        # Here the assertion is signed against our local key. Receptor check...
+        
+        # The assertion MUST have a string like head.payload.signature         
+        try:
+            head_encoded, payload_encoded, signature_encoded = assertion.split(b'.')
+        except:
+            raise AssertionFormatIncorrect()
+         
+        # Try to decode the payload
+        try:
+            payload = jws.utils.decode(payload_encoded)
+        except:
+            raise AssertionFormatIncorrect('Payload deserialization error')
+        
+        # Receptor verification
+        email_hashed = (b'sha256$' + sha256_string(receptor)).decode('utf-8')
+        if email_hashed == payload['recipient']['identity']:
+            # OK, the badge has been emitted for this user
+            return True
+        else:
+            return False
+                        
     def verify_signature_inverse(self, assertion, receptor):
          """ Check the assertion signature With the Key specified in JWS Paload """
          import json
@@ -353,11 +378,12 @@ class VerifyFactory():
          print(json.dumps(payload, sort_keys=True, indent=4))
          
          # Ok, is time to verify the assertion againts the key downloaded.
-         vf = VerifyFactory(self.conf, pub_key_pem, key_inline=True)
-         signature_valid = vf.verify_signature(assertion)
-                 
-         if not signature_valid:
-            return False
+         self.vk = VerifyingKey.from_pem(pub_key_pem)         
+         
+         try:
+            signature_valid = self.verify_signature(assertion)
+         except:
+             return False                  
      
          # Ok, the signature is valid, now i check if the badge is emitted for this receptor
          try:            
@@ -409,7 +435,12 @@ class VerifyFactory():
              file is correct or no """
             
         assertion = self.extract_svg_signature(file_in)
-        return self.verify_signature_inverse(assertion, receptor)
+        
+        # If pub_key exist, the verification use the local key
+        if self.pub_key:
+            return self.verify_signature_inlocal(assertion, receptor)
+        else:
+            return self.verify_signature_inverse(assertion, receptor)
 
      
 """ Shared Utils """
