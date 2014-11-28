@@ -61,8 +61,8 @@ class KeyFactoryBase(object):
     def generate_key_filenames(self):
         """ Generate the names for the keys files """
         
-        self.private_key_file = self.conf.keygen['private_key_path'] + sha1_string(self.conf.issuer['name'].encode('utf-8')) + b'.pem'
-        self.public_key_file = self.conf.keygen['public_key_path'] + sha1_string(self.conf.issuer['name'].encode('utf-8')) + b'_pub.pem'               
+        self.private_key_file = self.conf.keygen['private_key_path'].encode('utf-8') + sha1_string(self.conf.issuer['name'].encode('utf-8')) + b'.pem'
+        self.public_key_file = self.conf.keygen['public_key_path'].encode('utf-8') + sha1_string(self.conf.issuer['name'].encode('utf-8')) + b'_pub.pem'               
 
 
     def get_privkey_path(self):

@@ -26,8 +26,8 @@ badges = {
 
 """ KeyGenerator Configuration """
 keygen = dict(   
-    private_key_path = b'./private/',
-    public_key_path = b'./public/',
+    private_key_path = './private/',
+    public_key_path = './public/',
     url_verif = 'https://openbadges.luisgf.es'
 )
 
