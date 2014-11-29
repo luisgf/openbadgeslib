@@ -275,6 +275,9 @@ class FileToSignNotExists(Exception):
 class ErrorSigningFile(Exception):
     pass
 
+class BadgeSignedFileExists(Exception):
+    pass
+
 class SignerFactory():
     """ Signer Factory Object, Return a Given object type passing a name
         to the constructor. """
@@ -343,6 +346,9 @@ class SignerBase():
     
         if not os.path.exists(file_in):
             raise FileToSignNotExists()
+        
+        if os.path.exists(file_out):
+            raise BadgeSignedFileExists('Output file exists at:', file_out)
     
         try:
             # Parse de SVG XML
