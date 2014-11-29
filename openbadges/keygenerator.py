@@ -1,45 +1,34 @@
 #!/usr/bin/env python3
 #description     : This will create a RSA/EC key pair for a given issuer
 #author          : Luis G.F
-#date            : 20141127
-#version         : 0.3 
+#date            : 20141129
+#version         : 0.4
 
 import argparse
 
 # Local Imports
 import config
-from libopenbadges import KeyFactoryRSA, KeyFactoryECC
+from libopenbadges import KeyFactory
 
 # Entry Point
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Key Generation Parameters')
-    parser.add_argument('-gr', '--genrsa', action='store_true', help='Generate a new RSA 2048 Key pair')
     
     if config.PLEASE_ENABLE_ECC:
-        parser.add_argument('-ge', '--genecc', action="store_true", help='Generate a new ECC NIST256p Key pair')
-
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.3' )
+        parser.add_argument('-g', '--genkey', choices=["RSA","ECC"], help='Generate a new RSA or ECC Key pair')
+    else:
+         parser.add_argument('-g', '--genkey', action="store_const", const="RSA", help='Generate a new RSA Key pair')
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.4' )
     args = parser.parse_args()
     
-    if config.PLEASE_ENABLE_ECC:
-        if not args.genrsa and not args.genecc:
-            print('You must specify a key type to generate, EC (--genecc) or RSA (--genrsa)')
-            parser.print_help()
-        else:
-            if args.genrsa:
-                kf = KeyFactoryRSA(config)  
-            else:
-                kf = KeyFactoryECC(config)
-                
-            print("[!] Generating key pair for '%s'..." % config.issuer['name'])
-            kf.generate_keypair()  
+    if not args.genkey:
+        parser.print_help()
     else:
-        if args.genrsa:
-             kf = KeyFactoryRSA(config)  
-             print("[!] Generating key pair for '%s'..." % config.issuer['name'])
-             kf.generate_keypair()  
-        else:
-            parser.print_help()
+        kf = KeyFactory(config, args.genkey)
+                
+        print("[!] Generating key pair for '%s'..." % config.issuer['name'])
+        kf.generate_keypair()  
+
              
   
 

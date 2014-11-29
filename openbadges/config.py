@@ -9,7 +9,7 @@
     JWS draft are not clear with ECC, don't use 
     in production systems.
 """
-PLEASE_ENABLE_ECC = True
+PLEASE_ENABLE_ECC = False
 LOG_FILE = '/tmp/opnecbadges.log'
 
 """ Issuer Configuration """

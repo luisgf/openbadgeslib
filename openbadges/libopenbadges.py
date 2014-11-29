@@ -48,6 +48,21 @@ class PrivateKeyReadError(Exception):
 class PublicKeyReadError(Exception):
     pass
 
+class UnknownKeyType(Exception):
+    pass
+
+class KeyFactory():
+    """ Key Factory Object, Return a Given object type passing a name
+        to the constructor. """
+        
+    def __new__(cls, config, name):
+        if name == 'ECC':
+            return KeyFactoryECC(config)
+        if name == 'RSA':
+            return KeyFactoryRSA(config)
+        else:
+            raise UnknownKeyType()
+
 class KeyFactoryBase(object):       
     def __init__(self, config, key_type=None, key_size=None, hash_algo=None, curve_type=None):        
         self.conf = config         
@@ -129,8 +144,7 @@ class KeyFactoryBase(object):
     def get_pub_key_pem(self):
         return None
             
-class KeyFactoryRSA(KeyFactoryBase):
-    
+class KeyFactoryRSA(KeyFactoryBase):  
     def __init__(self, config, key_type='RSA', key_size=2048, hash_algo='SHA256'):  
         KeyFactoryBase.__init__(self, config, key_type, key_size, hash_algo)   
             
