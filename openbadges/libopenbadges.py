@@ -452,7 +452,7 @@ class VerifyFactory():
     """ Verify Factory Object, Return a Given object type passing a name
         to the constructor. """
         
-    def __new__(cls, crypto, conf, pub_key, key_inline):
+    def __new__(cls, crypto, conf, pub_key=None, key_inline=False):
         if crypto == 'ECC':
             return VerifyECC(conf, pub_key, key_inline)
         if crypto == 'RSA':

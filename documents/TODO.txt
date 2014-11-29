@@ -7,7 +7,6 @@ echo -n "eyJhbGciOiAiRVMyNTYifQ.eyJ2ZXJpZnkiOiB7InVybCI6ICJodHRwczovL29wZW5iYWRn
 =========
 TODO LIST
 
-- En el momento de firma, grabar un registro en un txt de los badges firmados.
 - Gerarquia de excepciones
 - Mover excepciones a modulo independiente
 - Documentar el uso del API
@@ -20,3 +19,5 @@ es sacar la configuracion del sistema de control de versiones.
     
 - Herramienta que copie lo necesario para validar los badges en un directorio (json, imagenes, claves)
 - Implementar sistema para detectar coherencia entre el tipo de claves utilizadas y la cabecera JOSE
+- El assertion se graba antes de definir el namespace, a pesar de que funciona no estoy seguro de que
+cumpla el standard, además de quedar algo feo.

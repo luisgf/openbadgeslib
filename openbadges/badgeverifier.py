@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 #description     : This program will verify the signature of a SVG file
 #author          : Luis G.F
-#date            : 20141128
-#version         : 0.1 
+#date            : 20141129
+#version         : 0.2 
 
 
 import argparse
 
 # Local Imports
 import config
-from libopenbadges import VerifyFactoryRSA
+from libopenbadges import VerifyFactory
 
 # Entry Point
 if __name__ == '__main__':
@@ -22,9 +22,9 @@ if __name__ == '__main__':
     
     if args.filein and args.receptor:
         if args.localkey:
-            sf = VerifyFactoryRSA(config, args.localkey)
+            sf = VerifyFactory(config.USE_CRYPTO, config, args.localkey)
         else:
-            sf = VerifyFactoryRSA(config)
+            sf = VerifyFactory(config.USE_CRYPTO, config)
                 
         receptor = args.receptor.encode('utf-8')
             
