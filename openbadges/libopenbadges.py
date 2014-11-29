@@ -234,10 +234,10 @@ class KeyECC(KeyBase):
         print('[+] ECC(%s) Private Key generated at %s' % (self.curve_type.name, self.get_privkey_path()))
         print('[+] ECC(%s) Public Key generated at %s' % (self.curve_type.name, self.get_pubkey_path()))  
 
-    def read_private_key(self, private_key_file): 
+    def read_private_key(self): 
         """ Read the private key from files """
         try:
-            with open(private_key_file, "rb") as priv:
+            with open(self.private_key_file, "rb") as priv:
                 self.priv_key = SigningKey.from_pem(priv.read())
                 priv.close()
                 
@@ -246,10 +246,10 @@ class KeyECC(KeyBase):
             raise PrivateKeyReadError('Error reading private key: %s' % self.private_key_file)
             return False
         
-    def read_public_key(self, public_key_file): 
+    def read_public_key(self): 
         """ Read the public key from files """
         try:
-            with open(public_key_file, "rb") as pub:
+            with open(self.public_key_file, "rb") as pub:
                 self.pub_key = VerifyingKey.from_pem(pub.read())
                 pub.close()
                 
@@ -548,7 +548,7 @@ class VerifyBase():
          print('[+] This is the assertion content:')
          print(json.dumps(payload, sort_keys=True, indent=4))
          
-         # Ok, is time to verify the assertion againts the key downloaded.        
+         # Ok, is time to verify the assertion againts the key downloaded.
          self.vk = self.get_crypto_object(pub_key_pem)
          
          try:
@@ -625,6 +625,23 @@ class VerifyBase():
         except ErrorParsingFile:
            print('[!] SVG format incorrect or this badge has not assertion signature embeded')
 
+    def get_crypto_object(self, pem_data):
+        """ Crypto Object can be a create with a key type that
+            i don't know the type yet. I need to guess the key type """
+         
+        try:
+            return RSA.importKey(pem_data)
+        except:
+            pass
+         
+        try:
+            return VerifyingKey.from_pem(pem_data)
+        except:
+            pass
+         
+        return None
+        
+
 """ RSA Verify Factory """
 class VerifyRSA(VerifyBase):  
     def __init__(self, config, pub_key=None, key_inline=False):
@@ -647,14 +664,10 @@ class VerifyRSA(VerifyBase):
                 self.vk = RSA.importKey(pub_key)
             except:
                 raise PublicKeyReadError()  
-            
-    def get_crypto_object(self, pem_data):
-        """ Return an instance of a crypto object """
-        return RSA.importKey(pem_data)
 
 class VerifyECC(VerifyBase):
     def __init__(self, conf, pub_key=None, key_inline=False):
-        VerifyBase.__init__(self, 'ECC', config, pub_key=pub_key, key_inline=key_inline)
+        VerifyBase.__init__(self, 'ECC', config, pub_key, key_inline)
          
         # If the pubkey is not passed as parameter, i can obtaint it via private_key
         if pub_key and not key_inline:
@@ -673,10 +686,6 @@ class VerifyECC(VerifyBase):
                 self.vk = VerifyingKey.from_pem(pub_key)
             except:
                 raise PublicKeyReadError()            
-
-    def get_crypto_object(self, pem_data):
-        """ Return an instance of a crypto object """
-        return VerifyingKey.from_pem(pem_data)
      
 """ Shared Utils """
 

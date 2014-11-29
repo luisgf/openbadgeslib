@@ -15,7 +15,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Key Generation Parameters')
     
     if config.PLEASE_ENABLE_ECC:
-        parser.add_argument('-g', '--genkey', choices=["RSA","ECC"], help='Generate a new RSA or ECC Key pair')
+        parser.add_argument('-g', '--genkey', choices=["RSA","ECC"], help='Generate a new RSA (2048bits) or ECC(NIST256p) Key pair')
     else:
          parser.add_argument('-g', '--genkey', action="store_const", const="RSA", help='Generate a new RSA Key pair')
     parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.4' )
