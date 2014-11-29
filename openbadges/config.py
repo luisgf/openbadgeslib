@@ -10,7 +10,7 @@
     JWS draft are not clear with ECC, don't use 
     in production systems, use at your own risk!
 """
-PLEASE_ENABLE_ECC = False
+PLEASE_ENABLE_ECC = True
 
 if PLEASE_ENABLE_ECC:
     USE_CRYPTO = 'ECC'
@@ -31,15 +31,26 @@ issuer = dict(
 
 """ Badge Catalog, You can add more creating new dict() entrys at end """
 badges = {
-    'BADGETEST': dict(
-                name = 'Badge Test',
-                description = 'A badge test example',
+    'BADGETESTRSA': dict(
+                name = 'Badge Test RSA',
+                description = 'Test de Badge firmado con clave RSA',
                 image = 'https://openbadges.luisgf.es/issuer/badges/badge.svg',
                 criteria = 'https://openbadges.luisgf.es/issuer/criteria.html',
                 issuer = 'https://openbadges.luisgf.es/issuer/organization.json',
                 json_url = 'https://openbadges.luisgf.es/issuer/badge-luisgf.json',
                 evidence = '',
-                url_key_verif = 'https://openbadges.luisgf.es/issuer/pubkeys/verify.pem',
+                url_key_verif = 'https://openbadges.luisgf.es/issuer/pubkeys/test_verify_rsa.pem',
+                local_badge_path = '../images/badge.svg'
+            ),
+     'BADGETESTECC': dict(
+                name = 'Badge Test ECC',
+                description = 'Test de Badge firmado con clave ECC',
+                image = 'https://openbadges.luisgf.es/issuer/badges/badge.svg',
+                criteria = 'https://openbadges.luisgf.es/issuer/criteria.html',
+                issuer = 'https://openbadges.luisgf.es/issuer/organization.json',
+                json_url = 'https://openbadges.luisgf.es/issuer/badge-luisgf.json',
+                evidence = '',
+                url_key_verif = 'https://openbadges.luisgf.es/issuer/pubkeys/test_verify_ecc.pem',
                 local_badge_path = '../images/badge.svg'
             )
 }
