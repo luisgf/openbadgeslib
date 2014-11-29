@@ -276,16 +276,29 @@ class ErrorSigningFile(Exception):
     pass
 
 class SignerFactory():
+    """ Signer Factory Object, Return a Given object type passing a name
+        to the constructor. """
+        
+    def __new__(cls, crypto, config, badgename, receptor, debug_enabled):
+        if crypto == 'ECC':
+            return SignerECC(config, badgename, receptor, debug_enabled=False)
+        if crypto == 'RSA':
+            return SignerRSA(config, badgename, receptor, debug_enabled=False)
+        else:
+            raise UnknownKeyType()
+
+class SignerBase():
     """ JWS Signer Factory """
     
-    def __init__(self, conf, badgename, receptor, debug_enabled=False):
-        self.conf = conf                              # Access to config.py values                
+    def __init__(self, use_crypto, config, badgename, receptor, debug_enabled=False):
+        self.conf = config                            # Access to config.py values                
         self.receptor = receptor                      # Receptor of the badge
         self.in_debug = debug_enabled
+        self.use_crypto = use_crypto                  # Typo of cryptography to use
         
         try:
-            if conf.badges[badgename]:
-                self.badge = conf.badges[badgename]
+            if config.badges[badgename]:
+                self.badge = config.badges[badgename]
         except KeyError:
             raise BadgeNotFound()
         
@@ -293,15 +306,6 @@ class SignerFactory():
         """ Generate a UID for a signed badge """
         
         return sha1_string((self.conf.issuer['name'] + self.badge['name']).encode('utf-8') + self.receptor)
-    
-    def generate_jose_header(self):
-        """ Generate JOSE Header """
-        
-        # ES256 for ECC Keys, RS256 for RSA Keys
-        jose_header = { 'alg': 'RS256' }        
-        self.debug('JOSE HEADER %s ' % json.dumps(jose_header))
-        
-        return jose_header
     
     def generate_jws_payload(self): 
         """ Generate JWS Payload """        
@@ -331,34 +335,6 @@ class SignerFactory():
         self.debug('JWS Payload %s ' % json.dumps(payload))
         
         return payload
-    
-    def generate_openbadge_assertion(self):
-        """ Generate and Sign and OpenBadge assertion """
-        
-        import jws
-        
-        header = self.generate_jose_header()
-        payload = self.generate_jws_payload()
-
-        # Read the keys from files
-        kf = KeyFactoryRSA(self.conf)
-        try:
-            kf.read_private_key()
-            kf.read_public_key()
-        except:
-            raise PrivateKeyReadError()
-        
-        signature = jws.sign(header, payload, kf.get_priv_key())             
-        assertion = jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + jws.utils.to_base64(signature)                      
-        
-        # Verify the assertion just after the generation.
-        vf = VerifyFactoryRSA(self.conf, kf.get_pub_key_pem(), key_inline=True)  
-        
-        if not vf.verify_signature(assertion):
-            return None
-        else:
-            self.debug('Assertion %s' % assertion)
-            return assertion
         
     def sign_svg_file(self, file_in, file_out, assertion_data):
         """ Add the Assertion information into the SVG file
@@ -405,6 +381,58 @@ class SignerFactory():
         
         return output_dir + fname + '_'+ fsuffix + fext
 
+    def generate_openbadge_assertion(self):
+        """ Generate and Sign and OpenBadge assertion """
+        
+        import jws
+        
+        header = self.generate_jose_header()
+        payload = self.generate_jws_payload()
+
+        # Read the keys from files
+        kf = KeyFactory(self.conf, self.use_crypto)
+        try:
+            kf.read_private_key()
+            kf.read_public_key()
+        except:
+            raise PrivateKeyReadError()
+        
+        signature = jws.sign(header, payload, kf.get_priv_key())             
+        assertion = jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + jws.utils.to_base64(signature)                      
+        
+        # Verify the assertion just after the generation.
+        vf = VerifyFactory(self.use_crypto, self.conf, kf.get_pub_key_pem(), key_inline=True)  
+        
+        if not vf.verify_signature(assertion):
+            return None
+        else:
+            self.debug('Assertion %s' % assertion)
+            return assertion
+
+class SignerRSA(SignerBase):
+    def __init__(self, config, badgename, receptor, debug_enabled):
+         SignerBase.__init__(self, 'RSA', config, badgename, receptor, debug_enabled)
+         
+    def generate_jose_header(self):
+        """ Generate JOSE Header """
+        
+        jose_header = { 'alg': 'RS256' }        
+        self.debug('JOSE HEADER %s ' % json.dumps(jose_header))
+        
+        return jose_header
+
+class SignerECC(SignerBase):
+    def __init__(self, config, badgename, receptor, debug_enabled):
+         SignerBase.__init__(self, 'ECC', config, badgename, receptor, debug_enabled)
+         
+    def generate_jose_header(self):
+        """ Generate JOSE Header """
+        
+        jose_header = { 'alg': 'ES256' }        
+        self.debug('JOSE HEADER %s ' % json.dumps(jose_header))
+        
+        return jose_header
+
 class PayloadFormatIncorrect(Exception):
     pass
 
@@ -420,15 +448,28 @@ class NoPubKeySpecified(Exception):
 class ErrorParsingFile(Exception):
     pass
 
-""" Signature Verification Factory """
 class VerifyFactory():
+    """ Verify Factory Object, Return a Given object type passing a name
+        to the constructor. """
+        
+    def __new__(cls, crypto, conf, pub_key, key_inline):
+        if crypto == 'ECC':
+            return VerifyECC(conf, pub_key, key_inline)
+        if crypto == 'RSA':
+            return VerifyRSA(conf, pub_key, key_inline)
+        else:
+            raise UnknownKeyType()
+    
+""" Signature Verification Factory """
+class VerifyBase():
     """ JWS Signature Verifier Factory """
     
-    def __init__(self, conf, pub_key=None, key_inline=False):
+    def __init__(self, use_crypto, conf, pub_key=None, key_inline=False):
         self.conf = conf                              # Access to config.py values  
         self.pub_key = pub_key                        # Local PubKey file
         self.vk = None                                # Crypto Object
-                 
+        self.use_crypto = use_crypto                  # Cryptography type to use
+        
     # Base    
     def verify_signature(self, assertion):
         """ Verify the JWS Signature, Return True if the signature block is Good """
@@ -585,9 +626,9 @@ class VerifyFactory():
            print('[!] SVG format incorrect or this badge has not assertion signature embeded')
 
 """ RSA Verify Factory """
-class VerifyFactoryRSA(VerifyFactory):  
+class VerifyRSA(VerifyBase):  
     def __init__(self, config, pub_key=None, key_inline=False):
-        VerifyFactory.__init__(self, config, pub_key=pub_key, key_inline=key_inline)
+        VerifyBase.__init__(self, 'RSA', config, pub_key, key_inline)
         
         # If the pubkey is not passed as parameter, i can obtaint it via private_key
         if pub_key and not key_inline:
@@ -611,9 +652,9 @@ class VerifyFactoryRSA(VerifyFactory):
         """ Return an instance of a crypto object """
         return RSA.importKey(pem_data)
 
-class VerifyFactoryECC(VerifyFactory):
+class VerifyECC(VerifyBase):
     def __init__(self, conf, pub_key=None, key_inline=False):
-        VerifyFactory.__init__(self, config, pub_key=pub_key, key_inline=key_inline)
+        VerifyBase.__init__(self, 'ECC', config, pub_key=pub_key, key_inline=key_inline)
          
         # If the pubkey is not passed as parameter, i can obtaint it via private_key
         if pub_key and not key_inline:

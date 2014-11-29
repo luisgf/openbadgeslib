@@ -3,14 +3,22 @@
 """ 
     Please, don't enable this if you are not completly sure 
     that your are doing.
-    Enabling this makes the program use
+    
+    Setting PLEASE_ENABLE_ECC to True makes the program use
     Elliptic Curve cryptography rather that RSA.
     
     JWS draft are not clear with ECC, don't use 
-    in production systems.
+    in production systems, use at your own risk!
 """
 PLEASE_ENABLE_ECC = False
-LOG_FILE = '/tmp/opnecbadges.log'
+
+if PLEASE_ENABLE_ECC:
+    USE_CRYPTO = 'ECC'
+else:
+    USE_CRYPTO = 'RSA'
+
+""" Log signed badges in this file """
+LOG_FILE = '/tmp/openbadges-signatures.log'
 
 """ Issuer Configuration """
 issuer = dict(
@@ -42,4 +50,6 @@ keygen = dict(
     public_key_path = './public/',
     url_verif = 'https://openbadges.luisgf.es'
 )
+
+
 

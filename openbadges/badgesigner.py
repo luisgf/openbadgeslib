@@ -23,7 +23,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     if args.badge:
-        sf = SignerFactory(config, args.badge, args.receptor.encode('utf-8'), debug_enabled=args.debug)  
+        sf = SignerFactory(config.USE_CRYPTO, config, args.badge, args.receptor.encode('utf-8'), debug_enabled=args.debug)  
         print("[!] Generating signature for badge '%s'..." % args.badge)        
         
         assertion = sf.generate_openbadge_assertion()
