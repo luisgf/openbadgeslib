@@ -626,8 +626,8 @@ class VerifyBase():
            print('[!] SVG format incorrect or this badge has not assertion signature embeded')
 
     def get_crypto_object(self, pem_data):
-        """ Crypto Object can be a create with a key type that
-            i don't know the type yet. I need to guess the key type """
+        """ Crypto Object can be a create with a key that
+            i don't know their type yet. I need to guess it """
          
         try:
             return RSA.importKey(pem_data)
