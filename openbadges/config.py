@@ -10,7 +10,7 @@
     JWS draft are not clear with ECC, don't use 
     in production systems, use at your own risk!
 """
-PLEASE_ENABLE_ECC = True
+PLEASE_ENABLE_ECC = False
 
 if PLEASE_ENABLE_ECC:
     USE_CRYPTO = 'ECC'
