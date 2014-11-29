@@ -641,7 +641,6 @@ class VerifyBase():
          
         return None
         
-
 """ RSA Verify Factory """
 class VerifyRSA(VerifyBase):  
     def __init__(self, config, pub_key=None, key_inline=False):
