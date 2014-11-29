@@ -24,7 +24,7 @@ if __name__ == '__main__':
     if not args.genkey:
         parser.print_help()
     else:
-        kf = KeyFactory(config, args.genkey)
+        kf = KeyFactory(args.genkey, config)
                 
         print("[!] Generating key pair for '%s'..." % config.issuer['name'])
         kf.generate_keypair()  

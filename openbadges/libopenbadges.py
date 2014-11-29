@@ -55,21 +55,21 @@ class KeyFactory():
     """ Key Factory Object, Return a Given object type passing a name
         to the constructor. """
         
-    def __new__(cls, config, name):
-        if name == 'ECC':
-            return KeyFactoryECC(config)
-        if name == 'RSA':
-            return KeyFactoryRSA(config)
+    def __new__(cls, crypto, config):
+        if crypto == 'ECC':
+            return KeyECC(config)
+        if crypto == 'RSA':
+            return KeyRSA(config)
         else:
             raise UnknownKeyType()
 
-class KeyFactoryBase(object):       
-    def __init__(self, config, key_type=None, key_size=None, hash_algo=None, curve_type=None):        
+class KeyBase(object):       
+    def __init__(self, use_crypto, config, key_size=None, hash_algo=None, curve_type=None):        
         self.conf = config         
-        self.key_type = key_type
+        self.use_crypto = use_crypto
         self.key_size = key_size
-        self.hash_algo = hash_algo 
-        self.curve_type = curve_type
+        self.hash_algo = hash_algo        # Unused now...
+        self.curve_type = curve_type      
         self.priv_key = None              # crypto Object
         self.pub_key = None               # crypto Object
         self.private_key_file = ''
@@ -144,9 +144,9 @@ class KeyFactoryBase(object):
     def get_pub_key_pem(self):
         return None
             
-class KeyFactoryRSA(KeyFactoryBase):  
-    def __init__(self, config, key_type='RSA', key_size=2048, hash_algo='SHA256'):  
-        KeyFactoryBase.__init__(self, config, key_type, key_size, hash_algo)   
+class KeyRSA(KeyBase):  
+    def __init__(self, config, key_size=2048, hash_algo='SHA256'):  
+        KeyBase.__init__(self, 'RSA', config, key_size, hash_algo)   
             
     def generate_keypair(self):
         """ Generate a RSA Key, returning in PEM Format """
@@ -202,11 +202,11 @@ class KeyFactoryRSA(KeyFactoryBase):
     def get_pub_key_pem(self):
         return self.pub_key.exportKey('PEM')
    
-class KeyFactoryECC(KeyFactoryBase):
+class KeyECC(KeyBase):
     """ Elliptic Curve Cryptography Factory class """
     
-    def __init__(self, config, key_type='EC', key_size=None, hash_algo='SHA256', curve_type=NIST256p):  
-        KeyFactoryBase.__init__(self, config, key_type, key_size, hash_algo, curve_type)            
+    def __init__(self, config, key_size=None, hash_algo=None, curve_type=NIST256p):  
+        KeyBase.__init__(self, 'ECC', config, key_size, hash_algo, curve_type)            
 
     def generate_keypair(self):
         """ Generate a ECDSA keypair """       
@@ -390,7 +390,7 @@ class SignerBase():
         payload = self.generate_jws_payload()
 
         # Read the keys from files
-        kf = KeyFactory(self.conf, self.use_crypto)
+        kf = KeyFactory(self.use_crypto, self.conf)
         try:
             kf.read_private_key()
             kf.read_public_key()
