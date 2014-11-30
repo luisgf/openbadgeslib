@@ -2,32 +2,36 @@
 #description     : This will create a RSA/EC key pair for a given issuer
 #author          : Luis G.F
 #date            : 20141129
-#version         : 0.4
+#version         : 0.5
 
 import argparse
 
 # Local Imports
-import config
+from config import profiles 
 from libopenbadges import KeyFactory
 
 # Entry Point
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Key Generation Parameters')
-    
-    if config.PLEASE_ENABLE_ECC:
-        parser.add_argument('-g', '--genkey', choices=["RSA","ECC"], help='Generate a new RSA (2048bits) or ECC(NIST256p) Key pair')
-    else:
-         parser.add_argument('-g', '--genkey', action="store_const", const="RSA", help='Generate a new RSA Key pair')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.4' )
+    parser = argparse.ArgumentParser(description='Key Generation Parameters')     
+    parser.add_argument('-p', '--profile', required=True, help='Specify the profile to use')
+    parser.add_argument('-g', '--genkey', action="store_true", help='Generate a new Key pair. Key type is taken from profile.')
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.5' )
     args = parser.parse_args()
     
     if not args.genkey:
         parser.print_help()
     else:
-        kf = KeyFactory(args.genkey, config)
-                
-        print("[!] Generating key pair for '%s'..." % config.issuer['name'])
-        kf.generate_keypair()  
+        """ Check if the profile exists """
+        try:
+            config = profiles[args.profile]
+            print("[!] Generating key pair for issuer '%s'" % config['issuer']['name'])
+            
+            kf = KeyFactory(config)
+            kf.generate_keypair()  
+            
+        except KeyError:
+            print('Profile %s not exist in config.py' % args.profile)
+            
 
              
   
