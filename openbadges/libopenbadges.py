@@ -328,9 +328,14 @@ class SignerBase():
             xml_tag.attributes['verify']= assertion.decode('utf-8')
             svg_doc.childNodes[1].appendChild(xml_tag) 
             
+            """ Log the signing process to log before write the badge to disk.
+                That's prevents that exists a badge signed without any trace """
+            
+            self.log(self.conf, '"%s" SIGNED successfully for receptor "%s" in file "%s"' % (self.badge['name'], self.receptor.decode('utf-8'), file_out))
+            
             with open(file_out, "w") as f:
                 svg_doc.writexml(f)
-            
+                    
         except:
             raise ErrorSigningFile('Error Signing file: ', file_in)
         finally:
@@ -388,6 +393,13 @@ class SignerBase():
         """ Return the path to the badge file """
         
         return self.badge['local_badge_path']
+   
+    def log(self, profile, msg):
+        """ Log in a file the signature event """
+        
+        with open(profile['signedlog'], "ab") as log:
+            entry = time.strftime("%d/%m/%Y %H:%M:%S").encode('utf-8') + b' ' + msg.encode('utf-8') + b'\n'
+            log.write(entry)
 
 class SignerRSA(SignerBase):
     def __init__(self, config, badgename, receptor, debug_enabled):
@@ -681,13 +693,6 @@ def sha256_string(string):
         return hash.hexdigest().encode('utf-8')     # hexdigest() return an 'str' not bytes.
     except:
         raise HashError() 
-
-def log(profile, msg):
-    """ Log in a file the signature event """
-        
-    with open(profile['log'], "ab") as log:
-        entry = time.strftime("%d/%m/%Y %H:%M:%S").encode('utf-8') + b' ' + msg.encode('utf-8') + b'\n'
-        log.write(entry)
        
 if __name__ == '__main__':
     unittest.main()

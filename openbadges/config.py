@@ -70,8 +70,8 @@ badge_testecc = dict(
 
 """ Profile Composition. Here you can configure your settings per profile """
 profiles = {
-        'ECC_PROFILE': { 'issuer':issuer_luisgf, 'badges':[badge_testecc], 'keys':ecc_keypair, 'log':log_ecc },
-        'RSA_PROFILE': { 'issuer':issuer_luisgf, 'badges':[badge_testrsa], 'keys':rsa_keypair, 'log':log_rsa }
+        'ECC_PROFILE': { 'issuer':issuer_luisgf, 'badges':[badge_testecc], 'keys':ecc_keypair, 'signedlog':log_ecc },
+        'RSA_PROFILE': { 'issuer':issuer_luisgf, 'badges':[badge_testrsa], 'keys':rsa_keypair, 'signedlog':log_rsa }
 }
 
 

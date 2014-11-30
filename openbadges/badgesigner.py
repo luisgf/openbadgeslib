@@ -10,7 +10,7 @@ import argparse
 
 # Local Imports
 from config import profiles
-from libopenbadges import SignerFactory, log, BadgeNotFound
+from libopenbadges import SignerFactory, BadgeNotFound
 
 # Entry Point
 if __name__ == '__main__':
@@ -38,10 +38,9 @@ if __name__ == '__main__':
             badgeout = sf.generate_output_filename(args.output, args.receptor)
             
             if sf.sign_svg_file(badgeout):
-                log(config, 'Badge %s for receptor %s signed succesfully at %s' % (args.badge, args.receptor, badgeout))
                 print('[+] Badge Signed succesfully at: ', badgeout)
             else:
-                log('Badge %s for receptor %s signed failed.' % (args.badge, args.receptort))
+                print('[-] An error has occurred during signing the badge.')
         
         except BadgeNotFound:
             print('%s is not defined or not attached as badge to this profile.' % args.badge)
