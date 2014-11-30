@@ -7,7 +7,7 @@
     
     Author:   Luis G.F <luisgf@luisgf.es>
     Date:     20141130
-    Verison:  1.0
+    Verison:  0.1
 
 """
 import argparse
@@ -24,7 +24,7 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--output', required=True, help='Specify the output directory to save the badge.')
     parser.add_argument('-p', '--profile', required=True, help='Specify the profile to use')
     parser.add_argument('-d', '--debug', action="store_true", help='Show debug messages in runtime.')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 1.0' )
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.1' )
     args = parser.parse_args()
     
     if args.badge:
