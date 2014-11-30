@@ -443,20 +443,19 @@ class VerifyBase():
     def __init__(self, conf):
         self.conf = conf                              # Access to config.py values  
         self.vk = None                                # Crypto Object
-        
-    # Base    
+         
     def verify_jws_signature(self, assertion, verif_key):
         """ Verify the JWS Signature, Return True if the signature block is Good """
        
         return jws.verify_block(assertion, verif_key)                               
     
-    # Base
     def verify_signature_inlocal(self, assertion, receptor):
         """ Verify that a signature is valid and has emitted for a given receptor """
         import json
         
         # Check if the JWS assertion is valid
         try:
+            self.show_key_info(self.vk)
             self.verify_jws_signature(assertion, self.vk) 
         except:  
             return False
@@ -525,8 +524,8 @@ class VerifyBase():
          # Ok, is time to verify the assertion againts the key downloaded.
          vk_external = self.get_crypto_object(pub_key_pem)
         
-        # Show key info of the downloaded key
-         #self.show_key_info(vk_external)
+         # Show key info of the downloaded key
+         self.show_key_info(vk_external)
          
          try:
             signature_valid = self.verify_jws_signature(assertion, vk_external)
@@ -544,7 +543,6 @@ class VerifyBase():
          except:
              raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
    
-   # Base 
     def download_pubkey(self, url):
         """ This function return the Key in pem format from server """
         
@@ -560,7 +558,6 @@ class VerifyBase():
         
         return pub_key_pem
     
-    # Base
     def extract_svg_signature(self, svg_data):
         """ Extract the signature embeded in a SVG file. """
         
@@ -617,6 +614,18 @@ class VerifyBase():
             pass
          
         return None
+
+    def show_key_info(self, key):
+        """ Guess the key type and show the appropiate info """
+        if key.__class__.__name__ == '_RSAobj':
+            # RSA Key.
+            print('[+] Using an RSA Key of %d bits size' % key.size())
+        elif key.__class__.__name__ == 'SigningKey' or key.__class__.__name__ == 'VerifyingKey':
+            # ECC key
+            print('[+] Using an ECC Key with a curve type %s' % key.curve.name)
+        else:
+            print('[!] Unknown key type! %s' % key.__class__.__name__)
+            
         
 """ RSA Verify Factory """
 class VerifyRSA(VerifyBase):  
@@ -627,17 +636,12 @@ class VerifyRSA(VerifyBase):
         try:
             with open(self.conf['keys']['public'], "rb") as key_file:
                 self.vk = RSA.importKey(key_file.read())
-                    
-            print('[+] Badge will be validated with local RSA key:', self.conf['keys']['public'])
         except:
             raise PublicKeyReadError()
              
     def load_pubkey_inline(self, pem_data):
         """ Create a crypto object from a pem string """
         return RSA.importKey(pem_data)
-    
-    def show_key_info(self, key):
-        print('[+] Using key type RSA %d bits size' % key.size())
 
 class VerifyECC(VerifyBase):
     def __init__(self, config):
@@ -647,17 +651,12 @@ class VerifyECC(VerifyBase):
         try:
             with open(self.conf['keys']['public'], "rb") as key_file:
                 self.vk = VerifyingKey.from_pem(key_file.read())
-                    
-                print('[+] Badge will be validated with local ECC key:', self.conf['keys']['public'])
         except:
             raise PublicKeyReadError()    
                
     def load_pubkey_inline(self, pem_data):
         """ Create a crypto object from a pem string """
         return VerifyingKey.from_pem(pem_data)
-    
-    def show_key_info(self, key):
-        print('[+] Using Key type ECC with curve %s' % key.curve.name)
      
 """ Shared Utils """
 
