@@ -462,7 +462,9 @@ class VerifyBase():
          
     def verify_jws_signature(self, assertion, verif_key):
         """ Verify the JWS Signature, Return True if the signature block is Good """
-       
+        
+        self.show_disclaimer()
+        
         return jws.verify_block(assertion, verif_key)                               
     
     def verify_signature_inlocal(self, assertion, receptor):
@@ -642,7 +644,23 @@ class VerifyBase():
         else:
             print('[!] Unknown key type! %s' % key.__class__.__name__)
             
+            
+    def show_disclaimer(self):
+        if self.conf['keys']['crypto'] == 'ECC':
+            print("""DISCLAIMER!
+                  
+            You are running the program with support for Elliptic Curve cryptography.
+                
+            The implementation of ECC in JWS Draft is not clear about the signature/verification
+            process and may lead to problems for you and others when verifying your badges.
+                  
+            Use at your own risk!
+            
+            Expiration and Revocations status of badges are not verified by this library version.
+                  
+            """)
         
+                 
 """ RSA Verify Factory """
 class VerifyRSA(VerifyBase):  
     def __init__(self, config):
