@@ -303,10 +303,10 @@ class SignerBase():
         
         return payload
         
-    def sign_svg_file(self, file_in, file_out, assertion_data):
-        """ Add the Assertion information into the SVG file
-        assertion_data MUST by a str. The assertion_data input
-        as bytes but MUST be converted tu str """
+    def sign_svg_file(self, file_out):
+        """ Add the Assertion information into the SVG file. """
+    
+        file_in = self.get_badge_local_path()
     
         if not os.path.exists(file_in):
             raise FileToSignNotExists()
@@ -315,6 +315,9 @@ class SignerBase():
             raise BadgeSignedFileExists('Output file exists at:', file_out)
     
         try:
+            
+            assertion = self.generate_openbadge_assertion()
+            
             # Parse de SVG XML
             svg_doc = parse(file_in)  
                     
@@ -322,7 +325,7 @@ class SignerBase():
             xml_tag = svg_doc.createElement("openbadges:assertion")
             xml_tag.attributes['xmlns:openbadges'] = 'http://openbadges.org'
             svg_doc.childNodes[1].appendChild(xml_tag) 
-            xml_tag.attributes['verify']= assertion_data.decode('utf-8')
+            xml_tag.attributes['verify']= assertion.decode('utf-8')
             svg_doc.childNodes[1].appendChild(xml_tag) 
             
             with open(file_out, "w") as f:
@@ -341,10 +344,11 @@ class SignerBase():
         if self.in_debug:
             print('DEBUG:', msg)
             
-    def generate_output_filename(self, file_in, output_dir, receptor):
+    def generate_output_filename(self, output_dir, receptor):
         """ Generate an output filename based on the source
             name and the receptor email """
         
+        file_in = self.get_badge_local_path()
         fbase = os.path.basename(file_in)
         fname, fext = os.path.splitext(fbase)
         fsuffix = receptor.replace('@','_').replace('.','_')

@@ -34,12 +34,10 @@ if __name__ == '__main__':
             sf = SignerFactory(config, args.badge, args.receptor.encode('utf-8'), debug_enabled=args.debug)  
             print("[!] Generating signature for badge '%s'..." % args.badge)        
             
-            assertion = sf.generate_openbadge_assertion()
+            # Output file...
+            badgeout = sf.generate_output_filename(args.output, args.receptor)
             
-            badgein = sf.get_badge_local_path()
-            badgeout = sf.generate_output_filename(badgein, args.output, args.receptor)
-            
-            if sf.sign_svg_file(badgein, badgeout, assertion):
+            if sf.sign_svg_file(badgeout):
                 log(config, 'Badge %s for receptor %s signed succesfully at %s' % (args.badge, args.receptor, badgeout))
                 print('[+] Badge Signed succesfully at: ', badgeout)
             else:
