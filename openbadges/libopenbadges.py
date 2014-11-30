@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
-#description     : Library for dealing with signing of badges
-#author          : Luis G.F
-#date            : 20141127
-#version         : 0.2 
+
+"""
+    Lib OpenBadge.
+    
+    Library for dealing with Openbadge signature and verifying process.
+    
+    Author:   Luis G.F <luisgf@luisgf.es>
+    Date:     20141130
+    Verison:  1.0
+
+"""
 
 import hashlib
 import os
@@ -21,7 +28,6 @@ from xml.dom.minidom import parse, parseString
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/")))
-#import config
 import jws.utils
 
 class GenPrivateKeyError(Exception):

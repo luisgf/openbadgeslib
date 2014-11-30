@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
-#description     : This will create a RSA/EC key pair for a given issuer
-#author          : Luis G.F
-#date            : 20141129
-#version         : 0.5
+
+"""
+    OpenBadge KeyPair Generator.
+    
+    This program will create an RSA/EC key pair for the issuer specified in the config
+    
+    Author:   Luis G.F <luisgf@luisgf.es>
+    Date:     20141130
+    Verison:  1.0
+
+"""
 
 import argparse
 
@@ -15,7 +22,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Key Generation Parameters')     
     parser.add_argument('-p', '--profile', required=True, help='Specify the profile to use')
     parser.add_argument('-g', '--genkey', action="store_true", help='Generate a new Key pair. Key type is taken from profile.')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.5' )
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s 1.0' )
     args = parser.parse_args()
     
     if not args.genkey:

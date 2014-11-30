@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
-#description     : This program will verify the signature of a SVG file
-#author          : Luis G.F
-#date            : 20141129
-#version         : 0.3 
+
+"""
+    OpenBadge Verificator.
+    
+    This program will verify the signature of a SVG badge with a local key or doing a download
+    of the key specified in the assertion.
+    
+    Author:   Luis G.F <luisgf@luisgf.es>
+    Date:     20141130
+    Verison:  1.0
+
+"""
 
 import argparse
 
@@ -17,7 +25,7 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--receptor', required=True, help='Specify the email of the receptor of the badge')
     parser.add_argument('-p', '--profile', required=True, help='Specify the profile to use')
     parser.add_argument('-lk', '--localkey', action="store_true", help='Verify the badge with local pubkey passed as param otherwise, the key in assertion will be used.')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.1' )
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s 1.0' )
     args = parser.parse_args()
     
     if args.filein and args.receptor:

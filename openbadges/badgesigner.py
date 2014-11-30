@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-#description     : This program will sign a badge with a jws signature
-#author          : Luis G.F
-#date            : 20141129
-#version         : 0.3
 
-""" ECDSA Key Generator """
+"""
+    OpenBadge Signer.
+    
+    This programs will generate an output file with a badge and an assertion embedded
+    
+    Author:   Luis G.F <luisgf@luisgf.es>
+    Date:     20141130
+    Verison:  1.0
 
+"""
 import argparse
 
 # Local Imports
@@ -20,7 +24,7 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--output', required=True, help='Specify the output directory to save the badge.')
     parser.add_argument('-p', '--profile', required=True, help='Specify the profile to use')
     parser.add_argument('-d', '--debug', action="store_true", help='Show debug messages in runtime.')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.3' )
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s 1.0' )
     args = parser.parse_args()
     
     if args.badge:
