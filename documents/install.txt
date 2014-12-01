@@ -62,7 +62,7 @@ El diccionario 'keygen' contiene la información de las rutas donde se guardará
 La lista 'badge' es una lista de diccionarios, de manera que un emisor puede expedir y firmar diferentes badges especificando su nombre. 
 
 
-keygeneration.py:
+openbadges-keygenerator.py:
 
 Este script crea un par de claves ECDSA (publica y privada) del tipo NIST256p y las guarda en disco en formato PEM.
 Para crear las claves hay que suministrar el nombre de un "issuer" o "emisor de badges", que sera la entidad final
