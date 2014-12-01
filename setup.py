@@ -21,5 +21,6 @@ setup(
   ],
   license='LGPLv3',
   requires=['urllib','hashlib','ssl','xml','json','time','sys','os'],
-  install_requires=['ecdsa']
+  package_dir={'openbadgeslib': './openbadgeslib'},
+  package_data={'openbadgeslib': ['./3dparty/jws/*.*']}
 )
