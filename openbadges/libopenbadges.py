@@ -2,7 +2,7 @@
 """
         LibOpenBadges
 
-        Copyright (c) 2014, Luis Gonzalez fernandez, All rights reserved.
+        Copyright (c) 2014, Luis Gonzalez Fernandez, All rights reserved.
 
         This library is free software; you can redistribute it and/or
         modify it under the terms of the GNU Lesser General Public
@@ -20,7 +20,7 @@
 """    
         Library for dealing with Openbadges signature and verification process.
     
-        Author:   Luis G.F <luisgf@luisgf.es>
+        Author:   Luis Gonzalez Fernandez <luisgf@luisgf.es>
         Date:     20141201
         Verison:  0.1
 """
