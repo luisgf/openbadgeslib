@@ -46,7 +46,7 @@ from openbadgeslib.errors import LibOpenBadgesException, VerifierExceptions
 
 
 # Entry Point
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description='Badge Signer Parameters')
     parser.add_argument('-i', '--filein', required=True, help='Specify the input SVG file to verify the signature')
     parser.add_argument('-r', '--receptor', required=True, help='Specify the email of the receptor of the badge')
@@ -73,3 +73,6 @@ if __name__ == '__main__':
              raise
     else:
         parser.print_help()
+
+if __name__ == '__main__':
+    main()

@@ -8,9 +8,9 @@ setup.py
 ./openbadgeslib/config.py
 ./openbadgeslib/errors.py
 ./openbadgeslib/keys.py
-./openbadgeslib/openbadges-keygenerator.py
-./openbadgeslib/openbadges-signer.py
-./openbadgeslib/openbadges-verifier.py
+./openbadgeslib/openbadges_keygenerator.py
+./openbadgeslib/openbadges_signer.py
+./openbadgeslib/openbadges_verifier.py
 ./openbadgeslib/signer.py
 ./openbadgeslib/util.py
 ./openbadgeslib/verifier.py

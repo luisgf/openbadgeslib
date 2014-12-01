@@ -47,7 +47,7 @@ from openbadgeslib import KeyFactory
 from openbadgeslib.errors import KeyGenExceptions
 
 # Entry Point
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description='Key Generation Parameters')     
     parser.add_argument('-p', '--profile', required=True, help='Specify the profile to use')
     parser.add_argument('-g', '--genkey', action="store_true", help='Generate a new Key pair. Key type is taken from profile.')
@@ -70,6 +70,8 @@ if __name__ == '__main__':
         except KeyGenExceptions:
             raise
 
+if __name__ == '__main__':
+    main()
              
   
 

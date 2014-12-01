@@ -45,7 +45,7 @@ from openbadgeslib import SignerFactory
 from openbadgeslib.errors import LibOpenBadgesException, SignerExceptions, BadgeNotFound
 
 # Entry Point
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description='Badge Signer Parameters')
     parser.add_argument('-b', '--badge', required=True, help='Specify the badge name for sign')
     parser.add_argument('-r', '--receptor', required=True, help='Specify the receptor email of the badge')    
@@ -85,3 +85,6 @@ if __name__ == '__main__':
     else:
         parser.print_help()
 
+
+if __name__ == '__main__':
+    main()
