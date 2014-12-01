@@ -22,7 +22,7 @@
     
         Author:   Luis Gonzalez Fernandez <luisgf@luisgf.es>
         Date:     20141201
-        Verison:  0.1
+        Version:  0.1
 """
 
 import hashlib
