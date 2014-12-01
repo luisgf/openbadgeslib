@@ -16,6 +16,7 @@ import argparse
 # Local Imports
 from config import profiles 
 from libopenbadges import KeyFactory
+from errors import KeyGenExceptions
 
 # Entry Point
 if __name__ == '__main__':
@@ -38,7 +39,8 @@ if __name__ == '__main__':
             
         except KeyError:
             print('Profile %s not exist in config.py' % args.profile)
-            
+        except KeyGenExceptions as error:
+            raise
 
              
   

@@ -15,7 +15,7 @@ import argparse
 # Local Imports
 from config import profiles
 from libopenbadges import SignerFactory
-from errors import BadgeNotFound
+from errors import SignerExceptions, BadgeNotFound
 
 # Entry Point
 if __name__ == '__main__':
@@ -50,6 +50,8 @@ if __name__ == '__main__':
         
         except BadgeNotFound:
             print('%s is not defined or not attached as badge to this profile.' % args.badge)
+        except SignerExceptions:
+            raise
 
     else:
         parser.print_help()

@@ -29,7 +29,7 @@ from xml.dom.minidom import parse, parseString
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/")))
 import jws.utils
-import errors
+from errors import *
 
 class KeyFactory():
     """ Key Factory Object, Return a Given object type passing a name
@@ -298,8 +298,8 @@ class SignerBase():
             xml_tag.attributes['verify']= assertion.decode('utf-8')
             svg_doc.childNodes[1].appendChild(xml_tag) 
             
-            """ Log the signing process to log before write the badge to disk.
-                That's prevents that exists a badge signed without any trace """
+            """ Log the signing process before write the badge to disk.
+                That's prevents the existence of a signed badge without traces """
             
             self.log(self.conf, '"%s" SIGNED successfully for receptor "%s" in file "%s"' % (self.badge['name'], self.receptor.decode('utf-8'), file_out))
             

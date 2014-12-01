@@ -11,59 +11,74 @@
 
 """
 
-class GenPrivateKeyError(Exception):
+""" Exception base classes """
+class KeyGenExceptions(Exception):
     pass
 
-class GenPublicKeyError(Exception):
+class SignerExceptions(Exception):
     pass
 
-class HashError(Exception):
+class VerifierExceptions(Exception):
     pass
 
-class PrivateKeySaveError(Exception):
+
+""" User-defined Exceptions """
+
+class GenPrivateKeyError(KeyGenExceptions):
+    pass
+
+class GenPublicKeyError(KeyGenExceptions):
+    pass
+
+class HashError(KeyGenExceptions):
+    pass
+
+class PrivateKeySaveError(KeyGenExceptions):
     pass
     
-class PublicKeySaveError(Exception):
+class PublicKeySaveError(KeyGenExceptions):
     pass
     
-class PrivateKeyExists(Exception):
+class PrivateKeyExists(KeyGenExceptions):
     pass
 
-class PrivateKeyReadError(Exception):
+class PrivateKeyReadError(KeyGenExceptions):
     pass
 
-class PublicKeyReadError(Exception):
+class PublicKeyReadError(KeyGenExceptions):
     pass
 
-class UnknownKeyType(Exception):
+class UnknownKeyType(KeyGenExceptions):
     pass
 
 """ Signer Exceptions """
 
-class BadgeNotFound(Exception):
+class BadgeNotFound(SignerExceptions):
     pass
 
-class FileToSignNotExists(Exception):
+class FileToSignNotExists(SignerExceptions):
     pass
 
-class ErrorSigningFile(Exception):
+class ErrorSigningFile(SignerExceptions):
     pass
 
-class BadgeSignedFileExists(Exception):
+class BadgeSignedFileExists(SignerExceptions):
     pass
 
-class PayloadFormatIncorrect(Exception):
+""" Verifier Exceptions """
+
+class PayloadFormatIncorrect(VerifierExceptions):
     pass
 
-class AssertionFormatIncorrect(Exception):
+class AssertionFormatIncorrect(VerifierExceptions):
     pass
 
-class NotIdentityInAssertion(Exception):
+class NotIdentityInAssertion(VerifierExceptions):
     pass
 
-class NoPubKeySpecified(Exception):
+class NoPubKeySpecified(VerifierExceptions):
     pass
 
-class ErrorParsingFile(Exception):
+class ErrorParsingFile(VerifierExceptions):
     pass
 
