@@ -43,7 +43,7 @@ class KeyFactory():
         else:
             raise UnknownKeyType()
 
-class KeyBase(object):       
+class KeyBase():       
     def __init__(self, config):        
         self.conf = config         
         self.priv_key = None              # crypto Object
@@ -211,22 +211,23 @@ class SignerFactory():
     """ Signer Factory Object, Return a Given object type passing a name
         to the constructor. """
         
-    def __new__(cls, config, badgename, receptor, debug_enabled):
+    def __new__(cls, config, badgename, receptor, evidence, debug_enabled):
         if config['keys']['crypto'] == 'ECC':
-            return SignerECC(config, badgename, receptor, debug_enabled)
+            return SignerECC(config, badgename, receptor, evidence, debug_enabled)
         if config['keys']['crypto'] == 'RSA':
-            return SignerRSA(config, badgename, receptor, debug_enabled)
+            return SignerRSA(config, badgename, receptor, evidence, debug_enabled)
         else:
             raise UnknownKeyType()
 
 class SignerBase():
     """ JWS Signer Factory """
     
-    def __init__(self, config, badgename, receptor, debug_enabled=False):
+    def __init__(self, config, badgename, receptor, evidence=None, debug_enabled=False):
         self.conf = config                            # Access to config.py values                
         self.receptor = receptor                      # Receptor of the badge
         self.in_debug = debug_enabled                 # Debug mode enabled
         self.badge = None
+        self.evidence = evidence                      # Url to the user evidence
         
         for badge in config['badges']:
             if badge['name'] == badgename:
@@ -265,6 +266,9 @@ class SignerBase():
                         issuedOn = int(time.time())
                      )  
         
+        if self.evidence:
+            payload['evidence'] = self.evidence
+            
         self.debug('JWS Payload %s ' % json.dumps(payload))
         
         return payload
@@ -368,8 +372,8 @@ class SignerBase():
             log.write(entry)
 
 class SignerRSA(SignerBase):
-    def __init__(self, config, badgename, receptor, debug_enabled):
-         SignerBase.__init__(self, config, badgename, receptor, debug_enabled)
+    def __init__(self, config, badgename, receptor, evidence, debug_enabled):
+         SignerBase.__init__(self, config, badgename, receptor, evidence, debug_enabled)
          
     def generate_jose_header(self):
         """ Generate JOSE Header """
@@ -380,8 +384,8 @@ class SignerRSA(SignerBase):
         return jose_header
 
 class SignerECC(SignerBase):
-    def __init__(self, config, badgename, receptor, debug_enabled):
-         SignerBase.__init__(self, config, badgename, receptor, debug_enabled)
+    def __init__(self, config, badgename, receptor, evidence, debug_enabled):
+         SignerBase.__init__(self, config, badgename, receptor, evidence, debug_enabled)
          
     def generate_jose_header(self):
         """ Generate JOSE Header """
@@ -390,8 +394,7 @@ class SignerECC(SignerBase):
         self.debug('JOSE HEADER %s ' % json.dumps(jose_header))
         
         return jose_header
-
-    pass
+    
 class VerifyFactory():
     """ Verify Factory Object, Return a Given object type passing a name
         to the constructor. """
@@ -644,7 +647,6 @@ class VerifyECC(VerifyBase):
         return VerifyingKey.from_pem(pem_data)
      
 """ Shared Utils """
-
 def sha1_string(string):
     """ Calculate SHA1 digest of a string """
     try:
