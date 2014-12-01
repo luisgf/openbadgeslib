@@ -28,7 +28,6 @@
 
 """
 from ecdsa import BadSignatureError
-from ssl import SSLError
 
 class LibOpenBadgesException(Exception):
     pass

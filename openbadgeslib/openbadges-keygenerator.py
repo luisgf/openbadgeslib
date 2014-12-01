@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """
+        OpenBadges Library
+         
         Copyright (c) 2014, Luis Gonzalez Fernandez 
         All rights reserved.
 
@@ -28,7 +30,7 @@
         either expressed or implied, of the FreeBSD Project.
 """
 """
-        OpenBadges KeyPair Generator.
+        KeyPair Generator.
     
         This program will create an RSA/EC key pair for the issuer specified in the config
     
@@ -41,8 +43,8 @@ import argparse
 
 # Local Imports
 from config import profiles 
-from libopenbadges import KeyFactory
-from errors import KeyGenExceptions
+from openbadgeslib import KeyFactory
+from openbadgeslib.errors import KeyGenExceptions
 
 # Entry Point
 if __name__ == '__main__':

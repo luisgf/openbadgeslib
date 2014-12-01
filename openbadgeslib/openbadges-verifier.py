@@ -40,9 +40,10 @@
 
 import argparse
 
-# Local Imports
-from config import profiles
-from libopenbadges import VerifyFactory
+from config import profiles 
+from openbadgeslib.verifier import VerifyFactory
+from openbadgeslib.errors import LibOpenBadgesException, VerifierExceptions
+
 
 # Entry Point
 if __name__ == '__main__':

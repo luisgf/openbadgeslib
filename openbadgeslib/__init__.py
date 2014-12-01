@@ -24,6 +24,7 @@
         Date:     20141201
         Version:  0.1
 """
-from openbadgeslib import errors
-from openbadgeslib.libopenbadges import KeyFactory, SignerFactory, VerifyFactory
+from openbadgeslib.keys import KeyFactory, KeyRSA, KeyECC
+from openbadgeslib.signer import SignerFactory, SignerRSA, SignerECC
+from openbadgeslib.verifier import VerifyFactory, VerifyRSA, VerifyECC
 
