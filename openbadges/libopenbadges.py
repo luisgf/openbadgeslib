@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
 """
-    Lib OpenBadge.
+    Lib OpenBadges.
     
     Library for dealing with Openbadge signature and verifying process.
     
     Author:   Luis G.F <luisgf@luisgf.es>
-    Date:     20141130
+    Date:     20141201
     Verison:  0.1
 
 """
@@ -29,33 +29,7 @@ from xml.dom.minidom import parse, parseString
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/")))
 import jws.utils
-
-class GenPrivateKeyError(Exception):
-    pass
-
-class GenPublicKeyError(Exception):
-    pass
-
-class HashError(Exception):
-    pass
-
-class PrivateKeySaveError(Exception):
-    pass
-    
-class PublicKeySaveError(Exception):
-    pass
-    
-class PrivateKeyExists(Exception):
-    pass
-
-class PrivateKeyReadError(Exception):
-    pass
-
-class PublicKeyReadError(Exception):
-    pass
-
-class UnknownKeyType(Exception):
-    pass
+import errors
 
 class KeyFactory():
     """ Key Factory Object, Return a Given object type passing a name
@@ -232,20 +206,6 @@ class KeyECC(KeyBase):
     
     def get_pub_key_pem(self):
         return self.pub_key.to_pem()
-
-""" Signer Exceptions """
-
-class BadgeNotFound(Exception):
-    pass
-
-class FileToSignNotExists(Exception):
-    pass
-
-class ErrorSigningFile(Exception):
-    pass
-
-class BadgeSignedFileExists(Exception):
-    pass
 
 class SignerFactory():
     """ Signer Factory Object, Return a Given object type passing a name
@@ -431,21 +391,7 @@ class SignerECC(SignerBase):
         
         return jose_header
 
-class PayloadFormatIncorrect(Exception):
     pass
-
-class AssertionFormatIncorrect(Exception):
-    pass
-
-class NotIdentityInAssertion(Exception):
-    pass
-
-class NoPubKeySpecified(Exception):
-    pass
-
-class ErrorParsingFile(Exception):
-    pass
-
 class VerifyFactory():
     """ Verify Factory Object, Return a Given object type passing a name
         to the constructor. """
@@ -665,8 +611,7 @@ class VerifyBase():
             Expiration and Revocations status of badges are not verified by this library version.
                   
             """)
-        
-                 
+                         
 """ RSA Verify Factory """
 class VerifyRSA(VerifyBase):  
     def __init__(self, config):

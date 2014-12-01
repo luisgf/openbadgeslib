@@ -6,7 +6,7 @@
     This programs will generate an output file with a badge and an assertion embedded
     
     Author:   Luis G.F <luisgf@luisgf.es>
-    Date:     20141130
+    Date:     20141201
     Verison:  0.1
 
 """
@@ -14,7 +14,8 @@ import argparse
 
 # Local Imports
 from config import profiles
-from libopenbadges import SignerFactory, BadgeNotFound
+from libopenbadges import SignerFactory
+from errors import BadgeNotFound
 
 # Entry Point
 if __name__ == '__main__':
