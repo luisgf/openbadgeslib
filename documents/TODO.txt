@@ -7,25 +7,20 @@ echo -n "eyJhbGciOiAiRVMyNTYifQ.eyJ2ZXJpZnkiOiB7InVybCI6ICJodHRwczovL29wZW5iYWRn
 =========
 TODO LIST
 
-- Gerarquia de excepciones
-- Mover excepciones a modulo independiente
 - Documentar el uso del API
 
 - La configuracion debe estar en un fichero .cfg o .ini no en un fichero .py, la idea con esto
 es sacar la configuracion del sistema de control de versiones.
 - el validador debería sacarte algo de info de algoritmos
     "validando badge hospedado"
-    "validando badge firmado con RSA de 2048 bits y SHA256"
     
 - Herramienta que copie lo necesario para validar los badges en un directorio (json, imagenes, claves)
 - El assertion se graba antes de definir el namespace, a pesar de que funciona no estoy seguro de que
 cumpla el standard, además de quedar algo feo.
 - El registro de badges deberia de estar en una DB o un pickle. Esto nos será util en el proceso
 de revocación
-- Mostrar una advertencia cuando se haga uso de la criptografia ECC avisando de posibles problemas al verificar.
 - Tutorial paso a paso de uso.
 - En la verificación del badge, hay que añadir la comprobacion del estado de revocacion.
 - Añadir a la verificación del badge la comprobacion del estado de expiración.
-- Añadir mensaje de que no se está comprobando la revocación cuando se lance el verificador.
 - Implementar un modo dry, que "genere el assertion pero no lo añada al fichero"
 - Añadir modo debug al generador de claves y al verificador.
