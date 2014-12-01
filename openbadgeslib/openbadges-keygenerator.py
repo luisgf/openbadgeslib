@@ -67,7 +67,7 @@ if __name__ == '__main__':
             
         except KeyError:
             print('Profile %s not exist in config.py' % args.profile)
-        except KeyGenExceptions as error:
+        except KeyGenExceptions:
             raise
 
              
