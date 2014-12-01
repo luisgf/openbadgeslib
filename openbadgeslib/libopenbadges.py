@@ -43,7 +43,7 @@ from xml.dom.minidom import parse, parseString
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/")))
 import jws.utils
-from errors import *
+#from .errors import *
 
 class KeyFactory():
     """ Key Factory Object, Return a Given object type passing a name

@@ -24,4 +24,7 @@
         Date:     20141201
         Version:  0.1
 """
+from openbadgeslib.config import profiles
+from openbadgeslib import errors
+from openbadgeslib.libopenbadges import *
 

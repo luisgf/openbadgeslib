@@ -20,6 +20,6 @@ setup(
       'License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)'
   ],
   license='LGPLv3',
-  requires=['urllib','hashlib'],
+  requires=['urllib','hashlib','ssl','xml','json','time','sys','os'],
   install_requires=['ecdsa']
 )
