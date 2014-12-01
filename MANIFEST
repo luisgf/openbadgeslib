@@ -5,7 +5,10 @@ openbadgeslib/__init__.py
 openbadgeslib/assertion.py
 openbadgeslib/config.py
 openbadgeslib/errors.py
-openbadgeslib/libopenbadges.py
+openbadgeslib/keys.py
 openbadgeslib/openbadges-keygenerator.py
 openbadgeslib/openbadges-signer.py
 openbadgeslib/openbadges-verifier.py
+openbadgeslib/signer.py
+openbadgeslib/util.py
+openbadgeslib/verifier.py
