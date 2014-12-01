@@ -32,18 +32,17 @@ import time
 import json
 
 from Crypto.PublicKey import RSA  
-from ecdsa import SigningKey, VerifyingKey, NIST256p, BadSignatureError
+from ecdsa import SigningKey, VerifyingKey, NIST256p
 from urllib import request
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPSHandler
 from urllib.parse import urlparse
-from ssl import SSLContext, CERT_NONE, VERIFY_CRL_CHECK_CHAIN, PROTOCOL_TLSv1, SSLError
+from ssl import SSLContext, CERT_NONE, VERIFY_CRL_CHECK_CHAIN, PROTOCOL_TLSv1
 from xml.dom.minidom import parse, parseString
 
 # Local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/")))
 import jws.utils
-#from .errors import *
 
 class KeyFactory():
     """ Key Factory Object, Return a Given object type passing a name

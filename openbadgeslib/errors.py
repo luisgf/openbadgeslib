@@ -27,6 +27,8 @@
     Verison:  0.1
 
 """
+from ecdsa import BadSignatureError
+from ssl import SSLError
 
 class LibOpenBadgesException(Exception):
     pass
