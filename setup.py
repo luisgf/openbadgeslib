@@ -1,5 +1,9 @@
  
 from distutils.core import setup
+
+with open('requirements.txt', 'r') as fh: 
+    dependencies = [l.strip() for l in fh] 
+
 setup(
   name = 'openbadgeslib',
   packages = ['openbadgeslib'], # this must be the same as the name above
@@ -21,6 +25,14 @@ setup(
   ],
   license='LGPLv3',
   requires=['urllib','hashlib','ssl','xml','json','time','sys','os'],
+  install_requires=dependencies,
   package_dir={'openbadgeslib': './openbadgeslib'},
-  package_data={'openbadgeslib': ['./3dparty/jws/*.*']}
+  package_data={'openbadgeslib': ['./3dparty/jws/*.*','requirements.txt']},
+  include_package_data=True,
+  entry_points = {
+          'console_scripts': [
+              'openbadges-keygenerator = openbadges_keygenerator.__main__:main'
+          ]
+  }
+
 )
