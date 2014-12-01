@@ -11,14 +11,17 @@
 
 """
 
+class LibOpenBadgesException(Exception):
+    pass
+
 """ Exception base classes """
-class KeyGenExceptions(Exception):
+class KeyGenExceptions(LibOpenBadgesException):
     pass
 
-class SignerExceptions(Exception):
+class SignerExceptions(LibOpenBadgesException):
     pass
 
-class VerifierExceptions(Exception):
+class VerifierExceptions(LibOpenBadgesException):
     pass
 
 
