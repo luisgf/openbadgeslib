@@ -31,9 +31,9 @@ setup(
   include_package_data=True,
   entry_points = {
           'console_scripts': [
-              'openbadges-keygenerator = openbadgeslib.openbadges_keygenerator:main',
-	      'openbadges-signer = openbadgeslib.openbadges_signer:main',
-	      'openbadges-verifier = openbadgeslib.openbadges_verifier:main'
+          'openbadges-keygenerator = openbadgeslib.openbadges_keygenerator:main',
+	        'openbadges-signer = openbadgeslib.openbadges_signer:main',
+	        'openbadges-verifier = openbadgeslib.openbadges_verifier:main'
           ]
   }
 
