@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-        LibOpenBadges
+        OpenBadges Library
 
         Copyright (c) 2014, Luis Gonzalez Fernandez, All rights reserved.
 
@@ -17,14 +17,12 @@
         You should have received a copy of the GNU Lesser General Public
         License along with this library.
 """
-"""
-    Lib OpenBadges.
-    
+"""    
     Exceptions of the library.
     
     Author:   Luis G.F <luisgf@luisgf.es>
     Date:     20141201
-    Verison:  0.1
+    Version:  0.1
 
 """
 from ecdsa import BadSignatureError

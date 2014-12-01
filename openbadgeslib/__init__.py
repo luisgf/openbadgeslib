@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-        LibOpenBadges
+        OpenBadges Library
 
         Copyright (c) 2014, Luis Gonzalez Fernandez, All rights reserved.
 

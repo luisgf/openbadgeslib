@@ -28,7 +28,7 @@
         either expressed or implied, of the FreeBSD Project.
 """
 """
-        OpenBadges Verificator.
+        OpenBadges Verifier
     
         This program will verify the signature of a SVG badge with a local key or doing a download
         of the key specified in the assertion.
