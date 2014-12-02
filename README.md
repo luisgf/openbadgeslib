@@ -1,60 +1,262 @@
-OpenBadges Lib:
-===============
+==================
+Openbadges Library
+==================
+
+This library implement's the Mozilla OpenBadges specification and it's able of do the signature of a SVG file and their verification using RSA and ECC keys.
+
+The library current version is 0.1 and is composed of three main components:
+
+- A library
+- A config file
+- Wrappers tools around the library
+
+The library is written in python and works on version of Python >= 3.4. Running the library under Python 2.7 works now but is not officially supported.
+
+The program use the following python internal modules:
+
+- hashlib
+- json
+- time
+- os
+- sys
+- xml.dom.minidom
+- ssl
+- urllib
+
+And the following python external modules:
+
+- ecdsa
+- pycrypto
+- python-jws
+
+License
+-------
+
+The library license is LGPLv3 and the wrapper tools has a BSD 2-clause license. A copy of both licenses can be found in the “documents” folder of the project.
+
+Author
+------
+
+The author of the library is Luis Gonzalez Fernandez and can be contacted in a address created specially for the library: openbadges@luisgf.es
 
 
-This is a library that's deal with the problem of key creation, signing and verifiy of openbadges
-in SVG format.
+Installation
+------------
+
+This program can be run inside a virtualenv environment and this is the recommended practice, but if you like to install in the main python library, you can do that.
+
+The library is installed via pip and can be installed with the following command line:
+
+::
+
+     $ pip install openbadgeslib
 
 
-<<<<<<< local
-La creación de un perfil se realiza añadiendo una entrada al diccionario "profiles", cuya clave
-será el nombre del mismo y la cual será la referencia a emplear cuando el programa solicite un perfil.
+That's will install all the dependencies needed by the project.
 
-Dicha entrada debe a su vez crear otro diccionario con 4 claves:
+Post-Installation
+-----------------
 
-issuer:    Especifica la información del emisor del badge. 
-badges:    Lista con los diferentes badges que gestionará este perfil.
-keys:      Especifica la ruta hacia las claves pública y privada, así como su tipo y su tamaño.
-           Es aqui donde podemos especificar que el programa use o no criptografia ECC.        
-signedlog: Fichero de log donde se registrarán las firmas de badges. Guardalo en un lugar seguro!
+After the library installation, the setup  process will create 3 wrapper programs in the binary folder (/usr/bin in UNIX or /virtualenv_folder/bin if you use a virtualenv):
 
-El fichero por defecto config.py viene con una muestra de 2 perfiles distintos, uno que emplea cifrado
-ECC y otro que emplea cifrado RSA.
+- openbadges_keygenerator.py
+- openbadges_signer.py
+- openbadges_verifier.py
 
 
-Generación de Claves:
-=====================
+After the library installation you need to tune some things in order to start signing badges. The first thing that you need do is adjust the config.  There are a config.py in the library installation path, but here you have an example that you can use:
 
-La primera vez que instalemos el programa debemos generar un par de claves que se usarán durante
-el proceso de firma y verificación de badges. La clave privada debe guardarse en un sitio seguro
-así como la clave pública debe exponerse libremente para que los demás puedan verificar nuestros badges.
+::
 
-Para generar un par de claves usaremos la herramienta "keygenerator.py", cuya salida ejecutada con el
-parámetro -h es la siguiente.
+  """
+        OpenBadges Library
 
-    $ ./keygenerator.py -h
-    usage: keygenerator.py [-h] -p PROFILE [-g] [-v]
+        Copyright (c) 2014, Luis Gonzalez Fernandez, All rights reserved.
 
-    Key Generation Parameters
+        This library is free software; you can redistribute it and/or
+        modify it under the terms of the GNU Lesser General Public
+        License as published by the Free Software Foundation; either
+        version 3.0 of the License, or (at your option) any later version.
 
-    optional arguments:
-    -h, --help            show this help message and exit
-    -p PROFILE, --profile PROFILE
-                            Specify the profile to use
-    -g, --genkey          Generate a new Key pair. Key type is taken from
-                            profile.
-    -v, --version         show program's version number and exit
+        This library is distributed in the hope that it will be useful,
+        but WITHOUT ANY WARRANTY; without even the implied warranty of
+        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+        Lesser General Public License for more details.
 
+        You should have received a copy of the GNU Lesser General Public
+        License along with this library.
+  """
+  """ 
+    Please, don't enable this if you are not completly sure 
+    that your are doing.
     
-Licencia de componentes:
-========================
+    Setting PLEASE_ENABLE_ECC to True makes the program able
+    to use Elliptic Curve cryptography rather that RSA.
+    
+    JWS draft are not clear with ECC, don't use 
+    in production systems, use at your own risk!
+  """
+  PLEASE_ENABLE_ECC = False
+    
+  """ Log signed badges in this file """
+  sign_log = './openbadges-ecc_sign.log'
 
-python ecdsa: MIT
-pycrypto: varias...
-jws: MIT
+  """ Configuration of RSA Keys """
+  rsa_keypair = dict(   
+                    crypto    = 'RSA',
+                    size      = 2048,
+                    hash_algo = 'SHA256',
+                    private = './private/test_sign_rsa.pem',
+                    public  = './public/test_verify_rsa.pem'
+                )
 
+  """ Issuer Configuration """
+  issuer_luisgf = dict(
+    name = 'Badge Issuer',
+    image = 'https://openbadges.luisgf.es/issuer/logo.png',
+    url = 'https://www.luisgf.es',
+    email = 'openbadges@luisgf.es',
+    revocationList = 'https://openbadges.luisgf.es/issuer/revocation.json'
+  )
 
+  """ Badge Entry """
+  badge_testrsa = dict(
+                name = 'BadgeName',
+                description = 'Badge Test signed with and RSA Key',
+                image = 'https://openbadges.luisgf.es/issuer/badges/badge.svg',
+                criteria = 'https://openbadges.luisgf.es/issuer/criteria.html',
+                issuer = 'https://openbadges.luisgf.es/issuer/organization.json',
+                json_url = 'https://openbadges.luisgf.es/issuer/badge-luisgf.json',
+                evidence = 'https://openbadges.luisgf.es/evidence.html',
+                url_key_verif = 'https://openbadges.luisgf.es/issuer/pubkeys/test_verify_rsa.pem',
+                local_badge_path = './images/badge.svg'
+            )
 
-<EN CONSTRUCCION>
-=======
->>>>>>> other
+  """ Profile Composition. Here you can configure your settings per profile """
+  profiles = {
+        'RSA_PROFILE': { 'issuer':issuer_luisgf, 'badges':[badge_testrsa], 'keys':rsa_keypair, 'signedlog':sign_log }
+  }
+
+You need to copy this file to a folder with read-writter permissions that the wrappers tools need to store  thinks like the keys. The wrapper tools will read the config.py from the current folder.
+When the installation has been finished you will need to import or create a new keypair in order to start signing badges.
+
+Wrapper tools
+-------------
+
+The library comes with three tools that's exploit the library facilities. 
+
+openbadges_keygenerator.py let's the user the create a new keypair on RSA (2048) and ECC (NIST256p) KeyPair.
+
+openbadges_signer: let's the user sign a SVG badge.
+
+openbadges_verifier: let's the user verifier the badge signature against a local key or with the key embedded in the assertion (remote verification).
+
+Library Usage
+-------------
+
+Key Generation
+==============
+::
+
+  (venv-openbadges)luisgf@NCC1701B:~/venv-openbadges/etc$ python3
+  Python 3.4.0 (default, Apr 11 2014, 13:05:11) 
+  [GCC 4.8.2] on linux
+  Type "help", "copyright", "credits" or "license" for more information.
+  >>> import openbadgeslib
+  >>> from config import profiles
+  >>> config = profiles['RSA_PROFILE']   # Select the profile from the config
+  >>> key_factory = openbadgeslib.KeyFactory(config)
+  >>> key_factory.generate_keypair()
+  [+] RSA(2048) Private Key generated at ./private/test_sign_rsa.pem
+  [+] RSA(2048) Public Key generated at ./public/test_verify_rsa.pem
+  True
+  >>> 
+
+Signing a Badge
+===============
+::
+
+  (venv-openbadges)luisgf@NCC1701B:~/venv-openbadges/etc$ python3
+  Python 3.4.0 (default, Apr 11 2014, 13:05:11) 
+  [GCC 4.8.2] on linux
+  Type "help", "copyright", "credits" or "license" for more information.
+  >>> import openbadgeslib
+  >>> from config import profiles
+  >>> config = profiles['RSA_PROFILE']
+  >>> sign_factory = openbadgeslib.SignerFactory(config, 'Badge RSA', 'email@domain.es')
+  >>> sign_factory.sign_svg_file('/tmp/badge_signed.svg')
+
+Signing a badge with a user evidence
+====================================
+::
+
+  Python 3.4.0 (default, Apr 11 2014, 13:05:11) 
+  [GCC 4.8.2] on linux
+  Type "help", "copyright", "credits" or "license" for more information.
+  >>> import openbadgeslib
+  >>> from config import profiles
+  >>> config = profiles['RSA_PROFILE']
+  >>> sign_factory = openbadgeslib.SignerFactory(config, 'Badge RSA', 'email@domain.es', evidence='https://www.luisgf.es/')
+  >>> sign_factory.sign_svg_file('/tmp/badge_signed.svg')
+  True
+  >>> 
+
+Verifying a badge with the key embedded in assertion
+====================================================
+::
+
+  (venv-openbadges)luisgf@NCC1701B:~/venv-openbadges/etc$ python3
+  Python 3.4.0 (default, Apr 11 2014, 13:05:11) 
+  [GCC 4.8.2] on linux
+  Type "help", "copyright", "credits" or "license" for more information.
+  >>> import openbadgeslib
+  >>> from config import profiles
+  >>> config = profiles['RSA_PROFILE']
+  >>> verify_factory = openbadgeslib.VerifyFactory(config)
+  >>> if verify_factory.is_svg_signature_valid('/tmp/badge_signed.svg', 'email@domain.es'):
+  ...    print('Signature Correct')
+  ... else:
+  ...    print('Signature Incorrect')
+  ... 
+  [+] The public key is in a server with TLS support. Good! https://openbadges.luisgf.es/issuer/pubkeys/test_verify_rsa.pem
+  [+] This is the assertion content:
+  {
+    "badge": "https://openbadges.luisgf.es/issuer/badge-luisgf.json",
+    "evidence": "https://www.luisgf.es/",
+    "image": "https://openbadges.luisgf.es/issuer/badges/badge.svg",
+    "issuedOn": 1417510230,
+    "recipient": {
+        "hashed": "true",
+        "identity": "sha256$a11c1f2d3944df28e213cb7bf161890d9c600cc1fd54d0e0793917caa3f1c272",
+        "type": "email"
+    },
+    "uid": "baba3a1428cf4bba4ca75da0a633a6a5465839bf",
+    "verify": {
+        "type": "signed",
+        "url": "https://openbadges.luisgf.es/issuer/pubkeys/test_verify_rsa.pem"
+    }
+  }
+  [+] Using an RSA Key of 2047 bits size
+  Signature Correct
+  >>>
+
+Verify a badge using the local public key
+=========================================
+::
+
+  (venv-openbadges)luisgf@NCC1701B:~/venv-openbadges/etc$ python3
+  Python 3.4.0 (default, Apr 11 2014, 13:05:11) 
+  [GCC 4.8.2] on linux
+  Type "help", "copyright", "credits" or "license" for more information.
+  >>> import openbadgeslib
+  >>> from config import profiles
+  >>> config = profiles['RSA_PROFILE']
+  >>> verify_factory = openbadgeslib.VerifyFactory(config)
+  >>> if verify_factory.is_svg_signature_valid('/tmp/badge_signed.svg', 'email@domain.es', local_verification=True):
+  ...    print('Signature Correct')
+  ... else:
+  ...    print('Signature Incorrect')
+  ... 
+  [+] Using an RSA Key of 2047 bits size
+  Signature Correct
+  >>> 
