@@ -60,7 +60,7 @@ def main():
             config = profiles[args.profile]
             
             sf = VerifyFactory(config)
-            receptor = args.receptor.encode('utf-8')
+            receptor = args.receptor
             
             if sf.is_svg_signature_valid(args.filein, receptor, local_verification=args.localkey):
                 print('[+] The Badge Signature is Correct for the user:', args.receptor)
