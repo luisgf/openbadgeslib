@@ -159,8 +159,8 @@ The library comes with three tools that implement the following facilities:
  
 What i need to start signing badges?
 ------------------------------------
-OpenBadges library and tools are not enough? Well, no, you need too a Web server to publish JSONs of
-the issuer, criteria, badge, revocation and the public key.
+OpenBadges library and tools are not enough? Well, unfortunately no. You need too a Web server
+to publish JSONs of the issuer, criteria, badge, revocation and the public key.
  
 Library Usage
 -------------
