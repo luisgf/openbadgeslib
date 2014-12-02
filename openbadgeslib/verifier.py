@@ -158,7 +158,7 @@ class VerifyBase():
              return False                  
      
          # Ok, the signature is valid, now i check if the badge is emitted for this receptor
-         try:            
+         try:
             email_hashed = (b'sha256$' + sha256_string(receptor)).decode('utf-8')
             if email_hashed == payload['recipient']['identity']:
                 # OK, the signature is valid and the badge is emitted for this user
