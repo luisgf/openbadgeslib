@@ -199,7 +199,7 @@ class VerifyBase():
         finally:
             svg_doc.unlink()
      
-    def is_svg_signature_valid(self, file_in, receptor, inline_data=False, local_verification=False):
+    def is_svg_signature_valid(self, file_in, email, inline_data=False, local_verification=False):
         """ This function return True/False if the signature in the
              file is correct or no """
         
@@ -214,6 +214,8 @@ class VerifyBase():
              
         try:    
             assertion = self.extract_svg_signature(svg_data)  
+            
+            receptor = email.encode('utf-8')
             
             # If pub_key exist, the verification use the local key
             if local_verification:
