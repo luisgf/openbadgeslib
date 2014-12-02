@@ -46,7 +46,7 @@ class SignerFactory():
     """ Signer Factory Object, Return a Given object type passing a name
         to the constructor. """
         
-    def __new__(cls, config, badgename, receptor, evidence, debug_enabled):
+    def __new__(cls, config, badgename, receptor, evidence=None, debug_enabled=None):
         if config['keys']['crypto'] == 'ECC':
             return SignerECC(config, badgename, receptor, evidence, debug_enabled)
         if config['keys']['crypto'] == 'RSA':
