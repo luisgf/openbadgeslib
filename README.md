@@ -10,7 +10,7 @@ The library current version is 0.1 and is composed of three main components:
 - A config file
 - Wrappers tools around the library
 
-The library is written in python and works on version of Python >= 3.4. Running the library under Python 2.7 works now but is not officially supported.
+The library is written in python and works on version of **Python >= 3.4**. Running the library under Python 2.7 works now but is not officially supported.
 
 The program use the following python internal modules:
 
@@ -59,9 +59,9 @@ Post-Installation
 
 After the library installation, the setup  process will create 3 wrapper programs in the binary folder (/usr/bin in UNIX or /virtualenv_folder/bin if you use a virtualenv):
 
-- openbadges_keygenerator.py
-- openbadges_signer.py
-- openbadges_verifier.py
+- **openbadges_keygenerator.py**
+- **openbadges_signer.py**
+- **openbadges_verifier.py**
 
 
 After the library installation you need to tune some things in order to start signing badges. The first thing that you need do is adjust the config.  There are a config.py in the library installation path, but here you have an example that you can use:
@@ -143,13 +143,11 @@ When the installation has been finished you will need to import or create a new 
 Wrapper tools
 -------------
 
-The library comes with three tools that's exploit the library facilities. 
+The library comes with three tools that's exploit the library facilities:
 
-openbadges_keygenerator.py let's the user the create a new keypair on RSA (2048) and ECC (NIST256p) KeyPair.
-
-openbadges_signer: let's the user sign a SVG badge.
-
-openbadges_verifier: let's the user verifier the badge signature against a local key or with the key embedded in the assertion (remote verification).
+ - **openbadges_keygenerator.py**  Let's the user the create a new keypair on RSA (2048) and ECC (NIST256p) KeyPair.                                                                     
+ - **openbadges_signer.py**        Let's the user sign a SVG badge with or without evidence
+ - **openbadges_verifier.py**      Let's the user verifier the badge signature against a local key or with thekey embedded in the assertion (remote verification).                        
 
 Library Usage
 -------------
@@ -185,6 +183,8 @@ Signing a Badge
   >>> config = profiles['RSA_PROFILE']
   >>> sign_factory = openbadgeslib.SignerFactory(config, 'Badge RSA', 'email@domain.es')
   >>> sign_factory.sign_svg_file('/tmp/badge_signed.svg')
+  True
+  >>>
 
 Signing a badge with a user evidence
 ====================================
