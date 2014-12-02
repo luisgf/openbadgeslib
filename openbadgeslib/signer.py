@@ -59,7 +59,7 @@ class SignerBase():
     
     def __init__(self, config, badgename, receptor, evidence=None, debug_enabled=False):
         self.conf = config                            # Access to config.py values                
-        self.receptor = receptor                      # Receptor of the badge
+        self.receptor = receptor.encode('utf-8')      # Receptor of the badge
         self.in_debug = debug_enabled                 # Debug mode enabled
         self.badge = None
         self.evidence = evidence                      # Url to the user evidence
@@ -79,8 +79,7 @@ class SignerBase():
     def generate_jws_payload(self): 
         """ Generate JWS Payload """        
         
-        # All this data MUST be a Str string in order to be converted to json properly.
-        
+        # All this data MUST be a Str string in order to be converted to json properly.        
         recipient_data = dict (
             identity = (b'sha256$' + sha256_string(self.receptor)).decode('utf-8'),
             type = 'email',

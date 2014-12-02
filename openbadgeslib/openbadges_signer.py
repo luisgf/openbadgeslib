@@ -64,7 +64,7 @@ def main():
             print('Profile %s not exist in config.py' % args.profile)
             
         try:            
-            sf = SignerFactory(config, args.badge, args.receptor.encode('utf-8'), evidence=args.evidence, debug_enabled=args.debug)  
+            sf = SignerFactory(config, args.badge, args.receptor, evidence=args.evidence, debug_enabled=args.debug)  
             print("[!] Generating signature for badge '%s'..." % args.badge)        
             
             # Output file...
