@@ -10,12 +10,12 @@ The current project version is **0.1** and is composed of three components:
  - A config file
  - Wrappers tools around the library
 
-The library and tools are written in python and works on **Python >= 3.4**. Running the library under Python 2.7 may work now but is not officially supported.
+The library and tools are written in Python and it required **Python >= 3.4**. Running the library under Python 2.7 may work now but is not officially supported.
 
 Dependencies
 ------------
 
-The program use the following python internal modules:
+The program use the following Python internal modules:
 
  - hashlib
  - json
@@ -26,7 +26,7 @@ The program use the following python internal modules:
  - ssl
  - urllib
 
-And the following python external modules:
+And the following Python external modules:
 
  - ecdsa
  - pycrypto
@@ -35,13 +35,13 @@ And the following python external modules:
 License
 -------
 
-This project use LGPL (v3) license for the library and a BSD 2-clause license for the wrapper tools.
+This library is licensed under the terms of the LGPL v3 and the wrapper tools under the terms of BSD 2-clause license.
 That's let you the freedom to do that you need with both.A copy of both licenses can be found in the “documents” folder of the project.
 
 Author
 ------
 
-The author of the library is Luis Gonzalez Fernandez and can be contacted in a address created specially for the project: openbadges@luisgf.es
+The author of the library is Luis Gonzalez Fernandez and can be contacted in a address created specially for the project: openbadges@luisgf.es 
 
 
 Installation
@@ -49,26 +49,27 @@ Installation
 
 This program can be run inside a virtualenv environment and this is the recommended practice, but if you like to install in the main python library, you can do that.
 
-The library is installed via pip and can be installed with the following command line:
+The library is installed via pip with the following command line:
 
 ::
 
      $ pip install openbadgeslib
 
 
-That's will install the library and all the dependencies needed by the project.
+That will install the software and all the needed dependencies
 
 Post-Installation
 -----------------
 
-After the library installation, the setup  process will create 3 wrapper programs in the binary folder (/usr/bin in UNIX or /virtualenv_folder/bin if you use a virtualenv):
+
+After the library installation, the setup process should have created 3 wrapper programs in the binary folder (/usr/bin in UNIX or /virtualenv_folder/bin if you use a virtualenv):
 
 - **openbadges_keygenerator.py**
 - **openbadges_signer.py**
 - **openbadges_verifier.py**
 
 
-After the library installation you need to tune some things in order to start signing badges. The first thing that you need do is adjust the config.
+Now you need to tune some things in order to start signing badges. The first thing that you need to do is customize the config.
 There are a config.py in the library installation path, but here you have an example that you can use:
 
 ::
@@ -144,17 +145,23 @@ There are a config.py in the library installation path, but here you have an exa
 
 You need to copy this to file named **config.py** to a folder with read-writte permissions that the wrappers tools need to store some data like the keys and log. The wrapper tools will read this config.py from the **current folder**.
 
-The next step, after library installation is the creation of a new keypair or importing existings one. This step is mandatory if you like to start signing badges.
+The next step, after library installation is the creation of a new keypair or importing existings one. This step is mandatory if you want to sign badges.
 
 Wrapper tools
 -------------
 
-The library comes with three tools that's exploit the library facilities:
+The library comes with three tools that implement the following facilities:
 
- - **openbadges_keygenerator.py**  Let's the user create a new pair of RSA (2048) or ECC (NIST256p) keys.                                                                     
- - **openbadges_signer.py**        Let's the user sign a SVG badge with or without evidence
- - **openbadges_verifier.py**      Let's the user verifier the badge signature against a local key or with thekey embedded in the assertion (remote verification).                        
+ - **openbadges_keygenerator.py**  Allow the user to create a new pair of RSA (2048) or ECC (NIST256p) keys.                                                                     
+ - **openbadges_signer.py**        Allow the user to sign a SVG badge with or without evidence
+ - **openbadges_verifier.py**      Allow the user to verify the badge signature against a local key or with the embedded key in the assertion (remote verification).                        
 
+ 
+What i need to start signing badges?
+------------------------------------
+OpenBadges library and tools are not enough? Well, no, you need too a Web server to publish JSONs of
+the issuer, criteria, badge, revocation and the public key.
+ 
 Library Usage
 -------------
 
