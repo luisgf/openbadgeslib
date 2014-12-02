@@ -2,42 +2,46 @@
 Openbadges Library
 ==================
 
-This library implement's the Mozilla OpenBadges specification and it's able of do the signature of a SVG file and their verification using RSA and ECC keys.
+This library implements the Mozilla OpenBadges specification and it's able to do the signature of a SVG file and its verification using RSA or ECC keys.
 
-The library current version is 0.1 and is composed of three main components:
+The current project version is **0.1** and is composed of three components:
 
-- A library
-- A config file
-- Wrappers tools around the library
+ - A library
+ - A config file
+ - Wrappers tools around the library
 
-The library is written in python and works on version of **Python >= 3.4**. Running the library under Python 2.7 works now but is not officially supported.
+The library and tools are written in python and works on **Python >= 3.4**. Running the library under Python 2.7 may work now but is not officially supported.
+
+Dependencies
+------------
 
 The program use the following python internal modules:
 
-- hashlib
-- json
-- time
-- os
-- sys
-- xml.dom.minidom
-- ssl
-- urllib
+ - hashlib
+ - json
+ - time
+ - os
+ - sys
+ - xml.dom.minidom
+ - ssl
+ - urllib
 
 And the following python external modules:
 
-- ecdsa
-- pycrypto
-- python-jws
+ - ecdsa
+ - pycrypto
+ - python-jws
 
 License
 -------
 
-The library license is LGPLv3 and the wrapper tools has a BSD 2-clause license. A copy of both licenses can be found in the “documents” folder of the project.
+This project use LGPL (v3) license for the library and a BSD 2-clause license for the wrapper tools.
+That's let you the freedom to do that you need with both.A copy of both licenses can be found in the “documents” folder of the project.
 
 Author
 ------
 
-The author of the library is Luis Gonzalez Fernandez and can be contacted in a address created specially for the library: openbadges@luisgf.es
+The author of the library is Luis Gonzalez Fernandez and can be contacted in a address created specially for the project: openbadges@luisgf.es
 
 
 Installation
@@ -52,7 +56,7 @@ The library is installed via pip and can be installed with the following command
      $ pip install openbadgeslib
 
 
-That's will install all the dependencies needed by the project.
+That's will install the library and all the dependencies needed by the project.
 
 Post-Installation
 -----------------
@@ -64,7 +68,8 @@ After the library installation, the setup  process will create 3 wrapper program
 - **openbadges_verifier.py**
 
 
-After the library installation you need to tune some things in order to start signing badges. The first thing that you need do is adjust the config.  There are a config.py in the library installation path, but here you have an example that you can use:
+After the library installation you need to tune some things in order to start signing badges. The first thing that you need do is adjust the config.
+There are a config.py in the library installation path, but here you have an example that you can use:
 
 ::
 
@@ -137,20 +142,24 @@ After the library installation you need to tune some things in order to start si
         'RSA_PROFILE': { 'issuer':issuer_luisgf, 'badges':[badge_testrsa], 'keys':rsa_keypair, 'signedlog':sign_log }
   }
 
-You need to copy this file to a folder with read-writter permissions that the wrappers tools need to store  thinks like the keys. The wrapper tools will read the config.py from the current folder.
-When the installation has been finished you will need to import or create a new keypair in order to start signing badges.
+You need to copy this to file named **config.py** to a folder with read-writte permissions that the wrappers tools need to store some data like the keys and log. The wrapper tools will read this config.py from the **current folder**.
+
+The next step, after library installation is the creation of a new keypair or importing existings one. This step is mandatory if you like to start signing badges.
 
 Wrapper tools
 -------------
 
 The library comes with three tools that's exploit the library facilities:
 
- - **openbadges_keygenerator.py**  Let's the user the create a new keypair on RSA (2048) and ECC (NIST256p) KeyPair.                                                                     
+ - **openbadges_keygenerator.py**  Let's the user create a new pair of RSA (2048) or ECC (NIST256p) keys.                                                                     
  - **openbadges_signer.py**        Let's the user sign a SVG badge with or without evidence
  - **openbadges_verifier.py**      Let's the user verifier the badge signature against a local key or with thekey embedded in the assertion (remote verification).                        
 
 Library Usage
 -------------
+
+Below this you can found some code snippets that show you how to use the library.
+
 
 Key Generation
 ==============
