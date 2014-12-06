@@ -25,3 +25,7 @@ de revocación
 - Implementar un modo dry, que "genere el assertion pero no lo añada al fichero"
 - Añadir modo debug al generador de claves y al verificador.
 - El parametro que "output" que se pasa al signer debe terminar en "/", sino la ruta no se genera correctamente.
+
+- 20141206: Creating a new crypto key when you already have one should
+  show an error and an appropiate exit code, but SHOULD NOT show a traceback.
+
