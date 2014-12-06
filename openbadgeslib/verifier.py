@@ -28,7 +28,7 @@
 import os
 import sys
 
-from Crypto.PublicKey import RSA  
+from Crypto.PublicKey import RSA
 from ecdsa import SigningKey, VerifyingKey, NIST256p
 
 from urllib import request
@@ -43,8 +43,9 @@ from ssl import SSLError
 # Local imports
 from openbadgeslib.errors import UnknownKeyType, AssertionFormatIncorrect, NotIdentityInAssertion, ErrorParsingFile, PublicKeyReadError
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/")))
-import jws.utils
+from .jws import utils as jws_utils
+from .jws import verify_block as jws_verify_block
+
 from openbadgeslib.util import sha256_string
 
 class VerifyFactory():
@@ -72,7 +73,7 @@ class VerifyBase():
         
         self.show_disclaimer()
         
-        return jws.verify_block(assertion, verif_key)                               
+        return jws_verify_block(assertion, verif_key)                               
     
     def verify_signature_inlocal(self, assertion, receptor):
         """ Verify that a signature is valid and has emitted for a given receptor """
@@ -95,7 +96,7 @@ class VerifyBase():
          
         # Try to decode the payload
         try:
-            payload = jws.utils.decode(payload_encoded)
+            payload = jws_utils.decode(payload_encoded)
         except:
             raise AssertionFormatIncorrect('Payload deserialization error')
         
@@ -118,7 +119,7 @@ class VerifyBase():
          
          # Try to decode the payload
          try:
-             payload = jws.utils.decode(payload_encoded)
+             payload = jws_utils.decode(payload_encoded)
          except:
              raise AssertionFormatIncorrect('Payload deserialization error')
          

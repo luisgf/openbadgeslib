@@ -1,5 +1,9 @@
 * v0.2 - Work in progress
 
+  - Massive cleanup of internal imports.
+
+  - Do not change "sys.path".
+
 * v0.1 - 20141201
 
   - Initial release.

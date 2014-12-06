@@ -39,8 +39,8 @@ from openbadgeslib.util import sha1_string, sha256_string
 from openbadgeslib.keys import KeyFactory
 from openbadgeslib.verifier import VerifyFactory
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "./3dparty/")))
-import jws.utils
+from .jws import utils as jws_utils
+from .jws import sign as jws_sign
         
 class SignerFactory():
     """ Signer Factory Object, Return a Given object type passing a name
@@ -166,9 +166,7 @@ class SignerBase():
 
     def generate_openbadge_assertion(self):
         """ Generate and Sign and OpenBadge assertion """
-        
-        import jws
-        
+
         header = self.generate_jose_header()
         payload = self.generate_jws_payload()
 
@@ -180,8 +178,8 @@ class SignerBase():
         except:
             raise PrivateKeyReadError()
         
-        signature = jws.sign(header, payload, kf.get_priv_key())             
-        assertion = jws.utils.encode(header) + b'.' + jws.utils.encode(payload) + b'.' + jws.utils.to_base64(signature)                      
+        signature = jws_sign(header, payload, kf.get_priv_key())             
+        assertion = jws_utils.encode(header) + b'.' + jws_utils.encode(payload) + b'.' + jws_utils.to_base64(signature)                      
         
         # Verify the assertion just after the generation.
         vf = VerifyFactory(self.conf)  
