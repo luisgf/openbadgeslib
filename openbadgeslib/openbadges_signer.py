@@ -39,10 +39,9 @@
 
 import argparse
 
-# Local Imports
-from config import profiles 
-from openbadgeslib import SignerFactory
-from openbadgeslib.errors import LibOpenBadgesException, SignerExceptions, BadgeNotFound
+from config import profiles  # XXX
+from .signer import SignerFactory
+from .errors import LibOpenBadgesException, SignerExceptions, BadgeNotFound
 
 # Entry Point
 def main():

@@ -30,7 +30,7 @@
 import os.path
 __path__.append(os.path.join(__path__[-1], '3dparty'))
 
-from openbadgeslib.keys import KeyFactory, KeyRSA, KeyECC
-from openbadgeslib.signer import SignerFactory, SignerRSA, SignerECC
-from openbadgeslib.verifier import VerifyFactory, VerifyRSA, VerifyECC
+from .keys import KeyFactory, KeyRSA, KeyECC
+from .signer import SignerFactory, SignerRSA, SignerECC
+from .verifier import VerifyFactory, VerifyRSA, VerifyECC
 

@@ -41,10 +41,9 @@
 
 import argparse
 
-# Local Imports
-from config import profiles 
-from openbadgeslib import KeyFactory
-from openbadgeslib.errors import KeyGenExceptions
+from config import profiles  # XXX
+from .keys import KeyFactory
+from .errors import KeyGenExceptions
 
 # Entry Point
 def main():

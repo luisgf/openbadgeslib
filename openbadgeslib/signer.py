@@ -32,12 +32,11 @@ import json
 
 from xml.dom.minidom import parse, parseString
 
-# Local imports
-from openbadgeslib.errors import UnknownKeyType, BadgeNotFound, FileToSignNotExists, BadgeSignedFileExists, ErrorSigningFile, PrivateKeyReadError 
+from .errors import UnknownKeyType, BadgeNotFound, FileToSignNotExists, BadgeSignedFileExists, ErrorSigningFile, PrivateKeyReadError
 
-from openbadgeslib.util import sha1_string, sha256_string
-from openbadgeslib.keys import KeyFactory
-from openbadgeslib.verifier import VerifyFactory
+from .util import sha1_string, sha256_string
+from .keys import KeyFactory
+from .verifier import VerifyFactory
 
 from .jws import utils as jws_utils
 from .jws import sign as jws_sign

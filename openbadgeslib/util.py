@@ -26,7 +26,7 @@
 """
 
 import hashlib
-from openbadgeslib.errors import HashError
+from .errors import HashError
 
 """ Shared Utils """
 def sha1_string(string):

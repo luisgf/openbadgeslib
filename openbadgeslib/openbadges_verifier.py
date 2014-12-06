@@ -40,9 +40,9 @@
 
 import argparse
 
-from config import profiles 
-from openbadgeslib.verifier import VerifyFactory
-from openbadgeslib.errors import LibOpenBadgesException, VerifierExceptions
+from config import profiles  # XXX
+from .verifier import VerifyFactory
+from .errors import LibOpenBadgesException, VerifierExceptions
 
 
 # Entry Point

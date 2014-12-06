@@ -41,12 +41,12 @@ from urllib.error import HTTPError, URLError
 from ssl import SSLError
 
 # Local imports
-from openbadgeslib.errors import UnknownKeyType, AssertionFormatIncorrect, NotIdentityInAssertion, ErrorParsingFile, PublicKeyReadError
+from .errors import UnknownKeyType, AssertionFormatIncorrect, NotIdentityInAssertion, ErrorParsingFile, PublicKeyReadError
 
 from .jws import utils as jws_utils
 from .jws import verify_block as jws_verify_block
 
-from openbadgeslib.util import sha256_string
+from .util import sha256_string
 
 class VerifyFactory():
     """ Verify Factory Object, Return a Given object type passing a name

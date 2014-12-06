@@ -28,11 +28,10 @@
 import os
 import sys
 
-from Crypto.PublicKey import RSA  
+from Crypto.PublicKey import RSA
 from ecdsa import SigningKey, VerifyingKey, NIST256p
 
-# Local imports
-from openbadgeslib.errors import UnknownKeyType, PrivateKeySaveError, PublicKeySaveError, PrivateKeyExists, GenPrivateKeyError, GenPublicKeyError, PrivateKeyReadError
+from .errors import UnknownKeyType, PrivateKeySaveError, PublicKeySaveError, PrivateKeyExists, GenPrivateKeyError, GenPublicKeyError, PrivateKeyReadError
 
 class KeyFactory():
     """ Key Factory Object, Return a Given object type passing a name
