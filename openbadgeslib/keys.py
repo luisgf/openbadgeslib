@@ -49,11 +49,11 @@ class KeyBase():
         self.pub_key = None               # crypto Object
 
     def get_privkey_path(self):
-        """ Return de path to the private key """
+        """ Return the path to the private key """
         return self.conf['keys']['private']
 
     def get_pubkey_path(self):
-        """ Return de path to the public key """
+        """ Return the path to the public key """
         return self.conf['keys']['public']
 
     def save_keypair(self, private_key_pem, public_key_pem):
