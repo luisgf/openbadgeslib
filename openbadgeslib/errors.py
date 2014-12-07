@@ -17,9 +17,9 @@
         You should have received a copy of the GNU Lesser General Public
         License along with this library.
 """
-"""    
+"""
     Exceptions of the library.
-    
+
     Author:   Luis G.F <luisgf@luisgf.es>
     Date:     20141201
     Version:  0.1
@@ -49,15 +49,12 @@ class GenPrivateKeyError(KeyGenExceptions):
 class GenPublicKeyError(KeyGenExceptions):
     pass
 
-class HashError(KeyGenExceptions):
-    pass
-
 class PrivateKeySaveError(KeyGenExceptions):
     pass
-    
+
 class PublicKeySaveError(KeyGenExceptions):
     pass
-    
+
 class PrivateKeyExists(KeyGenExceptions):
     pass
 

@@ -17,24 +17,24 @@
         You should have received a copy of the GNU Lesser General Public
         License along with this library.
 """
-""" 
-    Please, don't enable this if you are not completly sure 
+"""
+    Please, don't enable this if you are not completly sure
     that your are doing.
-    
+
     Setting PLEASE_ENABLE_ECC to True makes the program able
     to use Elliptic Curve cryptography rather that RSA.
-    
-    JWS draft are not clear with ECC, don't use 
+
+    JWS draft are not clear with ECC, don't use
     in production systems, use at your own risk!
 """
 PLEASE_ENABLE_ECC = True
-    
+
 """ Log signed badges in this file """
 log_ecc = '/tmp/openbadges-ecc_sign.log'
 log_rsa = '/tmp/openbadges-rsa_sign.log'
 
 """ Configuration of ECC Keys """
-ecc_keypair = dict(   
+ecc_keypair = dict(
                     crypto    = 'ECC' if PLEASE_ENABLE_ECC else 'RSA',
                     curve     = 'NIST256p',
                     hash_algo = 'SHA256',
@@ -43,7 +43,7 @@ ecc_keypair = dict(
                 )
 
 """ Configuration of RSA Keys """
-rsa_keypair = dict(   
+rsa_keypair = dict(
                     crypto    = 'RSA',
                     size      = 2048,
                     hash_algo = 'SHA256',

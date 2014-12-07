@@ -128,7 +128,7 @@ class ECDSA(HasherBase):
         ##  assume the signing key is already a real key
         # curve = getattr(ecdsa, self.bits_to_curve[self.bits])
         # signing_key = ecdsa.SigningKey.from_string(key, curve=curve)
-        # signing_key = ecdsa.SigningKey.from_string(key, curve=curve) 
+        # signing_key = ecdsa.SigningKey.from_string(key, curve=curve)
         return key.sign_deterministic(msg, hashfunc=self.hasher, sigencode=ecdsa.util.sigencode_der)
 
     def verify(self, msg, crypto, key):
@@ -161,12 +161,12 @@ def find(name):
         if match:
             return (endpoint, match)
     raise RouteMissingError('endpoint matching %s could not be found' % name)
-    
+
 def resolve(endpoint, match):
     if callable(endpoint):
         # send result back through
         return resolve(endpoint(**match.groupdict()), match)
-    
+
     # get the sign and verify methods from dict or obj
     try:
         crypt = { 'sign': endpoint['sign'], 'verify': endpoint['verify'] }

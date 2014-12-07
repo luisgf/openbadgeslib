@@ -32,7 +32,7 @@ class Algorithm(HeaderBase):
             self.methods = algos.route(value)
         except RouteMissingError:
             raise AlgorithmNotImplemented('"%s" not implemented.' % value)
-    
+
     def sign(self):
         self.data['signer'] = self.methods['sign']
     def verify(self):
@@ -41,15 +41,15 @@ class Algorithm(HeaderBase):
 KNOWN_HEADERS = {
     # REQUIRED, signing algo, see signing_methods
     'alg': Algorithm,
-    # OPTIONAL, type of signed content         
+    # OPTIONAL, type of signed content
     'typ': GenericString,
     # OPTIONAL, JSON Key URL. See http://self-issued.info/docs/draft-jones-json-web-key.html
     'jku': VerifyNotImplemented,
-     # OPTIONAL, key id, hint for which key to use.    
+     # OPTIONAL, key id, hint for which key to use.
     'kid': VerifyNotImplemented,
     # OPTIONAL, x.509 URL pointing to certificate or certificate chain
     'x5u': VerifyNotImplemented,
-    # OPTIONAL, x.509 certificate thumbprint    
+    # OPTIONAL, x.509 certificate thumbprint
     'x5t': VerifyNotImplemented,
 }
 

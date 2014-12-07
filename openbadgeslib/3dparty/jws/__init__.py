@@ -21,7 +21,7 @@ def sign(head, payload, key=None, is_json=False):
         raise MissingKey("Key was not passed as a param and a key could not be found from the header")
     if not data['signer']:
         raise MissingSigner("Header was processed, but no algorithm was found to sign the message")
-    signer = data['signer']  
+    signer = data['signer']
     signature = signer(_signing_input(head, payload, is_json), key)
     return signature
 
@@ -40,7 +40,7 @@ def verify(head, payload, encoded_signature, key=None, is_json=False):
     if not data['verifier']:
         raise MissingVerifier("Header was processed, but no algorithm was found to sign the message")
     verifier = data['verifier']
-    signature = utils.from_base64(encoded_signature)    
+    signature = utils.from_base64(encoded_signature)
     return verifier(_signing_input(head, payload, is_json), signature, key)
 
 # This function Verify an assertion block passed as parameter
@@ -50,7 +50,7 @@ def verify_block(msg, key=None):
     except ValueError:
         # The block has an incorrect format.
         raise SignatureError()
-    
+
     data = {
         'key': key,
         'header': utils.decode(head_encoded),
@@ -63,9 +63,9 @@ def verify_block(msg, key=None):
         raise MissingKey("Key was not passed as a param and a key could not be found from the header")
     if not data['verifier']:
         raise MissingVerifier("Header was processed, but no algorithm was found to sign the message")
-    verifier = data['verifier']    
-    signature = utils.from_base64(signature_encoded)    
-    return verifier(head_encoded + b'.' + payload_encoded, signature, key)     
+    verifier = data['verifier']
+    signature = utils.from_base64(signature_encoded)
+    return verifier(head_encoded + b'.' + payload_encoded, signature, key)
 
 ####################
 # semi-private api #
