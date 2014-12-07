@@ -95,7 +95,7 @@ class KeyBase():
             
 class KeyRSA(KeyBase):  
     def __init__(self, config):  
-        KeyBase.__init__(self, config)   
+        super().__init__(config)
             
     def generate_keypair(self):
         """ Generate a RSA Key, returning in PEM Format """
@@ -155,7 +155,7 @@ class KeyECC(KeyBase):
     """ Elliptic Curve Cryptography Factory class """
     
     def __init__(self, config):  
-        KeyBase.__init__(self, config)            
+        super().__init__(config)
 
     def generate_keypair(self):
         """ Generate a ECDSA keypair """       

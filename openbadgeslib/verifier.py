@@ -277,7 +277,7 @@ class VerifyBase():
 """ RSA Verify Factory """
 class VerifyRSA(VerifyBase):  
     def __init__(self, config):
-        VerifyBase.__init__(self, config)
+        super().__init__(config)
         
         # The pubkey is in a file
         try:
@@ -292,7 +292,7 @@ class VerifyRSA(VerifyBase):
 
 class VerifyECC(VerifyBase):
     def __init__(self, config):
-        VerifyBase.__init__(self, config)
+        super().__init__(config)
          
         # The pubkey is in a file
         try:

@@ -208,7 +208,7 @@ class SignerBase():
 
 class SignerRSA(SignerBase):
     def __init__(self, config, badgename, receptor, evidence, debug_enabled):
-         SignerBase.__init__(self, config, badgename, receptor, evidence, debug_enabled)
+         super().__init__(config, badgename, receptor, evidence, debug_enabled)
          
     def generate_jose_header(self):
         """ Generate JOSE Header """
@@ -220,7 +220,7 @@ class SignerRSA(SignerBase):
 
 class SignerECC(SignerBase):
     def __init__(self, config, badgename, receptor, evidence, debug_enabled):
-         SignerBase.__init__(self, config, badgename, receptor, evidence, debug_enabled)
+         super().__init__(config, badgename, receptor, evidence, debug_enabled)
          
     def generate_jose_header(self):
         """ Generate JOSE Header """
