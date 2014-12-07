@@ -1,5 +1,7 @@
 * v0.2 - Work in progress
 
+  - Use proper logging instead of simple "prints".
+
   - Massive cleanup of internal imports.
 
   - Do not change "sys.path".

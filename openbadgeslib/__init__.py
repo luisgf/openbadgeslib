@@ -25,6 +25,8 @@
         Version:  0.1
 """
 
+import logging
+logger = logging.getLogger(__name__)
 
 # https://docs.python.org/3.4/tutorial/modules.html#packages-in-multiple-directories
 import os.path
