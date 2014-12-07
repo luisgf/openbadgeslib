@@ -2,7 +2,8 @@
 """
         OpenBadges Library
 
-        Copyright (c) 2014, Luis Gonzalez Fernandez, All rights reserved.
+        Copyright (c) 2014, Luís González Fernández, luisgf@luisgf.es
+        Copyright (c) 2014, Jesús Cea Avión, jcea@jcea.es
 
         This library is free software; you can redistribute it and/or
         modify it under the terms of the GNU Lesser General Public
@@ -17,14 +18,6 @@
         You should have received a copy of the GNU Lesser General Public
         License along with this library.
 """
-"""
-    KeyPair Creation
-
-    Author:   Luis G.F <luisgf@luisgf.es>
-    Date:     20141201
-    Version:  0.1
-
-"""
 
 import logging
 logger = logging.getLogger(__name__)
@@ -35,19 +28,19 @@ import sys
 from Crypto.PublicKey import RSA
 from ecdsa import SigningKey, VerifyingKey, NIST256p
 
-from .errors import UnknownKeyType, PrivateKeySaveError, PublicKeySaveError, PrivateKeyExists, GenPrivateKeyError, GenPublicKeyError, PrivateKeyReadError
+from .errors import UnknownKeyType, PrivateKeySaveError, \
+        PublicKeySaveError, PrivateKeyExists, GenPrivateKeyError, \
+        GenPublicKeyError, PrivateKeyReadError, PublicKeyReadError
 
-class KeyFactory():
+def KeyFactory(config):
     """ Key Factory Object, Return a Given object type passing a name
         to the constructor. """
-
-    def __new__(cls, config):
-        if config['keys']['crypto'] == 'ECC':
-            return KeyECC(config)
-        if config['keys']['crypto'] == 'RSA':
-            return KeyRSA(config)
-        else:
-            raise UnknownKeyType()
+    if config['keys']['crypto'] == 'ECC':
+        return KeyECC(config)
+    if config['keys']['crypto'] == 'RSA':
+        return KeyRSA(config)
+    else:
+        raise UnknownKeyType()
 
 class KeyBase():
     def __init__(self, config):
@@ -65,19 +58,11 @@ class KeyBase():
 
     def save_keypair(self, private_key_pem, public_key_pem):
         """ Save keypair to file """
-        try:
-            with open(self.get_privkey_path(), "wb") as priv:
-                priv.write(private_key_pem)
-                priv.close()
-        except FileNotFoundError:
-             raise PrivateKeySaveError()
-
-        try:
-            with open(self.get_pubkey_path(), "wb") as pub:
+        # Lets save public first, just in case.
+        with open(self.get_pubkey_path(), "wb") as pub:
                 pub.write(public_key_pem)
-                pub.close()
-        except FileNotFoundError:
-             raise PublicKeySaveError()
+        with open(self.get_privkey_path(), "wb") as priv:
+                priv.write(private_key_pem)
 
     def has_key(self):
         """ Check if a private key is already generated """
@@ -104,46 +89,33 @@ class KeyRSA(KeyBase):
         self.has_key()
 
         # RSA Key Generation
-        try:
-            self.priv_key = RSA.generate(self.conf['keys']['size'])
-            priv_key_pem = self.priv_key.exportKey('PEM')
-        except:
-            raise GenPrivateKeyError()
-
-        try:
-            self.pub_key = self.priv_key.publickey()
-            pub_key_pem = self.pub_key.exportKey('PEM')
-        except:
-            raise GenPublicKeyError()
+        self.priv_key = RSA.generate(self.conf['keys']['size'])
+        priv_key_pem = self.priv_key.exportKey('PEM')
+        self.pub_key = self.priv_key.publickey()
+        pub_key_pem = self.pub_key.exportKey('PEM')
 
         self.save_keypair(priv_key_pem, pub_key_pem)
 
-        print('[+] RSA(%d) Private Key generated at %s' % (self.conf['keys']['size'], self.get_privkey_path()))
-        print('[+] RSA(%d) Public Key generated at %s' % (self.conf['keys']['size'], self.get_pubkey_path()))
-
-        return True
+        logger.info('[+] RSA(%d) Private Key generated at %s' % (self.conf['keys']['size'], self.get_privkey_path()))
+        logger.info('[+] RSA(%d) Public Key generated at %s' % (self.conf['keys']['size'], self.get_pubkey_path()))
 
     def read_private_key(self):
         """ Read the private key from file """
         try:
             with open(self.get_privkey_path(), "rb") as priv:
                 self.priv_key = RSA.importKey(priv.read())
-                priv.close()
-
-            return True
-        except:
-            raise PrivateKeyReadError('Error reading private key: %s' % self.get_privkey_path())
+        except Exception as e:
+            raise PrivateKeyReadError('Error reading private key: %s - %s' %
+                    self.get_privkey_path(), e)
 
     def read_public_key(self):
         """ Read the public key from file """
         try:
             with open(self.get_pubkey_path(), "rb") as pub:
                 self.pub_key = RSA.importKey(pub.read())
-                pub.close()
-
-            return True
-        except:
-            raise PrivateKeyReadError('Error reading public key: %s' % self.get_pubkey_path())
+        except Exception as e :
+            raise PublicKeyReadError('Error reading public key: %s - %s' %
+                    self.get_pubkey_path(), e)
 
     def get_priv_key_pem(self):
         return self.priv_key.exportKey('PEM')
@@ -164,46 +136,36 @@ class KeyECC(KeyBase):
         self.has_key()
 
         # Private key generation
-        try:
-            self.priv_key = SigningKey.generate(curve=NIST256p)
-            priv_key_pem = self.priv_key.to_pem()
-        except:
-            raise GenPrivateKeyError()
+        self.priv_key = SigningKey.generate(curve=NIST256p)
+        priv_key_pem = self.priv_key.to_pem()
 
         # Public Key name is the hash of the public key
-        try:
-            self.pub_key = self.priv_key.get_verifying_key()
-            pub_key_pem = self.pub_key.to_pem()
-        except:
-            raise GenPublicKeyError()
+        self.pub_key = self.priv_key.get_verifying_key()
+        pub_key_pem = self.pub_key.to_pem()
 
         # Save the keypair
         self.save_keypair(priv_key_pem, pub_key_pem)
 
-        print('[+] ECC(%s) Private Key generated at %s' % (self.conf['keys']['curve'], self.get_privkey_path()))
-        print('[+] ECC(%s) Public Key generated at %s' % (self.conf['keys']['curve'], self.get_pubkey_path()))
+        logger.info('[+] ECC(%s) Private Key generated at %s' % (self.conf['keys']['curve'], self.get_privkey_path()))
+        logger.info('[+] ECC(%s) Public Key generated at %s' % (self.conf['keys']['curve'], self.get_pubkey_path()))
 
     def read_private_key(self):
         """ Read the private key from files """
         try:
             with open(self.get_privkey_path(), "rb") as priv:
                 self.priv_key = SigningKey.from_pem(priv.read())
-                priv.close()
-
-            return True
-        except:
-            raise PrivateKeyReadError('Error reading private key: %s' % self.get_privkey_path())
+        except Exception as e:
+            raise PrivateKeyReadError('Error reading private key: %s - %s' %
+                    self.get_privkey_path(), e)
 
     def read_public_key(self):
         """ Read the public key from files """
         try:
             with open(self.get_pubkey_path(), "rb") as pub:
                 self.pub_key = VerifyingKey.from_pem(pub.read())
-                pub.close()
-
-            return True
         except:
-            raise PublicKeyReadError('Error reading public key: %s' % self.get_pubkey_path())
+            raise PublicKeyReadError('Error reading public key: %s - %s' %
+                    self.get_pubkey_path(), e)
 
     def get_priv_key_pem(self):
         return self.priv_key.to_pem()
