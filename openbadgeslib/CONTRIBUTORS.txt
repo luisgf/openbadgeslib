@@ -1,0 +1,5 @@
+XXX: Ojo, añadir este fichero al MANIFEST, cuando se aclare de dónde ha salido.
+
+Jesús Cea Avión, jcea@jcea.es
+Luís González Fernández, luisgf@luisgf.es
+
