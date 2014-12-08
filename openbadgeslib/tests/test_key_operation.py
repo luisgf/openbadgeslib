@@ -160,7 +160,6 @@ class checkKeysRSA(checkKeysBase, unittest.TestCase) :
             return PKCS1_v1_5.new(public_key).verify(h, signature)
         return verify
 
-@unittest.skip('ECC tests are not ready yet')
 class checkKeysECC(checkKeysBase, unittest.TestCase) :
     config = {'keys': {
                     'curve': 'NIST256p' ,
@@ -168,8 +167,8 @@ class checkKeysECC(checkKeysBase, unittest.TestCase) :
             }
 
     _KEY = KeyECC
-    _PUBLICKEYNAME = 'test_verify_rsa.pem'
-    _PRIVATEKEYNAME = 'test_sign_rsa.pem'
+    _PUBLICKEYNAME = 'test_verify_ecc.pem'
+    _PRIVATEKEYNAME = 'test_sign_ecc.pem'
 
     def _checkPrivateFraming(self, private_key_pem) :
         self.assertEqual(private_key_pem[0],
@@ -178,16 +177,23 @@ class checkKeysECC(checkKeysBase, unittest.TestCase) :
                 b'-----END EC PRIVATE KEY-----')
 
     def _importSigningKey(self, private_key) :
-        return ecdsa.SigningKey(private_key)
+        return ecdsa.SigningKey.from_pem(private_key)
 
     def _importVerifyingKey(self, public_key) :
-        return ecdsa.VerifyingKey(public_key)
+        return ecdsa.VerifyingKey.from_pem(public_key)
 
     def _signer(self, private_key) :
-        sign = functools.partial(private_key.sign, #_deterministic,
+        sign = functools.partial(private_key.sign_deterministic,
                 hashfunc = hashlib.sha256)
         return sign
 
     def _verifier(self, public_key) :
-        return PKCS1_v1_5.new(public_key).verify
+        def verify(msg, signature) :
+            try :
+                public_key.verify(signature, msg, hashfunc = hashlib.sha256)
+            except ecdsa.BadSignatureError :
+                return False
+            return True
+
+        return verify
 
