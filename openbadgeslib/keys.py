@@ -53,14 +53,6 @@ class KeyBase():
 
     def get_pubkey_path(self):
         return self.conf['keys']['public']
-
-    def save_keypair(self, private_key_pem, public_key_pem):
-        """ Save keypair to file """
-        # Lets save public first, just in case.
-        with open(self.get_pubkey_path(), "wb") as pub:
-                pub.write(public_key_pem)
-        with open(self.get_privkey_path(), "wb") as priv:
-                priv.write(private_key_pem)
    
     def get_priv_key(self):
         """ Return the crypto object """
@@ -82,8 +74,6 @@ class KeyRSA(KeyBase):
         priv_key_pem = self.priv_key.exportKey('PEM')
         self.pub_key = self.priv_key.publickey()
         pub_key_pem = self.pub_key.exportKey('PEM')
-
-        self.save_keypair(priv_key_pem, pub_key_pem)
 
         logger.info('[+] RSA(%d) Private Key generated at %s' % (self.conf['keys']['size'], self.get_privkey_path()))
         logger.info('[+] RSA(%d) Public Key generated at %s' % (self.conf['keys']['size'], self.get_pubkey_path()))
@@ -128,9 +118,6 @@ class KeyECC(KeyBase):
         # Public Key name is the hash of the public key
         self.pub_key = self.priv_key.get_verifying_key()
         pub_key_pem = self.pub_key.to_pem()
-
-        # Save the keypair
-        self.save_keypair(priv_key_pem, pub_key_pem)
 
         logger.info('[+] ECC(%s) Private Key generated at %s' % (self.conf['keys']['curve'], self.get_privkey_path()))
         logger.info('[+] ECC(%s) Public Key generated at %s' % (self.conf['keys']['curve'], self.get_pubkey_path()))
