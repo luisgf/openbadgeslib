@@ -49,9 +49,6 @@ class PrivateKeySaveError(KeyGenExceptions):
 class PublicKeySaveError(KeyGenExceptions):
     pass
 
-class PrivateKeyExists(KeyGenExceptions):
-    pass
-
 class PrivateKeyReadError(KeyGenExceptions):
     pass
 
