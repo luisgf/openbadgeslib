@@ -32,19 +32,18 @@ from .errors import UnknownKeyType, PrivateKeySaveError, \
         PublicKeySaveError, PrivateKeyExists, GenPrivateKeyError, \
         GenPublicKeyError, PrivateKeyReadError, PublicKeyReadError
 
-def KeyFactory(config):
+def KeyFactory(key_type='RSA'):
     """ Key Factory Object, Return a Given object type passing a name
         to the constructor. """
-    if config['keys']['crypto'] == 'ECC':
-        return KeyECC(config)
-    if config['keys']['crypto'] == 'RSA':
-        return KeyRSA(config)
+    if key_type == 'ECC':
+        return KeyECC(key_curve=NIST256p)
+    if key_type == 'RSA':
+        return KeyRSA(key_size=2048)
     else:
         raise UnknownKeyType()
 
 class KeyBase():
-    def __init__(self, config):
-        self.conf = config
+    def __init__(self):
         self.priv_key = None              # crypto Object
         self.pub_key = None               # crypto Object
    
@@ -57,14 +56,15 @@ class KeyBase():
         return self.pub_key
 
 class KeyRSA(KeyBase):
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, key_size):
+        self._key_size = key_size
+        super().__init__()
 
     def generate_keypair(self):
         """ Generate a RSA Key, returning in PEM Format """
 
         # RSA Key Generation
-        self.priv_key = RSA.generate(self.conf['keys']['size'])
+        self.priv_key = RSA.generate(self._key_size)
         priv_key_pem = self.priv_key.exportKey('PEM')
         self.pub_key = self.priv_key.publickey()
         pub_key_pem = self.pub_key.exportKey('PEM')
@@ -88,14 +88,15 @@ class KeyRSA(KeyBase):
 class KeyECC(KeyBase):
     """ Elliptic Curve Cryptography Factory class """
 
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, key_curve):
+        self._key_curve = key_curve
+        super().__init__()
 
     def generate_keypair(self):
         """ Generate a ECDSA keypair """
 
         # Private key generation
-        self.priv_key = SigningKey.generate(curve=NIST256p)
+        self.priv_key = SigningKey.generate(curve=self._key_curve)
         priv_key_pem = self.priv_key.to_pem()
 
         # Public Key name is the hash of the public key
