@@ -1,22 +1,31 @@
 import unittest
 from unittest.mock import Mock, patch, mock_open, call
 
+import functools, hashlib
+
 import test_common
 
 from openbadgeslib import keys
 from openbadgeslib.errors import UnknownKeyType
 
+import ecdsa
 from Crypto.PublicKey import RSA
 from Crypto.Signature import PKCS1_v1_5
 from Crypto.Hash import SHA256
 
-class KeyRSA(keys.KeyRSA) :
+class KeyBase :
     def save_keypair(self, private_key_pem, public_key_pem) :
         self._TEST_private_key_pem = private_key_pem
         self._TEST_public_key_pem = public_key_pem
 
     def has_key(self) :
         return False
+
+class KeyRSA(KeyBase, keys.KeyRSA) :
+    pass
+
+class KeyECC(KeyBase, keys.KeyECC) :
+    pass
 
 class check_key_factory(unittest.TestCase) :
     def test_rsa(self) :
@@ -51,32 +60,25 @@ class check_key_factory(unittest.TestCase) :
                 }
         self.assertRaises(UnknownKeyType, keys.KeyFactory, config)
 
-class check_keys_RSA(unittest.TestCase) :
-    config = {'keys': {
-                    'private': 'path_private',
-                    'public': 'path_public',
-                    'size': 2048,
-                },
-            }
-
+class checkKeysBase :
     @classmethod
     def setUpClass(cls) :
-        cls.key = KeyRSA(cls.config)
+        cls.config['keys'].update({'private':'path_private',
+                    'public': 'path_public'})
+        cls.key = cls._KEY(cls.config)
         cls.key.generate_keypair()
 
     def test_creation(self) :
-        public_key_pem = self.key._TEST_public_key_pem.split(b'\n')
-        private_key_pem = self.key._TEST_private_key_pem.split(b'\n')
+        public_key_pem = self.key._TEST_public_key_pem.strip().split(b'\n')
+        private_key_pem = self.key._TEST_private_key_pem.strip().split(b'\n')
 
         self.assertEqual(public_key_pem[0], b'-----BEGIN PUBLIC KEY-----')
         self.assertEqual(public_key_pem[-1], b'-----END PUBLIC KEY-----')
-        self.assertEqual(private_key_pem[0],
-                b'-----BEGIN RSA PRIVATE KEY-----')
-        self.assertEqual(private_key_pem[-1],
-                b'-----END RSA PRIVATE KEY-----')
+
+        return self._checkPrivateFraming(private_key_pem)
 
     def test_load(self) :
-        key = keys.KeyRSA(self.config)
+        key = self._KEY(self.config)
 
         # Bug in Python 3.4: "mock_open() should allow reading binary data"
         # http://bugs.python.org/issue23004
@@ -101,28 +103,91 @@ class check_keys_RSA(unittest.TestCase) :
         m.assert_has_calls([call().read()])
 
     def test_sign(self) :
-        mensaje = b'3.14159265'
-        h = SHA256.new(mensaje)
+        msg = b'3.14159265'
+        private_key = self._importSigningKey(self.key.get_priv_key_pem())
+        signer = self._signer(private_key)
+        signature = signer(msg)
+        public_key = self._importVerifyingKey(self.key.get_pub_key_pem())
+        verifier = self._verifier(public_key)
+        self.assertTrue(verifier(msg, signature))
 
-        private_key = RSA.importKey(self.key.get_priv_key_pem())
-        signer = PKCS1_v1_5.new(private_key)
-        signature = signer.sign(h)
-        public_key = RSA.importKey(self.key.get_pub_key_pem())
-        verifier = PKCS1_v1_5.new(public_key)
-        self.assertTrue(verifier.verify(h, signature))
+        with open(self._PRIVATEKEYNAME, 'rb') as f :
+            test_private_key = self._importSigningKey(f.read())
+        with open(self._PUBLICKEYNAME, 'rb') as f :
+            test_public_key = self._importVerifyingKey(f.read())
+        signer = self._signer(test_private_key)
+        test_signature = signer(msg)
+        verifier = self._verifier(test_public_key)
+        self.assertTrue(verifier(msg, test_signature))
 
-        with open('test_sign_rsa.pem', 'rb') as f :
-            test_private_key = RSA.importKey(f.read())
-        with open('test_verify_rsa.pem', 'rb') as f :
-            test_public_key = RSA.importKey(f.read())
-        signer = PKCS1_v1_5.new(test_private_key)
-        test_signature = signer.sign(h)
-        verifier = PKCS1_v1_5.new(test_public_key)
-        self.assertTrue(verifier.verify(h, test_signature))
+        verifier = self._verifier(test_public_key)
+        self.assertFalse(verifier(msg, signature))
 
-        verifier = PKCS1_v1_5.new(test_public_key)
-        self.assertFalse(verifier.verify(h, signature))
+        verifier = self._verifier(public_key)
+        self.assertFalse(verifier(msg, test_signature))
 
-        verifier = PKCS1_v1_5.new(public_key)
-        self.assertFalse(verifier.verify(h, test_signature))
+class checkKeysRSA(checkKeysBase, unittest.TestCase) :
+    config = {'keys': {
+                    'size': 2048,
+                },
+            }
+
+    _KEY = KeyRSA
+    _PUBLICKEYNAME = 'test_verify_rsa.pem'
+    _PRIVATEKEYNAME = 'test_sign_rsa.pem'
+
+    def _checkPrivateFraming(self, private_key_pem) :
+        self.assertEqual(private_key_pem[0],
+                b'-----BEGIN RSA PRIVATE KEY-----')
+        self.assertEqual(private_key_pem[-1],
+                b'-----END RSA PRIVATE KEY-----')
+
+    def _importSigningKey(self, private_key) :
+        return RSA.importKey(private_key)
+
+    def _importVerifyingKey(self, public_key) :
+        return RSA.importKey(public_key)
+
+    def _signer(self, private_key) :
+        def sign(msg) :
+            h = SHA256.new(msg)
+            return PKCS1_v1_5.new(private_key).sign(h)
+        return sign
+
+    def _verifier(self, public_key) :
+        def verify(msg, signature) :
+            h = SHA256.new(msg)
+            return PKCS1_v1_5.new(public_key).verify(h, signature)
+        return verify
+
+@unittest.skip('ECC tests are not ready yet')
+class checkKeysECC(checkKeysBase, unittest.TestCase) :
+    config = {'keys': {
+                    'curve': 'NIST256p' ,
+                },
+            }
+
+    _KEY = KeyECC
+    _PUBLICKEYNAME = 'test_verify_rsa.pem'
+    _PRIVATEKEYNAME = 'test_sign_rsa.pem'
+
+    def _checkPrivateFraming(self, private_key_pem) :
+        self.assertEqual(private_key_pem[0],
+                b'-----BEGIN EC PRIVATE KEY-----')
+        self.assertEqual(private_key_pem[-1],
+                b'-----END EC PRIVATE KEY-----')
+
+    def _importSigningKey(self, private_key) :
+        return ecdsa.SigningKey(private_key)
+
+    def _importVerifyingKey(self, public_key) :
+        return ecdsa.VerifyingKey(public_key)
+
+    def _signer(self, private_key) :
+        sign = functools.partial(private_key.sign, #_deterministic,
+                hashfunc = hashlib.sha256)
+        return sign
+
+    def _verifier(self, public_key) :
+        return PKCS1_v1_5.new(public_key).verify
 
