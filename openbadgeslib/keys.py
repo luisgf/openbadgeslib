@@ -74,9 +74,8 @@ class KeyRSA(KeyBase):
         priv_key_pem = self.priv_key.exportKey('PEM')
         self.pub_key = self.priv_key.publickey()
         pub_key_pem = self.pub_key.exportKey('PEM')
-
-        logger.info('[+] RSA(%d) Private Key generated at %s' % (self.conf['keys']['size'], self.get_privkey_path()))
-        logger.info('[+] RSA(%d) Public Key generated at %s' % (self.conf['keys']['size'], self.get_pubkey_path()))
+        
+        return priv_key_pem, pub_key_pem
 
     def read_private_key(self):
         """ Read the private key from file """
@@ -119,8 +118,7 @@ class KeyECC(KeyBase):
         self.pub_key = self.priv_key.get_verifying_key()
         pub_key_pem = self.pub_key.to_pem()
 
-        logger.info('[+] ECC(%s) Private Key generated at %s' % (self.conf['keys']['curve'], self.get_privkey_path()))
-        logger.info('[+] ECC(%s) Public Key generated at %s' % (self.conf['keys']['curve'], self.get_pubkey_path()))
+        return priv_key_pem, pub_key_pem
 
     def read_private_key(self):
         """ Read the private key from files """
