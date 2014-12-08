@@ -6,7 +6,7 @@ import functools, hashlib
 import test_common
 
 from openbadgeslib import keys
-from openbadgeslib.errors import UnknownKeyType
+from openbadgeslib.errors import UnknownKeyType, PrivateKeyExists
 
 import ecdsa
 from Crypto.PublicKey import RSA
@@ -14,12 +14,23 @@ from Crypto.Signature import PKCS1_v1_5
 from Crypto.Hash import SHA256
 
 class KeyBase :
+    def __init__(self, *args, **kwargs) :
+        self._has_key = False
+        super().__init__(*args, **kwargs)
+
     def save_keypair(self, private_key_pem, public_key_pem) :
+        if self._has_key :
+            raise RuntimeError('No debemos grabar si ya tenemos la clave')
         self._TEST_private_key_pem = private_key_pem
         self._TEST_public_key_pem = public_key_pem
 
     def has_key(self) :
-        return False
+        if self._has_key :
+            raise PrivateKeyExists(self.get_privkey_path())
+
+    def set_has_key(self) :
+        self._has_key = True
+
 
 class KeyRSA(KeyBase, keys.KeyRSA) :
     pass
@@ -76,6 +87,11 @@ class checkKeysBase :
         self.assertEqual(public_key_pem[-1], b'-----END PUBLIC KEY-----')
 
         return self._checkPrivateFraming(private_key_pem)
+
+    def test_creationOverwrite(self) :
+        key = self._KEY(self.config)
+        key.set_has_key()
+        self.assertRaises(PrivateKeyExists, key.generate_keypair)
 
     def test_load(self) :
         key = self._KEY(self.config)
