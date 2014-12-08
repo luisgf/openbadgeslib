@@ -23,6 +23,7 @@ import hashlib
 
 def _hash_string(hash_name, string) :
     h = hashlib.new(hash_name)
+    h.update(string)
     return h.hexdigest().encode('latin-1')
 
 def sha1_string(string) :
