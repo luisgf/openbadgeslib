@@ -29,7 +29,7 @@ from Crypto.PublicKey import RSA
 from ecdsa import SigningKey, VerifyingKey, NIST256p
 
 from .errors import UnknownKeyType, PrivateKeySaveError, \
-        PublicKeySaveError, PrivateKeyExists, GenPrivateKeyError, \
+        PublicKeySaveError, GenPrivateKeyError, \
         GenPublicKeyError, PrivateKeyReadError, PublicKeyReadError
 
 def KeyFactory(key_type='RSA'):

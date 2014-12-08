@@ -32,39 +32,45 @@
 
 import argparse
 
-from config import profiles  # XXX
 from .keys import KeyFactory
 from .errors import KeyGenExceptions
+from .confparser import ConfParser
 
 # Entry Point
 def main():
     parser = argparse.ArgumentParser(description='Key Generation Parameters')
-    parser.add_argument('-p', '--profile', required=True, help='Specify the profile to use')
+    parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-g', '--genkey', action="store_true", help='Generate a new Key pair. Key type is taken from profile.')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.1' )
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.2' )
     args = parser.parse_args()
 
     if not args.genkey:
         parser.print_help()
     else:
-        """ Check if the profile exists """
-        try:
-            config = profiles[args.profile]
-            print("[!] Generating key pair for issuer '%s'" % config['issuer']['name'])
+        parser = ConfParser(args.config)
+        conf = parser.read_conf()        
+        
+        if conf:
+            try:            
+                print("[!] Generating key pair for issuer '%s'" % conf['issuer']['name'])
 
-            kf = KeyFactory(config)
-            kf.generate_keypair()
+                kf = KeyFactory()
+                priv_key_pem, pub_key_pem = kf.generate_keypair()
+                    
+                with open(conf['keys']['private'],'wb') as f:
+                    f.write(priv_key_pem)
+                    
+                with open(conf['keys']['public'],'wb') as f:
+                    f.write(pub_key_pem)
+                    
+                print('[+] Private key saved at: %s' % conf['keys']['private'])
+                print('[+] Public key saved at: %s' % conf['keys']['public'])
 
-        except KeyError:
-            print('Profile %s not exist in config.py' % args.profile)
-        except KeyGenExceptions:
-            raise
+            except KeyGenExceptions:
+                raise
+        else:
+            print('[!] El fichero de configuracion %s NO existe o está vacio' % args.config)
 
 if __name__ == '__main__':
     main()
-
-
-
-
-
 

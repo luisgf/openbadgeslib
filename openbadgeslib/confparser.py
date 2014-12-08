@@ -19,6 +19,7 @@
         License along with this library.
 """
 
+import os
 import logging
 logger = logging.getLogger(__name__)
 
@@ -29,8 +30,12 @@ class ConfParser():
         self.config_file = config_file 
 
     def read_conf(self):
+        if not os.path.isfile(self.config_file):
+            return None
+        
         self.parser = ConfigParser(interpolation=ExtendedInterpolation())        
-        return self.parser.read(self.config_file)        
+        self.parser.read(self.config_file)
+        return self.parser
 
 if __name__ == '__main__':
     pass
