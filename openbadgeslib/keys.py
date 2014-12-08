@@ -63,13 +63,7 @@ class KeyBase():
                 pub.write(public_key_pem)
         with open(self.get_privkey_path(), "wb") as priv:
                 priv.write(private_key_pem)
-
-    def has_key(self):
-        """ Check if a private key is already generated """
-
-        if os.path.isfile(self.get_privkey_path()):
-            raise PrivateKeyExists(self.get_privkey_path())
-
+   
     def get_priv_key(self):
         """ Return the crypto object """
         return self.priv_key
@@ -84,9 +78,6 @@ class KeyRSA(KeyBase):
 
     def generate_keypair(self):
         """ Generate a RSA Key, returning in PEM Format """
-
-        # Check if a key exists
-        self.has_key()
 
         # RSA Key Generation
         self.priv_key = RSA.generate(self.conf['keys']['size'])
@@ -131,9 +122,6 @@ class KeyECC(KeyBase):
 
     def generate_keypair(self):
         """ Generate a ECDSA keypair """
-
-        # If the issuer has a key, stop a new key generation
-        self.has_key()
 
         # Private key generation
         self.priv_key = SigningKey.generate(curve=NIST256p)
