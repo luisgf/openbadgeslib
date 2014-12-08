@@ -1,0 +1,54 @@
+;
+; OpenBadges Lib configuration example for RSA Cryptography
+;
+
+; Luis G.F <luisgf@luisgf.es> - https://openbadges.luisgf.es
+; Version: 0.2
+; Date: 20141205
+;
+
+; Paths to the keys and log
+[paths]
+base         = /tmp/openbadgeslib_conf
+base_key     = ${base}/keys
+base_log     = ${base}/log
+base_image   = ${base}/images
+base_json    = ${base}/json
+
+; Log configuration. Stored in ${base_log}
+[logs]
+general = general.log
+signer  = signer.log
+
+;Key configuration. Stored in ${base_key}
+[keys]
+private   = ${paths:base_key}/sign_rsa_key.pem
+public    = ${paths:base_key}/verify_rsa_key.pem
+
+; Configuration of the OpenBadges issuer.
+[issuer]
+name   		   = OpenBadge issuer
+url	   		   = https://www.luisgf.es
+image  		   = issuer_logo.png
+email  		   = issuer_mail@notexists.es
+publish_url  = https://openbadges.luisgf.es/issuer/
+revocationList = revoked.json
+
+;Badge configuration sections.
+[badge_1]
+name        = Badge 1
+description = Given to any user that install this library
+image 		= image_badge1.svg
+criteria 	= https://www.domain.com/criteria.html
+verify_key = 
+;alignement  = 
+;tags 		=
+
+[badge_2]
+name        = Badge 2
+description = Given to any user that install this library
+image 		= image_badge2.png
+criteria 	= https://www.domain.com/criteria.html
+verify_key = 
+;alignement  = 
+;tags 		= 
