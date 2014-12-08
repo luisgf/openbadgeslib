@@ -106,7 +106,7 @@ class KeyRSA(KeyBase):
                 self.priv_key = RSA.importKey(priv.read())
         except Exception as e:
             raise PrivateKeyReadError('Error reading private key: %s - %s' %
-                    self.get_privkey_path(), e)
+                    (self.get_privkey_path(), e))
 
     def read_public_key(self):
         """ Read the public key from file """
@@ -115,7 +115,7 @@ class KeyRSA(KeyBase):
                 self.pub_key = RSA.importKey(pub.read())
         except Exception as e :
             raise PublicKeyReadError('Error reading public key: %s - %s' %
-                    self.get_pubkey_path(), e)
+                    (self.get_pubkey_path(), e))
 
     def get_priv_key_pem(self):
         return self.priv_key.exportKey('PEM')
@@ -156,7 +156,7 @@ class KeyECC(KeyBase):
                 self.priv_key = SigningKey.from_pem(priv.read())
         except Exception as e:
             raise PrivateKeyReadError('Error reading private key: %s - %s' %
-                    self.get_privkey_path(), e)
+                    (self.get_privkey_path(), e))
 
     def read_public_key(self):
         """ Read the public key from files """
@@ -165,7 +165,7 @@ class KeyECC(KeyBase):
                 self.pub_key = VerifyingKey.from_pem(pub.read())
         except:
             raise PublicKeyReadError('Error reading public key: %s - %s' %
-                    self.get_pubkey_path(), e)
+                    (self.get_pubkey_path(), e))
 
     def get_priv_key_pem(self):
         return self.priv_key.to_pem()

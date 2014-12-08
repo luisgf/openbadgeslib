@@ -20,7 +20,6 @@
 """
 
 import hashlib
-from .errors import HashError
 
 def _hash_string(hash_name, string) :
     h = hashlib.new(hash_name)
