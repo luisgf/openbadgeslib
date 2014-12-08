@@ -47,12 +47,6 @@ class KeyBase():
         self.conf = config
         self.priv_key = None              # crypto Object
         self.pub_key = None               # crypto Object
-
-    def get_privkey_path(self):
-        return self.conf['keys']['private']
-
-    def get_pubkey_path(self):
-        return self.conf['keys']['public']
    
     def get_priv_key(self):
         """ Return the crypto object """
@@ -77,23 +71,13 @@ class KeyRSA(KeyBase):
         
         return priv_key_pem, pub_key_pem
 
-    def read_private_key(self):
-        """ Read the private key from file """
-        try:
-            with open(self.get_privkey_path(), "rb") as priv:
-                self.priv_key = RSA.importKey(priv.read())
-        except Exception as e:
-            raise PrivateKeyReadError('Error reading private key: %s - %s' %
-                    (self.get_privkey_path(), e))
+    def read_private_key(self, key_pem=None):
+        """ Read the private key from param in PEM format """
+        self.priv_key = RSA.importKey(key_pem)
 
-    def read_public_key(self):
+    def read_public_key(self, key_pem=None):
         """ Read the public key from file """
-        try:
-            with open(self.get_pubkey_path(), "rb") as pub:
-                self.pub_key = RSA.importKey(pub.read())
-        except Exception as e :
-            raise PublicKeyReadError('Error reading public key: %s - %s' %
-                    (self.get_pubkey_path(), e))
+        self.pub_key = RSA.importKey(key_pem)
 
     def get_priv_key_pem(self):
         return self.priv_key.exportKey('PEM')
@@ -120,23 +104,13 @@ class KeyECC(KeyBase):
 
         return priv_key_pem, pub_key_pem
 
-    def read_private_key(self):
+    def read_private_key(self, key_pem=None):
         """ Read the private key from files """
-        try:
-            with open(self.get_privkey_path(), "rb") as priv:
-                self.priv_key = SigningKey.from_pem(priv.read())
-        except Exception as e:
-            raise PrivateKeyReadError('Error reading private key: %s - %s' %
-                    (self.get_privkey_path(), e))
+        self.priv_key = SigningKey.from_pem(key_pem)
 
-    def read_public_key(self):
+    def read_public_key(self, key_pem=None):
         """ Read the public key from files """
-        try:
-            with open(self.get_pubkey_path(), "rb") as pub:
-                self.pub_key = VerifyingKey.from_pem(pub.read())
-        except:
-            raise PublicKeyReadError('Error reading public key: %s - %s' %
-                    (self.get_pubkey_path(), e))
+        self.pub_key = VerifyingKey.from_pem(key_pem)        
 
     def get_priv_key_pem(self):
         return self.priv_key.to_pem()
