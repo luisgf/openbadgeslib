@@ -29,15 +29,6 @@
         of the authors and should not be interpreted as representing official policies,
         either expressed or implied, of the FreeBSD Project.
 """
-"""
-        KeyPair Generator.
-
-        This program will create an RSA/EC key pair for the issuer specified in the config
-
-        Author:   Luis Gonzalez Fernandez <luisgf@luisgf.es>
-        Date:     20141201
-        Version:  0.1
-"""
 
 import argparse
 
