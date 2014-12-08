@@ -1,8 +1,9 @@
- 
+#!/usr/bin/env python3
+
 from distutils.core import setup
 
-with open('requirements.txt', 'r') as fh: 
-    dependencies = [l.strip() for l in fh] 
+with open('requirements.txt', 'r') as fh:
+    dependencies = [l.strip() for l in fh]
 
 setup(
   name = 'openbadgeslib',
@@ -32,9 +33,10 @@ setup(
   entry_points = {
           'console_scripts': [
           'openbadges-keygenerator = openbadgeslib.openbadges_keygenerator:main',
-	        'openbadges-signer = openbadgeslib.openbadges_signer:main',
-	        'openbadges-verifier = openbadgeslib.openbadges_verifier:main'
+	      'openbadges-signer = openbadgeslib.openbadges_signer:main',
+	      'openbadges-verifier = openbadgeslib.openbadges_verifier:main'
           ]
   }
 
 )
+

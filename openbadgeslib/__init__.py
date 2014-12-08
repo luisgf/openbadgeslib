@@ -17,13 +17,6 @@
         You should have received a copy of the GNU Lesser General Public
         License along with this library.
 """
-"""
-        Library for dealing with Openbadges signature and verification process.
-
-        Author:   Luis Gonzalez Fernandez <luisgf@luisgf.es>
-        Date:     20141201
-        Version:  0.1
-"""
 
 import logging
 logger = logging.getLogger(__name__)

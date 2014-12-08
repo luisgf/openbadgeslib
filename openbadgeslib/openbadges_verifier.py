@@ -27,16 +27,6 @@
         of the authors and should not be interpreted as representing official policies,
         either expressed or implied, of the FreeBSD Project.
 """
-"""
-        OpenBadges Verifier
-
-        This program will verify the signature of a SVG badge with a local key or doing a download
-        of the key specified in the assertion.
-
-        Author:   Luis Gonzalez Fernandez <luisgf@luisgf.es>
-        Date:     20141201
-        Version:  0.1
-"""
 
 import argparse
 

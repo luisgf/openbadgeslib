@@ -27,15 +27,6 @@
         of the authors and should not be interpreted as representing official policies,
         either expressed or implied, of the FreeBSD Project.
 """
-"""
-        OpenBadges Signer.
-
-        This programs will generate an output file with a badge and an assertion embedded
-
-        Author:   Luis Gonzalez Fernandez <luisgf@luisgf.es>
-        Date:     20141201
-        Version:  0.1
-"""
 
 import argparse
 
