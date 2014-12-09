@@ -114,7 +114,7 @@ class SignerBase():
 
         logger.info('"%s" SIGNED successfully for receptor "%s"' % (self._badge_name, self._receptor.decode('utf-8')))
 
-        svg_signed = svg_doc.toxml(encoding='UTF-8')  # In Upper Case!
+        svg_signed = svg_doc.toxml()
         svg_doc.unlink()
 
         return svg_signed

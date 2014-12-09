@@ -60,19 +60,23 @@ def main():
             sys.exit(-1)
 
         try:
-            _badge_file_in = conf['paths']['base_image'] + '/' + conf[args.badge]['image']
-            _badge_svg_in = conf['issuer']['publish_url'] + '/' + conf[args.badge]['image']
-            _badge_json_url = conf['issuer']['publish_url'] + '/' + args.badge + '.json'
-            _badge_verify_key_url = conf[args.badge]['verify_key']
+            sf = SignerFactory(key_type='RSA', badge_name=args.badge, \
+                 receptor=args.receptor, evidence=args.evidence, \
+                 debug_enabled=args.debug)
+            sf._badge_file_path = conf['paths']['base_image'] + '/' + conf[args.badge]['image']
+            sf._badge_image_url = conf['issuer']['publish_url'] + '/' + conf[args.badge]['image']
+            sf._badge_json_url = conf['issuer']['publish_url'] + '/' + args.badge + '.json'
+            sf._verify_key_url = conf[args.badge]['verify_key']
+
             _priv_key = conf['keys']['private']
             _pub_key = conf['keys']['public']
 
-            if not os.path.isfile(_badge_file_in):
-                print('[!] Badge file %s NOT exists.' % _badge_file_in)
+            if not os.path.isfile(sf._badge_file_path):
+                print('[!] Badge file %s NOT exists.' % sf._badge_file_path)
                 sys.exit(-1)
 
             """ Reading the SVG content """
-            with open(_badge_file_in,"rb") as f:
+            with open(sf._badge_file_path,"rb") as f:
                 _badge_image_data = f.read()
 
             """ Reading the keys """
@@ -82,14 +86,9 @@ def main():
             with open(_pub_key,"rb") as f:
                 _pub_key_pem = f.read()
 
-            sf = SignerFactory(key_type='RSA', badge_name=args.badge, \
-                 badge_file_path=_badge_file_in, badge_image_url=_badge_svg_in, \
-                 badge_json_url=_badge_json_url, receptor=args.receptor, \
-                 evidence=args.evidence, verify_key_url=_badge_verify_key_url,
-                 debug_enabled=args.debug)
             print("[!] Generating signature for badge '%s'..." % args.badge)
 
-            _badge_file_out = sf.generate_output_filename(_badge_file_in, args.output, args.receptor)
+            _badge_file_out = sf.generate_output_filename(sf._badge_file_path, args.output, args.receptor)
             _badge_assertion = sf.generate_openbadge_assertion(_priv_key_pem, _pub_key_pem)
 
             if os.path.isfile(_badge_file_out):
@@ -98,7 +97,7 @@ def main():
 
             _badge_svg_out = sf.sign_svg(_badge_image_data, _badge_assertion)
 
-            with open(_badge_file_out, "wb") as f:
+            with open(_badge_file_out, "w") as f:
                 f.write(_badge_svg_out)
             print('[+] Badge Signed succesfully at: ', _badge_file_out)
 
