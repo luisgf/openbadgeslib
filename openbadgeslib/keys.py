@@ -36,9 +36,9 @@ def KeyFactory(key_type='RSA'):
     """ Key Factory Object, Return a Given object type passing a name
         to the constructor. """
     if key_type == 'ECC':
-        return KeyECC(key_curve=NIST256p)
+        return KeyECC()
     if key_type == 'RSA':
-        return KeyRSA(key_size=2048)
+        return KeyRSA()
     else:
         raise UnknownKeyType()
 
