@@ -82,7 +82,7 @@ def main():
             with open(_pub_key,"rb") as f:
                 _pub_key_pem = f.read()
 
-            sf = SignerFactory(badge_name=args.badge, badge_image=_badge_svg_in, badge_json_url=_badge_json_url, receptor=args.receptor, evidence=args.evidence, debug_enabled=args.debug)
+            sf = SignerFactory(key_type='RSA')
             print("[!] Generating signature for badge '%s'..." % args.badge)
 
             _badge_file_out = sf.generate_output_filename(_badge_file_in, args.output, args.receptor)

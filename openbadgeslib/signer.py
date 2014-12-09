@@ -54,7 +54,7 @@ def SignerFactory(key_type='RSA'):
 class SignerBase():
     """ JWS Signer Factory """
 
-    def __init__(self, issuer, badge_name, badge_file_path, badge_image_url, badge_json_url, receptor, evidence, verif_key_url, debug_enabled):
+    def __init__(self, issuer='', badge_name='', badge_file_path=None, badge_image_url=None, badge_json_url=None, receptor='', evidence=None, verify_key_url=None, debug_enabled=False):
         self._issuer = issuer.encode('utf-8')
         self._badge_name = badge_name.encode('utf-8')
         self._badge_file_path = badge_file_path         # Path to loca file
@@ -62,7 +62,7 @@ class SignerBase():
         self._badge_json_url = badge_json_url
         self._receptor = receptor.encode('utf-8')      # Receptor of the badge
         self._evidence = evidence                      # Url to the user evidence
-        self._verif_key_url = verif_key_url
+        self._verify_key_url = verify_key_url
         self.in_debug = debug_enabled                 # Debug mode enabledl
 
     def generate_uid(self):
@@ -79,7 +79,7 @@ class SignerBase():
 
         verify_data = dict(
             type = 'signed',
-            url = self._verif_key_url
+            url = self._verify_key_url
         )
 
         payload = dict(
@@ -162,8 +162,8 @@ class SignerBase():
             log.write(entry)
 
 class SignerRSA(SignerBase):
-    def __init__(self, badge_name=None, badge_image_url=None, badge_json_url=None, receptor='', evidence=None, verif_key_url=None, debug_enabled=False):
-        super().__init__(badge_name, badge_image_url, badge_json_url, receptor, evidence, verif_key_url, debug_enabled)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.key = KeyFactory('RSA')
 
     def generate_jose_header(self):
@@ -173,8 +173,8 @@ class SignerRSA(SignerBase):
         return jose_header
 
 class SignerECC(SignerBase):
-    def __init__(self, badge_name=None, badge_image_url=None, badge_json_url=None, receptor='', evidence=None, verif_key_url=None, debug_enabled=False):
-        super().__init__(badge_name, badge_image_url, badge_json_url, receptor, evidence, verif_key_url, debug_enabled)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.key = KeyFactory('ECC')
 
     def generate_jose_header(self):
