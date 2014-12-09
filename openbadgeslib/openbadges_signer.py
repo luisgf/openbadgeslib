@@ -64,8 +64,8 @@ def main():
                  receptor=args.receptor, evidence=args.evidence, \
                  debug_enabled=args.debug)
             sf._badge_file_path = conf['paths']['base_image'] + '/' + conf[args.badge]['image']
-            sf._badge_image_url = conf['issuer']['publish_url'] + '/' + conf[args.badge]['image']
-            sf._badge_json_url = conf['issuer']['publish_url'] + '/' + args.badge + '.json'
+            sf._badge_image_url = conf['issuer']['publish_url'] + '/' + args.badge + '/' + conf[args.badge]['image']
+            sf._badge_json_url = conf['issuer']['publish_url'] + '/' + args.badge + '/badge.json'
             sf._verify_key_url = conf[args.badge]['verify_key']
 
             _priv_key = conf['keys']['private']
