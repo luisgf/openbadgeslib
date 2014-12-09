@@ -87,12 +87,17 @@ def main():
 
             _badge_file_out = sf.generate_output_filename(_badge_file_in, args.output, args.receptor)
             _badge_assertion = sf.generate_openbadge_assertion(_priv_key_pem, _pub_key_pem)
-            _badge_svg_out = sf.svg_sign(_badge_svg_in, _badge_assertion)
 
-            if _badge_svg_out:
-                print('[+] Badge Signed succesfully at: ', _badge_file_out)
-            else:
-                print('[-] An error has occurred during signing the badge.')
+            if os.path.isfile(_badge_file_out):
+                print('[!] A %s OpenBadge has already signed for %s in %s' % (args.badge, args.receptor, _badge_file_out))
+                sys.exit(-1)
+
+            _badge_svg_out = sf.sign_svg(_badge_image_data, _badge_assertion)
+            
+            with open(_badge_file_out, "wb") as f:
+                f.write(_badge_svg_out)
+            print('[+] Badge Signed succesfully at: ', _badge_file_out)
+
         except SignerExceptions:
             raise
         except LibOpenBadgesException:

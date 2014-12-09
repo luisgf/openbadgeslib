@@ -112,9 +112,9 @@ class SignerBase():
         """ Log the signing process before returning it.
                 That's prevents the existence of a signed badge without traces """
 
-        self.log(self.conf, '"%s" SIGNED successfully for receptor "%s"' % (self._badge_name, self._receptor.decode('utf-8')))
+        logger.info('"%s" SIGNED successfully for receptor "%s"' % (self._badge_name, self._receptor.decode('utf-8')))
 
-        svg_signed = svg_doc.toxml()
+        svg_signed = svg_doc.toxml(encoding='UTF-8')  # In Upper Case!
         svg_doc.unlink()
 
         return svg_signed
@@ -147,6 +147,9 @@ class SignerBase():
         signature = jws_sign(header, payload, self.key.get_priv_key())
         assertion = jws_utils.encode(header) + b'.' + jws_utils.encode(payload) + b'.' + jws_utils.to_base64(signature)
 
+        """
+        Code deactivated until config.ini refactorizacion of VerifyFactory()
+
         # Verify the assertion just after the generation.
         vf = VerifyFactory(self.conf)
         vf.load_pubkey_inline(kf.get_pub_key_pem())
@@ -156,6 +159,8 @@ class SignerBase():
         else:
             self.debug('Assertion %s' % assertion)
             return assertion
+        """
+        return assertion
 
     def log(self, profile, msg):
         with open(profile['signedlog'], "ab") as log:
