@@ -29,38 +29,47 @@
 """
 
 import argparse
+import sys, os
 
-from config import profiles  # XXX
 from .verifier import VerifyFactory
 from .errors import LibOpenBadgesException, VerifierExceptions
-
+from .confparser import ConfParser
 
 # Entry Point
 def main():
     parser = argparse.ArgumentParser(description='Badge Signer Parameters')
+    parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-i', '--filein', required=True, help='Specify the input SVG file to verify the signature')
     parser.add_argument('-r', '--receptor', required=True, help='Specify the email of the receptor of the badge')
-    parser.add_argument('-p', '--profile', required=True, help='Specify the profile to use')
     parser.add_argument('-lk', '--localkey', action="store_true", help='Verify the badge with local pubkey passed as param otherwise, the key in assertion will be used.')
     parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.1' )
     args = parser.parse_args()
 
     if args.filein and args.receptor:
-         try:
-            config = profiles[args.profile]
+        cf = ConfParser(args.config)
+        conf = cf.read_conf()
 
-            sf = VerifyFactory(config)
+        if not conf:
+            print('[!] The config file %s NOT exists or is empty' % args.config)
+            sys.exit(-1)
+
+        try:
+            sf = VerifyFactory()
             receptor = args.receptor
 
-            if sf.is_svg_signature_valid(args.filein, receptor, local_verification=args.localkey):
+            if not os.path.isfile(args.filein):
+                print('[!] SVG file %s NOT exists.' % args.filein)
+                sys.exit(-1)
+
+            with open(args.filein, "rb") as f:
+                svg_data = f.read()
+
+            if sf.is_svg_signature_valid(svg_data, receptor, local_verification=args.localkey):
                 print('[+] The Badge Signature is Correct for the user:', args.receptor)
             else:
                 print('[!] Badge signature is incorrect, corrupted or tampered for the user:', args.receptor)
-
-         except KeyError:
-            print('Profile %s not exist in config.py' % args.profile)
-         except VerifierExceptions:
-             raise
+        except VerifierExceptions:
+            raise
     else:
         parser.print_help()
 

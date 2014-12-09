@@ -77,11 +77,11 @@ class VerifyBase():
         import json
 
         # Check if the JWS assertion is valid
-        try:
-            self.show_key_info(self.key)
-            self.verify_jws_signature(assertion, self.key)
-        except:
-            return False
+        #try:
+        self.show_key_info(self.key)
+        self.verify_jws_signature(assertion, self.key)
+        #except:
+        #    return False
 
         # Here the assertion is signed against our local key. Receptor check...
 
@@ -140,6 +140,8 @@ class VerifyBase():
             print('[!] And error has occurred during PubKey download. HTTP Error: ', e.code, e.reason)
          except URLError as e:
             print('[!] And error has occurred during PubKey download. Reason: ', e.reason)
+         except Exception as e:
+             print(e)
 
          print('[+] This is the assertion content:')
          print(json.dumps(payload, sort_keys=True, indent=4))
@@ -190,39 +192,25 @@ class VerifyBase():
 
             # Extract the assertion
             assertion = svg_doc.getElementsByTagName("openbadges:assertion")
-            return assertion[0].attributes['verify'].nodeValue.encode('utf-8')
+            signature = assertion[0].attributes['verify'].nodeValue.encode('utf-8')
 
         except:
             raise ErrorParsingFile('Error Parsing SVG file: ')
         finally:
             svg_doc.unlink()
+            return signature
 
-    def is_svg_signature_valid(self, file_in, email, inline_data=False, local_verification=False):
+    def is_svg_signature_valid(self, svg_data, email='', local_verification=False):
         """ This function return True/False if the signature in the
              file is correct or no """
 
-        if not inline_data:
-            if not os.path.exists(file_in):
-                raise errors.FileToSignNotExists()
-            else:
-                with open(file_in, "rb") as f:
-                    svg_data = f.read()
+        assertion = self.extract_svg_signature(svg_data)
+        receptor = email.encode('utf-8')
+
+        if local_verification:
+            return self.verify_signature_inlocal(assertion, receptor)
         else:
-            svg_data = file_in
-
-        try:
-            assertion = self.extract_svg_signature(svg_data)
-
-            receptor = email.encode('utf-8')
-
-            # If pub_key exist, the verification use the local key
-            if local_verification:
-                return self.verify_signature_inlocal(assertion, receptor)
-            else:
-                return self.verify_signature_inverse(assertion, receptor)
-
-        except ErrorParsingFile:
-           print('[!] SVG format incorrect or this badge has not assertion signature embeded')
+            return self.verify_signature_inverse(assertion, receptor)
 
     def get_crypto_object(self, pem_data):
         """ Crypto Object can be a create with a key that

@@ -41,14 +41,14 @@ from .verifier import VerifyFactory
 from .jws import utils as jws_utils
 from .jws import sign as jws_sign
 
-def SignerFactory(key_type='RSA'):
+def SignerFactory(key_type='RSA', *args, **kwargs):
     """ Signer Factory Object, Return a Given object type passing a name
         to the constructor. """
 
     if key_type == 'ECC':
-        return SignerECC()
+        return SignerECC(*args, **kwargs)
     if key_type == 'RSA':
-        return SignerRSA()
+        return SignerRSA(*args, **kwargs)
     else:
         raise UnknownKeyType()
 
@@ -58,11 +58,11 @@ class SignerBase():
     def __init__(self, issuer='', badge_name='', badge_file_path=None, badge_image_url=None, badge_json_url=None, receptor='', evidence=None, verify_key_url=None, debug_enabled=False):
         self._issuer = issuer.encode('utf-8')
         self._badge_name = badge_name.encode('utf-8')
-        self._badge_file_path = badge_file_path         # Path to loca file
+        self._badge_file_path = badge_file_path       # Path to local file
         self._badge_image_url = badge_image_url
         self._badge_json_url = badge_json_url
-        self._receptor = receptor.encode('utf-8')      # Receptor of the badge
-        self._evidence = evidence                      # Url to the user evidence
+        self._receptor = receptor.encode('utf-8')     # Receptor of the badge
+        self._evidence = evidence                     # Url to evidence
         self._verify_key_url = verify_key_url
         self.in_debug = debug_enabled                 # Debug mode enabledl
 
@@ -95,7 +95,7 @@ class SignerBase():
         if self._evidence:
             payload['evidence'] = self._evidence
 
-        self.debug('JWS Payload %s ' % json.dumps(payload))
+        logger.debug('JWS Payload %s ' % json.dumps(payload))
 
         return payload
 
@@ -118,12 +118,6 @@ class SignerBase():
         svg_doc.unlink()
 
         return svg_signed
-
-    def debug(self, msg):
-        """ Show debug messages if debug mode is enabled """
-
-        if self.in_debug:
-            print('DEBUG:', msg)
 
     def generate_output_filename(self, file_in, output_dir, receptor):
         """ Generate an output filename based on the source
@@ -165,7 +159,7 @@ class SignerRSA(SignerBase):
     def generate_jose_header(self):
         jose_header = { 'alg': 'RS256' }
 
-        self.debug('JOSE HEADER %s ' % json.dumps(jose_header))
+        logger.debug('JOSE HEADER %s ' % json.dumps(jose_header))
         return jose_header
 
 class SignerECC(SignerBase):
@@ -176,7 +170,7 @@ class SignerECC(SignerBase):
     def generate_jose_header(self):
         jose_header = { 'alg': 'ES256' }
 
-        self.debug('JOSE HEADER %s ' % json.dumps(jose_header))
+        logger.debug('JOSE HEADER %s ' % json.dumps(jose_header))
         return jose_header
 
 
