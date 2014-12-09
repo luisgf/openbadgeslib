@@ -40,17 +40,16 @@ from .verifier import VerifyFactory
 from .jws import utils as jws_utils
 from .jws import sign as jws_sign
 
-class SignerFactory():
+def SignerFactory(key_type='RSA', badgename=None, receptor=None, evidence=None, debug_enabled=None):
     """ Signer Factory Object, Return a Given object type passing a name
         to the constructor. """
 
-    def __new__(cls, config, badgename, receptor, evidence=None, debug_enabled=None):
-        if config['keys']['crypto'] == 'ECC':
-            return SignerECC(config, badgename, receptor, evidence, debug_enabled)
-        if config['keys']['crypto'] == 'RSA':
-            return SignerRSA(config, badgename, receptor, evidence, debug_enabled)
-        else:
-            raise UnknownKeyType()
+    if key_type == 'ECC':
+        return SignerECC(badgename, receptor, evidence, debug_enabled)
+    if key_type == 'RSA':
+        return SignerRSA(badgename, receptor, evidence, debug_enabled)
+    else:
+        raise UnknownKeyType()
 
 class SignerBase():
     """ JWS Signer Factory """
