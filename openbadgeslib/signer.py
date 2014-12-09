@@ -54,18 +54,10 @@ def SignerFactory(key_type='RSA'):
 class SignerBase():
     """ JWS Signer Factory """
 
-    def __init__(self, badgename, receptor, evidence=None, debug_enabled=False):
+    def __init__(self, badgename, receptor, evidence, debug_enabled):
         self.receptor = receptor.encode('utf-8')      # Receptor of the badge
-        self.in_debug = debug_enabled                 # Debug mode enabled
-        self.badge = None
+        self.in_debug = debug_enabled                 # Debug mode enabledl
         self.evidence = evidence                      # Url to the user evidence
-
-        for badge in config['badges']:
-            if badge['name'] == badgename:
-                self.badge = badge
-
-        if not self.badge:
-            raise BadgeNotFound()
 
     def generate_uid(self):
         """ Generate a UID for a signed badge """
@@ -200,7 +192,7 @@ class SignerBase():
             log.write(entry)
 
 class SignerRSA(SignerBase):
-    def __init__(self, badgename=None, receptor=None, evidence=None, debug_enabled=False):
+    def __init__(self, badgename=None, receptor='', evidence=None, debug_enabled=False):
          super().__init__(badgename, receptor, evidence, debug_enabled)
 
     def generate_jose_header(self):
@@ -212,7 +204,7 @@ class SignerRSA(SignerBase):
         return jose_header
 
 class SignerECC(SignerBase):
-    def __init__(self, badgename=None, receptor=None, evidence=None, debug_enabled=False):
+    def __init__(self, badgename=None, receptor='', evidence=None, debug_enabled=False):
          super().__init__(badgename, receptor, evidence, debug_enabled)
 
     def generate_jose_header(self):
