@@ -46,7 +46,7 @@ class KeyBase():
     def __init__(self):
         self.priv_key = None              # crypto Object
         self.pub_key = None               # crypto Object
-   
+
     def get_priv_key(self):
         """ Return the crypto object """
         return self.priv_key
@@ -56,7 +56,7 @@ class KeyBase():
         return self.pub_key
 
 class KeyRSA(KeyBase):
-    def __init__(self, key_size):
+    def __init__(self, key_size=2048):
         self._key_size = key_size
         super().__init__()
 
@@ -68,7 +68,7 @@ class KeyRSA(KeyBase):
         priv_key_pem = self.priv_key.exportKey('PEM')
         self.pub_key = self.priv_key.publickey()
         pub_key_pem = self.pub_key.exportKey('PEM')
-        
+
         return priv_key_pem, pub_key_pem
 
     def read_private_key(self, key_pem=None):
@@ -88,7 +88,7 @@ class KeyRSA(KeyBase):
 class KeyECC(KeyBase):
     """ Elliptic Curve Cryptography Factory class """
 
-    def __init__(self, key_curve):
+    def __init__(self, key_curve=NIST256p):
         self._key_curve = key_curve
         super().__init__()
 
@@ -111,7 +111,7 @@ class KeyECC(KeyBase):
 
     def read_public_key(self, key_pem=None):
         """ Read the public key from files """
-        self.pub_key = VerifyingKey.from_pem(key_pem)        
+        self.pub_key = VerifyingKey.from_pem(key_pem)
 
     def get_priv_key_pem(self):
         return self.priv_key.to_pem()
