@@ -28,7 +28,7 @@
     POSSIBILITY OF SUCH DAMAGE.
 """
 
-import argparse
+import argparse, os.path
 
 from .keys import KeyFactory
 from .errors import KeyGenExceptions
@@ -49,6 +49,10 @@ def main():
         conf = parser.read_conf()
 
         if conf:
+            for i in (conf['keys']['private'], conf['keys']['public']) :
+                if os.path.exists(i) :
+                    raise FileExistsError(i)
+
             try:
                 print("[!] Generating key pair for issuer '%s'" % conf['issuer']['name'])
 
