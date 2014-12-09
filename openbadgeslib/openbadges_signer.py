@@ -44,7 +44,7 @@ def main():
     parser.add_argument('-o', '--output', required=True, help='Specify the output directory to save the badge.')
     parser.add_argument('-e', '--evidence', help='Set an url to the user evidence')
     parser.add_argument('-d', '--debug', action="store_true", help='Show debug messages in runtime.')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.1' )
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.2' )
     args = parser.parse_args()
 
     if args.badge:
