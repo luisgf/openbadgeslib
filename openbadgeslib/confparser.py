@@ -27,13 +27,13 @@ from configparser import ConfigParser, ExtendedInterpolation, Error, NoOptionErr
 
 class ConfParser():
     def __init__(self, config_file='config.ini'):
-        self.config_file = config_file 
+        self.config_file = config_file
 
     def read_conf(self):
         if not os.path.isfile(self.config_file):
             return None
-        
-        self.parser = ConfigParser(interpolation=ExtendedInterpolation())        
+
+        self.parser = ConfigParser(interpolation=ExtendedInterpolation())
         self.parser.read(self.config_file)
         return self.parser
 

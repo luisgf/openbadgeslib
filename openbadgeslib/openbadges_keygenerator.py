@@ -48,21 +48,21 @@ def main():
         parser.print_help()
     else:
         parser = ConfParser(args.config)
-        conf = parser.read_conf()        
-        
+        conf = parser.read_conf()
+
         if conf:
-            try:            
+            try:
                 print("[!] Generating key pair for issuer '%s'" % conf['issuer']['name'])
 
                 kf = KeyFactory()
                 priv_key_pem, pub_key_pem = kf.generate_keypair()
-                    
+
                 with open(conf['keys']['private'],'wb') as f:
                     f.write(priv_key_pem)
-                    
+
                 with open(conf['keys']['public'],'wb') as f:
                     f.write(pub_key_pem)
-                    
+
                 print('[+] Private key saved at: %s' % conf['keys']['private'])
                 print('[+] Public key saved at: %s' % conf['keys']['public'])
 
