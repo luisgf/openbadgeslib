@@ -1,3 +1,5 @@
+# https://python-packaging-user-guide.readthedocs.org/en/latest/distributing.html
+
 recursive-include openbadgeslib *
 global-exclude __pycache__/*
-include *.txt config.ini.example README.md
+include *.txt config.ini.example README.md MANIFEST.in
