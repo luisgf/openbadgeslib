@@ -29,6 +29,7 @@ import sys
 import time
 import json
 
+from datetime import datetime
 from xml.dom.minidom import parse, parseString
 
 from .errors import UnknownKeyType, FileToSignNotExists, BadgeSignedFileExists, ErrorSigningFile, PrivateKeyReadError
@@ -66,7 +67,7 @@ class SignerBase():
         self.in_debug = debug_enabled                 # Debug mode enabledl
 
     def generate_uid(self):
-        return sha1_string(self._issuer + self._badge_name + self._receptor + int(time.time()))
+        return sha1_string(self._issuer + self._badge_name + self._receptor + datetime.now().isoformat().encode('utf-8'))
 
     def generate_jws_payload(self):
 
