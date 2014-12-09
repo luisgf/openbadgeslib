@@ -256,15 +256,17 @@ class VerifyBase():
         if self.conf['keys']['crypto'] == 'ECC':
             print("""DISCLAIMER!
 
-            You are running the program with support for Elliptic Curve cryptography.
+            You are running the program with support for Elliptic
+            Curve cryptography.
 
-            The implementation of ECC in JWS Draft is not clear about the signature/verification
-            process and may lead to problems for you and others when verifying your badges.
+            The implementation of ECC in JWS Draft is not clear about the
+            signature/verification process and may lead to problems for you
+            and others when verifying your badges.
 
             Use at your own risk!
 
-            Expiration and Revocations status of badges are not verified by this library version.
-
+            Expiration and Revocations status of badges are not verified by
+            this library version.
             """)
 
 """ RSA Verify Factory """
