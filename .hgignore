@@ -4,6 +4,6 @@ syntax: glob
 *.py3
 *.egg
 build/*
-private/*
-public/*
+dist/*
 __pycache__
+MANIFEST
