@@ -40,22 +40,21 @@ from .verifier import VerifyFactory
 from .jws import utils as jws_utils
 from .jws import sign as jws_sign
 
-def SignerFactory(key_type='RSA', badgename=None, receptor=None, evidence=None, debug_enabled=None):
+def SignerFactory(key_type='RSA'):
     """ Signer Factory Object, Return a Given object type passing a name
         to the constructor. """
 
     if key_type == 'ECC':
-        return SignerECC(badgename, receptor, evidence, debug_enabled)
+        return SignerECC()
     if key_type == 'RSA':
-        return SignerRSA(badgename, receptor, evidence, debug_enabled)
+        return SignerRSA()
     else:
         raise UnknownKeyType()
 
 class SignerBase():
     """ JWS Signer Factory """
 
-    def __init__(self, config, badgename, receptor, evidence=None, debug_enabled=False):
-        self.conf = config                            # Access to config.py values
+    def __init__(self, badgename, receptor, evidence=None, debug_enabled=False):
         self.receptor = receptor.encode('utf-8')      # Receptor of the badge
         self.in_debug = debug_enabled                 # Debug mode enabled
         self.badge = None
@@ -201,8 +200,8 @@ class SignerBase():
             log.write(entry)
 
 class SignerRSA(SignerBase):
-    def __init__(self, config, badgename, receptor, evidence, debug_enabled):
-         super().__init__(config, badgename, receptor, evidence, debug_enabled)
+    def __init__(self, badgename=None, receptor=None, evidence=None, debug_enabled=False):
+         super().__init__(badgename, receptor, evidence, debug_enabled)
 
     def generate_jose_header(self):
         """ Generate JOSE Header """
@@ -213,8 +212,8 @@ class SignerRSA(SignerBase):
         return jose_header
 
 class SignerECC(SignerBase):
-    def __init__(self, config, badgename, receptor, evidence, debug_enabled):
-         super().__init__(config, badgename, receptor, evidence, debug_enabled)
+    def __init__(self, badgename=None, receptor=None, evidence=None, debug_enabled=False):
+         super().__init__(badgename, receptor, evidence, debug_enabled)
 
     def generate_jose_header(self):
         """ Generate JOSE Header """
