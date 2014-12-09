@@ -16,7 +16,7 @@ class check_signer_factory(unittest.TestCase) :
 
     def test_ec(self) :
         sign = signer.SignerFactory('ECC')
-        self.assertIsInstance(sign, signer.signerECC)
+        self.assertIsInstance(sign, signer.SignerECC)
 
     def test_unknown(self) :
         self.assertRaises(UnknownKeyType, signer.SignerFactory, 'XXX')

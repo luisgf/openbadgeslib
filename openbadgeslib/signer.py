@@ -31,7 +31,7 @@ import json
 
 from xml.dom.minidom import parse, parseString
 
-from .errors import UnknownKeyType, BadgeNotFound, FileToSignNotExists, BadgeSignedFileExists, ErrorSigningFile, PrivateKeyReadError
+from .errors import UnknownKeyType, FileToSignNotExists, BadgeSignedFileExists, ErrorSigningFile, PrivateKeyReadError
 
 from .util import sha1_string, sha256_string
 from .keys import KeyFactory
@@ -54,10 +54,12 @@ def SignerFactory(key_type='RSA'):
 class SignerBase():
     """ JWS Signer Factory """
 
-    def __init__(self, badgename, receptor, evidence, debug_enabled):
+    def __init__(self, issuer, badgename, receptor, evidence, debug_enabled):
+        self.issuer = issuer.encode('utf-8')
+        self.badgename = badgename.encode('utf-8')
         self.receptor = receptor.encode('utf-8')      # Receptor of the badge
-        self.in_debug = debug_enabled                 # Debug mode enabledl
         self.evidence = evidence                      # Url to the user evidence
+        self.in_debug = debug_enabled                 # Debug mode enabledl
 
     def generate_uid(self):
         """ Generate a UID for a signed badge """

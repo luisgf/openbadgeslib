@@ -60,9 +60,6 @@ class UnknownKeyType(KeyGenExceptions):
 
 """ Signer Exceptions """
 
-class BadgeNotFound(SignerExceptions):
-    pass
-
 class FileToSignNotExists(SignerExceptions):
     pass
 
