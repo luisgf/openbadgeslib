@@ -106,67 +106,61 @@ class VerifyBase():
             return False
 
     def verify_signature_inverse(self, assertion, receptor):
-         """ Check the assertion signature With the Key specified in JWS Paload """
-         import json
-         # The assertion MUST have a string like head.payload.signature
-         try:
+        """ Check the assertion against the Key specified in JWS Paload """
+        import json
+        # The assertion MUST have a string like head.payload.signature
+        try:
             head_encoded, payload_encoded, signature_encoded = assertion.split(b'.')
-         except:
-             raise AssertionFormatIncorrect()
+        except:
+            raise AssertionFormatIncorrect()
 
-         # Try to decode the payload
-         try:
-             payload = jws_utils.decode(payload_encoded)
-         except:
-             raise AssertionFormatIncorrect('Payload deserialization error')
+        # Try to decode the payload
+        try:
+            payload = jws_utils.decode(payload_encoded)
+        except:
+            raise AssertionFormatIncorrect('Payload deserialization error')
 
-         """ Parse URL to detect that has a correct format and a secure source.
+        """ Parse URL to detect that has a correct format and a secure source.
              Warning User otherwise """
 
-         u = urlparse(payload['verify']['url'])
+        u = urlparse(payload['verify']['url'])
 
-         if u.scheme != 'https':
-             print('[!] Warning! The public key is in a server that\'s lacks TLS support.', payload['verify']['url'])
-         else:
-             print('[+] The public key is in a server with TLS support. Good!', payload['verify']['url'])
+        if u.scheme != 'https':
+            print('[!] Warning! The public key is in a server that\'s lacks TLS support.', payload['verify']['url'])
+        else:
+            print('[+] The public key is in a server with TLS support. Good!', payload['verify']['url'])
 
-         if u.hostname == b'':
-             raise AssertionFormatIncorrect('The URL thats point to public key not exists in this assertion')
+        if u.hostname == b'':
+            raise AssertionFormatIncorrect('The URL thats point to public key not exists in this assertion')
 
-         # OK, is time to download the pubkey
-         try:
-            pub_key_pem = self.download_pubkey(payload['verify']['url'])
-         except HTTPError as e:
-            print('[!] And error has occurred during PubKey download. HTTP Error: ', e.code, e.reason)
-         except URLError as e:
-            print('[!] And error has occurred during PubKey download. Reason: ', e.reason)
-         except Exception as e:
-             print(e)
+        # OK, is time to download the pubkey
+        pub_key_pem = self.download_pubkey(payload['verify']['url'])
 
-         print('[+] This is the assertion content:')
-         print(json.dumps(payload, sort_keys=True, indent=4))
 
-         # Ok, is time to verify the assertion againts the key downloaded.
-         vk_external = self.get_crypto_object(pub_key_pem)
+        print('[+] This is the assertion content:')
+        print(json.dumps(payload, sort_keys=True, indent=4))
 
-         # Show key info of the downloaded key
-         self.show_key_info(vk_external)
+        # Ok, is time to verify the assertion againts the key downloaded.
+        vk_external = self.get_crypto_object(pub_key_pem)
 
-         try:
+        # Show key info of the downloaded key
+        self.show_key_info(vk_external)
+
+        try:
             signature_valid = self.verify_jws_signature(assertion, vk_external)
-         except:
+        except:
              return False
 
-         # Ok, the signature is valid, now i check if the badge is emitted for this receptor
-         try:
+        # Ok, the signature is valid, now i check if the badge is emitted for this receptor
+        try:
             email_hashed = (b'sha256$' + sha256_string(receptor)).decode('utf-8')
             if email_hashed == payload['recipient']['identity']:
                 # OK, the signature is valid and the badge is emitted for this user
                 return True
             else:
                 return False
-         except:
-             raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
+        except:
+            raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
 
     def download_pubkey(self, url):
         """ This function return the Key in pem format from server """
@@ -207,10 +201,15 @@ class VerifyBase():
         assertion = self.extract_svg_signature(svg_data)
         receptor = email.encode('utf-8')
 
-        if local_verification:
-            return self.verify_signature_inlocal(assertion, receptor)
-        else:
-            return self.verify_signature_inverse(assertion, receptor)
+        try:
+            if local_verification:
+                return self.verify_signature_inlocal(assertion, receptor)
+            else:
+                return self.verify_signature_inverse(assertion, receptor)
+        except HTTPError as e:
+            print('[!] And error has occurred during PubKey download. HTTP Error: ', e.code, e.reason)
+        except URLError as e:
+            print('[!] And error has occurred during PubKey download. Reason: ', e.reason)
 
     def get_crypto_object(self, pem_data):
         """ Crypto Object can be a create with a key that
