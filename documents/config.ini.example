@@ -40,8 +40,8 @@ name        = Badge 1
 description = Given to any user that install this library
 image 		= image_badge1.svg
 criteria 	= https://www.domain.com/criteria.html
-verify_key = 
-;alignement  = 
+verify_key  = http://www.domain.com/issuer/verify_badge1.key
+;alignement  =
 ;tags 		=
 
 [badge_2]
@@ -49,6 +49,6 @@ name        = Badge 2
 description = Given to any user that install this library
 image 		= image_badge2.png
 criteria 	= https://www.domain.com/criteria.html
-verify_key = 
-;alignement  = 
-;tags 		= 
+verify_key  = http://www.domain.com/issuer/verify_badge2.key
+;alignement  =
+;tags 		=
