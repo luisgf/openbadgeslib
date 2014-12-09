@@ -147,20 +147,15 @@ class SignerBase():
         signature = jws_sign(header, payload, self.key.get_priv_key())
         assertion = jws_utils.encode(header) + b'.' + jws_utils.encode(payload) + b'.' + jws_utils.to_base64(signature)
 
-        """
-        Code deactivated until config.ini refactorizacion of VerifyFactory()
-
         # Verify the assertion just after the generation.
-        vf = VerifyFactory(self.conf)
-        vf.load_pubkey_inline(kf.get_pub_key_pem())
+        vf = VerifyFactory()
+        vf.load_pubkey_inline(self.key.get_pub_key_pem())
 
         if not vf.verify_jws_signature(assertion, self.key.get_pub_key()):
             return None
         else:
-            self.debug('Assertion %s' % assertion)
+            logger.debug('Assertion %s' % assertion)
             return assertion
-        """
-        return assertion
 
 class SignerRSA(SignerBase):
     def __init__(self, *args, **kwargs):

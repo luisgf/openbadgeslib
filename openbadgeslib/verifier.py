@@ -249,7 +249,7 @@ class VerifyRSA(VerifyBase):
         """ Create a crypto object from a pem string """
         return RSA.importKey(pub_key_pem)
 
-     def show_key_info(self, key):
+    def show_key_info(self, key):
          print('[+] Using an RSA Key of %d bits size' % key.size())
 
     def show_disclaimer(self):
