@@ -71,7 +71,7 @@ def main():
             except KeyGenExceptions:
                 raise
         else:
-            print('[!] El fichero de configuracion %s NO existe o está vacio' % args.config)
+            print('[!] Config file %s NOT exists or is empty' % args.config)
 
 if __name__ == '__main__':
     main()
