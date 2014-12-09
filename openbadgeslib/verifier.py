@@ -38,24 +38,24 @@ from urllib.error import HTTPError, URLError
 from ssl import SSLError
 
 # Local imports
-from .errors import UnknownKeyType, AssertionFormatIncorrect, NotIdentityInAssertion, ErrorParsingFile, PublicKeyReadError
+from .errors import UnknownKeyType, AssertionFormatIncorrect, \
+            NotIdentityInAssertion, ErrorParsingFile, PublicKeyReadError
 
 from .jws import utils as jws_utils
 from .jws import verify_block as jws_verify_block
 
 from .util import sha256_string
 
-class VerifyFactory():
+def VerifyFactory(key_type='RSA'):
     """ Verify Factory Object, Return a Given object type passing a name
         to the constructor. """
 
-    def __new__(cls, conf):
-        if conf['keys']['crypto'] == 'ECC':
-            return VerifyECC(conf)
-        if conf['keys']['crypto'] == 'RSA':
-            return VerifyRSA(conf)
-        else:
-            raise UnknownKeyType()
+    if key_type == 'ECC':
+       return VerifyECC(conf)
+    if key_type == 'RSA':
+       return VerifyRSA(conf)
+    else:
+       raise UnknownKeyType()
 
 """ Signature Verification Factory """
 class VerifyBase():
