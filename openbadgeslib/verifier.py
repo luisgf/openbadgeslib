@@ -83,13 +83,8 @@ class VerifyBase():
         #except:
         #    return False
 
-        # Here the assertion is signed against our local key. Receptor check...
-
-        # The assertion MUST have a string like head.payload.signature
-        try:
-            head_encoded, payload_encoded, signature_encoded = assertion.split(b'.')
-        except:
-            raise AssertionFormatIncorrect()
+        # The assertion is signed with our local key. Receptor check...
+        head_encoded, payload_encoded, signature_encoded = assertion.split(b'.')
 
         # Try to decode the payload
         try:
@@ -100,7 +95,6 @@ class VerifyBase():
         # Receptor verification
         email_hashed = (b'sha256$' + sha256_string(receptor)).decode('utf-8')
         if email_hashed == payload['recipient']['identity']:
-            # OK, the badge has been emitted for this user
             return True
         else:
             return False
@@ -128,14 +122,13 @@ class VerifyBase():
         if u.scheme != 'https':
             print('[!] Warning! The public key is in a server that\'s lacks TLS support.', payload['verify']['url'])
         else:
-            print('[+] The public key is in a server with TLS support. Good!', payload['verify']['url'])
+            print('[+] The public key appears to be in a server with TLS support. Good!', payload['verify']['url'])
 
         if u.hostname == b'':
             raise AssertionFormatIncorrect('The URL thats point to public key not exists in this assertion')
 
         # OK, is time to download the pubkey
         pub_key_pem = self.download_pubkey(payload['verify']['url'])
-
 
         print('[+] This is the assertion content:')
         print(json.dumps(payload, sort_keys=True, indent=4))
@@ -194,7 +187,7 @@ class VerifyBase():
             svg_doc.unlink()
             return signature
 
-    def is_svg_signature_valid(self, svg_data, email='', local_verification=False):
+    def is_svg_signature_valid(self, svg_data, email='', local_key=None):
         """ This function return True/False if the signature in the
              file is correct or no """
 
@@ -202,7 +195,8 @@ class VerifyBase():
         receptor = email.encode('utf-8')
 
         try:
-            if local_verification:
+            if local_key:
+                self.key = self.load_pubkey_inline(local_key)
                 return self.verify_signature_inlocal(assertion, receptor)
             else:
                 return self.verify_signature_inverse(assertion, receptor)

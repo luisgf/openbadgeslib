@@ -64,7 +64,13 @@ def main():
             with open(args.filein, "rb") as f:
                 svg_data = f.read()
 
-            if sf.is_svg_signature_valid(svg_data, receptor, local_verification=args.localkey):
+            if args.localkey:
+                with open(conf['keys']['public'],"rb") as f:
+                    local_key_pem = f.read()
+            else:
+                local_key_pem = None
+
+            if sf.is_svg_signature_valid(svg_data, receptor, local_key=local_key_pem):
                 print('[+] The Badge Signature is Correct for the user:', args.receptor)
             else:
                 print('[!] Badge signature is incorrect, corrupted or tampered for the user:', args.receptor)
