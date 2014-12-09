@@ -162,11 +162,6 @@ class SignerBase():
         """
         return assertion
 
-    def log(self, profile, msg):
-        with open(profile['signedlog'], "ab") as log:
-            entry = time.strftime("%d/%m/%Y %H:%M:%S").encode('utf-8') + b' ' + msg.encode('utf-8') + b'\n'
-            log.write(entry)
-
 class SignerRSA(SignerBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
