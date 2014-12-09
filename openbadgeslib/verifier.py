@@ -51,35 +51,35 @@ def VerifyFactory(key_type='RSA'):
         to the constructor. """
 
     if key_type == 'ECC':
-       return VerifyECC(conf)
+       return VerifyECC()
     if key_type == 'RSA':
-       return VerifyRSA(conf)
+       return VerifyRSA()
     else:
        raise UnknownKeyType()
 
 """ Signature Verification Factory """
 class VerifyBase():
-    """ JWS Signature Verifier Factory """
-
-    def __init__(self, conf):
-        self.conf = conf                              # Access to config.py values
-        self.vk = None                                # Crypto Object
+    def __init__(self, receptor=''):
+        self.key = None                                         # Crypto Object
+        self._receptor = receptor.encode('utf-8')
 
     def verify_jws_signature(self, assertion, verif_key):
-        """ Verify the JWS Signature, Return True if the signature block is Good """
+        """ Verify the JWS Signature, Return True if the signature
+            block is Good """
 
         self.show_disclaimer()
 
         return jws_verify_block(assertion, verif_key)
 
     def verify_signature_inlocal(self, assertion, receptor):
-        """ Verify that a signature is valid and has emitted for a given receptor """
+        """ Verify that a signature is valid and has emitted for a
+            given receptor """
         import json
 
         # Check if the JWS assertion is valid
         try:
-            self.show_key_info(self.vk)
-            self.verify_jws_signature(assertion, self.vk)
+            self.show_key_info(self.key)
+            self.verify_jws_signature(assertion, self.key)
         except:
             return False
 
@@ -240,63 +240,43 @@ class VerifyBase():
 
         return None
 
-    def show_key_info(self, key):
-        """ Guess the key type and show the appropiate info """
-        if key.__class__.__name__ == '_RSAobj':
-            # RSA Key.
-            print('[+] Using an RSA Key of %d bits size' % key.size())
-        elif key.__class__.__name__ == 'SigningKey' or key.__class__.__name__ == 'VerifyingKey':
-            # ECC key
-            print('[+] Using an ECC Key with a curve type %s' % key.curve.name)
-        else:
-            print('[!] Unknown key type! %s' % key.__class__.__name__)
-
-
-    def show_disclaimer(self):
-        if self.conf['keys']['crypto'] == 'ECC':
-            print("""DISCLAIMER!
-
-            You are running the program with support for Elliptic
-            Curve cryptography.
-
-            The implementation of ECC in JWS Draft is not clear about the
-            signature/verification process and may lead to problems for you
-            and others when verifying your badges.
-
-            Use at your own risk!
-
-            Expiration and Revocations status of badges are not verified by
-            this library version.
-            """)
-
 """ RSA Verify Factory """
 class VerifyRSA(VerifyBase):
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-        # The pubkey is in a file
-        try:
-            with open(self.conf['keys']['public'], "rb") as key_file:
-                self.vk = RSA.importKey(key_file.read())
-        except:
-            raise PublicKeyReadError()
-
-    def load_pubkey_inline(self, pem_data):
+    def load_pubkey_inline(self, pub_key_pem):
         """ Create a crypto object from a pem string """
-        return RSA.importKey(pem_data)
+        return RSA.importKey(pub_key_pem)
+
+     def show_key_info(self, key):
+         print('[+] Using an RSA Key of %d bits size' % key.size())
+
+    def show_disclaimer(self):
+        pass
 
 class VerifyECC(VerifyBase):
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-        # The pubkey is in a file
-        try:
-            with open(self.conf['keys']['public'], "rb") as key_file:
-                self.vk = VerifyingKey.from_pem(key_file.read())
-        except:
-            raise PublicKeyReadError()
-
-    def load_pubkey_inline(self, pem_data):
+    def load_pubkey_inline(self, pub_key_pem):
         """ Create a crypto object from a pem string """
-        return VerifyingKey.from_pem(pem_data)
+        return VerifyingKey.from_pem(pub_key_pem)
 
+    def show_key_info(self, key):
+        print('[+] Using an ECC Key with a curve type %s' % key.curve.name)
+
+    def show_disclaimer(self):
+        print("""DISCLAIMER!
+
+                You are running the program with support for Elliptic
+                Curve cryptography.
+
+                The implementation of ECC in JWS Draft is not clear about the
+                signature/verification process and may lead to problems for
+                you and others when verifying your badges.
+
+                Use at your own risk!
+
+                Expiration and Revocations status of badges are not verified
+                by this library version. """)
