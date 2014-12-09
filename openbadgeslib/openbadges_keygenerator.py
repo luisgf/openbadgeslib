@@ -45,8 +45,8 @@ def main():
     if not args.genkey:
         parser.print_help()
     else:
-        parser = ConfParser(args.config)
-        conf = parser.read_conf()
+        cparser = ConfParser(args.config)
+        conf = cparser.read_conf()
 
         if conf:
             for i in (conf['keys']['private'], conf['keys']['public']) :
