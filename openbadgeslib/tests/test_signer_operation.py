@@ -69,17 +69,5 @@ class check_signer_methods(unittest.TestCase):
             pub_key = f.read()
         
         assertion = self.signer.generate_openbadge_assertion(priv_key, pub_key)
-        self.assertEqual(assertion, b'eyJhbGciOiAiUlMyNTYifQ.eyJpc3N1ZWRPbiI6ID' +
-        'E0MTgyMTEzOTYsICJ1aWQiOiAiZGFmMDFhODM3ZmQ2YzdiY2E1M2UyN2UxM2E0MDZlNzhi' +
-        'YTAyMTJhMyIsICJ2ZXJpZnkiOiB7InVybCI6IG51bGwsICJ0eXBlIjogInNpZ25lZCJ9LC' +
-        'AicmVjaXBpZW50IjogeyJoYXNoZWQiOiAidHJ1ZSIsICJ0eXBlIjogImVtYWlsIiwgImlk' +
-        'ZW50aXR5IjogInNoYTI1NiRlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YW' +
-        'U0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0sICJiYWRnZSI6IG51bGwsICJpbWFn' +
-        'ZSI6IG51bGx9.O6jzaCbRxRLXdsiLHLV7gkOKl-Q9BU2ZJozhsfcXG9qaPIykb4zMhteYb' +
-        'uKZqozmW_Bm0ub10SLx0J_xxNSi79A28RTzjc4q5nQFKriE6DvnbcdfhRrHLbcWLHhpjwj' +
-        '2Fa5ir2Sc7BDYwWHGZJfSb4PSRInDWe7psVLutH4YFz2Xa_4nTqcP7rBT2X-XV-KFrsL6l' +
-        '8nI5UwZ001JCXiK9MTO9s87tS8sftvyDjubkWCcAkIspR4qxK6Vg8wt2lKifXSmZ9c-Dag' +
-        'uWFJdMwn12RxgT0oNBzkWsn0hN_5sUmaYcexRs7ESDHMa7gd4IuW1JWN5Hxm8fOUkqUszD' +
-        'T2zVg')
-                
+
         
