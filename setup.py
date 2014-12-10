@@ -17,7 +17,7 @@ setup(
   long_description = 'A library to sign and verify OpenBadges',
   author = 'Luis González Fernández, Jesús Cea Avión',
   author_email = 'openbadges@luisgf.es, jcea@jcea.es',
-  url = 'https://hg.luisgf.es/openbadges/',
+  url = 'https://openbadges.luisgf.es//',
   keywords = ['openbadges'], # arbitrary keywords
   classifiers = [
       'Development Status :: 3 - Alpha',
