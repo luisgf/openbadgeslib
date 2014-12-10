@@ -46,8 +46,8 @@ def main():
 
     subdirs = ['keys','images','json','log']
     for subdir in subdirs:
-        if os.path.lexists(subdir) :
-            raise FileExistsError(subdir)
+        if os.path.lexists(directory + '/' + subdir) :
+            raise FileExistsError(directory + '/' + subdir)
         os.mkdir(directory + '/' + subdir)
         os.umask(umask)
 
