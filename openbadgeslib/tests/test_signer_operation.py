@@ -40,3 +40,8 @@ class check_signer_methods(unittest.TestCase):
         jose_json = json.dumps(jose, sort_keys=True)
         self.assertEqual(jose_json, '{"alg": "RS256"}')
         
+    def test_ecc_jose_header(self):        
+        jose = signer.SignerECC().generate_jose_header()
+        jose_json = json.dumps(jose, sort_keys=True)
+        self.assertEqual(jose_json, '{"alg": "ES256"}')
+        
