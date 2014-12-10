@@ -61,8 +61,7 @@ def main():
 
         try:
             sf = SignerFactory(key_type='RSA', badge_name=args.badge, \
-                 receptor=args.receptor, evidence=args.evidence, \
-                 debug_enabled=args.debug)
+                 receptor=args.receptor, evidence=args.evidence)
             sf.badge_file_path = conf['paths']['base_image'] + '/' + conf[args.badge]['image']
             sf.badge_image_url = conf['issuer']['publish_url'] + '/' + args.badge + '/' + conf[args.badge]['image']
             sf.badge_json_url = conf['issuer']['publish_url'] + '/' + args.badge + '/badge.json'
