@@ -37,6 +37,10 @@ class ConfParser():
 
         self.parser = ConfigParser(interpolation=ExtendedInterpolation())
         self.parser.read(self.config_file)
+        if self.parser['paths']['base'][0] == '.':
+            abs_path = os.path.dirname(self.config_file)
+            full_path = os.path.abspath(abs_path)
+            self.parser['paths']['base'] = full_path
         return self.parser
 
 if __name__ == '__main__':
