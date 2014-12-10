@@ -26,17 +26,19 @@ setup(
       'Programming Language :: Python :: 3.4',
       'Topic :: Software Development :: Libraries :: Python Modules',
       'Natural Language :: English',
+      'Natural Language :: Spanish',
       'License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)'
   ],
   license = 'LGPLv3',
   install_requires = dependencies,
   include_package_data = True,
   entry_points = {
-          'console_scripts': [
-          'openbadges-keygenerator = openbadgeslib.openbadges_keygenerator:main',
-	      'openbadges-signer = openbadgeslib.openbadges_signer:main',
-	      'openbadges-verifier = openbadgeslib.openbadges_verifier:main'
-          ]
-  }
+    'console_scripts': [
+        'openbadges-init = openbadgeslib.openbadges_init:main',
+        'openbadges-keygenerator = openbadgeslib.openbadges_keygenerator:main',
+        'openbadges-signer = openbadgeslib.openbadges_signer:main',
+        'openbadges-verifier = openbadgeslib.openbadges_verifier:main'
+        ]
+    }
 )
 
