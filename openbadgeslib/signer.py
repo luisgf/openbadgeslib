@@ -56,44 +56,44 @@ class SignerBase():
     """ JWS Signer Factory """
 
     def __init__(self, issuer='', badge_name='', badge_file_path=None, badge_image_url=None, badge_json_url=None, receptor='', evidence=None, verify_key_url=None, debug_enabled=False):
-        self._issuer = issuer.encode('utf-8')
-        self._badge_name = badge_name.encode('utf-8')
-        self._badge_file_path = badge_file_path       # Path to local file
-        self._badge_image_url = badge_image_url
-        self._badge_json_url = badge_json_url
-        self._receptor = receptor.encode('utf-8')     # Receptor of the badge
-        self._evidence = evidence                     # Url to evidence
-        self._verify_key_url = verify_key_url
+        self.issuer = issuer.encode('utf-8')
+        self.badge_name = badge_name.encode('utf-8')
+        self.badge_file_path = badge_file_path       # Path to local file
+        self.badge_image_url = badge_image_url
+        self.badge_json_url = badge_json_url
+        self.receptor = receptor.encode('utf-8')     # Receptor of the badge
+        self.evidence = evidence                     # Url to evidence
+        self.verify_key_url = verify_key_url
         self.in_debug = debug_enabled                 # Debug mode enabledl
 
     def generate_uid(self):
-        return sha1_string(self._issuer + self._badge_name + self._receptor + datetime.now().isoformat().encode('utf-8'))
+        return sha1_string(self.issuer + self.badge_name + self.receptor + datetime.now().isoformat().encode('utf-8'))
 
     def generate_jws_payload(self, deterministic=False):
 
         # All this data MUST be a Str string in order to be converted to json properly.
         recipient_data = dict (
-            identity = (b'sha256$' + sha256_string(self._receptor)).decode('utf-8'),
+            identity = (b'sha256$' + sha256_string(self.receptor)).decode('utf-8'),
             type = 'email',
             hashed = 'true'
         )
 
         verify_data = dict(
             type = 'signed',
-            url = self._verify_key_url
+            url = self.verify_key_url
         )
 
         payload = dict(
                         uid = 0 if deterministic else self.generate_uid().decode('utf-8'),
                         recipient = recipient_data,
-                        image = self._badge_image_url,
-                        badge = self._badge_json_url,
+                        image = self.badge_image_url,
+                        badge = self.badge_json_url,
                         verify = verify_data,
                         issuedOn = 0 if deterministic else int(time.time())
                      )
 
-        if self._evidence:
-            payload['evidence'] = self._evidence
+        if self.evidence:
+            payload['evidence'] = self.evidence
 
         logger.debug('JWS Payload %s ' % json.dumps(payload))
 
@@ -112,7 +112,7 @@ class SignerBase():
         """ Log the signing process before returning it.
                 That's prevents the existence of a signed badge without traces """
 
-        logger.info('"%s" SIGNED successfully for receptor "%s"' % (self._badge_name, self._receptor.decode('utf-8')))
+        logger.info('"%s" SIGNED successfully for receptor "%s"' % (self.badge_name, self.receptor.decode('utf-8')))
 
         svg_signed = svg_doc.toxml()
         svg_doc.unlink()
