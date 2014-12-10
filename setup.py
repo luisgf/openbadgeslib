@@ -14,7 +14,10 @@ setup(
   packages = ['openbadgeslib'], # this must be the same as the name above
   version = version,
   description = 'A library to sign and verify OpenBadges',
-  long_description = 'A library to sign and verify OpenBadges',
+  long_description = ('A library to sign and verify OpenBadges. If you need more info, here is our '
+  '`Homepage <https://openbadges.luisgf.es>`_ and the '
+  '`Developers mail <openbadges@luisgf.es>`_'
+  ),
   author = 'Luis González Fernández, Jesús Cea Avión',
   author_email = 'luisgf@luisgf.es, jcea@jcea.es',
   url = 'https://openbadges.luisgf.es//',
