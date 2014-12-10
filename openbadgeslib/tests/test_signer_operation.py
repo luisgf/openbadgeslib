@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import Mock, patch, mock_open, call
 
 import functools, hashlib
+import json
 
 import test_common
 
@@ -33,3 +34,9 @@ class check_signer_methods(unittest.TestCase):
     def test_generate_output_filename(self):
         out = self.signer.generate_output_filename('badge.svg','/tmp/','test@test.es')
         self.assertEqual(out, '/tmp/badge_test_test_es.svg')
+    
+    def test_rsa_jose_header(self):        
+        jose = signer.SignerRSA().generate_jose_header()
+        jose_json = json.dumps(jose, sort_keys=True)
+        self.assertEqual(jose_json, '{"alg": "RS256"}')
+        
