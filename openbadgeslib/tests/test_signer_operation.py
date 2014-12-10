@@ -28,6 +28,10 @@ class check_signer_methods(unittest.TestCase):
     @classmethod
     def setUpClass(cls) :
         cls.signer = signer.SignerBase()
+        cls.signer._receptor = b'test@test.es'
+        cls.signer._verify_key_url = 'https://url.notexists/verify_test.pem'
+        cls.signer._badge_image_url = 'https://url.notexists/image.svg'
+        cls.signer._badge_json_url = 'https://url.notexists/badge.json'
         
     def test_signer_uid_generation(self):
         uid = self.signer.generate_uid()
@@ -48,10 +52,6 @@ class check_signer_methods(unittest.TestCase):
         self.assertEqual(jose_json, '{"alg": "ES256"}')
     
     def test_payload_generation(self):
-        self.signer._receptor = b'test@test.es'
-        self.signer._verify_key_url = 'https://url.notexists/verify_test.pem'
-        self.signer._badge_image_url = 'https://url.notexists/image.svg'
-        self.signer._badge_json_url = 'https://url.notexists/badge.json'
         payload = self.signer.generate_jws_payload(deterministic=True)
         payload_json = json.dumps(payload, sort_keys=True)
         self.assertEqual(payload_json, '{"badge": "https://url.notexists/badge.json",'+
