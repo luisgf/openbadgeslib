@@ -2,4 +2,4 @@
 
 recursive-include openbadgeslib *
 global-exclude __pycache__/*
-include *.txt README.md MANIFEST.in
+include *.txt MANIFEST.in
