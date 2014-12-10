@@ -3,6 +3,7 @@
 """
     Copyright (c) 2014, Luis González Fernández - luisgf@luisgf.es
     Copyright (c) 2014, Jesús Cea Avión - jcea@jcea.es
+
     All rights reserved.
 
     Redistribution and use in source and binary forms, with or without
@@ -81,3 +82,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
