@@ -28,10 +28,10 @@ class check_signer_methods(unittest.TestCase):
     @classmethod
     def setUpClass(cls) :
         cls.signer = signer.SignerBase()
-        cls.signer._receptor = b'test@test.es'
-        cls.signer._verify_key_url = 'https://url.notexists/verify_test.pem'
-        cls.signer._badge_image_url = 'https://url.notexists/image.svg'
-        cls.signer._badge_json_url = 'https://url.notexists/badge.json'
+        cls.signer.receptor = b'test@test.es'
+        cls.signer.verify_key_url = 'https://url.notexists/verify_test.pem'
+        cls.signer.badge_image_url = 'https://url.notexists/image.svg'
+        cls.signer.badge_json_url = 'https://url.notexists/badge.json'
         
     def test_signer_uid_generation(self):
         uid = self.signer.generate_uid()
