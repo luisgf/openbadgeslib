@@ -44,6 +44,13 @@ def main():
     os.mkdir(directory)
     os.umask(umask)
 
+    subdirs = ['keys','images','json','log']
+    for subdir in subdirs:
+        if os.path.lexists(subdir) :
+            raise FileExistsError(subdir)
+        os.mkdir(directory + '/' + subdir)
+        os.umask(umask)
+
     source = os.path.join(os.path.dirname(__file__), 'config.ini.example')
     destination = os.path.join(directory, 'config.ini')
     shutil.copyfile(source, destination)
