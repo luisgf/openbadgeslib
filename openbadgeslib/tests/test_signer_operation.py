@@ -23,6 +23,8 @@ class check_signer_factory(unittest.TestCase) :
         self.assertRaises(UnknownKeyType, signer.SignerFactory, 'XXX')
         
 class check_signer_methods(unittest.TestCase):
+    maxDiff = None
+    
     @classmethod
     def setUpClass(cls) :
         cls.signer = signer.SignerBase()
@@ -44,4 +46,18 @@ class check_signer_methods(unittest.TestCase):
         jose = signer.SignerECC().generate_jose_header()
         jose_json = json.dumps(jose, sort_keys=True)
         self.assertEqual(jose_json, '{"alg": "ES256"}')
+    
+    def test_payload_generation(self):
+        self.signer._receptor = b'test@test.es'
+        self.signer._verify_key_url = 'https://url.notexists/verify_test.pem'
+        self.signer._badge_image_url = 'https://url.notexists/image.svg'
+        self.signer._badge_json_url = 'https://url.notexists/badge.json'
+        payload = self.signer.generate_jws_payload(deterministic=True)
+        payload_json = json.dumps(payload, sort_keys=True)
+        self.assertEqual(payload_json, '{"badge": "https://url.notexists/badge.json",'+
+        ' "image": "https://url.notexists/image.svg", "issuedOn": 0,'+
+        ' "recipient": {"hashed": "true", "identity": "sha256$513e6874856ed5eb4d9adcb39171e1c1270bdc79cf5428d8f46b8940a0e4533a"'+
+        ', "type": "email"}, "uid": 0, "verify": {"type": "signed", "url":'+
+        ' "https://url.notexists/verify_test.pem"}}')
+        
         

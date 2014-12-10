@@ -69,7 +69,7 @@ class SignerBase():
     def generate_uid(self):
         return sha1_string(self._issuer + self._badge_name + self._receptor + datetime.now().isoformat().encode('utf-8'))
 
-    def generate_jws_payload(self):
+    def generate_jws_payload(self, deterministic=False):
 
         # All this data MUST be a Str string in order to be converted to json properly.
         recipient_data = dict (
@@ -84,12 +84,12 @@ class SignerBase():
         )
 
         payload = dict(
-                        uid = self.generate_uid().decode('utf-8'),
+                        uid = 0 if deterministic else self.generate_uid().decode('utf-8'),
                         recipient = recipient_data,
                         image = self._badge_image_url,
                         badge = self._badge_json_url,
                         verify = verify_data,
-                        issuedOn = int(time.time())
+                        issuedOn = 0 if deterministic else int(time.time())
                      )
 
         if self._evidence:
