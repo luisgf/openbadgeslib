@@ -55,7 +55,7 @@ def SignerFactory(key_type='RSA', *args, **kwargs):
 class SignerBase():
     """ JWS Signer Factory """
 
-    def __init__(self, issuer='', badge_name='', badge_file_path=None, badge_image_url=None, badge_json_url=None, receptor='', evidence=None, verify_key_url=None, debug_enabled=False):
+    def __init__(self, issuer='', badge_name='', badge_file_path=None, badge_image_url=None, badge_json_url=None, receptor='', evidence=None, verify_key_url=None):
         self.issuer = issuer.encode('utf-8')
         self.badge_name = badge_name.encode('utf-8')
         self.badge_file_path = badge_file_path       # Path to local file
@@ -64,7 +64,6 @@ class SignerBase():
         self.receptor = receptor.encode('utf-8')     # Receptor of the badge
         self.evidence = evidence                     # Url to evidence
         self.verify_key_url = verify_key_url
-        self.in_debug = debug_enabled                 # Debug mode enabledl
 
     def generate_uid(self):
         return sha1_string(self.issuer + self.badge_name + self.receptor + datetime.now().isoformat().encode('utf-8'))
