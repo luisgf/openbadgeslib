@@ -2,6 +2,9 @@
 
   - "openbadges-init".
 
+  - New configuration format. If you are using 0.1 format, you must
+    migrate by hand.
+
   - Tests!.
 
   - Use proper logging instead of simple "prints".
