@@ -29,3 +29,7 @@ class check_signer_methods(unittest.TestCase):
     def test_signer_uid_generation(self):
         uid = self.signer.generate_uid()
         self.assertEqual(len(uid), 40)
+    
+    def test_generate_output_filename(self):
+        out = self.signer.generate_output_filename('badge.svg','/tmp/','test@test.es')
+        self.assertEqual(out, '/tmp/badge_test_test_es.svg')
