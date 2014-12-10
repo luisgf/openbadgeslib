@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-    Copyright (c) 2014, Luís González Fernández - luisgf@luisgf.es
+    Copyright (c) 2014, Luis González Fernández - luisgf@luisgf.es
     Copyright (c) 2014, Jesús Cea Avión - jcea@jcea.es
     All rights reserved.
 
