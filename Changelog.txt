@@ -1,5 +1,7 @@
 * v0.2 - Work in progress
 
+  - "openbadges-init".
+
   - Tests!.
 
   - Use proper logging instead of simple "prints".
