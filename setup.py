@@ -20,7 +20,7 @@ setup(
   ),
   author = 'Luis González Fernández, Jesús Cea Avión',
   author_email = 'luisgf@luisgf.es, jcea@jcea.es',
-  url = 'https://openbadges.luisgf.es//',
+  url = 'https://openbadges.luisgf.es/',
   keywords = ['openbadges'], # arbitrary keywords
   classifiers = [
       'Development Status :: 3 - Alpha',
