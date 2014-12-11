@@ -32,7 +32,7 @@
 import os, os.path, sys, shutil
 
 def main():
-    if len(sys.argv) != 2 :
+    if (len(sys.argv) != 2) or (sys.argv[1] == '-h') :
         sys.exit('%s DIRECTORY' %sys.argv[0])
 
     directory = sys.argv[1]
@@ -42,14 +42,9 @@ def main():
 
     umask = os.umask(0o077)  # rwx------
     os.mkdir(directory)
+    for subdir in ['keys', 'images', 'json', 'log'] :
+        os.mkdir(os.path.join(directory, subdir))
     os.umask(umask)
-
-    subdirs = ['keys','images','json','log']
-    for subdir in subdirs:
-        if os.path.lexists(directory + '/' + subdir) :
-            raise FileExistsError(directory + '/' + subdir)
-        os.mkdir(directory + '/' + subdir)
-        os.umask(umask)
 
     source = os.path.join(os.path.dirname(__file__), 'config.ini.example')
     destination = os.path.join(directory, 'config.ini')
