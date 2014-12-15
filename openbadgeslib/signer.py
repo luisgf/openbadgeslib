@@ -101,6 +101,9 @@ class SignerBase():
     def sign_svg(self, svg_in, assertion):
         svg_doc = parseString(svg_in)
 
+        if (self.has_assertion(svg_doc)):
+            raise ErrorSigningFile('The input SVG file is already signed.')
+
         # Assertion
         xml_tag = svg_doc.createElement("openbadges:assertion")
         xml_tag.attributes['xmlns:openbadges'] = 'http://openbadges.org'
@@ -149,6 +152,12 @@ class SignerBase():
         else:
             logger.debug('Assertion %s' % assertion)
             return assertion
+
+    def has_assertion(self, xml_obj):
+        if xml_obj.getElementsByTagName('openbadges:assertion'):
+            return True
+        else:
+            return False
 
 class SignerRSA(SignerBase):
     def __init__(self, *args, **kwargs):
