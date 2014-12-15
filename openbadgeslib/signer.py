@@ -104,12 +104,17 @@ class SignerBase():
         if (self.has_assertion(svg_doc)):
             raise ErrorSigningFile('The input SVG file is already signed.')
 
+        try:
+            xmlid = 1 if svg_doc.childNodes[1].nodeName == 'svg' else 0            
+        except IndexError:
+            xmlid = 0
+
         # Assertion
         xml_tag = svg_doc.createElement("openbadges:assertion")
         xml_tag.attributes['xmlns:openbadges'] = 'http://openbadges.org'
-        svg_doc.childNodes[1].appendChild(xml_tag)
+        svg_doc.childNodes[xmlid].appendChild(xml_tag)
         xml_tag.attributes['verify']= assertion.decode('utf-8')
-        svg_doc.childNodes[1].appendChild(xml_tag)
+        svg_doc.childNodes[xmlid].appendChild(xml_tag)
 
         """ Log the signing process before returning it.
                 That's prevents the existence of a signed badge without traces """
