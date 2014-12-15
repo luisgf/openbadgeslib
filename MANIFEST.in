@@ -1,5 +1,6 @@
 # https://python-packaging-user-guide.readthedocs.org/en/latest/distributing.html
 
 recursive-include openbadgeslib *
+recursive-include tests *
 global-exclude __pycache__/*
 include *.txt MANIFEST.in
