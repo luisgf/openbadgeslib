@@ -2,5 +2,6 @@
 
 recursive-include openbadgeslib *
 recursive-include tests *
+recursive-include docs *
 global-exclude __pycache__/*
 include *.txt MANIFEST.in
