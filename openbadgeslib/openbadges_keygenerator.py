@@ -40,7 +40,7 @@ def main():
     parser = argparse.ArgumentParser(description='Key Generation Parameters')
     parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-g', '--genkey', action="store_true", help='Generate a new Key pair. Key type is taken from profile.')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.2' )
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.2.1' )
     args = parser.parse_args()
 
     if not args.genkey:
