@@ -71,7 +71,7 @@ class SignerBase():
 
     def generate_jws_payload(self, deterministic=False):
 
-        mail_salt = md5_string(os.urandom(128))
+        mail_salt = b's4lt3d' if deterministic else md5_string(os.urandom(128))
         # All this data MUST be a Str string in order to be converted to json properly.
         recipient_data = dict (
             identity = (b'sha256$' + hash_email(self.receptor, mail_salt)).decode('utf-8'),
