@@ -28,13 +28,14 @@ import os
 import sys
 import time
 import json
+import os
 
 from datetime import datetime
 from xml.dom.minidom import parse, parseString
 
 from .errors import UnknownKeyType, FileToSignNotExists, BadgeSignedFileExists, ErrorSigningFile, PrivateKeyReadError
 
-from .util import sha1_string, sha256_string
+from .util import hash_email, md5_string, sha1_string, sha256_string
 from .keys import KeyFactory
 from .verifier import VerifyFactory
 
@@ -70,10 +71,12 @@ class SignerBase():
 
     def generate_jws_payload(self, deterministic=False):
 
+        mail_salt = md5_string(os.urandom(128))
         # All this data MUST be a Str string in order to be converted to json properly.
         recipient_data = dict (
-            identity = (b'sha256$' + sha256_string(self.receptor)).decode('utf-8'),
+            identity = (b'sha256$' + hash_email(self.receptor, mail_salt)).decode('utf-8'),
             type = 'email',
+            salt = mail_salt.decode('utf-8'),
             hashed = 'true'
         )
 
@@ -107,7 +110,7 @@ class SignerBase():
         # Assertion
         svg_tag = svg_doc.getElementsByTagName('svg').item(0)
         assertion_tag = svg_doc.createElement("openbadges:assertion")
-        assertion_tag.attributes['xmlns:openbadges'] = 'http://openbadges.org'        
+        assertion_tag.attributes['xmlns:openbadges'] = 'http://openbadges.org'
         assertion_tag.attributes['verify']= assertion.decode('utf-8')
         svg_tag.appendChild(assertion_tag)
 

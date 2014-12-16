@@ -34,3 +34,8 @@ def sha1_string(string) :
 def sha256_string(string):
     return _hash_string('sha256', string)
 
+def md5_string(string):
+    return _hash_string('md5', string)
+
+def hash_email(email, salt):
+    return sha256_string(email + salt)
