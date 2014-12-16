@@ -119,7 +119,6 @@ The configuration file that openbadges-init was generated should look like that:
   base_key     = ${base}/keys
   base_log     = ${base}/log
   base_image   = ${base}/images
-  base_json    = ${base}/json
 
   ; Log configuration. Stored in ${base_log}
   [logs]
@@ -144,18 +143,22 @@ The configuration file that openbadges-init was generated should look like that:
   [badge_1]
   name        = Badge 1
   description = Given to any user that install this library
-  image       = image_badge1.svg
+  local_image = image_badge1.svg
+  image	      = https://www.domain.com/badge_1/badge.svg
   criteria    = https://www.domain.com/badge_1/criteria.html
   verify_key  = https://www.domain.com/issuer/badge_1/verify_rsa_key.pem
+  badge       = https://www.domain.com/badge_1/badge.json
   ;alignement  =
   ;tags        =
 
   [badge_2]
   name        = Badge 2
   description = Given to any user that promote the usage of this library
-  image       = image_badge2.png
+  local_image = image_badge2.svg
+  image       = https://www.domain.com/badge_2/badge.svg
   criteria    = https://www.domain.com/issuer/badge_2/criteria.html
   verify_key  = https://www.domain.com/issuer/badge_2/verify_rsa_key.pem
+  badge       = https://www.domain.com/badge_2/badge.json
   ;alignement =
   ;tags       =
 
