@@ -79,5 +79,4 @@ class check_signer_methods(unittest.TestCase):
                 svg_in = f.read()
         assertion = b'<openbadges:assertion verify="ASSERTION_TEST" xmlns:openbadges="http://openbadges.org"/>'
         svg_out = self.signer.sign_svg(svg_in, assertion)
-        print(md5_string(svg_out.encode('utf-8')))
         self.assertEqual(md5_string(svg_out.encode('utf-8')), b'bbca55bddb426825197dd713435d9259')
