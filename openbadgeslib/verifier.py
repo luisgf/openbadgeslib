@@ -46,7 +46,7 @@ from .errors import UnknownKeyType, AssertionFormatIncorrect, \
 from .jws import utils as jws_utils
 from .jws import verify_block as jws_verify_block
 
-from .util import sha256_string
+from .util import hash_email, sha256_string
 
 def VerifyFactory(key_type='RSA'):
     """ Verify Factory Object, Return a Given object type passing a name
@@ -95,7 +95,12 @@ class VerifyBase():
             raise AssertionFormatIncorrect('Payload deserialization error')
 
         # Receptor verification
-        email_hashed = (b'sha256$' + sha256_string(receptor)).decode('utf-8')
+        try:
+            email_salt = payload['recipient']['salt'].encode('utf-8')
+        except:
+            email_salt = b''
+
+        email_hashed = (b'sha256$' + hash_email(receptor, email_salt)).decode('utf-8')
         if email_hashed == payload['recipient']['identity']:
             return True
         else:
@@ -146,9 +151,14 @@ class VerifyBase():
         except:
              return False
 
+        try:
+            email_salt = payload['recipient']['salt'].encode('utf-8')
+        except:
+            email_salt = b''
+
         # Ok, the signature is valid, now i check if the badge is emitted for this receptor
         try:
-            email_hashed = (b'sha256$' + sha256_string(receptor)).decode('utf-8')
+            email_hashed = (b'sha256$' + hash_email(receptor, email_salt)).decode('utf-8')
             if email_hashed == payload['recipient']['identity']:
                 # OK, the signature is valid and the badge is emitted for this user
                 return True
