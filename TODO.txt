@@ -29,3 +29,6 @@ de revocación
 - 20141206: Creating a new crypto key when you already have one should
   show an error and an appropiate exit code, but SHOULD NOT show a traceback.
 
+- 20141216: Tampering with Openbadges (inserting a valid asertion in another
+  image) should be detected and notified.
+
