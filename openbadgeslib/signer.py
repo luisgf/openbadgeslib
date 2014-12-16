@@ -65,13 +65,14 @@ class SignerBase():
         self.receptor = receptor.encode('utf-8')     # Receptor of the badge
         self.evidence = evidence                     # Url to evidence
         self.verify_key_url = verify_key_url
+        self.deterministic = False                   # Randomness
 
     def generate_uid(self):
         return sha1_string(self.issuer + self.badge_name + self.receptor + datetime.now().isoformat().encode('utf-8'))
 
-    def generate_jws_payload(self, deterministic=False):
+    def generate_jws_payload(self):
 
-        mail_salt = b's4lt3d' if deterministic else md5_string(os.urandom(128))
+        mail_salt = b's4lt3d' if self.deterministic else md5_string(os.urandom(128))
         # All this data MUST be a Str string in order to be converted to json properly.
         recipient_data = dict (
             identity = (b'sha256$' + hash_email(self.receptor, mail_salt)).decode('utf-8'),
@@ -86,12 +87,12 @@ class SignerBase():
         )
 
         payload = dict(
-                        uid = 0 if deterministic else self.generate_uid().decode('utf-8'),
+                        uid = 0 if self.deterministic else self.generate_uid().decode('utf-8'),
                         recipient = recipient_data,
                         image = self.badge_image_url,
                         badge = self.badge_json_url,
                         verify = verify_data,
-                        issuedOn = 0 if deterministic else int(time.time())
+                        issuedOn = 0 if self.deterministic else int(time.time())
                      )
 
         if self.evidence:
