@@ -45,7 +45,7 @@ def main():
     parser.add_argument('-o', '--output', required=True, help='Specify the output directory to save the badge.')
     parser.add_argument('-e', '--evidence', help='Set an url to the user evidence')
     parser.add_argument('-d', '--debug', action="store_true", help='Show debug messages in runtime.')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.2' )
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.2.1' )
     args = parser.parse_args()
 
     if args.badge:
@@ -63,9 +63,9 @@ def main():
         try:
             sf = SignerFactory(key_type='RSA', badge_name=args.badge, \
                  receptor=args.receptor, evidence=args.evidence)
-            sf.badge_file_path = conf['paths']['base_image'] + '/' + conf[args.badge]['image']
-            sf.badge_image_url = conf['issuer']['publish_url'] + '/' + args.badge + '/' + conf[args.badge]['image']
-            sf.badge_json_url = conf['issuer']['publish_url'] + '/' + args.badge + '/badge.json'
+            sf.badge_file_path = conf['paths']['base_image'] + '/' + conf[args.badge]['local_image']
+            sf.badge_image_url = conf[args.badge]['image']
+            sf.badge_json_url = conf[args.badge]['badge']
             sf.verify_key_url = conf[args.badge]['verify_key']
 
             priv_key = conf['keys']['private']
