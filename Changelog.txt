@@ -1,3 +1,7 @@
+* v0.2 - 20141216
+  - config.ini allow now to configure the badge json url and image url
+  - signier and verifier now use salted emails by default in assertions.
+
 * v0.2 - 20141210
 
   - "openbadges-init".
