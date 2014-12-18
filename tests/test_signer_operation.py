@@ -10,6 +10,7 @@ from openbadgeslib import signer
 from openbadgeslib.errors import UnknownKeyType
 from openbadgeslib.confparser import ConfParser
 from openbadgeslib.util import md5_string
+from openbadgeslib.logs import Logger
 
 class check_signer_factory(unittest.TestCase) :
     def test_rsa(self) :
@@ -25,15 +26,17 @@ class check_signer_factory(unittest.TestCase) :
 
 class check_signer_methods(unittest.TestCase):
     maxDiff = None
-
+    log = Logger(base_log='/tmp',general='general.log', signer='signer.log')
+    
     @classmethod
     def setUpClass(cls) :
-        cls.signer = signer.SignerBase()
+        cls.signer = signer.SignerBase(log=check_signer_methods.log)
         cls.signer.receptor = b'test@test.es'
         cls.signer.verify_key_url = 'https://url.notexists/verify_test.pem'
         cls.signer.badge_image_url = 'https://url.notexists/image.svg'
         cls.signer.badge_json_url = 'https://url.notexists/badge.json'
         cls.signer.deterministic = True
+        cls.signer.uid = b'000000'
 
     def test_signer_uid_generation(self):
         uid = self.signer.generate_uid()
@@ -44,12 +47,16 @@ class check_signer_methods(unittest.TestCase):
         self.assertEqual(out, '/tmp/badge_test_test_es.svg')
 
     def test_rsa_jose_header(self):
-        jose = signer.SignerRSA().generate_jose_header()
+        sf = signer.SignerFactory('RSA')
+        sf.log= self.log
+        jose = sf.generate_jose_header()
         jose_json = json.dumps(jose, sort_keys=True)
         self.assertEqual(jose_json, '{"alg": "RS256"}')
 
     def test_ecc_jose_header(self):
-        jose = signer.SignerECC().generate_jose_header()
+        sf = signer.SignerFactory('ECC')
+        sf.log = self.log
+        jose = sf.generate_jose_header()
         jose_json = json.dumps(jose, sort_keys=True)
         self.assertEqual(jose_json, '{"alg": "ES256"}')
 
