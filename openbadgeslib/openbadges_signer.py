@@ -32,12 +32,15 @@
 import argparse
 import sys, os
 
+from .logs import Logger
 from .signer import SignerFactory
 from .errors import LibOpenBadgesException, SignerExceptions
 from .confparser import ConfParser
 
+
 # Entry Point
 def main():
+    global log
     parser = argparse.ArgumentParser(description='Badge Signer Parameters')
     parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-b', '--badge', required=True, help='Specify the badge name for sign')
@@ -53,26 +56,31 @@ def main():
         conf = cf.read_conf()
 
         if not conf:
-            print('[!] The config file %s NOT exists or is empty' % args.config)
+            print('ERROR: The config file %s NOT exists or is empty' % args.config)
             sys.exit(-1)
 
         if not conf[args.badge]:
-            print('%s is not defined in this config file' % args.badge)
+            print('ERROR: %s is not defined in this config file' % args.badge)
             sys.exit(-1)
+
+        log = Logger(base_log=conf['paths']['base_log'], 
+                      general=conf['logs']['general'], 
+                      signer=conf['logs']['signer'])
 
         try:
             sf = SignerFactory(key_type='RSA', badge_name=args.badge, \
-                 receptor=args.receptor, evidence=args.evidence)
+                 receptor=args.receptor, evidence=args.evidence, log=log)
             sf.badge_file_path = conf['paths']['base_image'] + '/' + conf[args.badge]['local_image']
             sf.badge_image_url = conf[args.badge]['image']
             sf.badge_json_url = conf[args.badge]['badge']
             sf.verify_key_url = conf[args.badge]['verify_key']
+            sf.signerlog = log.signer
 
             priv_key = conf['keys']['private']
             pub_key = conf['keys']['public']
 
             if not os.path.isfile(sf.badge_file_path):
-                print('[!] Badge file %s NOT exists.' % sf.badge_file_path)
+                log.console.error('Badge file %s NOT exists.' % sf.badge_file_path)
                 sys.exit(-1)
 
             """ Reading the SVG content """
@@ -86,20 +94,19 @@ def main():
             with open(pub_key,"rb") as f:
                 pub_key_pem = f.read()
 
-            print("[!] Generating signature for badge '%s'..." % args.badge)
-
             badge_file_out = sf.generate_output_filename(sf.badge_file_path, args.output, args.receptor)
             badge_assertion = sf.generate_openbadge_assertion(priv_key_pem, pub_key_pem)
 
             if os.path.isfile(badge_file_out):
-                print('[!] A %s OpenBadge has already signed for %s in %s' % (args.badge, args.receptor, badge_file_out))
+                log.console.warning('A %s OpenBadge has already signed for %s in %s' % (args.badge, args.receptor, badge_file_out))
                 sys.exit(-1)
 
+            log.console.info("Generating signature for badge '%s'..." % args.badge)
             badge_svg_out = sf.sign_svg(badge_image_data, badge_assertion)
 
             with open(badge_file_out, "wb") as f:
                 f.write(badge_svg_out.encode('utf-8'))
-            print('[+] Badge Signed succesfully at: ', badge_file_out)
+            log.console.info('Badge Signed succesfully at: %s ' % badge_file_out)
 
         except SignerExceptions:
             raise

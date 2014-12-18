@@ -21,9 +21,6 @@
         License along with this library.
 """
 
-import logging
-logger = logging.getLogger(__name__)
-
 import os
 import sys
 import time
@@ -56,7 +53,10 @@ def SignerFactory(key_type='RSA', *args, **kwargs):
 class SignerBase():
     """ JWS Signer Factory """
 
-    def __init__(self, issuer='', badge_name='', badge_file_path=None, badge_image_url=None, badge_json_url=None, receptor='', evidence=None, verify_key_url=None, deterministic=False):
+    def __init__(self, issuer='', badge_name='', badge_file_path=None,
+                 badge_image_url=None, badge_json_url=None, receptor='', 
+                 evidence=None, verify_key_url=None, deterministic=False, 
+                 log=None):
         self.issuer = issuer.encode('utf-8')
         self.badge_name = badge_name.encode('utf-8')
         self.badge_file_path = badge_file_path       # Path to local file
@@ -66,9 +66,11 @@ class SignerBase():
         self.evidence = evidence                     # Url to evidence
         self.verify_key_url = verify_key_url
         self.deterministic = deterministic           # Randomness
+        self.log = log
 
     def generate_uid(self):
-        return sha1_string(self.issuer + self.badge_name + self.receptor + datetime.now().isoformat().encode('utf-8'))
+        self.uid = sha1_string(self.issuer + self.badge_name + self.receptor + datetime.now().isoformat().encode('utf-8'))
+        return self.uid
 
     def generate_jws_payload(self):
 
@@ -98,7 +100,7 @@ class SignerBase():
         if self.evidence:
             payload['evidence'] = self.evidence
 
-        logger.debug('JWS Payload %s ' % json.dumps(payload))
+        self.log.console.debug('JWS Payload %s ' % json.dumps(payload))
 
         return payload
 
@@ -118,7 +120,9 @@ class SignerBase():
         """ Log the signing process before returning it.
                 That's prevents the existence of a signed badge without traces """
 
-        logger.info('"%s" SIGNED successfully for receptor "%s"' % (self.badge_name, self.receptor.decode('utf-8')))
+        self.log.signer.info('%s SIGNED for %s UID %s' % 
+        (self.badge_name.decode('utf-8'), self.receptor.decode('utf-8'),
+         self.uid.decode('utf-8')))
 
         svg_signed = svg_doc.toxml()
         svg_doc.unlink()
@@ -154,7 +158,7 @@ class SignerBase():
         if not vf.verify_jws_signature(assertion, self.key.get_pub_key()):
             return None
         else:
-            logger.debug('Assertion %s' % assertion)
+            self.log.console.debug('Assertion %s' % assertion)
             return assertion
 
     def has_assertion(self, xml_obj):
@@ -171,7 +175,7 @@ class SignerRSA(SignerBase):
     def generate_jose_header(self):
         jose_header = { 'alg': 'RS256' }
 
-        logger.debug('JOSE HEADER %s ' % json.dumps(jose_header))
+        self.log.console.debug('JOSE HEADER %s ' % json.dumps(jose_header))
         return jose_header
 
 class SignerECC(SignerBase):
@@ -181,8 +185,8 @@ class SignerECC(SignerBase):
 
     def generate_jose_header(self):
         jose_header = { 'alg': 'ES256' }
-
-        logger.debug('JOSE HEADER %s ' % json.dumps(jose_header))
+        
+        self.log.console.debug('JOSE HEADER %s ' % json.dumps(jose_header))
         return jose_header
 
 

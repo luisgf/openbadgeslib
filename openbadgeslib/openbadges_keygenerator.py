@@ -31,9 +31,11 @@
 
 import argparse, os.path
 
+from .logs import Logger
 from .keys import KeyFactory
 from .errors import KeyGenExceptions
 from .confparser import ConfParser
+global log
 
 # Entry Point
 def main():
@@ -54,8 +56,12 @@ def main():
                 if os.path.exists(i) :
                     raise FileExistsError(i)
 
+            log = Logger(base_log=conf['paths']['base_log'], 
+                      general=conf['logs']['general'], 
+                      signer=conf['logs']['signer'])
+            
             try:
-                print("[!] Generating key pair for issuer '%s'" % conf['issuer']['name'])
+                log.console.info("Generating key pair for issuer '%s'" % conf['issuer']['name'])
 
                 kf = KeyFactory()
                 priv_key_pem, pub_key_pem = kf.generate_keypair()
@@ -66,13 +72,13 @@ def main():
                 with open(conf['keys']['public'],'wb') as f:
                     f.write(pub_key_pem)
 
-                print('[+] Private key saved at: %s' % conf['keys']['private'])
-                print('[+] Public key saved at: %s' % conf['keys']['public'])
+                log.console.info('Private key saved at: %s' % conf['keys']['private'])
+                log.console.info('Public key saved at: %s' % conf['keys']['public'])
 
             except KeyGenExceptions:
                 raise
         else:
-            print('[!] Config file %s NOT exists or is empty' % args.config)
+            print('ERROR: Config file %s NOT exists or is empty' % args.config)
 
 if __name__ == '__main__':
     main()

@@ -21,9 +21,6 @@
         License along with this library.
 """
 
-import logging
-logger = logging.getLogger(__name__)
-
 # https://docs.python.org/3.4/tutorial/modules.html#packages-in-multiple-directories
 import os.path
 __path__.append(os.path.join(__path__[-1], '3dparty'))
