@@ -58,3 +58,6 @@ de revocación
 
 - 20141219: Mechanism to automatically email the badges.
 
+- 20141219: Evidence should be the default. Disabling evidence should
+  the option.
+
