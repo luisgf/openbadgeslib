@@ -56,3 +56,5 @@ de revocación
   indicating the correct timezone. Could be difficult, though.
   Think about it.
 
+- 20141219: Mechanism to automatically email the badges.
+
