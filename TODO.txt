@@ -32,20 +32,10 @@ de revocación
 - 20141216: Tampering with Openbadges (inserting a valid asertion in another
   image) should be detected and notified.
 
-- 20141216: "-o" signing option MUST do a "os.path.join()".
-
-- 20141216: "-o" signing option could be optional.
-
-- 20141216: "-o" signing option MUST indicate clearly that it
-  is a directory and by default it will be current directory.
-
 - 20141216: Each badge should be able to use a different key.
 
 - 20141216: Badges created must be registered somewhere:
   Timestamp, UID, email, evidence.
-
-- 20141216: Generated name could use "unencoded" email address
-  in the name, to automate subsequent emailing.
 
 - 20141216: keeping INI and webserver configuration in sync should
   be easy. For instance, just indicate the URL of the badge
