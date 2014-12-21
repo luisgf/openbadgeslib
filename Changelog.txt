@@ -7,6 +7,11 @@
 
   - When specified, "-o" is suppose to be a directory.
 
+  - Adds a "-E" or "--no-evidence" parameter when creating a new badge.
+
+  - When creating a new badge we need to choose EXPLICITLY between
+    providing evidence or not.
+
 * v0.2.1 - 20141216
 
   - config.ini allows now to configure the badge json url and image url.

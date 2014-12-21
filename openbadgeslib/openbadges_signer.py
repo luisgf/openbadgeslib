@@ -46,10 +46,16 @@ def main():
     parser.add_argument('-b', '--badge', required=True, help='Specify the badge name for sign')
     parser.add_argument('-r', '--receptor', required=True, help='Specify the receptor email of the badge')
     parser.add_argument('-o', '--output', default=os.path.curdir, help='Specify the output directory to save the badge.')
-    parser.add_argument('-e', '--evidence', help='Set an url to the user evidence')
-    parser.add_argument('-d', '--debug', action="store_true", help='Show debug messages in runtime.')
+    parser.add_argument('-e', '--evidence', help='Set an URL to the user evidence')
+    parser.add_argument('-E', '--no-evidence', action='store_true', help='Do not use evidence')
+    parser.add_argument('-d', '--debug', action='store_true', help='Show debug messages in runtime.')
     parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.2.1' )
     args = parser.parse_args()
+
+    if bool(args.no_evidence) != (args.evidence != None) :  # XOR
+        sys.exit("Please, choose '-e' OR '-E'")
+
+    evidence = args.evidence  # If no evidence, evidence=None
 
     if args.badge:
         cf = ConfParser(args.config)
@@ -69,7 +75,7 @@ def main():
 
         try:
             sf = SignerFactory(key_type='RSA', badge_name=args.badge, \
-                 receptor=args.receptor, evidence=args.evidence, log=log)
+                 receptor=args.receptor, evidence=evidence, log=log)
             sf.badge_file_path = os.path.join(conf['paths']['base_image'],
                     conf[args.badge]['local_image'])
             sf.badge_image_url = conf[args.badge]['image']

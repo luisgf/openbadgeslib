@@ -62,7 +62,7 @@ class SignerBase():
         self.badge_image_url = badge_image_url
         self.badge_json_url = badge_json_url
         self.receptor = receptor.encode('utf-8')     # Receptor of the badge
-        self.evidence = evidence                     # Url to evidence
+        self.evidence = evidence                     # URL to evidence
         self.verify_key_url = verify_key_url
         self.deterministic = deterministic           # Randomness
         self.log = log
