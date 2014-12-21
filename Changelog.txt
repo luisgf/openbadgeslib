@@ -1,5 +1,8 @@
 * v0.3 - WORK IN PROGRESS
 
+  - The email is not encoded anymore in the filename, when creating
+    a new badge.
+
   - When creating a badge, "-o" is optional.
 
   - When specified, "-o" is suppose to be a directory.
