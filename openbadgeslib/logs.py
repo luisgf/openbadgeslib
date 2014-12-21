@@ -22,45 +22,45 @@
 """
 
 import logging
-import os 
+import os
 
 class Logger():
     def __init__(self, *args, **kwargs):
-        self.main = self.init_log(logger='general', base_log=kwargs['base_log'], 
+        self.main = self.init_log(logger='general', base_log=kwargs['base_log'],
                                   file=kwargs['general'])
-        self.signer = self.init_log(logger='signer', base_log=kwargs['base_log'], 
+        self.signer = self.init_log(logger='signer', base_log=kwargs['base_log'],
                                     file=kwargs['signer'])
         try:
             self.console = self.init_console(show_debug=kwargs['show_debug'])
         except KeyError:
-            self.console = self.init_console()            
+            self.console = self.init_console()
 
-    def init_log(self, logger='', base_log=None, log_level=logging.INFO, 
+    def init_log(self, logger='', base_log=None, log_level=logging.INFO,
                  file=None):
-        logger = logging.getLogger(logger)   
-        logger.setLevel(logging.DEBUG)         
-        file_path = os.path.join(base_log, file)        
-        
+        logger = logging.getLogger(logger)
+        logger.setLevel(logging.DEBUG)
+        file_path = os.path.join(base_log, file)
+
         """ Create a file handler """
-        handler = logging.FileHandler(file_path, "w", 
+        handler = logging.FileHandler(file_path, "w",
                                       encoding='utf-8', delay=False)
         handler.setLevel(log_level)
         formatter = logging.Formatter("%(asctime)s %(message)s")
         handler.setFormatter(formatter)
         logger.addHandler(handler)
-    
+
         return logger
 
     def init_console(self, show_debug=False):
-        logger = logging.getLogger()  
-        logger.setLevel(logging.NOTSET)   
-        
+        logger = logging.getLogger()
+        logger.setLevel(logging.NOTSET)
+
         """ Console a console handler """
         handler = logging.StreamHandler()
         if not show_debug:
             handler.setLevel(logging.INFO)
         formatter = logging.Formatter("%(levelname)s - %(message)s")
         handler.setFormatter(formatter)
-        logger.addHandler(handler)    
-        
-        return logger        
+        logger.addHandler(handler)
+
+        return logger

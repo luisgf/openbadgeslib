@@ -63,8 +63,8 @@ def main():
             print('ERROR: %s is not defined in this config file' % args.badge)
             sys.exit(-1)
 
-        log = Logger(base_log=conf['paths']['base_log'], 
-                      general=conf['logs']['general'], 
+        log = Logger(base_log=conf['paths']['base_log'],
+                      general=conf['logs']['general'],
                       signer=conf['logs']['signer'])
 
         try:

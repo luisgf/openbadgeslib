@@ -56,10 +56,10 @@ def main():
                 if os.path.exists(i) :
                     raise FileExistsError(i)
 
-            log = Logger(base_log=conf['paths']['base_log'], 
-                      general=conf['logs']['general'], 
+            log = Logger(base_log=conf['paths']['base_log'],
+                      general=conf['logs']['general'],
                       signer=conf['logs']['signer'])
-            
+
             try:
                 log.console.info("Generating key pair for issuer '%s'" % conf['issuer']['name'])
 

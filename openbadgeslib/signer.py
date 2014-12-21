@@ -53,8 +53,8 @@ class SignerBase():
     """ JWS Signer Factory """
 
     def __init__(self, issuer='', badge_name='', badge_file_path=None,
-                 badge_image_url=None, badge_json_url=None, receptor='', 
-                 evidence=None, verify_key_url=None, deterministic=False, 
+                 badge_image_url=None, badge_json_url=None, receptor='',
+                 evidence=None, verify_key_url=None, deterministic=False,
                  log=None):
         self.issuer = issuer.encode('utf-8')
         self.badge_name = badge_name.encode('utf-8')
@@ -119,7 +119,7 @@ class SignerBase():
         """ Log the signing process before returning it.
                 That's prevents the existence of a signed badge without traces """
 
-        self.log.signer.info('%s SIGNED for %s UID %s' % 
+        self.log.signer.info('%s SIGNED for %s UID %s' %
         (self.badge_name.decode('utf-8'), self.receptor.decode('utf-8'),
          self.uid.decode('utf-8')))
 
@@ -184,7 +184,7 @@ class SignerECC(SignerBase):
 
     def generate_jose_header(self):
         jose_header = { 'alg': 'ES256' }
-        
+
         self.log.console.debug('JOSE HEADER %s ' % json.dumps(jose_header))
         return jose_header
 
