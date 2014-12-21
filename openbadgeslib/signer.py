@@ -135,7 +135,7 @@ class SignerBase():
         fbase = os.path.basename(file_in)
         fname, fext = os.path.splitext(fbase)
         #fsuffix = receptor.replace('@','_').replace('.','_')
-        suffix = receptor
+        fsuffix = receptor
 
         return os.path.join(output_dir, fname + '-'+ fsuffix + fext)
 
