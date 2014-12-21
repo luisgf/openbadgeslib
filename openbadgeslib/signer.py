@@ -21,11 +21,10 @@
         License along with this library.
 """
 
-import os
+import os, os.path
 import sys
 import time
 import json
-import os
 
 from datetime import datetime
 from xml.dom.minidom import parse, parseString
@@ -137,7 +136,7 @@ class SignerBase():
         fname, fext = os.path.splitext(fbase)
         fsuffix = receptor.replace('@','_').replace('.','_')
 
-        return output_dir + fname + '_'+ fsuffix + fext
+        return os.path.join(output_dir, fname + '_'+ fsuffix + fext)
 
     def generate_openbadge_assertion(self, priv_key_pem, pub_key_pem):
         """ Generate and Sign and OpenBadge assertion """

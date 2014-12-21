@@ -1,3 +1,9 @@
+* v0.3 - WORK IN PROGRESS
+
+  - When creating a badge, "-o" is optional.
+
+  - When specified, "-o" is suppose to be a directory.
+
 * v0.2.1 - 20141216
 
   - config.ini allows now to configure the badge json url and image url.

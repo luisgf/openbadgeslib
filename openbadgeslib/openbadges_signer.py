@@ -30,7 +30,7 @@
 """
 
 import argparse
-import sys, os
+import sys, os, os.path
 
 from .logs import Logger
 from .signer import SignerFactory
@@ -45,7 +45,7 @@ def main():
     parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-b', '--badge', required=True, help='Specify the badge name for sign')
     parser.add_argument('-r', '--receptor', required=True, help='Specify the receptor email of the badge')
-    parser.add_argument('-o', '--output', required=True, help='Specify the output directory to save the badge.')
+    parser.add_argument('-o', '--output', default=os.path.curdir, help='Specify the output directory to save the badge.')
     parser.add_argument('-e', '--evidence', help='Set an url to the user evidence')
     parser.add_argument('-d', '--debug', action="store_true", help='Show debug messages in runtime.')
     parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.2.1' )
@@ -70,7 +70,8 @@ def main():
         try:
             sf = SignerFactory(key_type='RSA', badge_name=args.badge, \
                  receptor=args.receptor, evidence=args.evidence, log=log)
-            sf.badge_file_path = conf['paths']['base_image'] + '/' + conf[args.badge]['local_image']
+            sf.badge_file_path = os.path.join(conf['paths']['base_image'],
+                    conf[args.badge]['local_image'])
             sf.badge_image_url = conf[args.badge]['image']
             sf.badge_json_url = conf[args.badge]['badge']
             sf.verify_key_url = conf[args.badge]['verify_key']
