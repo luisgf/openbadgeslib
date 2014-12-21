@@ -40,9 +40,12 @@ global log
 # Entry Point
 def main():
     parser = argparse.ArgumentParser(description='Key Generation Parameters')
-    parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
-    parser.add_argument('-g', '--genkey', action="store_true", help='Generate a new Key pair. Key type is taken from profile.')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.2.1' )
+    parser.add_argument('-c', '--config', default='config.ini',
+            help='Specify the config.ini file to use')
+    parser.add_argument('-g', '--genkey', help=('Generate a new Key pair '
+        'for the specified Badge. Key type is taken from profile.'))
+    parser.add_argument('-v', '--version', action='version',
+            version='%(prog)s 0.2.1' )
     args = parser.parse_args()
 
     if not args.genkey:
@@ -52,7 +55,12 @@ def main():
         conf = cparser.read_conf()
 
         if conf:
-            for i in (conf['keys']['private'], conf['keys']['public']) :
+            if args.genkey not in conf :
+                sys.exit('Badge "%s" doesn't exist in the configuration file'
+                        %args.genkey)
+            private_key = conf[args.genkey]['private_key']
+            public_key = conf[args.genkey]['public_key']
+            for i in (private_key, public_key) :
                 if os.path.exists(i) :
                     raise FileExistsError(i)
 
@@ -66,14 +74,14 @@ def main():
                 kf = KeyFactory()
                 priv_key_pem, pub_key_pem = kf.generate_keypair()
 
-                with open(conf['keys']['private'],'wb') as f:
+                with open(private_key, 'wb') as f:
                     f.write(priv_key_pem)
 
-                with open(conf['keys']['public'],'wb') as f:
+                with open(public_key, 'wb') as f:
                     f.write(pub_key_pem)
 
-                log.console.info('Private key saved at: %s' % conf['keys']['private'])
-                log.console.info('Public key saved at: %s' % conf['keys']['public'])
+                log.console.info('Private key saved at: %s' % private_key)
+                log.console.info('Public key saved at: %s' % public_key)
 
             except KeyGenExceptions:
                 raise

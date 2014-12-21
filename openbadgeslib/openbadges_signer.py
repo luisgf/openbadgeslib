@@ -61,11 +61,13 @@ def main():
         cf = ConfParser(args.config)
         conf = cf.read_conf()
 
+        badge = 'badge_' + args.badge
+
         if not conf:
             print('ERROR: The config file %s NOT exists or is empty' % args.config)
             sys.exit(-1)
 
-        if not conf[args.badge]:
+        if not conf[badge]:
             print('ERROR: %s is not defined in this config file' % args.badge)
             sys.exit(-1)
 
@@ -77,14 +79,14 @@ def main():
             sf = SignerFactory(key_type='RSA', badge_name=args.badge, \
                  receptor=args.receptor, evidence=evidence, log=log)
             sf.badge_file_path = os.path.join(conf['paths']['base_image'],
-                    conf[args.badge]['local_image'])
-            sf.badge_image_url = conf[args.badge]['image']
-            sf.badge_json_url = conf[args.badge]['badge']
-            sf.verify_key_url = conf[args.badge]['verify_key']
+                    conf[badge]['local_image'])
+            sf.badge_image_url = conf[badge]['image']
+            sf.badge_json_url = conf[badge]['badge']
+            sf.verify_key_url = conf[badge]['verify_key']
             sf.signerlog = log.signer
 
-            priv_key = conf['keys']['private']
-            pub_key = conf['keys']['public']
+            priv_key = conf[badge]['private_key']
+            pub_key = conf[badge]['public_key']
 
             if not os.path.isfile(sf.badge_file_path):
                 log.console.error('Badge file %s NOT exists.' % sf.badge_file_path)

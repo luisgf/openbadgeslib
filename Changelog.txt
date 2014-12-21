@@ -7,10 +7,21 @@
 
   - When specified, "-o" is suppose to be a directory.
 
-  - Adds a "-E" or "--no-evidence" parameter when creating a new badge.
+  - We can specify "-E" or "--no-evidence" parameter when creating
+    a new badge.
 
-  - When creating a new badge we need to choose EXPLICITLY between
+  - When creating a new badge we need now to choose EXPLICITLY between
     providing evidence or not.
+
+  - Now badge sections in the INI file must be prefixed with "badge_".
+
+    UPGRADE: If your badge is called "ponente2014", rename it to
+    "badge_ponente2014".
+
+  - Now each badge can have a different key.
+
+    UPGRADE: Move your current key configuration to the badge section,
+    renaming "private" to "private_key" and "public" to "public_key".
 
 * v0.2.1 - 20141216
 

@@ -14,11 +14,6 @@ base_image   = ${base}/images
 general = general.log
 signer  = signer.log
 
-;Key configuration. Stored in ${base_key}
-[keys]
-private   = ${paths:base_key}/sign_rsa_key.pem
-public    = ${paths:base_key}/verify_rsa_key.pem
-
 ; Configuration of the OpenBadges issuer.
 [issuer]
 name           = OpenBadge issuer
@@ -37,6 +32,8 @@ image       = https://www.issuer.badge/issuer/badge_1/badge1.svg
 criteria    = https://www.issuer.badge/issuer/badge_1/criteria.html
 verify_key  = https://www.issuer.badge/issuer/badge_1/verify_rsa_key.pem
 badge       = https://www.issuer.badge/issuer/badge_1/badge.json
+private_key = ${paths:base_key}/sign_rsa_key_1.pem
+public_key  = ${paths:base_key}/verify_rsa_key_1.pem
 ;alignement  =
 ;tags        =
 
@@ -48,6 +45,8 @@ image       = https://www.issuer.badge/issuer/badge_2/badge2.svg
 criteria    = https://www.issuer.badge/issuer/badge_2/criteria.html
 verify_key  = https://www.issuer.badge/issuer/badge_2/verify_rsa_key.pem
 badge       = https://www.issuer.badge/issuer/badge_2/badge.json
+private_key = ${paths:base_key}/sign_rsa_key_2.pem
+public_key  = ${paths:base_key}/verify_rsa_key_2.pem
 ;alignement =
 ;tags       =
 
