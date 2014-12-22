@@ -57,7 +57,7 @@ def main():
 
         badge = 'badge_' + args.genkey
         if conf:
-            if badge in conf :
+            if badge not in conf :
                 sys.exit("Badge '%s' doesn't exist in the configuration file"
                         %args.genkey)
             private_key = conf[badge]['private_key']
