@@ -39,11 +39,16 @@ from .confparser import ConfParser
 # Entry Point
 def main():
     parser = argparse.ArgumentParser(description='Badge Signer Parameters')
-    parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
-    parser.add_argument('-i', '--filein', required=True, help='Specify the input SVG file to verify the signature')
-    parser.add_argument('-r', '--receptor', required=True, help='Specify the email of the receptor of the badge')
-    parser.add_argument('-lk', '--localkey', action="store_true", help='Verify the badge with local pubkey passed as param otherwise, the key in assertion will be used.')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.2.1' )
+    parser.add_argument('-c', '--config', default='config.ini',
+            help='Specify the config.ini file to use')
+    parser.add_argument('-i', '--filein', required=True,
+            help='Specify the input SVG file to verify the signature')
+    parser.add_argument('-r', '--receptor', required=True,
+            help='Specify the email of the receptor of the badge')
+    parser.add_argument('-l', '--local', metavar='BADGE',
+            help='Do the verification using the local configuration')
+    parser.add_argument('-v', '--version', action='version',
+            version='%(prog)s 0.2.1' )
     args = parser.parse_args()
 
     if args.filein and args.receptor:
@@ -65,8 +70,13 @@ def main():
             with open(args.filein, "rb") as f:
                 svg_data = f.read()
 
-            if args.localkey:
-                with open(conf['keys']['public'],"rb") as f:
+            if args.local:
+                badge = 'badge_' + args.local
+                if badge not in conf :
+                    sys.exit('There is no "%s" badge in the configuration' %
+                            args.local)
+
+                with open(conf[badge]['public_key'],"rb") as f:
                     local_key_pem = f.read()
             else:
                 local_key_pem = None
