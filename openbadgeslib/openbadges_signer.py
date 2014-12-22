@@ -52,7 +52,7 @@ def main():
     parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.2.1' )
     args = parser.parse_args()
 
-    if bool(args.no_evidence) != (args.evidence != None) :  # XOR
+    if bool(args.no_evidence) != (args.evidence is None) :  # XOR
         sys.exit("Please, choose '-e' OR '-E'")
 
     evidence = args.evidence  # If no evidence, evidence=None
