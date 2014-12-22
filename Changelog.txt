@@ -23,6 +23,8 @@
     UPGRADE: Move your current key configuration to the badge section,
     renaming "private" to "private_key" and "public" to "public_key".
 
+    UPGRADE: Now "openbadges-keygenerator -g" requires a badge name.
+
 * v0.2.1 - 20141216
 
   - config.ini allows now to configure the badge json url and image url.
