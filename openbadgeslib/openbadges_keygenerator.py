@@ -29,7 +29,7 @@
     POSSIBILITY OF SUCH DAMAGE.
 """
 
-import argparse, os.path
+import argparse, os.path, sys
 
 from .logs import Logger
 from .keys import KeyFactory
