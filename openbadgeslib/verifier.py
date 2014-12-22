@@ -45,6 +45,7 @@ from .errors import UnknownKeyType, AssertionFormatIncorrect, \
 
 from .jws import utils as jws_utils
 from .jws import verify_block as jws_verify_block
+from .jws.exceptions import SignatureError as JWS_SignatureError
 
 from .util import hash_email, sha256_string
 
@@ -71,7 +72,10 @@ class VerifyBase():
 
         self.show_disclaimer()
 
-        return jws_verify_block(assertion, verif_key)
+        try :
+            return jws_verify_block(assertion, verif_key)
+        except JWS_SignatureError :
+            return False
 
     def verify_signature_inlocal(self, assertion, receptor):
         """ Verify that a signature is valid and has emitted for a
@@ -79,11 +83,9 @@ class VerifyBase():
         import json
 
         # Check if the JWS assertion is valid
-        #try:
         self.show_key_info(self.key)
-        self.verify_jws_signature(assertion, self.key)
-        #except:
-        #    return False
+        if not self.verify_jws_signature(assertion, self.key) :
+            return False
 
         # The assertion is signed with our local key. Receptor check...
         head_encoded, payload_encoded, signature_encoded = assertion.split(b'.')

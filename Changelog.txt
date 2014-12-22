@@ -25,6 +25,9 @@
 
     UPGRADE: Now "openbadges-keygenerator -g" requires a badge name.
 
+  - "openbadges-verifier" changes its parameter from "-lk" to "-l"and
+    now it needs the name of the badge to locale its public key.
+
 * v0.2.1 - 20141216
 
   - config.ini allows now to configure the badge json url and image url.
