@@ -55,12 +55,13 @@ def main():
         cparser = ConfParser(args.config)
         conf = cparser.read_conf()
 
+        badge = 'badge_' + args.genkey
         if conf:
-            if args.genkey not in conf :
+            if badge in conf :
                 sys.exit("Badge '%s' doesn't exist in the configuration file"
                         %args.genkey)
-            private_key = conf[args.genkey]['private_key']
-            public_key = conf[args.genkey]['public_key']
+            private_key = conf[badge]['private_key']
+            public_key = conf[badge]['public_key']
             for i in (private_key, public_key) :
                 if os.path.exists(i) :
                     raise FileExistsError(i)
