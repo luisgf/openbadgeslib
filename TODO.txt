@@ -15,7 +15,6 @@ TODO LIST
 - El registro de badges deberia de estar en una DB o un pickle. Esto nos será util en el proceso
 de revocación
 - Tutorial paso a paso de uso.
-- Añadir a la verificación del badge la comprobacion del estado de expiración.
 - Implementar un modo dry, que "genere el assertion pero no lo añada al fichero"
 - Añadir modo debug al generador de claves y al verificador.
 - El parametro que "output" que se pasa al signer debe terminar en "/", sino la ruta no se genera correctamente.
