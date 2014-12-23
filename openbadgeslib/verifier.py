@@ -339,7 +339,4 @@ class VerifyECC(VerifyBase):
                 signature/verification process and may lead to problems for
                 you and others when verifying your badges.
 
-                Use at your own risk!
-
-                Expiration status of badges are not verified
-                by this library version. """)
+                Use at your own risk!""")
