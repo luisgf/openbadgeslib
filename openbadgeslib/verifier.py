@@ -170,7 +170,10 @@ class VerifyBase():
             raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
 
     def download_pubkey(self, url):
-        """ This function return the Key in pem format from server """
+        return self.download_file(url)
+        
+    def download_file(self, url):
+        """ This function download a file from server """
 
         # SSL Context
         sslctx = SSLContext(PROTOCOL_TLSv1)
@@ -180,9 +183,9 @@ class VerifyBase():
         request.install_opener(request.build_opener(sslctx_handler))
 
         with request.urlopen(url, timeout=30) as kd:
-            pub_key_pem = kd.read()
+            file = kd.read()
 
-        return pub_key_pem
+        return file
 
     def extract_svg_signature(self, svg_data):
         """ Extract the signature embeded in a SVG file. """
