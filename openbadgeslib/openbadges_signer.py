@@ -58,8 +58,11 @@ def main():
 
     evidence = args.evidence  # If no evidence, evidence=None
 
-    expiration = int(time.time()) + args.expires*86400
-
+    if args.expires:
+        expiration = int(time.time()) + args.expires*86400
+    else:
+        expiration = None
+        
     if args.badge:
         cf = ConfParser(args.config)
         conf = cf.read_conf()
