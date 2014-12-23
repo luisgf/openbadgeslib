@@ -30,7 +30,7 @@
 """
 
 import argparse
-import sys, os, os.path
+import sys, os, os.path, time
 
 from .logs import Logger
 from .signer import SignerFactory
@@ -48,6 +48,7 @@ def main():
     parser.add_argument('-o', '--output', default=os.path.curdir, help='Specify the output directory to save the badge.')
     parser.add_argument('-e', '--evidence', help='Set an URL to the user evidence')
     parser.add_argument('-E', '--no-evidence', action='store_true', help='Do not use evidence')
+    parser.add_argument('-x', '--expires', type=int, help='Set badge expiration after x days.')
     parser.add_argument('-d', '--debug', action='store_true', help='Show debug messages in runtime.')
     parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.2.1' )
     args = parser.parse_args()
@@ -56,6 +57,8 @@ def main():
         sys.exit("Please, choose '-e' OR '-E'")
 
     evidence = args.evidence  # If no evidence, evidence=None
+
+    expiration = int(time.time()) + args.expires*86400
 
     if args.badge:
         cf = ConfParser(args.config)
@@ -77,7 +80,8 @@ def main():
 
         try:
             sf = SignerFactory(key_type='RSA', badge_name=args.badge, \
-                 receptor=args.receptor, evidence=evidence, log=log)
+                 receptor=args.receptor, evidence=evidence, expires=expiration,
+                 log=log)
             sf.badge_file_path = os.path.join(conf['paths']['base_image'],
                     conf[badge]['local_image'])
             sf.badge_image_url = conf[badge]['image']

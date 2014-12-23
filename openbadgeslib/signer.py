@@ -55,7 +55,7 @@ class SignerBase():
     def __init__(self, issuer='', badge_name='', badge_file_path=None,
                  badge_image_url=None, badge_json_url=None, receptor='',
                  evidence=None, verify_key_url=None, deterministic=False,
-                 log=None):
+                 expires=None, log=None):
         self.issuer = issuer.encode('utf-8')
         self.badge_name = badge_name.encode('utf-8')
         self.badge_file_path = badge_file_path       # Path to local file
@@ -65,6 +65,7 @@ class SignerBase():
         self.evidence = evidence                     # URL to evidence
         self.verify_key_url = verify_key_url
         self.deterministic = deterministic           # Randomness
+        self.expires = expires
         self.log = log
 
     def generate_uid(self):
@@ -95,6 +96,9 @@ class SignerBase():
                         verify = verify_data,
                         issuedOn = 0 if self.deterministic else int(time.time())
                      )
+                     
+        if self.expires:
+            payload['expires'] = self.expires
 
         if self.evidence:
             payload['evidence'] = self.evidence
