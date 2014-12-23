@@ -9,12 +9,9 @@ TODO LIST
 
 - Documentar el uso del API
 
-- La configuracion debe estar en un fichero .cfg o .ini no en un fichero .py, la idea con esto
-es sacar la configuracion del sistema de control de versiones.
 - el validador debería sacarte algo de info de algoritmos
     "validando badge hospedado"
     
-- Herramienta que copie lo necesario para validar los badges en un directorio (json, imagenes, claves)
 - El assertion se graba antes de definir el namespace, a pesar de que funciona no estoy seguro de que
 cumpla el standard, además de quedar algo feo.
 - El registro de badges deberia de estar en una DB o un pickle. Esto nos será util en el proceso
