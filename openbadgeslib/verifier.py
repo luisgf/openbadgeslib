@@ -38,6 +38,7 @@ from xml.dom.minidom import parseString
 
 from urllib.error import HTTPError, URLError
 from ssl import SSLError
+import json
 
 # Local imports
 from .errors import UnknownKeyType, AssertionFormatIncorrect, \
@@ -80,7 +81,6 @@ class VerifyBase():
     def verify_signature_inlocal(self, assertion, receptor):
         """ Verify that a signature is valid and has emitted for a
             given receptor """
-        import json
 
         # Check if the JWS assertion is valid
         self.show_key_info(self.key)
@@ -113,7 +113,7 @@ class VerifyBase():
 
     def verify_signature_inverse(self, assertion, receptor):
         """ Check the assertion against the Key specified in JWS Paload """
-        import json
+
         # The assertion MUST have a string like head.payload.signature
         try:
             head_encoded, payload_encoded, signature_encoded = assertion.split(b'.')
@@ -161,6 +161,12 @@ class VerifyBase():
         except:
             email_salt = b''
 
+        # Are this badge revoked?
+        reason = self.check_revocation(payload)
+        if reason:
+            print('[!] The badge %s has been revoked. Reason: %s' % (payload['uid'],reason))
+            return False
+
         # Ok, the signature is valid, now i check if the badge is emitted for this receptor
         try:
             email_hashed = (b'sha256$' + hash_email(receptor, email_salt)).decode('utf-8')
@@ -172,8 +178,25 @@ class VerifyBase():
         except:
             raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
 
-    def check_revocation(self, jws_payload):
-        revocation_url = jws_payload[]
+    def check_revocation(self, payload):
+        """ Return true if the badge has been revoked """
+        uid = payload['uid']
+       
+        badge_json = self.download_file(payload['badge'])
+        badge = jws_utils.from_json(badge_json)
+                
+        issuer_json = self.download_file(badge['issuer'])
+        issuer = jws_utils.from_json(issuer_json)
+        
+        revocation_json = self.download_file(issuer['revocationList'])
+        revocation = jws_utils.from_json(revocation_json)
+        
+        if revocation:
+            for badge_id in revocation:
+                if badge_id == uid:                    
+                    return revocation[badge_id]           
+        
+        return None
     
     def download_pubkey(self, url):
         return self.download_file(url)
