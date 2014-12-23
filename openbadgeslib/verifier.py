@@ -105,6 +105,16 @@ class VerifyBase():
             print('[!] The badge %s has been revoked. Reason: %s' % (payload['uid'],reason))
             return False
 
+        # Are this badge expired?
+        try:
+            expiration = self.check_expiration(payload['issuedOn'], payload['expires'])
+            if expiration:
+                print('[!] The badge %s has expired at: %s' % (payload['uid'], expiration))
+                return False
+        except KeyError:
+            """ No expiration set """
+            pass
+
         # Receptor verification
         try:
             email_salt = payload['recipient']['salt'].encode('utf-8')
@@ -173,6 +183,16 @@ class VerifyBase():
             print('[!] The badge %s has been revoked. Reason: %s' % (payload['uid'],reason))
             return False
 
+        # Are this badge expired?
+        try:
+            expiration = self.check_expiration(payload['issuedOn'], payload['expires'])
+            if expiration:
+                print('[!] The badge %s has expired at: %s' % (payload['uid'], expiration))
+                return False
+        except KeyError:
+            """ No expiration set """
+            pass
+
         # Ok, the signature is valid, now i check if the badge is emitted for this receptor
         try:
             email_hashed = (b'sha256$' + hash_email(receptor, email_salt)).decode('utf-8')
@@ -183,6 +203,16 @@ class VerifyBase():
                 return False
         except:
             raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
+
+    def check_expiration(self, ts_expedition, ts_expiration):
+        from time import gmtime, strftime
+        
+        if ts_expiration < ts_expedition:
+            return "%s" % strftime("%a, %d %b %Y %H:%M:%S +0000",
+                                                 gmtime(ts_expiration))
+
+        else:
+            return None
 
     def check_revocation(self, payload):
         """ Return true if the badge has been revoked """
