@@ -12,8 +12,6 @@ TODO LIST
 - el validador debería sacarte algo de info de algoritmos
     "validando badge hospedado"
     
-- El assertion se graba antes de definir el namespace, a pesar de que funciona no estoy seguro de que
-cumpla el standard, además de quedar algo feo.
 - El registro de badges deberia de estar en una DB o un pickle. Esto nos será util en el proceso
 de revocación
 - Tutorial paso a paso de uso.
