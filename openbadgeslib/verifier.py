@@ -99,6 +99,12 @@ class VerifyBase():
         print('[+] This is the assertion content:')
         print(json.dumps(payload, sort_keys=True, indent=4))
 
+        # Are this badge revoked?
+        reason = self.check_revocation(payload)
+        if reason:
+            print('[!] The badge %s has been revoked. Reason: %s' % (payload['uid'],reason))
+            return False
+
         # Receptor verification
         try:
             email_salt = payload['recipient']['salt'].encode('utf-8')
@@ -305,5 +311,5 @@ class VerifyECC(VerifyBase):
 
                 Use at your own risk!
 
-                Expiration and Revocations status of badges are not verified
+                Expiration status of badges are not verified
                 by this library version. """)
