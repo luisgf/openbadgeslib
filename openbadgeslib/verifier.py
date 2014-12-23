@@ -96,6 +96,9 @@ class VerifyBase():
         except:
             raise AssertionFormatIncorrect('Payload deserialization error')
 
+        print('[+] This is the assertion content:')
+        print(json.dumps(payload, sort_keys=True, indent=4))
+
         # Receptor verification
         try:
             email_salt = payload['recipient']['salt'].encode('utf-8')
@@ -169,6 +172,9 @@ class VerifyBase():
         except:
             raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
 
+    def check_revocation(self, jws_payload):
+        revocation_url = jws_payload[]
+    
     def download_pubkey(self, url):
         return self.download_file(url)
         
