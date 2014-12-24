@@ -32,19 +32,18 @@ from xml.dom.minidom import parse, parseString
 from .errors import UnknownKeyType, FileToSignNotExists, BadgeSignedFileExists, ErrorSigningFile, PrivateKeyReadError
 
 from .util import hash_email, md5_string, sha1_string, sha256_string
-from .keys import KeyFactory
-from .verifier import VerifyFactory
+from .keys import KeyFactory, KeyType
 
 from .jws import utils as jws_utils
 from .jws import sign as jws_sign
 
-def SignerFactory(key_type='RSA', *args, **kwargs):
+def SignerFactory(key_type=KeyType.RSA, *args, **kwargs):
     """ Signer Factory Object, Return a Given object type passing a name
         to the constructor. """
 
-    if key_type == 'ECC':
+    if key_type == KeyType.ECC:
         return SignerECC(*args, **kwargs)
-    if key_type == 'RSA':
+    if key_type == KeyType.RSA:
         return SignerRSA(*args, **kwargs)
     else:
         raise UnknownKeyType()
@@ -52,27 +51,29 @@ def SignerFactory(key_type='RSA', *args, **kwargs):
 class SignerBase():
     """ JWS Signer Factory """
 
-    def __init__(self, issuer='', badge_name='', badge_file_path=None,
-                 badge_image_url=None, badge_json_url=None, receptor='',
-                 evidence=None, verify_key_url=None, deterministic=False,
-                 expires=None, log=None):
-        self.issuer = issuer.encode('utf-8')
+    def __init__(self, badge_name='',
+                 image_url=None, json_url=None, identity='',
+                 evidence=None, verify_key=None, deterministic=False,
+                 expires=None, sign_key=None):
         self.badge_name = badge_name.encode('utf-8')
-        self.badge_file_path = badge_file_path       # Path to local file
-        self.badge_image_url = badge_image_url
-        self.badge_json_url = badge_json_url
-        self.receptor = receptor.encode('utf-8')     # Receptor of the badge
+        self.badge_image_url = image_url
+        self.badge_json_url = json_url
+        self.receptor = identity.encode('utf-8')     # Receptor of the badge
         self.evidence = evidence                     # URL to evidence
-        self.verify_key_url = verify_key_url
+        self.verify_key_url = verify_key
         self.deterministic = deterministic           # Randomness
         self.expires = expires
-        self.log = log
+        self.sign_key = sign_key
 
     def generate_uid(self):
-        self.uid = sha1_string(self.issuer + self.badge_name + self.receptor + datetime.now().isoformat().encode('utf-8'))
+        self.uid = sha1_string(self.badge_name + self.receptor + datetime.now().isoformat().encode('utf-8'))
         return self.uid
 
+    def get_uid(self):
+        return self.uid.decode('utf-8')
+
     def generate_jws_payload(self):
+        self.generate_uid()
 
         mail_salt = b's4lt3d' if self.deterministic else md5_string(os.urandom(128))
         # All this data MUST be a Str string in order to be converted to json properly.
@@ -89,21 +90,21 @@ class SignerBase():
         )
 
         payload = dict(
-                        uid = 0 if self.deterministic else self.generate_uid().decode('utf-8'),
+                        uid = 0 if self.deterministic else self.get_uid(),
                         recipient = recipient_data,
                         image = self.badge_image_url,
                         badge = self.badge_json_url,
                         verify = verify_data,
                         issuedOn = 0 if self.deterministic else int(time.time())
                      )
-                     
+
         if self.expires:
             payload['expires'] = self.expires
 
         if self.evidence:
             payload['evidence'] = self.evidence
 
-        self.log.console.debug('JWS Payload %s ' % json.dumps(payload))
+        #self.log.console.debug('JWS Payload %s ' % json.dumps(payload))
 
         return payload
 
@@ -120,50 +121,34 @@ class SignerBase():
         assertion_tag.attributes['verify']= assertion.decode('utf-8')
         svg_tag.appendChild(assertion_tag)
 
-        """ Log the signing process before returning it.
-                That's prevents the existence of a signed badge without traces """
-
-        self.log.signer.info('%s SIGNED for %s UID %s' %
-        (self.badge_name.decode('utf-8'), self.receptor.decode('utf-8'),
-         self.uid.decode('utf-8')))
-
         svg_signed = svg_doc.toxml()
         svg_doc.unlink()
 
         return svg_signed
 
-    def generate_output_filename(self, file_in, output_dir, receptor):
+    def generate_output_filename(self, file_in, output_dir):
         """ Generate an output filename based on the source
             name and the receptor email """
 
         fbase = os.path.basename(file_in)
         fname, fext = os.path.splitext(fbase)
         #fsuffix = receptor.replace('@','_').replace('.','_')
-        fsuffix = receptor
+        fsuffix = self.receptor.decode('utf-8')
 
         return os.path.join(output_dir, fname + '-'+ fsuffix + fext)
 
-    def generate_openbadge_assertion(self, priv_key_pem, pub_key_pem):
+    def generate_openbadge_assertion(self):
         """ Generate and Sign and OpenBadge assertion """
 
         header = self.generate_jose_header()
         payload = self.generate_jws_payload()
 
-        self.key.read_private_key(priv_key_pem)
-        self.key.read_public_key(pub_key_pem)
+        self.key.read_private_key(self.sign_key)
 
         signature = jws_sign(header, payload, self.key.get_priv_key())
         assertion = jws_utils.encode(header) + b'.' + jws_utils.encode(payload) + b'.' + jws_utils.to_base64(signature)
 
-        # Verify the assertion just after the generation.
-        vf = VerifyFactory()
-        vf.load_pubkey_inline(self.key.get_pub_key_pem())
-
-        if not vf.verify_jws_signature(assertion, self.key.get_pub_key()):
-            return None
-        else:
-            self.log.console.debug('Assertion %s' % assertion)
-            return assertion
+        return assertion
 
     def has_assertion(self, xml_obj):
         if xml_obj.getElementsByTagName('openbadges:assertion'):
@@ -174,23 +159,25 @@ class SignerBase():
 class SignerRSA(SignerBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.key = KeyFactory('RSA')
+        self.key_type = KeyType.RSA
+        self.key = KeyFactory(KeyType.RSA)
 
     def generate_jose_header(self):
         jose_header = { 'alg': 'RS256' }
 
-        self.log.console.debug('JOSE HEADER %s ' % json.dumps(jose_header))
+        #self.log.console.debug('JOSE HEADER %s ' % json.dumps(jose_header))
         return jose_header
 
 class SignerECC(SignerBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.key = KeyFactory('ECC')
+        self.key_type = KeyType.ECC
+        self.key = KeyFactory(KeyType.ECC)
 
     def generate_jose_header(self):
         jose_header = { 'alg': 'ES256' }
 
-        self.log.console.debug('JOSE HEADER %s ' % json.dumps(jose_header))
+        #self.log.console.debug('JOSE HEADER %s ' % json.dumps(jose_header))
         return jose_header
 
 
