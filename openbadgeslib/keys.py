@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 import os
 import sys
 
+from enum import Enum
 from Crypto.PublicKey import RSA
 from ecdsa import SigningKey, VerifyingKey, NIST256p
 
@@ -34,12 +35,16 @@ from .errors import UnknownKeyType, PrivateKeySaveError, \
         PublicKeySaveError, GenPrivateKeyError, \
         GenPublicKeyError, PrivateKeyReadError, PublicKeyReadError
 
-def KeyFactory(key_type='RSA'):
+class KeyType(Enum):
+    RSA = 'RSA 2048'
+    ECC = 'ECC NIST256p'
+
+def KeyFactory(key_type=KeyType.RSA):
     """ Key Factory Object, Return a Given object type passing a name
         to the constructor. """
-    if key_type == 'ECC':
+    if key_type == KeyType.ECC:
         return KeyECC()
-    if key_type == 'RSA':
+    if key_type == KeyType.RSA:
         return KeyRSA()
     else:
         raise UnknownKeyType()
@@ -120,4 +125,11 @@ class KeyECC(KeyBase):
 
     def get_pub_key_pem(self):
         return self.pub_key.to_pem()
+
+def detect_key_type(pem_data):
+    try:
+        RSA.importKey(pem_data)
+        return KeyType.RSA
+    except:
+        return KeyType.ECC
 
