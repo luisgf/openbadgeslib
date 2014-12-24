@@ -1,4 +1,4 @@
-* v0.3 - WORK IN PROGRESS
+* v0.3
 
   - The email is not encoded anymore in the filename, when creating
     a new badge.
@@ -27,6 +27,12 @@
 
   - "openbadges-verifier" changes its parameter from "-lk" to "-l"and
     now it needs the name of the badge to locale its public key.
+
+  - "openbadges-verifier" now accept a parameter -x for specify the
+    expiration for a badge.
+
+  - "openbadges-verifier" now check the revocation status and the expiration
+    dates of badges.
 
 * v0.2.1 - 20141216
 
