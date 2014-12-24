@@ -32,7 +32,8 @@
 import argparse
 import sys, os
 
-from .verifier import VerifyFactory
+from .keys import detect_key_type
+from .verifier import VerifyFactory, VerifyBase, BadgeStatus, KeyType
 from .errors import LibOpenBadgesException, VerifierExceptions
 from .confparser import ConfParser
 
@@ -60,9 +61,6 @@ def main():
             sys.exit(-1)
 
         try:
-            sf = VerifyFactory()
-            receptor = args.receptor
-
             if not os.path.isfile(args.filein):
                 print('[!] SVG file %s NOT exists.' % args.filein)
                 sys.exit(-1)
@@ -77,14 +75,23 @@ def main():
                             args.local)
 
                 with open(conf[badge]['public_key'],"rb") as f:
-                    local_key_pem = f.read()
+                    key_pem = f.read()
             else:
-                local_key_pem = None
+                key_pem = None
 
-            if sf.is_svg_signature_valid(svg_data, receptor, local_key=local_key_pem):
-                print('[+] The Badge Signature is Correct for the user:', args.receptor)
+            key_type = detect_key_type(key_pem)
+            assertion = VerifyBase.extract_svg_assertion(svg_data)
+
+            vf = VerifyFactory(key_type=key_type, assertion=assertion,
+                               identity=args.receptor, verify_key=key_pem)
+
+            sign = vf.get_signature_status()
+
+            if sign.status is BadgeStatus.VALID:
+                vf.print_payload()
+                print('[+] Signature is correct for the identity %s' % args.receptor)
             else:
-                print('[!] Badge signature is incorrect, corrupted or tampered for the user:', args.receptor)
+                print('[-] ', sign.msg)
         except VerifierExceptions:
             raise
     else:
