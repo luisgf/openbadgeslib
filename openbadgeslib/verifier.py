@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 import os
 import sys
 
+from enum import Enum
 from Crypto.PublicKey import RSA
 from ecdsa import SigningKey, VerifyingKey, NIST256p
 
@@ -47,198 +48,157 @@ from .errors import UnknownKeyType, AssertionFormatIncorrect, \
 from .jws import utils as jws_utils
 from .jws import verify_block as jws_verify_block
 from .jws.exceptions import SignatureError as JWS_SignatureError
-
+from .keys import KeyType, detect_key_type
 from .util import hash_email, sha256_string
 
-def VerifyFactory(key_type='RSA'):
+class BadgeStatus(Enum):
+    VALID = 1
+    SIGNATURE_ERROR = 2
+    EXPIRED = 3
+    REVOKED = 4
+    IDENTITY_ERROR = 5
+    NONE = 6
+
+class VerifyInfo():
+    def __init__(self, status=BadgeStatus.NONE, msg=None):
+        self.status = status
+        self.msg = msg
+
+def VerifyFactory(key_type=KeyType.RSA, *args, **kwargs):
     """ Verify Factory Object, Return a Given object type passing a name
         to the constructor. """
 
-    if key_type == 'ECC':
-       return VerifyECC()
-    if key_type == 'RSA':
-       return VerifyRSA()
+    if key_type == KeyType.ECC:
+       return VerifyECC(*args, **kwargs)
+    if key_type == KeyType.RSA:
+       return VerifyRSA(*args, **kwargs)
     else:
        raise UnknownKeyType()
 
 """ Signature Verification Factory """
 class VerifyBase():
-    def __init__(self, receptor=''):
-        self.key = None                                         # Crypto Object
-        self._receptor = receptor.encode('utf-8')
+    def __init__(self, assertion=None, identity=None, verify_key=None):
+        self._assertion = assertion
+        self._identity = identity
+        self._metadata = self.extract_metadata()
 
-    def verify_jws_signature(self, assertion, verif_key):
-        """ Verify the JWS Signature, Return True if the signature
-            block is Good """
+        if (verify_key is None):
+            self._verify_key = self.download_pubkey()
+        else:
+            self._verify_key = verify_key
 
+        self._key_type = detect_key_type(self._verify_key)
+
+    def print_payload(self):
+        print('[+] This is the assertion content:')
+        print(json.dumps(self._metadata['payload'], sort_keys=True, indent=4))
+
+    def check_jws_signature(self, assertion, key):
+        try:
+            if jws_verify_block(assertion, key):
+                return VerifyInfo(BadgeStatus.VALID, 'OK')
+
+        except JWS_SignatureError as err:
+            return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, err)
+
+    def get_signature_status(self):
         self.show_disclaimer()
 
-        try :
-            return jws_verify_block(assertion, verif_key)
-        except JWS_SignatureError :
-            return False
-
-    def verify_signature_inlocal(self, assertion, receptor):
-        """ Verify that a signature is valid and has emitted for a
-            given receptor """
-
-        # Check if the JWS assertion is valid
-        self.show_key_info(self.key)
-        if not self.verify_jws_signature(assertion, self.key) :
-            return False
-
-        # The assertion is signed with our local key. Receptor check...
-        head_encoded, payload_encoded, signature_encoded = assertion.split(b'.')
-
-        # Try to decode the payload
-        try:
-            payload = jws_utils.decode(payload_encoded)
-        except:
-            raise AssertionFormatIncorrect('Payload deserialization error')
-
-        print('[+] This is the assertion content:')
-        print(json.dumps(payload, sort_keys=True, indent=4))
-
-        # Are this badge revoked?
-        reason = self.check_revocation(payload)
-        if reason:
-            print('[!] The badge %s has been revoked. Reason: %s' % (payload['uid'],reason))
-            return False
-
-        # Are this badge expired?
-        try:
-            expiration = self.check_expiration(payload['issuedOn'], payload['expires'])
-            if expiration:
-                print('[!] The badge %s has expired at: %s' % (payload['uid'], expiration))
-                return False
-        except KeyError:
-            """ No expiration set """
-            pass
-
-        # Receptor verification
-        try:
-            email_salt = payload['recipient']['salt'].encode('utf-8')
-        except:
-            email_salt = b''
-
-        email_hashed = (b'sha256$' + hash_email(receptor, email_salt)).decode('utf-8')
-        if email_hashed == payload['recipient']['identity']:
-            return True
-        else:
-            return False
-
-    def verify_signature_inverse(self, assertion, receptor):
-        """ Check the assertion against the Key specified in JWS Paload """
-
-        # The assertion MUST have a string like head.payload.signature
-        try:
-            head_encoded, payload_encoded, signature_encoded = assertion.split(b'.')
-        except:
-            raise AssertionFormatIncorrect()
-
-        # Try to decode the payload
-        try:
-            payload = jws_utils.decode(payload_encoded)
-        except:
-            raise AssertionFormatIncorrect('Payload deserialization error')
-
-        """ Parse URL to detect that has a correct format and a secure source.
-             Warning User otherwise """
-
-        u = urlparse(payload['verify']['url'])
-
-        if u.scheme != 'https':
-            print('[!] Warning! The public key is in a server that\'s lacks TLS support.', payload['verify']['url'])
-        else:
-            print('[+] The public key appears to be in a server with TLS support. Good!', payload['verify']['url'])
-
-        if u.hostname == b'':
-            raise AssertionFormatIncorrect('The URL thats point to public key not exists in this assertion')
-
-        # OK, is time to download the pubkey
-        pub_key_pem = self.download_pubkey(payload['verify']['url'])
-
-        print('[+] This is the assertion content:')
-        print(json.dumps(payload, sort_keys=True, indent=4))
-
-        # Ok, is time to verify the assertion againts the key downloaded.
-        vk_external = self.get_crypto_object(pub_key_pem)
-
-        # Show key info of the downloaded key
-        self.show_key_info(vk_external)
+        assertion = self._metadata['assertion']
+        payload = self._metadata['payload']
 
         try:
-            signature_valid = self.verify_jws_signature(assertion, vk_external)
-        except:
-             return False
+            if self.check_jws_signature(assertion, self._verify_key) is not BadgeStatus.VALID:
+                """ Signature is cryptographically correct """
 
-        try:
-            email_salt = payload['recipient']['salt'].encode('utf-8')
-        except:
-            email_salt = b''
+                 # Are this badge revoked?
+                reason = self.check_revocation(payload)
+                if reason:
+                    error = 'The badge %s has been revoked. Reason: %s' % (payload['uid'],reason)
+                    return VerifyInfo(BadgeStatus.REVOKED, error)
 
-        # Are this badge revoked?
-        reason = self.check_revocation(payload)
-        if reason:
-            print('[!] The badge %s has been revoked. Reason: %s' % (payload['uid'],reason))
-            return False
+                # Are this badge expired?
+                try:
+                    expiration = self.check_expiration(payload['issuedOn'], payload['expires'])
+                    if expiration:
+                        error = 'The badge with UID %s has expired at: %s' % (payload['uid'], expiration)
+                        return VerifyInfo(BadgeStatus.EXPIRED, error)
+                except KeyError:
+                    pass
 
-        # Are this badge expired?
-        try:
-            expiration = self.check_expiration(payload['issuedOn'], payload['expires'])
-            if expiration:
-                print('[!] The badge %s has expired at: %s' % (payload['uid'], expiration))
-                return False
-        except KeyError:
-            """ No expiration set """
-            pass
-
-        # Ok, the signature is valid, now i check if the badge is emitted for this receptor
-        try:
-            email_hashed = (b'sha256$' + hash_email(receptor, email_salt)).decode('utf-8')
-            if email_hashed == payload['recipient']['identity']:
-                # OK, the signature is valid and the badge is emitted for this user
-                return True
+                if not self.check_identity():
+                    error = 'Identity mismatch for: %s' % self._identity
+                    return VerifyInfo(BadgeStatus.IDENTITY_ERROR, error)
             else:
-                return False
-        except:
-            raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
+                return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, 'Signature invalid, corrupted or tampered')
+
+        except HTTPError as e:
+            return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, e.reason)
+        except URLError as e:
+            return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, e.reason)
+
+        # OK, all is correct.
+        return VerifyInfo(BadgeStatus.VALID, 'OK')
 
     def check_expiration(self, ts_expedition, ts_expiration):
         from time import gmtime, strftime
-        
+
         if ts_expiration < ts_expedition:
             return "%s" % strftime("%a, %d %b %Y %H:%M:%S +0000",
                                                  gmtime(ts_expiration))
-
         else:
             return None
 
     def check_revocation(self, payload):
         """ Return true if the badge has been revoked """
         uid = payload['uid']
-       
+
         badge_json = self.download_file(payload['badge'])
         badge = jws_utils.from_json(badge_json)
-                
+
         issuer_json = self.download_file(badge['issuer'])
         issuer = jws_utils.from_json(issuer_json)
-        
+
         revocation_json = self.download_file(issuer['revocationList'])
         revocation = jws_utils.from_json(revocation_json)
-        
+
         if revocation:
             for badge_id in revocation:
-                if badge_id == uid:                    
-                    return revocation[badge_id]           
-        
+                if badge_id == uid:
+                    return revocation[badge_id]
+
         return None
-    
-    def download_pubkey(self, url):
-        return self.download_file(url)
-        
+
+    def check_identity(self):
+        payload = self._metadata['payload']
+
+        try:
+            try:
+                email_salt = payload['recipient']['salt'].encode('utf-8')
+            except:
+                email_salt = b''
+
+            email_hashed = (b'sha256$' + hash_email(self._identity.encode(), email_salt)).decode('utf-8')
+            if email_hashed == payload['recipient']['identity']:
+                return True
+            else:
+                return False
+        except:
+            raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
+
+    def download_pubkey(self):
+        return self.download_file(self._metadata['payload']['verify']['url'])
+
     def download_file(self, url):
         """ This function download a file from server """
+
+        u = urlparse(url)
+
+        if u.scheme != 'https':
+            print('Warning! %s don\'t use TLS.', url)
+
+        if u.hostname == b'':
+            raise AssertionFormatIncorrect('The URL %s was malformed' % url)
 
         # SSL Context
         sslctx = SSLContext(PROTOCOL_TLSv1)
@@ -252,56 +212,36 @@ class VerifyBase():
 
         return file
 
-    def extract_svg_signature(self, svg_data):
-        """ Extract the signature embeded in a SVG file. """
+    @staticmethod
+    def extract_svg_assertion(svg_data):
+        """ Extract the assertion embeded in a SVG file. """
 
         try:
             # Parse de SVG XML
             svg_doc = parseString(svg_data)
 
             # Extract the assertion
-            assertion = svg_doc.getElementsByTagName("openbadges:assertion")
-            signature = assertion[0].attributes['verify'].nodeValue.encode('utf-8')
+            xml_node = svg_doc.getElementsByTagName("openbadges:assertion")
+            assertion = xml_node[0].attributes['verify'].nodeValue.encode('utf-8')
 
         except:
             raise ErrorParsingFile('Error Parsing SVG file: ')
         finally:
             svg_doc.unlink()
-            return signature
+            return assertion
 
-    def is_svg_signature_valid(self, svg_data, email='', local_key=None):
-        """ This function return True/False if the signature in the
-             file is correct or no """
-
-        assertion = self.extract_svg_signature(svg_data)
-        receptor = email.encode('utf-8')
-
+    def extract_metadata(self):
+        # The assertion MUST be a string like head.payload.signature
         try:
-            if local_key:
-                self.key = self.load_pubkey_inline(local_key)
-                return self.verify_signature_inlocal(assertion, receptor)
-            else:
-                return self.verify_signature_inverse(assertion, receptor)
-        except HTTPError as e:
-            print('[!] And error has occurred during PubKey download. HTTP Error: ', e.code, e.reason)
-        except URLError as e:
-            print('[!] And error has occurred during PubKey download. Reason: ', e.reason)
+            data = self._assertion.split(b'.')
 
-    def get_crypto_object(self, pem_data):
-        """ Crypto Object can be a create with a key that
-            i don't know their type yet. I need to guess it """
-
-        try:
-            return RSA.importKey(pem_data)
+            return dict(header = jws_utils.decode(data[0]),
+                        payload = jws_utils.decode(data[1]),
+                        signature = data[2],
+                        assertion = self._assertion)
         except:
-            pass
+            raise AssertionFormatIncorrect()
 
-        try:
-            return VerifyingKey.from_pem(pem_data)
-        except:
-            pass
-
-        return None
 
 """ RSA Verify Factory """
 class VerifyRSA(VerifyBase):
@@ -332,11 +272,11 @@ class VerifyECC(VerifyBase):
     def show_disclaimer(self):
         print("""DISCLAIMER!
 
-                You are running the program with support for Elliptic
-                Curve cryptography.
+        You are running the program with support for Elliptic
+        Curve cryptography.
 
-                The implementation of ECC in JWS Draft is not clear about the
-                signature/verification process and may lead to problems for
-                you and others when verifying your badges.
+        The implementation of ECC in JWS Draft is not clear about the
+        signature/verification process and may lead to problems for
+        you and others when verifying your badges.
 
-                Use at your own risk!""")
+        Use at your own risk!""")
