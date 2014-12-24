@@ -33,6 +33,7 @@ import argparse
 import sys, os, os.path, time
 
 from .logs import Logger
+from .keys import KeyType, detect_key_type
 from .signer import SignerFactory
 from .errors import LibOpenBadgesException, SignerExceptions
 from .confparser import ConfParser
@@ -62,7 +63,7 @@ def main():
         expiration = int(time.time()) + args.expires*86400
     else:
         expiration = None
-        
+
     if args.badge:
         cf = ConfParser(args.config)
         conf = cf.read_conf()
@@ -82,36 +83,34 @@ def main():
                       signer=conf['logs']['signer'])
 
         try:
-            sf = SignerFactory(key_type='RSA', badge_name=args.badge, \
-                 receptor=args.receptor, evidence=evidence, expires=expiration,
-                 log=log)
-            sf.badge_file_path = os.path.join(conf['paths']['base_image'],
+            badge_path = os.path.join(conf['paths']['base_image'],
                     conf[badge]['local_image'])
-            sf.badge_image_url = conf[badge]['image']
-            sf.badge_json_url = conf[badge]['badge']
-            sf.verify_key_url = conf[badge]['verify_key']
-            sf.signerlog = log.signer
-
             priv_key = conf[badge]['private_key']
-            pub_key = conf[badge]['public_key']
 
-            if not os.path.isfile(sf.badge_file_path):
-                log.console.error('Badge file %s NOT exists.' % sf.badge_file_path)
+            if not os.path.isfile(badge_path):
+                log.console.error('Badge file %s NOT exists.' % badge_path)
                 sys.exit(-1)
 
             """ Reading the SVG content """
-            with open(sf.badge_file_path,"rb") as f:
+            with open(badge_path,"rb") as f:
                 badge_image_data = f.read()
 
             """ Reading the keys """
             with open(priv_key,"rb") as f:
                 priv_key_pem = f.read()
 
-            with open(pub_key,"rb") as f:
-                pub_key_pem = f.read()
+            key_type = detect_key_type(priv_key_pem)
 
-            badge_file_out = sf.generate_output_filename(sf.badge_file_path, args.output, args.receptor)
-            badge_assertion = sf.generate_openbadge_assertion(priv_key_pem, pub_key_pem)
+            sf = SignerFactory(key_type=key_type, sign_key=priv_key_pem,
+                               badge_name=badge,
+                               image_url = conf[badge]['image'],
+                               json_url=conf[badge]['badge'],
+                               verify_key=conf[badge]['verify_key'],
+                               identity=args.receptor, evidence=evidence,
+                               expires=expiration)
+
+            badge_file_out = sf.generate_output_filename(badge_path, args.output)
+            badge_assertion = sf.generate_openbadge_assertion()
 
             if os.path.isfile(badge_file_out):
                 log.console.warning('A %s OpenBadge has already signed for %s in %s' % (args.badge, args.receptor, badge_file_out))
@@ -122,7 +121,9 @@ def main():
 
             with open(badge_file_out, "wb") as f:
                 f.write(badge_svg_out.encode('utf-8'))
-            log.console.info('Badge Signed succesfully at: %s ' % badge_file_out)
+
+            print('%s SIGNED for %s UID %s at %s' % (badge, args.receptor,
+                                                   sf.get_uid(), badge_file_out))
 
         except SignerExceptions:
             raise
