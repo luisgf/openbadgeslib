@@ -6,19 +6,21 @@ import json
 
 import test_common
 
+
 from openbadgeslib import signer
 from openbadgeslib.errors import UnknownKeyType
 from openbadgeslib.confparser import ConfParser
 from openbadgeslib.util import md5_string
 from openbadgeslib.logs import Logger
+from openbadgeslib.keys import KeyType
 
 class check_signer_factory(unittest.TestCase) :
     def test_rsa(self) :
-        sign = signer.SignerFactory('RSA')
+        sign = signer.SignerFactory(KeyType.RSA)
         self.assertIsInstance(sign, signer.SignerRSA)
 
     def test_ec(self) :
-        sign = signer.SignerFactory('ECC')
+        sign = signer.SignerFactory(KeyType.ECC)
         self.assertIsInstance(sign, signer.SignerECC)
 
     def test_unknown(self) :
@@ -27,10 +29,10 @@ class check_signer_factory(unittest.TestCase) :
 class check_signer_methods(unittest.TestCase):
     maxDiff = None
     log = Logger(base_log='/tmp',general='general.log', signer='signer.log')
-    
+
     @classmethod
     def setUpClass(cls) :
-        cls.signer = signer.SignerBase(log=check_signer_methods.log)
+        cls.signer = signer.SignerBase()
         cls.signer.receptor = b'test@test.es'
         cls.signer.verify_key_url = 'https://url.notexists/verify_test.pem'
         cls.signer.badge_image_url = 'https://url.notexists/image.svg'
@@ -43,19 +45,17 @@ class check_signer_methods(unittest.TestCase):
         self.assertEqual(len(uid), 40)
 
     def test_generate_output_filename(self):
-        out = self.signer.generate_output_filename('badge.svg','/tmp/','test@test.es')
+        out = self.signer.generate_output_filename('badge.svg','/tmp/')
         self.assertEqual(out, '/tmp/badge-test@test.es.svg')
 
     def test_rsa_jose_header(self):
-        sf = signer.SignerFactory('RSA')
-        sf.log= self.log
+        sf = signer.SignerFactory(KeyType.RSA)
         jose = sf.generate_jose_header()
         jose_json = json.dumps(jose, sort_keys=True)
         self.assertEqual(jose_json, '{"alg": "RS256"}')
 
     def test_ecc_jose_header(self):
-        sf = signer.SignerFactory('ECC')
-        sf.log = self.log
+        sf = signer.SignerFactory(KeyType.ECC)
         jose = sf.generate_jose_header()
         jose_json = json.dumps(jose, sort_keys=True)
         self.assertEqual(jose_json, '{"alg": "ES256"}')

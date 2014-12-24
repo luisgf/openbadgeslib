@@ -16,11 +16,11 @@ from Crypto.Hash import SHA256
 
 class check_key_factory(unittest.TestCase) :
     def test_rsa(self) :
-        key = keys.KeyFactory('RSA')
+        key = keys.KeyFactory(keys.KeyType.RSA)
         self.assertIsInstance(key, keys.KeyRSA)
 
     def test_ec(self) :
-        key = keys.KeyFactory('ECC')
+        key = keys.KeyFactory(keys.KeyType.ECC)
         self.assertIsInstance(key, keys.KeyECC)
 
     def test_unknown(self) :
