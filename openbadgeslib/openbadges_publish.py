@@ -40,7 +40,7 @@ def main():
     parser = argparse.ArgumentParser(description='Publisher Parameters')
     parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-o', '--output', required=True, help='Specify the output directory to save the public files')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.2.1' )
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.3' )
     args = parser.parse_args()
 
     cf = ConfParser(args.config)

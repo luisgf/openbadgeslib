@@ -49,7 +49,7 @@ def main():
     parser.add_argument('-l', '--local', metavar='BADGE',
             help='Do the verification using the local configuration')
     parser.add_argument('-v', '--version', action='version',
-            version='%(prog)s 0.2.1' )
+            version='%(prog)s 0.3' )
     args = parser.parse_args()
 
     if args.filein and args.receptor:

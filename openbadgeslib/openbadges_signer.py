@@ -51,7 +51,7 @@ def main():
     parser.add_argument('-E', '--no-evidence', action='store_true', help='Do not use evidence')
     parser.add_argument('-x', '--expires', type=int, help='Set badge expiration after x days.')
     parser.add_argument('-d', '--debug', action='store_true', help='Show debug messages in runtime.')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.2.1' )
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.3' )
     args = parser.parse_args()
 
     if bool(args.no_evidence) != (args.evidence is None) :  # XOR

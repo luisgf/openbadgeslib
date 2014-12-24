@@ -46,7 +46,7 @@ def main():
             help=('Generate a new Key pair '
                 'for the specified Badge. Key type is taken from profile.'))
     parser.add_argument('-v', '--version', action='version',
-            version='%(prog)s 0.2.1' )
+            version='%(prog)s 0.3' )
     args = parser.parse_args()
 
     if not args.genkey:
