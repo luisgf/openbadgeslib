@@ -1,9 +1,3 @@
-VARIOS:
-
-Ejemplo de simulacion de firma desde la linea de comandos con openssl:
-
-echo -n "eyJhbGciOiAiRVMyNTYifQ.eyJ2ZXJpZnkiOiB7InVybCI6ICJodHRwczovL29wZW5iYWRnZXMubHVpc2dmLmVzL2lzc3Vlci9wdWJrZXlzL3ZlcmlmeS5wZW0iLCAidHlwZSI6ICJzaWduZWQifSwgInJlY2lwaWVudCI6IHsiaWRlbnRpdHkiOiAic2hhMjU2JGYyZGRiNDlkOGI3MjkxNTZiZThlZjliYzc1YjcxNzk1MzRlMzU1YWM3NGFlMDYzZmMyZWE3ZTcxMGJmMTMxZTIiLCAiaGFzaGVkIjogInRydWUiLCAidHlwZSI6ICJlbWFpbCJ9LCAiaXNzdWVkT24iOiAxNDE2NzU2NjMzLCAiaW1hZ2UiOiAiaHR0cHM6Ly9vcGVuYmFkZ2VzLmx1aXNnZi5lcy9pc3N1ZXIvYmFkZ2VzL2ltYWdlLnBuZyIsICJiYWRnZSI6ICJodHRwczovL29wZW5iYWRnZXMubHVpc2dmLmVzL2lzc3Vlci9iYWRnZS1sdWlzZ2YuanNvbiIsICJ1aWQiOiAiMDgwNTE1MmE1NzkyMzc3NmEwMzczNThiODc1ZDhmNjMyOTA2OTFkNyJ9" | openssl dgst -sign private/5380bd026d61646095d9404d20b58134474802f1.pem  | base64 
-
 =========
 TODO LIST
 
@@ -12,12 +6,9 @@ TODO LIST
 - el validador debería sacarte algo de info de algoritmos
     "validando badge hospedado"
     
-- El registro de badges deberia de estar en una DB o un pickle. Esto nos será util en el proceso
-de revocación
 - Tutorial paso a paso de uso.
 - Implementar un modo dry, que "genere el assertion pero no lo añada al fichero"
 - Añadir modo debug al generador de claves y al verificador.
-- El parametro que "output" que se pasa al signer debe terminar en "/", sino la ruta no se genera correctamente.
 
 - 20141216: Tampering with Openbadges (inserting a valid asertion in another
   image) should be detected and notified.
