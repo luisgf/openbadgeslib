@@ -62,9 +62,11 @@ def main():
                         %args.genkey)
             private_key = conf[badge]['private_key']
             public_key = conf[badge]['public_key']
+
             for i in (private_key, public_key) :
-                if os.path.exists(i) :
-                    raise FileExistsError(i)
+                if os.path.exists(i):
+                    print('[!] Key file is present at %s' % i)
+                    sys.exit(1)
 
             log = Logger(base_log=conf['paths']['base_log'],
                       general=conf['logs']['general'],
