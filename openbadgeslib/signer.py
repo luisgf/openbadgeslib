@@ -120,6 +120,7 @@ class SignerBase():
         assertion_tag.attributes['xmlns:openbadges'] = 'http://openbadges.org'
         assertion_tag.attributes['verify']= assertion.decode('utf-8')
         svg_tag.appendChild(assertion_tag)
+        svg_tag.appendChild(svg_doc.createComment(' Signed with OpenBadgesLib v0.3 '))
 
         svg_signed = svg_doc.toxml()
         svg_doc.unlink()
