@@ -14,6 +14,13 @@ base_image   = ${base}/images
 general = general.log
 signer  = signer.log
 
+; SMTP Configuration
+[smtp]
+smtp_server = localhost
+smtp_port = 25
+use_ssl = False
+mail_from = no-reply@issuer.badge
+
 ; Configuration of the OpenBadges issuer.
 [issuer]
 name           = OpenBadge issuer
