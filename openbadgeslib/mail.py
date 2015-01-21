@@ -36,12 +36,12 @@ class BadgeMail():
         self.use_ssl = use_ssl
         self.mail_from = mail_from
 
-    def send_badge(self, send_to, subject, text, files=None):
+    def send(self, mail_to, subject, text, files=None):
         msg = MIMEMultipart()
         msg['Subject'] = subject
         msg['From'] = self.mail_from
         msg['Date'] = formatdate(localtime=True)
-        msg['To'] = COMMASPACE.join(send_to)
+        msg['To'] = COMMASPACE.join(mail_to)
 
         msg.attach(MIMEText(text))
 
@@ -57,11 +57,10 @@ class BadgeMail():
             else:
                 smtp = smtplib.SMTP(self.smtp_server, self.smtp_port)
 
-            smtp.sendmail(self.mail_from, send_to, msg.as_string())
-            #smtp.close()
+            smtp.sendmail(self.mail_from, mail_to, msg.as_string())
             smtp.quit()
         except smtplib.SMTPDataError as err:
-            print('[!] Error sending mail to: %s. %s' % (send_to, err))
+            print('[!] Error sending mail to: %s. %s' % (mail_to, err))
             sys.exit(-1)
 
 if __name__ == '__main__':
