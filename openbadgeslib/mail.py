@@ -21,12 +21,13 @@
         License along with this library.
 """
 
-import smtplib
+import smtplib, sys
 from os.path import basename
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import COMMASPACE, formatdate
+from email.header import Header
 
 class BadgeMail():
     def __init__(self, smtp_server='localhost', smtp_port=25, use_ssl=False,
@@ -36,16 +37,17 @@ class BadgeMail():
         self.use_ssl = use_ssl
         self.mail_from = mail_from
 
-    def send(self, mail_to, subject, text, files=None):
+    def send(self, mail_to, subject, body, files=[]):
         msg = MIMEMultipart()
-        msg['Subject'] = subject
-        msg['From'] = self.mail_from
+        msg['Subject'] = Header(subject, 'utf-8')
+        msg['From'] = Header(self.mail_from, 'utf-8')
         msg['Date'] = formatdate(localtime=True)
-        msg['To'] = COMMASPACE.join(mail_to)
+        msg['To'] = Header(mail_to, 'utf-8')
 
-        msg.attach(MIMEText(text))
+        msg.attach(MIMEText(body,'plain','utf-8'))
 
-        for f in files or []:
+        """ Support for sending more than one file attached """
+        for f in files:
             with open(f, "rb") as file:
                 msg.attach(MIMEImage(
                     file.read(),
@@ -61,7 +63,20 @@ class BadgeMail():
             smtp.quit()
         except smtplib.SMTPDataError as err:
             print('[!] Error sending mail to: %s. %s' % (mail_to, err))
-            sys.exit(-1)
+
+    def get_mail_content(self, file):
+        """ Return the Subject and Body of the Email. The first line of the file
+        is used as Subject """
+
+        with open(file, 'r') as f:
+            data = f.readlines()
+
+        if data:
+            return data[0].strip('\n'), ''.join(data[1:])
+        else:
+            return None, None
+
 
 if __name__ == '__main__':
     pass
+
