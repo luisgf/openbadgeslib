@@ -34,4 +34,5 @@ TODO LIST
 - 20150127: The comment added to the SVG file must use
   __version__ instead of a hardcoded value.
 
+- 20150226: Support generating badges with expiration.
 
