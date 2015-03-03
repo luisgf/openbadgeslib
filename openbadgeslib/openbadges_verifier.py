@@ -36,6 +36,7 @@ from .keys import detect_key_type
 from .verifier import VerifyFactory, VerifyBase, BadgeStatus, KeyType
 from .errors import LibOpenBadgesException, VerifierExceptions
 from .confparser import ConfParser
+from .util import __version__
 
 # Entry Point
 def main():
@@ -49,7 +50,7 @@ def main():
     parser.add_argument('-l', '--local', metavar='BADGE',
             help='Do the verification using the local configuration')
     parser.add_argument('-v', '--version', action='version',
-            version='%(prog)s 0.3' )
+            version=__version__ )
     args = parser.parse_args()
 
     if args.filein and args.receptor:

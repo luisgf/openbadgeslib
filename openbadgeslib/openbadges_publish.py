@@ -34,13 +34,14 @@ import json
 import os, os.path, sys, shutil
 
 from urllib.parse import urljoin
-from confparser import ConfParser
+from .confparser import ConfParser
+from .util import __version__
 
 def main():
     parser = argparse.ArgumentParser(description='Publisher Parameters')
     parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-o', '--output', required=True, help='Specify the output directory to save the public files')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s 0.3' )
+    parser.add_argument('-v', '--version', action='version', version=__version__ )
     args = parser.parse_args()
 
     cf = ConfParser(args.config)
