@@ -49,13 +49,9 @@ class BadgeMail():
         """ Support for sending more than one file attached """
         for f in files:
             with open(f, "rb") as file:
-                try:
-                    image = MIMEImage(file.read(),
-                                      Content_Disposition='attachment; filename=%s' % basename(f),
-                        Content_Description='Signed OpenBadge'
-                    )
-                except:
-                finally:
+                image = MIMEImage(file.read(),
+                                  Content_Disposition='attachment; filename=%s' % basename(f), Content_Description='Signed OpenBadge'
+                )
 
                 msg.attach(MIMEImage(
                     file.read(),

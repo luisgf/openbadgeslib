@@ -24,9 +24,8 @@
 # https://docs.python.org/3.4/tutorial/modules.html#packages-in-multiple-directories
 import os.path
 __path__.append(os.path.join(__path__[-1], '3dparty'))
-__version__ = 'v0.4'
 
 from .keys import KeyFactory, KeyRSA, KeyECC
 from .signer import SignerFactory, SignerRSA, SignerECC
 from .verifier import VerifyFactory, VerifyRSA, VerifyECC
-
+from .util import __version__
