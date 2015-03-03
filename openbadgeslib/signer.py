@@ -21,6 +21,8 @@
         License along with this library.
 """
 
+__version__ = 'v0.4'
+
 import os, os.path
 import sys
 import time
