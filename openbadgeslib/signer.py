@@ -21,8 +21,6 @@
         License along with this library.
 """
 
-__version__ = 'v0.4'
-
 import os, os.path
 import sys
 import time
@@ -33,7 +31,7 @@ from xml.dom.minidom import parse, parseString
 
 from .errors import UnknownKeyType, FileToSignNotExists, BadgeSignedFileExists, ErrorSigningFile, PrivateKeyReadError
 
-from .util import hash_email, md5_string, sha1_string, sha256_string
+from .util import hash_email, md5_string, sha1_string, sha256_string, __version__
 from .keys import KeyFactory, KeyType
 
 from .jws import utils as jws_utils
@@ -122,7 +120,7 @@ class SignerBase():
         assertion_tag.attributes['xmlns:openbadges'] = 'http://openbadges.org'
         assertion_tag.attributes['verify']= assertion.decode('utf-8')
         svg_tag.appendChild(assertion_tag)
-        svg_tag.appendChild(svg_doc.createComment(' Signed with OpenBadgesLib v0.3 '))
+        svg_tag.appendChild(svg_doc.createComment(' Signed with OpenBadgesLib %s ' % __version__))
 
         svg_signed = svg_doc.toxml()
         svg_doc.unlink()
