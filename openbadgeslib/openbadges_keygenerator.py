@@ -35,6 +35,7 @@ from .logs import Logger
 from .keys import KeyFactory
 from .errors import KeyGenExceptions
 from .confparser import ConfParser
+from .util import __version__
 global log
 
 # Entry Point
@@ -46,7 +47,7 @@ def main():
             help=('Generate a new Key pair '
                 'for the specified Badge. Key type is taken from profile.'))
     parser.add_argument('-v', '--version', action='version',
-            version='%(prog)s 0.3' )
+            version=__version__ )
     args = parser.parse_args()
 
     if not args.genkey:
