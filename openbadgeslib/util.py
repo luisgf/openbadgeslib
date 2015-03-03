@@ -21,6 +21,9 @@
         License along with this library.
 """
 
+
+__version__ = 'v0.4'     # Package Version
+
 import hashlib
 
 def _hash_string(hash_name, string) :
