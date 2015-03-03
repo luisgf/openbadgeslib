@@ -37,7 +37,7 @@ from .keys import KeyType, detect_key_type
 from .signer import SignerFactory
 from .errors import LibOpenBadgesException, SignerExceptions
 from .confparser import ConfParser
-
+from .mail import BadgeMail
 
 # Entry Point
 def main():
@@ -47,6 +47,7 @@ def main():
     parser.add_argument('-b', '--badge', required=True, help='Specify the badge name for sign')
     parser.add_argument('-r', '--receptor', required=True, help='Specify the receptor email of the badge')
     parser.add_argument('-o', '--output', default=os.path.curdir, help='Specify the output directory to save the badge.')
+    parser.add_argument('-M', '--mail-badge', action='store_true', help='Send Badge to user mail')
     parser.add_argument('-e', '--evidence', help='Set an URL to the user evidence')
     parser.add_argument('-E', '--no-evidence', action='store_true', help='Do not use evidence')
     parser.add_argument('-x', '--expires', type=int, help='Set badge expiration after x days.')
@@ -124,6 +125,16 @@ def main():
 
             print('%s SIGNED for %s UID %s at %s' % (badge, args.receptor,
                                                    sf.get_uid(), badge_file_out))
+
+            if bool(args.mail_badge):
+                server = conf['smtp']['smtp_server']
+                port = conf['smtp']['smtp_port']
+                use_ssl = conf['smtp']['use_ssl']
+                mail_from = conf['smtp']['mail_from']
+
+                mail = BadgeMail(server, port, use_ssl, mail_from)
+                subject, body = mail.get_mail_content(conf[badge]['mail'])
+                mail.send(args.receptor, subject, body, [badge_file_out])
 
         except SignerExceptions:
             raise
