@@ -26,27 +26,166 @@ import sys
 import time
 import json
 
+from struct import pack
 from datetime import datetime
 from xml.dom.minidom import parse, parseString
+from zlib import crc32
+
+from png import Reader, write_chunks, _signature
 
 from .errors import UnknownKeyType, FileToSignNotExists, BadgeSignedFileExists, ErrorSigningFile, PrivateKeyReadError
-
-from .util import hash_email, md5_string, sha1_string, sha256_string, __version__
+from .util import md5_string, sha1_string, sha256_string, __version__
 from .keys import KeyFactory, KeyType
+from .badge import BadgeSigned, BadgeType, BadgeImgType
 
-from .jws import utils as jws_utils
+
 from .jws import sign as jws_sign
 
-def SignerFactory(key_type=KeyType.RSA, *args, **kwargs):
-    """ Signer Factory Object, Return a Given object type passing a name
-        to the constructor. """
+class Signer():
+    def __init__(self, identity=None, evidence=None, expiration=None,
+                 deterministic=False, badge_type=None):
+        self.identity = identity.encode('utf-8')
+        self.evidence = evidence
+        self.expiration = expiration
+        self.badge_type = badge_type
+        self.deterministic = deterministic
 
-    if key_type == KeyType.ECC:
-        return SignerECC(*args, **kwargs)
-    if key_type == KeyType.RSA:
-        return SignerRSA(*args, **kwargs)
-    else:
-        raise UnknownKeyType()
+    def generate_uid(self):
+        return sha1_string(self.identity + datetime.now().isoformat().encode('utf-8'))
+
+    def sign_badge(self, badge_obj):
+        if (self.has_assertion(badge_obj)):
+            raise ErrorSigningFile('The input file is already signed.')
+
+        serial_num = self.generate_uid()
+        salt = b's4lt3d' if self.deterministic else md5_string(os.urandom(128))
+
+        out = BadgeSigned(source=badge_obj, serial_num=serial_num,
+                          identity=self.identity, evidence=self.evidence,
+                          expiration=self.expiration, salt=salt)
+
+        self.generate_assertion(out)
+
+        if badge_obj.image_type is BadgeImgType.SVG:
+            self.append_svg_assertion(out)
+        elif badge_obj.image_type is BadgeImgType.PNG:
+            self.append_png_assertion(out)
+
+        return out
+
+    def generate_jws(self, badge):
+        """ Generate the JWS Payload using an BadgeSigned Object as input """
+
+        if badge.source.key_type is KeyType.RSA:
+            jose_header = { 'alg': 'RS256' }
+        elif badge.source.key_type is KeyType.ECC:
+            jose_header = { 'alg': 'ES256' }
+
+        # All this data MUST be a Str string in order to be converted to json properly.
+        recipient_data = dict (
+            identity = badge.get_identity_hashed(),
+            type = 'email',
+            salt = badge.get_salt(),
+            hashed = 'true'
+        )
+
+        if self.badge_type is BadgeType.SIGNED:
+            verify_data = dict(
+                type = 'signed',
+                url = badge.source.verify_key_url
+            )
+
+        payload = dict(
+                        uid = 0 if self.deterministic else badge.get_serial_num(),
+                        recipient = recipient_data,
+                        image = badge.source.image_url,
+                        badge = badge.source.json_url,
+                        verify = verify_data,
+                        issuedOn = 0 if self.deterministic else int(time.time())
+                     )
+
+        if badge.expiration:
+            payload['expires'] = badge.expiration
+
+        if badge.evidence:
+            payload['evidence'] = badge.evidence
+
+        return jose_header, payload
+
+    def generate_assertion(self, badge):
+        """ Generate and Sign and OpenBadge assertion """
+
+        badge.jws_header, badge.jws_body = self.generate_jws(badge)
+        badge.jws_signature = jws_sign(badge.jws_header, badge.jws_body, badge.source.priv_key)
+
+        return badge.get_assertion()
+
+    def has_assertion(self, badge):
+        """ Detect if a Badge is already signed """
+
+        if badge.image_type is BadgeImgType.SVG:
+            return self.has_svg_assertion(badge)
+        elif badge.image_type is BadgeImgType.PNG:
+            return self.has_png_assertion(badge)
+
+
+    def append_svg_assertion(self, badge):
+        """ Append the assertion to a SVG File """
+
+        svg_doc = parseString(badge.source.image)
+
+        # Assertion
+        svg_tag = svg_doc.getElementsByTagName('svg').item(0)
+        assertion_tag = svg_doc.createElement("openbadges:assertion")
+        assertion_tag.attributes['xmlns:openbadges'] = 'http://openbadges.org'
+        assertion_tag.attributes['verify']= badge.get_assertion()
+        svg_tag.appendChild(assertion_tag)
+        svg_tag.appendChild(svg_doc.createComment(' Signed with OpenBadgesLib %s ' % __version__))
+
+        badge.signed = svg_doc.toxml().encode('utf-8')
+        svg_doc.unlink()
+
+    def append_png_assertion(self, badge):
+        """ Append the assertion to a PNG file """
+
+        badge.signed = _signature
+
+        chunks = list()
+        png = Reader(bytes=badge.source.image)
+
+        for chunk in png.chunks():
+            chunks.append(chunk)
+
+        itxt_data = b'openbadges' + pack('BBBBB',0,0,0,0,0) + badge.get_assertion().encode('utf-8')
+        itxt = ('iTXt', itxt_data)
+        chunks.insert(len(chunks)-1,itxt)
+
+        text_data = 'Comment Signed with OpenBadgesLib %s' % __version__
+        text = ('tEXt', text_data.encode('utf-8'))
+        chunks.insert(len(chunks)-1,text)
+
+        for tag, data in chunks:
+            badge.signed = badge.signed + pack("!I", len(data))
+            tag = tag.encode('iso8859-1')
+            badge.signed = badge.signed + tag
+            badge.signed = badge.signed + data
+            checksum = crc32(tag)
+            checksum = crc32(data, checksum)
+            checksum &= 2**32-1
+            badge.signed = badge.signed + pack("!I", checksum)
+
+    def has_svg_assertion(self, badge):
+        xml_doc = parseString(badge.image)
+        has_assertion = False
+
+        if xml_doc.getElementsByTagName('openbadges:assertion'):
+            has_assertion = True
+
+        xml_doc.unlink()
+        return has_assertion
+
+    def has_png_assertion(self, badge):
+        return False
 
 class SignerBase():
     """ JWS Signer Factory """
@@ -72,41 +211,6 @@ class SignerBase():
     def get_uid(self):
         return self.uid.decode('utf-8')
 
-    def generate_jws_payload(self):
-        self.generate_uid()
-
-        mail_salt = b's4lt3d' if self.deterministic else md5_string(os.urandom(128))
-        # All this data MUST be a Str string in order to be converted to json properly.
-        recipient_data = dict (
-            identity = (b'sha256$' + hash_email(self.receptor, mail_salt)).decode('utf-8'),
-            type = 'email',
-            salt = mail_salt.decode('utf-8'),
-            hashed = 'true'
-        )
-
-        verify_data = dict(
-            type = 'signed',
-            url = self.verify_key_url
-        )
-
-        payload = dict(
-                        uid = 0 if self.deterministic else self.get_uid(),
-                        recipient = recipient_data,
-                        image = self.badge_image_url,
-                        badge = self.badge_json_url,
-                        verify = verify_data,
-                        issuedOn = 0 if self.deterministic else int(time.time())
-                     )
-
-        if self.expires:
-            payload['expires'] = self.expires
-
-        if self.evidence:
-            payload['evidence'] = self.evidence
-
-        #self.log.console.debug('JWS Payload %s ' % json.dumps(payload))
-
-        return payload
 
     def sign_svg(self, svg_in, assertion):
         svg_doc = parseString(svg_in)
@@ -127,17 +231,6 @@ class SignerBase():
 
         return svg_signed
 
-    def generate_output_filename(self, file_in, output_dir):
-        """ Generate an output filename based on the source
-            name and the receptor email """
-
-        fbase = os.path.basename(file_in)
-        fname, fext = os.path.splitext(fbase)
-        #fsuffix = receptor.replace('@','_').replace('.','_')
-        fsuffix = self.receptor.decode('utf-8')
-
-        return os.path.join(output_dir, fname + '-'+ fsuffix + fext)
-
     def generate_openbadge_assertion(self):
         """ Generate and Sign and OpenBadge assertion """
 
@@ -157,28 +250,5 @@ class SignerBase():
         else:
             return False
 
-class SignerRSA(SignerBase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.key_type = KeyType.RSA
-        self.key = KeyFactory(KeyType.RSA)
-
-    def generate_jose_header(self):
-        jose_header = { 'alg': 'RS256' }
-
-        #self.log.console.debug('JOSE HEADER %s ' % json.dumps(jose_header))
-        return jose_header
-
-class SignerECC(SignerBase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.key_type = KeyType.ECC
-        self.key = KeyFactory(KeyType.ECC)
-
-    def generate_jose_header(self):
-        jose_header = { 'alg': 'ES256' }
-
-        #self.log.console.debug('JOSE HEADER %s ' % json.dumps(jose_header))
-        return jose_header
 
 

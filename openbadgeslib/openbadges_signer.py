@@ -34,15 +34,15 @@ import sys, os, os.path, time
 
 from .logs import Logger
 from .keys import KeyType, detect_key_type
-from .signer import SignerFactory
+from .signer import Signer
 from .errors import LibOpenBadgesException, SignerExceptions
 from .confparser import ConfParser
+from .badge import Badge, BadgeImgType, BadgeType
 from .mail import BadgeMail
 from .util import __version__
 
 # Entry Point
 def main():
-    global log
     parser = argparse.ArgumentParser(description='Badge Signer Parameters')
     parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-b', '--badge', required=True, help='Specify the badge name for sign')
@@ -80,62 +80,42 @@ def main():
             print('ERROR: %s is not defined in this config file' % args.badge)
             sys.exit(-1)
 
-        log = Logger(base_log=conf['paths']['base_log'],
-                      general=conf['logs']['general'],
-                      signer=conf['logs']['signer'])
-
         try:
-            badge_path = os.path.join(conf['paths']['base_image'],
-                    conf[badge]['local_image'])
-            priv_key = conf[badge]['private_key']
+            sf = Signer(identity=args.receptor, evidence=evidence,
+                        expiration=expiration, badge_type=BadgeType.SIGNED)
 
-            if not os.path.isfile(badge_path):
-                log.console.error('Badge file %s NOT exists.' % badge_path)
-                sys.exit(-1)
+            badge_obj = Badge.create_from_conf(conf, badge)
 
-            """ Reading the SVG content """
-            with open(badge_path,"rb") as f:
-                badge_image_data = f.read()
+            if badge_obj.image_type is BadgeImgType.PNG:
+                fbase = '%s_%s.png' % (badge, args.receptor)
+            elif badge_obj.image_type is BadgeImgType.SVG:
+                fbase = '%s_%s.svg' % (badge, args.receptor)
 
-            """ Reading the keys """
-            with open(priv_key,"rb") as f:
-                priv_key_pem = f.read()
-
-            key_type = detect_key_type(priv_key_pem)
-
-            sf = SignerFactory(key_type=key_type, sign_key=priv_key_pem,
-                               badge_name=badge,
-                               image_url = conf[badge]['image'],
-                               json_url=conf[badge]['badge'],
-                               verify_key=conf[badge]['verify_key'],
-                               identity=args.receptor, evidence=evidence,
-                               expires=expiration)
-
-            badge_file_out = sf.generate_output_filename(badge_path, args.output)
-            badge_assertion = sf.generate_openbadge_assertion()
+            badge_file_out = os.path.join(args.output, fbase)
 
             if os.path.isfile(badge_file_out):
-                log.console.warning('A %s OpenBadge has already signed for %s in %s' % (args.badge, args.receptor, badge_file_out))
+                print('A %s OpenBadge has already signed for %s in %s' % (args.badge, args.receptor, badge_file_out))
                 sys.exit(-1)
 
-            log.console.info("Generating signature for badge '%s'..." % args.badge)
-            badge_svg_out = sf.sign_svg(badge_image_data, badge_assertion)
+            print("Generating signature for badge '%s'..." % args.badge)
 
-            with open(badge_file_out, "wb") as f:
-                f.write(badge_svg_out.encode('utf-8'))
+            badge_signed = sf.sign_badge(badge_obj)
 
-            print('%s SIGNED for %s UID %s at %s' % (badge, args.receptor,
-                                                   sf.get_uid(), badge_file_out))
+            if badge_signed:
+                badge_signed.save_to_file(badge_file_out)
 
-            if bool(args.mail_badge):
-                server = conf['smtp']['smtp_server']
-                port = conf['smtp']['smtp_port']
-                use_ssl = conf['smtp']['use_ssl']
-                mail_from = conf['smtp']['mail_from']
+                print('%s SIGNED for %s UID %s at %s' % (badge, badge_signed.get_identity(),
+                                                   badge_signed.get_serial_num(), badge_file_out))
 
-                mail = BadgeMail(server, port, use_ssl, mail_from)
-                subject, body = mail.get_mail_content(conf[badge]['mail'])
-                mail.send(args.receptor, subject, body, [badge_file_out])
+                if bool(args.mail_badge):
+                    server = conf['smtp']['smtp_server']
+                    port = conf['smtp']['smtp_port']
+                    use_ssl = conf['smtp']['use_ssl']
+                    mail_from = conf['smtp']['mail_from']
+
+                    mail = BadgeMail(server, port, use_ssl, mail_from)
+                    subject, body = mail.get_mail_content(conf[badge]['mail'])
+                    mail.send(args.receptor, subject, body, [badge_file_out])
 
         except SignerExceptions:
             raise

@@ -26,6 +26,6 @@ import os.path
 __path__.append(os.path.join(__path__[-1], '3dparty'))
 
 from .keys import KeyFactory, KeyRSA, KeyECC
-from .signer import SignerFactory, SignerRSA, SignerECC
+from .signer import Signer
 from .verifier import VerifyFactory, VerifyRSA, VerifyECC
 from .util import __version__
