@@ -44,14 +44,14 @@ from .jws import sign as jws_sign
 class Signer():
     def __init__(self, identity=None, evidence=None, expiration=None,
                  deterministic=False, badge_type=None):
-        self.identity = identity.encode('utf-8')
+        self.identity = identity
         self.evidence = evidence
         self.expiration = expiration
         self.badge_type = badge_type
         self.deterministic = deterministic
 
     def generate_uid(self):
-        return sha1_string(self.identity + datetime.now().isoformat().encode('utf-8'))
+        return sha1_string(os.urandom(128))
 
     def sign_badge(self, badge_obj):
         if (self.has_assertion(badge_obj)):

@@ -32,10 +32,10 @@
 import argparse
 import sys, os
 
-from .keys import detect_key_type
-from .verifier import VerifyFactory, VerifyBase, BadgeStatus, KeyType
+from .verifier import Verifier
 from .errors import LibOpenBadgesException, VerifierExceptions
 from .confparser import ConfParser
+from .badge import BadgeSigned, BadgeStatus
 from .util import __version__
 
 # Entry Point
@@ -56,6 +56,7 @@ def main():
     if args.filein and args.receptor:
         cf = ConfParser(args.config)
         conf = cf.read_conf()
+        local_pubkey = None
 
         if not conf:
             print('[!] The config file %s NOT exists or is empty' % args.config)
@@ -65,34 +66,26 @@ def main():
             if not os.path.isfile(args.filein):
                 print('[!] Badge file %s NOT exists.' % args.filein)
                 sys.exit(-1)
-
-            with open(args.filein, "rb") as f:
-                svg_data = f.read()
-
+            
             if args.local:
                 badge = 'badge_' + args.local
                 if badge not in conf :
                     sys.exit('There is no "%s" badge in the configuration' %
                             args.local)
+              
+                with open(conf[badge]['public_key'], 'rb') as file:
+                    local_pubkey = file.read()
 
-                with open(conf[badge]['public_key'],"rb") as f:
-                    key_pem = f.read()
+            badge = BadgeSigned.read_from_file(args.filein)
+            v = Verifier(verify_key=local_pubkey, identity=args.receptor)
+            check = v.get_badge_status(badge) 
+            
+            if check.status is BadgeStatus.VALID:
+                v.print_payload(badge)
+                print('[+] Signature is correct for the identity %s' % v.get_identity())
             else:
-                key_pem = None
+                print('[-] ', check.msg)
 
-            key_type = detect_key_type(key_pem)
-            assertion = VerifyBase.extract_svg_assertion(svg_data)
-
-            vf = VerifyFactory(key_type=key_type, assertion=assertion,
-                               identity=args.receptor, verify_key=key_pem)
-
-            sign = vf.get_signature_status()
-
-            if sign.status is BadgeStatus.VALID:
-                vf.print_payload()
-                print('[+] Signature is correct for the identity %s' % args.receptor)
-            else:
-                print('[-] ', sign.msg)
         except VerifierExceptions:
             raise
     else:

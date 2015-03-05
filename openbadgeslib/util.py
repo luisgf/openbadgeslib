@@ -25,6 +25,11 @@
 __version__ = 'v0.4'     # Package Version
 
 import hashlib
+from urllib import request
+from urllib.request import HTTPSHandler
+from urllib.parse import urlparse
+from ssl import SSLContext, CERT_NONE, VERIFY_CRL_CHECK_CHAIN, PROTOCOL_TLSv1
+from ssl import SSLError
 
 def _hash_string(hash_name, string) :
     h = hashlib.new(hash_name)
@@ -42,3 +47,38 @@ def md5_string(string):
 
 def hash_email(email, salt):
     return sha256_string(email + salt)
+    
+def download_file(url):
+    """ This function download a file from server """
+
+    u = urlparse(url)
+
+    if u.scheme != 'https':
+        print('Warning! %s don\'t use TLS.', url)
+
+    if u.hostname == b'':
+        raise AssertionFormatIncorrect('The URL %s was malformed' % url)
+
+    # SSL Context
+    sslctx = SSLContext(PROTOCOL_TLSv1)
+    sslctx.verify_mode = CERT_NONE
+    sslctx_handler = HTTPSHandler(context=sslctx, check_hostname=False)
+
+    request.install_opener(request.build_opener(sslctx_handler))
+
+    with request.urlopen(url, timeout=30) as kd:
+        file = kd.read()
+
+    return file
+
+def show_ecc_disclaimer(self):
+    print("""DISCLAIMER!
+
+    You are running the program with support for Elliptic
+    Curve cryptography.
+
+    The implementation of ECC in JWS Draft is not clear about the
+    signature/verification process and may lead to problems for
+    you and others when verifying your badges.
+
+    Use at your own risk!""")    
