@@ -44,7 +44,7 @@ def main():
     parser.add_argument('-c', '--config', default='config.ini',
             help='Specify the config.ini file to use')
     parser.add_argument('-i', '--filein', required=True,
-            help='Specify the input SVG file to verify the signature')
+            help='Specify the input file to verify the signature')
     parser.add_argument('-r', '--receptor', required=True,
             help='Specify the email of the receptor of the badge')
     parser.add_argument('-l', '--local', metavar='BADGE',
@@ -63,7 +63,7 @@ def main():
 
         try:
             if not os.path.isfile(args.filein):
-                print('[!] SVG file %s NOT exists.' % args.filein)
+                print('[!] Badge file %s NOT exists.' % args.filein)
                 sys.exit(-1)
 
             with open(args.filein, "rb") as f:
