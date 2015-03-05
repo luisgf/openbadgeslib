@@ -2,8 +2,8 @@
 """
         OpenBadges Library
 
-        Copyright (c) 2014, Luis González Fernández, luisgf@luisgf.es
-        Copyright (c) 2014, Jesús Cea Avión, jcea@jcea.es
+        Copyright (c) 2015, Luis González Fernández, luisgf@luisgf.es
+        Copyright (c) 2015, Jesús Cea Avión, jcea@jcea.es
 
         All rights reserved.
 

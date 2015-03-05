@@ -2,8 +2,8 @@
 """
         OpenBadges Library
 
-        Copyright (c) 2014, Luis González Fernández, luisgf@luisgf.es
-        Copyright (c) 2014, Jesús Cea Avión, jcea@jcea.es
+        Copyright (c) 2015, Luis González Fernández, luisgf@luisgf.es
+        Copyright (c) 2015, Jesús Cea Avión, jcea@jcea.es
 
         All rights reserved.
 
@@ -127,9 +127,18 @@ class KeyECC(KeyBase):
         return self.pub_key.to_pem()
 
 def detect_key_type(pem_data):
+    """ Positive Key type detection """
+
     try:
         RSA.importKey(pem_data)
         return KeyType.RSA
     except:
-        return KeyType.ECC
+        pass
 
+    try:
+        VerifyingKey.from_pem(pem_data)
+        return KeyType.ECC
+    except:
+        pass
+
+    raise UnknownKeyType('Unable to guess Key type')
