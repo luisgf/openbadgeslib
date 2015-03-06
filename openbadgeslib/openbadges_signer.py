@@ -123,13 +123,13 @@ def main():
                     login = None
                     password = None
 
-                    if 'login' in conf['smtp']:
-                        login = conf['smtp']['login']
+                    if 'username' in conf['smtp']:
+                        username = conf['smtp']['username']
 
                     if 'password' in conf['smtp']:
                         password = conf['smtp']['password']
 
-                    mail = BadgeMail(server, port, use_ssl, mail_from, login,
+                    mail = BadgeMail(server, port, use_ssl, mail_from, username,
                                      password)
                     subject, body = mail.get_mail_content(conf[badge]['mail'])
                     mail.set_subject(subject)

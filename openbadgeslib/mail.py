@@ -21,7 +21,8 @@
         License along with this library.
 """
 
-import smtplib, sys
+import sys
+from smtplib import SMTP_SSL, SMTP, SMTPAuthenticationError, SMTPDataError
 from os.path import basename
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
@@ -64,16 +65,20 @@ class BadgeMail():
 
         try:
             if self.use_ssl:
-                smtp = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port)
+                smtp = SMTP_SSL(self.smtp_server, self.smtp_port)
             else:
-                smtp = smtplib.SMTP(self.smtp_server, self.smtp_port)
+                smtp = SMTP(self.smtp_server, self.smtp_port)
 
             if self.username:
-                smtp.login(self.username, self.password)
+                try:
+                    smtp.login(self.username, self.password)
+                except SMTPAuthenticationError as err:
+                    print('[!] SMTP Auth Error: %s' % err)
+                    sys.exit(-1)
 
             smtp.sendmail(self.mail_from, badge.get_identity(), msg.as_string())
             smtp.quit()
-        except smtplib.SMTPDataError as err:
+        except SMTPDataError as err:
             print('[!] Error sending mail to: %s. %s' % (mail_to, err))
 
     def get_mail_content(self, file):
