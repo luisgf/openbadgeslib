@@ -53,7 +53,7 @@ class BadgeType(Enum):
 class Assertion():
     def __init__(self, header=None, body=None, signature=None):
         self.header = header               # In Base64
-        self.body = body                 # In Base64
+        self.body = body                   # In Base64
         self.signature = signature
 
     @staticmethod
@@ -72,6 +72,15 @@ class Assertion():
 
     def get_assertion(self):
         return self.header + b'.' + self.body + b'.' + self.signature
+
+    def encode_header(self, header):
+        self.header = jws_utils.encode(header)
+
+    def encode_body(self, body):
+        self.body = jws_utils.encode(body)
+
+    def encode_signature(self, signature):
+        self.signature = jws_utils.to_base64(signature)
 
     def __str__(self):
         return 'Header: %s\nBody: %s\nSignature: %s' % (self.header, self.body, self.signature)
@@ -174,10 +183,6 @@ class BadgeSigned():
         self.signed_assertion = None             # Signed Assertion
         self.issue_date = issue_date             # Timestamp
         self.assertion = assertion
-        """ This should be methods """
-        #self.jws_header = None
-        #self.jws_body = None
-        #self.jws_signature = None
 
     @staticmethod
     def read_from_file(file_name):
@@ -236,7 +241,9 @@ class BadgeSigned():
         return self.salt.decode('utf-8')
 
     def get_assertion(self):
-        return (jws_utils.encode(self.jws_header) + b'.' + jws_utils.encode(self.jws_body) + b'.' + jws_utils.to_base64(self.jws_signature)).decode('utf-8')
+        if self.assertion:
+            if self.assertion.signature:
+                return self.assertion.get_assertion().decode('utf-8')
 
     def get_serial_num(self):
         return self.serial_num.decode('utf-8')

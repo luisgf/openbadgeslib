@@ -36,7 +36,7 @@ from png import Reader, write_chunks, _signature
 from .errors import UnknownKeyType, FileToSignNotExists, BadgeSignedFileExists, ErrorSigningFile, PrivateKeyReadError
 from .util import md5_string, sha1_string, sha256_string, __version__
 from .keys import KeyFactory, KeyType
-from .badge import BadgeSigned, BadgeType, BadgeImgType
+from .badge import BadgeSigned, BadgeType, BadgeImgType, Assertion
 
 
 from .jws import sign as jws_sign
@@ -115,10 +115,13 @@ class Signer():
     def generate_assertion(self, badge):
         """ Generate and Sign and OpenBadge assertion """
 
-        badge.jws_header, badge.jws_body = self.generate_jws(badge)
-        badge.jws_signature = jws_sign(badge.jws_header, badge.jws_body, badge.source.priv_key)
+        header, body = self.generate_jws(badge)
+        signature = jws_sign(header, body, badge.source.priv_key)
 
-        return badge.get_assertion()
+        badge.assertion = Assertion()
+        badge.assertion.encode_header(header)
+        badge.assertion.encode_body(body)
+        badge.assertion.encode_signature(signature)
 
     def has_assertion(self, badge):
         """ Detect if a Badge is already signed """
@@ -186,69 +189,5 @@ class Signer():
 
     def has_png_assertion(self, badge):
         return False
-
-class SignerBase():
-    """ JWS Signer Factory """
-
-    def __init__(self, badge_name='',
-                 image_url=None, json_url=None, identity='',
-                 evidence=None, verify_key=None, deterministic=False,
-                 expires=None, sign_key=None):
-        self.badge_name = badge_name.encode('utf-8')
-        self.badge_image_url = image_url
-        self.badge_json_url = json_url
-        self.receptor = identity.encode('utf-8')     # Receptor of the badge
-        self.evidence = evidence                     # URL to evidence
-        self.verify_key_url = verify_key
-        self.deterministic = deterministic           # Randomness
-        self.expires = expires
-        self.sign_key = sign_key
-
-    def generate_uid(self):
-        self.uid = sha1_string(self.badge_name + self.receptor + datetime.now().isoformat().encode('utf-8'))
-        return self.uid
-
-    def get_uid(self):
-        return self.uid.decode('utf-8')
-
-
-    def sign_svg(self, svg_in, assertion):
-        svg_doc = parseString(svg_in)
-
-        if (self.has_assertion(svg_doc)):
-            raise ErrorSigningFile('The input SVG file is already signed.')
-
-        # Assertion
-        svg_tag = svg_doc.getElementsByTagName('svg').item(0)
-        assertion_tag = svg_doc.createElement("openbadges:assertion")
-        assertion_tag.attributes['xmlns:openbadges'] = 'http://openbadges.org'
-        assertion_tag.attributes['verify']= assertion.decode('utf-8')
-        svg_tag.appendChild(assertion_tag)
-        svg_tag.appendChild(svg_doc.createComment(' Signed with OpenBadgesLib %s ' % __version__))
-
-        svg_signed = svg_doc.toxml()
-        svg_doc.unlink()
-
-        return svg_signed
-
-    def generate_openbadge_assertion(self):
-        """ Generate and Sign and OpenBadge assertion """
-
-        header = self.generate_jose_header()
-        payload = self.generate_jws_payload()
-
-        self.key.read_private_key(self.sign_key)
-
-        signature = jws_sign(header, payload, self.key.get_priv_key())
-        assertion = jws_utils.encode(header) + b'.' + jws_utils.encode(payload) + b'.' + jws_utils.to_base64(signature)
-
-        return assertion
-
-    def has_assertion(self, xml_obj):
-        if xml_obj.getElementsByTagName('openbadges:assertion'):
-            return True
-        else:
-            return False
-
 
 
