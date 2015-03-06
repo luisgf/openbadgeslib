@@ -138,7 +138,7 @@ class Badge():
 
             if not os.path.isfile(img_path):
                 print('Badge file %s NOT exists.' % img_path)
-                sys.exit(-1)
+                raise IOError
 
             with open(img_path, 'rb') as file:
                 img_content = file.read()
