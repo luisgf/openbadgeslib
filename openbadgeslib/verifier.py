@@ -56,15 +56,15 @@ class Verifier():
     def __init__(self, verify_key=None, identity=None):
         self.verify_key = verify_key
         self.identity = identity.encode('utf-8')
-        
+
         if self.verify_key:
-            self.key_type = detect_key_type(self.verify_key)        
-    
+            self.key_type = detect_key_type(self.verify_key)
+
     def get_identity(self):
         return self.identity.decode('utf-8')
-        
+
     def get_badge_status(self, badge):
-        
+
         if badge.source.key_type is KeyType.ECC:
             show_ecc_disclaimer()
 
@@ -83,10 +83,10 @@ class Verifier():
                     expiration = self.check_expiration(badge)
                     if expiration:
                         error = 'The badge with UID %s has expired at: %s' % (badge.serial_num, expiration)
-                        return VerifyInfo(BadgeStatus.EXPIRED, error)                
+                        return VerifyInfo(BadgeStatus.EXPIRED, error)
 
                 if not self.check_identity(badge):
-                    error = 'Identity mismatch for: %s' % badge.get_identity()
+                    error = 'Identity mismatch for: %s' % self.get_identity()
                     return VerifyInfo(BadgeStatus.IDENTITY_ERROR, error)
             else:
                 return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, 'Signature invalid, corrupted or tampered')
@@ -105,13 +105,13 @@ class Verifier():
                 return VerifyInfo(BadgeStatus.VALID, 'OK')
 
         except JWS_SignatureError as err:
-            return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, err)    
+            return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, err)
 
     def check_revocation(self, badge):
         """ Return true if the badge has been revoked """
-        
+
         serial_num = badge.serial_num
-        
+
         badge_json = download_file(badge.source.json_url)
         badge = jws_utils.from_json(badge_json)
 
