@@ -76,7 +76,7 @@ def main():
             print('ERROR: The config file %s NOT exists or is empty' % args.config)
             sys.exit(-1)
 
-        if not conf[badge]:
+        if not badge in conf:
             print('ERROR: %s is not defined in this config file' % args.badge)
             sys.exit(-1)
 
