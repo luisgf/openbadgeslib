@@ -1,3 +1,11 @@
+* v0.4
+ - Support for PNG!. Now the library is capable of verify and sign OpenBadges
+   in PNG format.
+
+ - Support for sendmails badges via mail.
+
+ - Badge signes are registered in a log file.
+
 * v0.3
 
   - The email is not encoded anymore in the filename, when creating
