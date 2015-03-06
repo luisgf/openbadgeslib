@@ -20,6 +20,9 @@ smtp_server = localhost
 smtp_port = 25
 use_ssl = False
 mail_from = no-reply@issuer.badge
+; Uncomment this if your SMTP server needs authentication
+;login =
+;password =
 
 ; Configuration of the OpenBadges issuer.
 [issuer]
