@@ -55,24 +55,24 @@ class Assertion():
         self.header = header               # In Base64
         self.body = body                 # In Base64
         self.signature = signature
-        
+
     @staticmethod
     def decode(data):
         try:
             header, body, signature = data.split(b'.')
-            return Assertion(header, body, signature)            
+            return Assertion(header, body, signature)
         except:
             raise AssertionFormatIncorrect()
-    
+
     def decode_header(self):
         return jws_utils.decode(self.header)
-    
+
     def decode_body(self):
         return jws_utils.decode(self.body)
-    
+
     def get_assertion(self):
         return self.header + b'.' + self.body + b'.' + self.signature
-        
+
     def __str__(self):
         return 'Header: %s\nBody: %s\nSignature: %s' % (self.header, self.body, self.signature)
 
@@ -184,7 +184,7 @@ class BadgeSigned():
         """ Read a Signed Badge from file """
         with open(file_name, 'rb') as file:
             file_data = file.read()              # Binary Data Signed
-        
+
         if file_name.lower().endswith('.svg'):
             img_type = BadgeImgType.SVG
             assertion = extract_svg_assertion(file_data)
@@ -193,35 +193,35 @@ class BadgeSigned():
             assertion = extract_png_assertion(file_data)
         else:
             raise BadgeImgFormatUnsupported('The image format for %s is not supported' % badge)
-        
+
         body = assertion.decode_body()
-        
+
         try:
             evidence=body['evidence']
         except KeyError:
             evidence=None
-        
+
         try:
-            expiration=body['expiration']
+            expiration=body['expires']
         except KeyError:
             expiration=None
-        
+
         # TODO: Download from internet the files associated
         pubkey_pem = download_file(body['verify']['url'])
         key_type = detect_key_type(pubkey_pem)
-        
+
         badge = Badge(image_url=body['image'], verify_key_url=body['verify']['url'],
-                      json_url=body['badge'], key_type=key_type, 
+                      json_url=body['badge'], key_type=key_type,
                       pubkey_pem=pubkey_pem)
-                      
-        badge_sig = BadgeSigned(source=badge, serial_num=body['uid'], 
+
+        badge_sig = BadgeSigned(source=badge, serial_num=body['uid'],
                                 identity=body['recipient']['identity'].encode('utf-8'),
                                 evidence=evidence, expiration=expiration,
                                 salt=body['recipient']['salt'].encode('utf-8'),
-                                issue_date=body['issuedOn'], 
+                                issue_date=body['issuedOn'],
                                 assertion=assertion)
         return badge_sig
-        
+
     def save_to_file(self, file_name):
          with open(file_name, 'wb') as f:
                 f.write(self.signed)
@@ -243,7 +243,7 @@ class BadgeSigned():
 
     def __str__(self):
         return 'Serial Num: %s\nIdentity: %s\nEvidence %s\nExpiration: %s\nSalt: %s\n' % (self.serial_num, self.identity, self.evidence, self.expiration, self.salt)
-  
+
 def extract_svg_assertion(file_data):
     """ Extract the assertion embeded in a SVG file. """
 
@@ -253,11 +253,11 @@ def extract_svg_assertion(file_data):
 
         # Extract the assertion
         xml_node = svg_doc.getElementsByTagName("openbadges:assertion")
-        return Assertion.decode(xml_node[0].attributes['verify'].nodeValue.encode('utf-8'))        
+        return Assertion.decode(xml_node[0].attributes['verify'].nodeValue.encode('utf-8'))
     except:
         raise ErrorParsingFile('Error Parsing SVG file: ')
     finally:
-        svg_doc.unlink()  
+        svg_doc.unlink()
 
 def extract_png_assertion(file_data):
     return None
