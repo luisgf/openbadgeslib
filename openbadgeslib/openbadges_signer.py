@@ -32,6 +32,8 @@
 import argparse
 import sys, os, os.path, time
 
+from datetime import datetime
+
 from .logs import Logger
 from .keys import KeyType, detect_key_type
 from .signer import Signer
@@ -102,10 +104,16 @@ def main():
             badge_signed = sf.sign_badge(badge_obj)
 
             if badge_signed:
-                badge_signed.save_to_file(badge_file_out)
+                sign_log = os.path.join(conf['paths']['base_log'], conf['logs']['signer'])
+                # Date in ISO-8601 Format
+                msg = '%s %s SIGNED for %s UID %s\n' \
+                    % (datetime.today().isoformat(), badge,
+                       badge_signed.get_identity(), badge_signed.get_serial_num())
 
-                print('%s SIGNED for %s UID %s at %s' % (badge, badge_signed.get_identity(),
-                                                   badge_signed.get_serial_num(), badge_file_out))
+                with open(sign_log, 'w') as file:
+                    file.write(msg)
+
+                badge_signed.save_to_file(badge_file_out)
 
                 if bool(args.mail_badge):
                     server = conf['smtp']['smtp_server']
