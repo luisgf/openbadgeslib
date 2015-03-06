@@ -13,9 +13,6 @@ TODO LIST
 - 20141216: Tampering with Openbadges (inserting a valid asertion in another
   image) should be detected and notified.
 
-- 20141216: Badges created must be registered somewhere:
-  Timestamp, UID, email, evidence.
-
 - 20141216: keeping INI and webserver configuration in sync should
   be easy. For instance, just indicate the URL of the badge
   configuration and the signing process would download (and cache)
