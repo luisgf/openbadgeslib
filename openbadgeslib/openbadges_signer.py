@@ -83,7 +83,7 @@ def main():
             sys.exit(-1)
 
         try:
-            sf = Signer(identity=args.receptor, evidence=evidence,
+            sf = Signer(identity=args.receptor.encode('utf-8'), evidence=evidence,
                         expiration=expiration, badge_type=BadgeType.SIGNED)
 
             badge_obj = Badge.create_from_conf(conf, badge)

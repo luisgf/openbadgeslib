@@ -44,7 +44,7 @@ from .jws import sign as jws_sign
 class Signer():
     def __init__(self, identity=None, evidence=None, expiration=None,
                  deterministic=False, badge_type=None):
-        self.identity = identity.encode('utf-8')
+        self.identity = identity
         self.evidence = evidence
         self.expiration = expiration
         self.badge_type = badge_type
