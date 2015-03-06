@@ -6,6 +6,9 @@
 
  - Badge signes are registered in a log file.
 
+ - Mail code now supports SMTP auth. The config file need modifications.
+   See the example.
+
 * v0.3
 
   - The email is not encoded anymore in the filename, when creating
