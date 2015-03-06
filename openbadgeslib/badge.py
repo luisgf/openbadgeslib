@@ -27,6 +27,8 @@ from enum import Enum
 from Crypto.PublicKey import RSA
 from ecdsa import SigningKey, VerifyingKey, NIST256p
 from xml.dom.minidom import parseString
+from png import Reader
+from struct import unpack
 
 from .confparser import ConfParser
 from .keys import KeyType, detect_key_type
@@ -267,7 +269,13 @@ def extract_svg_assertion(file_data):
         svg_doc.unlink()
 
 def extract_png_assertion(file_data):
-    return None
+    png = Reader(bytes=file_data)
+
+    for tag, data in png.chunks():
+        if tag == 'iTXt':
+            fmt_len = len(data)-15        # 15=len('openbadges'+pack('BBBBB'))
+            fmt = '<10s5B%ds' % fmt_len
+            return Assertion.decode(unpack(fmt, data)[6])
 
 if __name__ == '__main__':
     pass
