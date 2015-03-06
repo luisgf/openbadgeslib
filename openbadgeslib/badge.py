@@ -185,6 +185,7 @@ class BadgeSigned():
         self.signed_assertion = None             # Signed Assertion
         self.issue_date = issue_date             # Timestamp
         self.assertion = assertion
+        self.file_out = None                     # Path to signed file if saved
 
     @staticmethod
     def read_from_file(file_name):
@@ -232,6 +233,7 @@ class BadgeSigned():
     def save_to_file(self, file_name):
          with open(file_name, 'wb') as f:
                 f.write(self.signed)
+         self.file_out = file_name
 
     def get_identity(self):
         return self.identity.decode('utf-8')

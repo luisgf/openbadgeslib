@@ -28,43 +28,50 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import COMMASPACE, formatdate
 from email.header import Header
+from .badge import BadgeImgType
 
 class BadgeMail():
     def __init__(self, smtp_server='localhost', smtp_port=25, use_ssl=False,
-                 mail_from=None):
+                 mail_from=None, username=None, password=None):
         self.smtp_server = smtp_server
         self.smtp_port = smtp_port
         self.use_ssl = use_ssl
         self.mail_from = mail_from
+        self.username = username
+        self.password = password
+        self.subject = None
+        self.body = None
 
-    def send(self, mail_to, subject, body, files=[]):
+    def send(self, badge):
         msg = MIMEMultipart()
-        msg['Subject'] = Header(subject, 'utf-8')
+        msg['Subject'] = Header(self.subject, 'utf-8')
         msg['From'] = Header(self.mail_from, 'utf-8')
         msg['Date'] = formatdate(localtime=True)
-        msg['To'] = Header(mail_to, 'utf-8')
+        msg['To'] = Header(badge.get_identity(), 'utf-8')
 
-        msg.attach(MIMEText(body,'plain','utf-8'))
+        msg.attach(MIMEText(self.body,'plain','utf-8'))
 
-        """ Support for sending more than one file attached """
-        for f in files:
-            with open(f, "rb") as file:
-                image = MIMEImage(file.read(),
-                                  Content_Disposition='attachment; filename=%s' % basename(f), Content_Description='Signed OpenBadge'
-                )
+        if badge.source.image_type is BadgeImgType.SVG:
+            mime_type = 'svg+xml'
+        elif badge.source.image_type is BadgeImgType.PNG:
+            mime_type = 'png'
 
-                msg.attach(MIMEImage(
-                    file.read(),
-                    Content_Disposition='attachment; filename=%s' % basename(f),
-                    Content_Description='Signed OpenBadge'
-                ))
+        image = MIMEImage(badge.source.image,
+                          Content_Disposition='attachment; filename=%s' % basename(badge.file_out),
+                          Content_Description='Signed OpenBadge',
+                          _subtype=mime_type)
+        msg.attach(image)
+
         try:
             if self.use_ssl:
                 smtp = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port)
             else:
                 smtp = smtplib.SMTP(self.smtp_server, self.smtp_port)
 
-            smtp.sendmail(self.mail_from, mail_to, msg.as_string())
+            if self.username:
+                smtp.login(self.username, self.password)
+
+            smtp.sendmail(self.mail_from, badge.get_identity(), msg.as_string())
             smtp.quit()
         except smtplib.SMTPDataError as err:
             print('[!] Error sending mail to: %s. %s' % (mail_to, err))
@@ -81,6 +88,11 @@ class BadgeMail():
         else:
             return None, None
 
+    def set_subject(self, subject):
+        self.subject = subject
+
+    def set_body(self, body):
+        self.body = body
 
 if __name__ == '__main__':
     pass

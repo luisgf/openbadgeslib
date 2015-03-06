@@ -120,10 +120,21 @@ def main():
                     port = conf['smtp']['smtp_port']
                     use_ssl = conf['smtp']['use_ssl']
                     mail_from = conf['smtp']['mail_from']
+                    login = None
+                    password = None
 
-                    mail = BadgeMail(server, port, use_ssl, mail_from)
+                    if 'login' in conf['smtp']:
+                        login = conf['smtp']['login']
+
+                    if 'password' in conf['smtp']:
+                        password = conf['smtp']['password']
+
+                    mail = BadgeMail(server, port, use_ssl, mail_from, login,
+                                     password)
                     subject, body = mail.get_mail_content(conf[badge]['mail'])
-                    mail.send(args.receptor, subject, body, [badge_file_out])
+                    mail.set_subject(subject)
+                    mail.set_body(body)
+                    mail.send(badge_signed)
 
         except SignerExceptions:
             raise
