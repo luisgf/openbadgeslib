@@ -22,9 +22,6 @@ TODO LIST
   indicating the correct timezone. Could be difficult, though.
   Think about it.
 
-- 20150127: The mailing code needs username/password support.
-
-- 20150127: The mailing code needs a mailform template.
 
 
 
