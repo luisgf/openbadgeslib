@@ -188,6 +188,13 @@ class Signer():
         return has_assertion
 
     def has_png_assertion(self, badge):
+        png = Reader(bytes=badge.image)
+
+        for tag, data in png.chunks():
+            if tag == 'iTXt':
+                if data.startswith(b'openbadges'):
+                    return True
+
         return False
 
 
