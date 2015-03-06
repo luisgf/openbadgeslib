@@ -72,7 +72,7 @@ def download_file(url):
     return file
 
 def show_ecc_disclaimer():
-    print("""DISCLAIMER!
+    print("""    DISCLAIMER!
 
     You are running the program with support for Elliptic
     Curve cryptography.
@@ -81,4 +81,4 @@ def show_ecc_disclaimer():
     signature/verification process and may lead to problems for
     you and others when verifying your badges.
 
-    Use at your own risk!""")
+    Use at your own risk!\n""")
