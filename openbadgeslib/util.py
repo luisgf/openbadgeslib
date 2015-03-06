@@ -47,7 +47,7 @@ def md5_string(string):
 
 def hash_email(email, salt):
     return sha256_string(email + salt)
-    
+
 def download_file(url):
     """ This function download a file from server """
 
@@ -71,7 +71,7 @@ def download_file(url):
 
     return file
 
-def show_ecc_disclaimer(self):
+def show_ecc_disclaimer():
     print("""DISCLAIMER!
 
     You are running the program with support for Elliptic
@@ -81,4 +81,4 @@ def show_ecc_disclaimer(self):
     signature/verification process and may lead to problems for
     you and others when verifying your badges.
 
-    Use at your own risk!""")    
+    Use at your own risk!""")
