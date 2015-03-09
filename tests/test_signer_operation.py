@@ -13,7 +13,7 @@ from openbadgeslib.confparser import ConfParser
 from openbadgeslib.util import md5_string
 from openbadgeslib.logs import Logger
 from openbadgeslib.keys import KeyType
-from openbadgeslib.badge import Badge, BadgeType, BadgeImgType
+from openbadgeslib.badge import Badge, BadgeType, BadgeImgType, Assertion, BadgeSigned
 from openbadgeslib.confparser import ConfParser
 
 class check_badge(unittest.TestCase) :
@@ -25,27 +25,36 @@ class check_badge(unittest.TestCase) :
         conf = cf.read_conf()
         self.assertIsNotNone(conf)
 
-    def test_badge_creation(self):
+    def test_badge_object_creation(self):
         """ Badge object creation """
         
         badge = Badge()
         self.assertIsInstance(badge, Badge)
+        
+    def test_assertion_creation(self):
+        """ Test Assertion Object creation """
+        
+        assertion = Assertion()
+        self.assertIsInstance(assertion, Assertion)
+    
+    def test_badgesigned_creation(self):
+        """ Test BadgeSigned object creation """
+        
+        badge = BadgeSigned()
+        self.assertIsInstance(badge, BadgeSigned)
 
     def test_badge_creation(self):
         """ Test Manual Badge creation """
         
-        cf = ConfParser('./config1.ini')
-        conf = cf.read_conf()
-        badge = 'badge_test_1'
-        badge = Badge(ini_name=badge,
-                         name=conf[badge]['name'],
-                         description=conf[badge]['description'],
+        badge = Badge(ini_name='badge_test_1',
+                         name='OpenBadgesLib TEST SVG RSA Badge',
+                         description='TEST SVG RSA Badge',
                          image_type=BadgeImgType.SVG,
                          image=None,
-                         image_url=conf[badge]['image'],
-                         criteria_url=conf[badge]['criteria'],
-                         json_url=conf[badge]['badge'],
-                         verify_key_url=conf[badge]['verify_key'],
+                         image_url='https://openbadges.luisgf.es/issuer/badge_1/badge.svg',
+                         criteria_url='https://openbadges.luisgf.es/issuer/badge_1/criteria.html',
+                         json_url='https://openbadges.luisgf.es/issuer/badge_1/badge.json',
+                         verify_key_url='https://openbadges.luisgf.es/issuer/badge_1/verify_rsa_key.pem',
                          key_type=KeyType.RSA,
                          privkey_pem=None,
                          pubkey_pem=None)
@@ -58,8 +67,7 @@ class check_badge(unittest.TestCase) :
         self.assertEqual(badge.criteria_url, 'https://openbadges.luisgf.es/issuer/badge_1/criteria.html')
         self.assertEqual(badge.json_url, 'https://openbadges.luisgf.es/issuer/badge_1/badge.json')
         self.assertEqual(badge.verify_key_url, 'https://openbadges.luisgf.es/issuer/badge_1/verify_rsa_key.pem')
-        self.assertEqual(badge.key_type, KeyType.RSA)
-        self.assertEqual(conf['badge_test_1']['local_image'], 'sample1.svg')    
+        self.assertEqual(badge.key_type, KeyType.RSA)    
         self.assertTrue(badge.image_url.endswith('.svg'))
 
     def test_badge1(self):
@@ -174,6 +182,28 @@ class check_badge(unittest.TestCase) :
             key_pem = f.read()
         self.assertEqual(badge.pubkey_pem, key_pem)   
 
+    def test_assertion_decoding(self):
+        """ Test the assertion decoding and reconstruct """
+        
+        payload = b'IkhFQURFUiI.IkJPRFki.IlNJR05BVFVSRSI'
+        decode = Assertion.decode(payload)
+        self.assertIsInstance(decode, Assertion)
+        
+    def test_decode_jws_header(self):
+        payload = b'IkhFQURFUiI.IkJPRFki.IlNJR05BVFVSRSI'
+        decode = Assertion.decode(payload)
+        self.assertEqual(decode.decode_header(), 'HEADER')
+    
+    def test_decode_jws_body(self):
+        payload = b'IkhFQURFUiI.IkJPRFki.IlNJR05BVFVSRSI'
+        decode = Assertion.decode(payload)
+        self.assertEqual(decode.decode_body(), 'BODY')
+
+    def test_get_complete_assertion(self):
+        payload = b'IkhFQURFUiI.IkJPRFki.IlNJR05BVFVSRSI'
+        decode = Assertion.decode(payload)
+        self.assertEqual(decode.get_assertion(), payload)
+        
 class check_signer(unittest.TestCase):
     @classmethod
     def setUpClass(cls) :
