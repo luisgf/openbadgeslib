@@ -1,9 +1,0 @@
-syntax: glob
-*.pyc
-*.pyo
-*.py3
-*.egg
-build/*
-dist/*
-__pycache__
-MANIFEST
