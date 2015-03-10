@@ -41,7 +41,8 @@ setup(
         'openbadges-init = openbadgeslib.openbadges_init:main',
         'openbadges-keygenerator = openbadgeslib.openbadges_keygenerator:main',
         'openbadges-signer = openbadgeslib.openbadges_signer:main',
-        'openbadges-verifier = openbadgeslib.openbadges_verifier:main'
+        'openbadges-verifier = openbadgeslib.openbadges_verifier:main',
+        'openbadges-publish = openbadgeslib.openbadges_publish:main'
         ]
     }
 )
