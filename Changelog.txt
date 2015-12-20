@@ -1,3 +1,8 @@
+* v0.4.2
+ - Adding support to verifying external openbadges.
+ - Adding a new parameter to show assertion before verifing
+ - OpenBadges URLs are verified before the signing process
+
 * v0.4
  - Support for PNG!. Now the library is capable of verify and sign OpenBadges
    in PNG format.

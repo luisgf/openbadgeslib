@@ -2,8 +2,8 @@
 """
         OpenBadges Library
 
-        Copyright (c) 2015, Luis González Fernández, luisgf@luisgf.es
-        Copyright (c) 2015, Jesús Cea Avión, jcea@jcea.es
+        Copyright (c) 2014-2015, Luis González Fernández, luisgf@luisgf.es
+        Copyright (c) 2014-2015, Jesús Cea Avión, jcea@jcea.es
 
         All rights reserved.
 
@@ -22,7 +22,7 @@
 """
 
 
-__version__ = 'v0.4'     # Package Version
+__version__ = '0.4.2'     # Package Version
 
 import hashlib
 from urllib import request
@@ -54,7 +54,7 @@ def download_file(url):
     u = urlparse(url)
 
     if u.scheme != 'https':
-        print('Warning! %s don\'t use TLS.', url)
+        print('Warning! %s doesn\'t use TLS.' % url)
 
     if u.hostname == b'':
         raise AssertionFormatIncorrect('The URL %s was malformed' % url)

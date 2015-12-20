@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 """
-    Copyright (c) 2015, Luis González Fernández - luisgf@luisgf.es
-    Copyright (c) 2015, Jesús Cea Avión - jcea@jcea.es
+    Copyright (c) 2014-2015, Luis González Fernández - luisgf@luisgf.es
+    Copyright (c) 2014-2015, Jesús Cea Avión - jcea@jcea.es
 
     All rights reserved.
 
@@ -60,7 +60,7 @@ def main():
             f.write(issuer)
 
         revocation = create_revocation_json(conf)
-        revocation_file = os.path.join(args.output, 'revocation.json')
+        revocation_file = os.path.join(args.output, 'revoked.json')
         with open(revocation_file, "w", encoding='ascii') as f:
             f.write(revocation)
 

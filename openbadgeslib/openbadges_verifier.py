@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 """
-    Copyright (c) 2015, Luis González Fernández - luisgf@luisgf.es
-    Copyright (c) 2015, Jesús Cea Avión - jcea@jcea.es
+    Copyright (c) 2014-2015, Luis González Fernández - luisgf@luisgf.es
+    Copyright (c) 2014-2015, Jesús Cea Avión - jcea@jcea.es
 
     All rights reserved.
 
@@ -49,24 +49,29 @@ def main():
             help='Specify the email of the receptor of the badge')
     parser.add_argument('-l', '--local', metavar='BADGE',
             help='Do the verification using the local configuration')
+    parser.add_argument('-s', '--show', action='store_true', 
+            help='Show the assertion of the OpenBadge being verified.')
     parser.add_argument('-v', '--version', action='version',
             version=__version__ )
     args = parser.parse_args()
 
     if args.filein and args.receptor:
-        cf = ConfParser(args.config)
-        conf = cf.read_conf()
-        local_pubkey = None
+        if args.local:
+            cf = ConfParser(args.config)
+       	    conf = cf.read_conf()
+            if not conf:
+                print('[!] The config file %s NOT exists or is empty' % args.config)
+                sys.exit(-1)
 
-        if not conf:
-            print('[!] The config file %s NOT exists or is empty' % args.config)
-            sys.exit(-1)
+        local_pubkey = None
 
         try:
             if not os.path.isfile(args.filein):
                 print('[!] Badge file %s NOT exists.' % args.filein)
                 sys.exit(-1)
             
+            badge = BadgeSigned.read_from_file(args.filein)
+
             if args.local:
                 badge = 'badge_' + args.local
                 if badge not in conf :
@@ -75,13 +80,16 @@ def main():
               
                 with open(conf[badge]['public_key'], 'rb') as file:
                     local_pubkey = file.read()
+            else:
+                local_pubkey = badge.get_signkey_pem()
 
-            badge = BadgeSigned.read_from_file(args.filein)
             v = Verifier(verify_key=local_pubkey, identity=args.receptor)
+            if args.show:
+                v.print_payload(badge)
+                
             check = v.get_badge_status(badge) 
             
-            if check.status is BadgeStatus.VALID:
-                v.print_payload(badge)
+            if check.status is BadgeStatus.VALID:                
                 print('[+] Signature is correct for the identity %s' % v.get_identity())
             else:
                 print('[-] ', check.msg)

@@ -2,7 +2,7 @@
 
 from distutils.core import setup
 
-version = '0.4'
+version = '0.4.2'
 
 dependencies = [
         'ecdsa',
@@ -28,6 +28,7 @@ setup(
       'Intended Audience :: Developers',
       'Operating System :: OS Independent',
       'Programming Language :: Python :: 3.4',
+      'Programming Language :: Python :: 3.5',
       'Topic :: Software Development :: Libraries :: Python Modules',
       'Natural Language :: English',
       'Natural Language :: Spanish',

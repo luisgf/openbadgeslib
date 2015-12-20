@@ -2,8 +2,8 @@
 """
         OpenBadges Library
 
-        Copyright (c) 2015, Luis González Fernández, luisgf@luisgf.es
-        Copyright (c) 2015, Jesús Cea Avión, jcea@jcea.es
+        Copyright (c) 2014-2015, Luis González Fernández, luisgf@luisgf.es
+        Copyright (c) 2014-2015, Jesús Cea Avión, jcea@jcea.es
 
         All rights reserved.
 
@@ -113,7 +113,12 @@ class Verifier():
         serial_num = badge.serial_num
 
         badge_json = download_file(badge.source.json_url)
-        badge = jws_utils.from_json(badge_json)
+        if not badge_json:
+            raise AssertionFormatIncorrect('Badge JSON doesn\'t exists %s' % badge.source.json_url)
+        try:    
+            badge = jws_utils.from_json(badge_json)
+        except:
+            raise AssertionFormatIncorrect("Badge JSON format incorrect at %s" % badge.source.json_url)
 
         issuer_json = download_file(badge['issuer'])
         issuer = jws_utils.from_json(issuer_json)

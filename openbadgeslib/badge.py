@@ -2,8 +2,8 @@
 """
         OpenBadges Library
 
-        Copyright (c) 2015, Luis González Fernández, luisgf@luisgf.es
-        Copyright (c) 2015, Jesús Cea Avión, jcea@jcea.es
+        Copyright (c) 2014-2015, Luis González Fernández, luisgf@luisgf.es
+        Copyright (c) 2014-2015, Jesús Cea Avión, jcea@jcea.es
 
         All rights reserved.
 
@@ -168,6 +168,49 @@ class Badge():
     def __str__(self):
         return 'INI Name: %s\nName: %s\nDescription: %s\nImage Type: %s\nImage Url: %s\nKey Type: %s\nVerify Key: %s\nJSON Url: %s\n' % (self.ini_name, self.name, self.description, self.image_type, self.image_url, self.key_type, self.verify_key_url, self.json_url)
 
+    def urls_has_problems(self):
+        """ Check if urls in Badge are corrects and online """
+
+        error = False
+        data = None
+
+        try:
+            data = download_file(self.image_url)
+        except:
+            pass
+        finally:
+            if not data:
+                print('[!] OpenBadge Image at config file is pointing to a wrong url: %s' % self.image_url)
+                error = True
+
+        try:
+            data = download_filie(self.criteria_url)
+        except:
+            pass
+        finally:
+            if not data:
+                print('[!] OpenBadge Criteria at config file is pointing to a wrong url %s' % self.criteria_url)
+                error = True
+
+        try:
+            data = download_file(self.json_url)
+        except:
+            pass
+        finally:
+            if not data:
+                print('[!] OpenBadge JSon at config file is pointing to a wrong url %s' % self.json_url)
+                error = True
+
+        try:
+            data = download_file(self.verify_key_url)
+        except:
+            pass
+        finally:
+            if not data:
+                print('[!] OpenBadge Verify key at config file is poiting to a wrong url %s' % self.verify_key_url)
+                error = True
+
+        return error
 
 class BadgeSigned():
     """ A Signed Badge Object """
@@ -214,9 +257,15 @@ class BadgeSigned():
         except KeyError:
             expiration=None
 
-        # TODO: Download from internet the files associated
-        pubkey_pem = download_file(body['verify']['url'])
-        key_type = detect_key_type(pubkey_pem)
+        try:
+            pubkey_pem = download_file(body['verify']['url'])
+            key_type = detect_key_type(pubkey_pem)
+        except:
+            pubkey_pem = None
+            key_type = None
+            print('Unable to verify OpenBadge Signature. The URL pointing to verify key doesn\'t exists.')
+            print('Url with problems: %s' % body['verify']['url'])
+            sys.exit(-1)
 
         badge = Badge(image_url=body['image'], verify_key_url=body['verify']['url'],
                       json_url=body['badge'], key_type=key_type,
@@ -254,6 +303,11 @@ class BadgeSigned():
 
     def __str__(self):
         return 'Serial Num: %s\nIdentity: %s\nEvidence %s\nExpiration: %s\nSalt: %s\n' % (self.serial_num, self.identity, self.evidence, self.expiration, self.salt)
+
+    def get_signkey_pem(self):
+        """ Return the public key pem used to sign the openbadge """
+
+        return self.source.pubkey_pem
 
 def extract_svg_assertion(file_data):
     """ Extract the assertion embeded in a SVG file. """

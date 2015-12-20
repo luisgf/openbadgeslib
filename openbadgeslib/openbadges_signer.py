@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 """
-    Copyright (c) 2015, Luis González Fernández - luisgf@luisgf.es
-    Copyright (c) 2015, Jesús Cea Avión - jcea@jcea.es
+    Copyright (c) 2014-2015, Luis González Fernández - luisgf@luisgf.es
+    Copyright (c) 2015-2015, Jesús Cea Avión - jcea@jcea.es
 
     All rights reserved.
 
@@ -99,7 +99,9 @@ def main():
                 print('A %s OpenBadge has already signed for %s in %s' % (args.badge, args.receptor, badge_file_out))
                 sys.exit(-1)
 
-            print("Generating signature for badge '%s'..." % args.badge)
+            # Checking url reachability..
+            if badge_obj.urls_has_problems():
+                sys.exit(-1)
 
             badge_signed = sf.sign_badge(badge_obj)
 
@@ -135,6 +137,8 @@ def main():
                     mail.set_subject(subject)
                     mail.set_body(body)
                     mail.send(badge_signed)
+                    
+                print('%s at: %s' % (msg.strip('\n'), badge_file_out))
 
         except SignerExceptions:
             raise
