@@ -184,7 +184,7 @@ class Badge():
                 error = True
 
         try:
-            data = download_filie(self.criteria_url)
+            data = download_file(self.criteria_url)
         except:
             pass
         finally:
