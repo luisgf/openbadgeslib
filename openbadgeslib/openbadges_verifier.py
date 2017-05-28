@@ -73,12 +73,12 @@ def main():
             badge = BadgeSigned.read_from_file(args.filein)
 
             if args.local:
-                badge = 'badge_' + args.local
-                if badge not in conf :
+                badge_name = 'badge_' + args.local
+                if badge_name not in conf :
                     sys.exit('There is no "%s" badge in the configuration' %
                             args.local)
               
-                with open(conf[badge]['public_key'], 'rb') as file:
+                with open(conf[badge_name]['public_key'], 'rb') as file:
                     local_pubkey = file.read()
             else:
                 local_pubkey = badge.get_signkey_pem()

@@ -36,7 +36,13 @@ class ConfParser():
             return None
 
         self.parser = ConfigParser(interpolation=ExtendedInterpolation())
-        self.parser.read(self.config_file)
+
+        try:
+            self.parser.read(self.config_file)
+        except UnicodeDecodeError as e:
+            # We should raise an UnicodeDecodeError, but the error message is too cryptic.#
+            raise ValueError("The encoding of the configuration file and the default encoding of "
+                             "the operating system mismatch") from None
         if self.parser['paths']['base'][0] == '.':
             abs_path = os.path.dirname(self.config_file)
             full_path = os.path.abspath(abs_path)
