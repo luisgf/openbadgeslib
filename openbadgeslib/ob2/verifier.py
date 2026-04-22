@@ -21,35 +21,24 @@
         License along with this library.
 """
 
+from .badge import BadgeStatus
+from ..util import hash_email, download_file, show_ecc_disclaimer
+from ..keys import KeyType, detect_key_type
+from .._jws.exceptions import SignatureError as JWS_SignatureError
+from .._jws import verify_block as jws_verify_block
+from .._jws import utils as jws_utils
+from ..errors import AssertionFormatIncorrect, NotIdentityInAssertion
+import json
+from urllib.error import HTTPError, URLError
 import logging
 logger = logging.getLogger(__name__)
 
-import os
-import sys
-
-from enum import Enum
-from Crypto.PublicKey import RSA
-from ecdsa import SigningKey, VerifyingKey, NIST256p
-
-from xml.dom.minidom import parseString
-from urllib.error import HTTPError, URLError
-
-import json
-
-from ..errors import UnknownKeyType, AssertionFormatIncorrect, \
-            NotIdentityInAssertion, ErrorParsingFile, PublicKeyReadError
-
-from .._jws import utils as jws_utils
-from .._jws import verify_block as jws_verify_block
-from .._jws.exceptions import SignatureError as JWS_SignatureError
-from ..keys import KeyType, detect_key_type
-from ..util import hash_email, sha256_string, download_file, show_ecc_disclaimer
-from .badge import BadgeStatus
 
 class VerifyInfo():
     def __init__(self, status=BadgeStatus.NONE, msg=None):
         self.status = status
         self.msg = msg
+
 
 class Verifier():
     def __init__(self, verify_key=None, identity=None):
@@ -116,7 +105,7 @@ class Verifier():
             raise AssertionFormatIncorrect('Badge JSON doesn\'t exists %s' % badge.source.json_url)
         try:
             badge = jws_utils.from_json(badge_json)
-        except:
+        except Exception:
             raise AssertionFormatIncorrect("Badge JSON format incorrect at %s" % badge.source.json_url)
 
         issuer_json = download_file(badge['issuer'])
@@ -137,7 +126,7 @@ class Verifier():
 
         if badge.expiration < badge.issue_date:
             return "%s" % strftime("%a, %d %b %Y %H:%M:%S +0000",
-                                                 gmtime(badge.expiration))
+                                   gmtime(badge.expiration))
         else:
             return None
 
@@ -150,7 +139,7 @@ class Verifier():
                 return True
             else:
                 return False
-        except:
+        except Exception:
             raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
 
     def print_payload(self, badge):

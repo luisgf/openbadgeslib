@@ -21,24 +21,23 @@
         License along with this library.
 """
 
-import os, os.path
-import sys
+import os
+import os.path
 import time
-import json
 
 from struct import pack
-from datetime import datetime
-from xml.dom.minidom import parse, parseString
+from xml.dom.minidom import parseString
 from zlib import crc32
 
-from png import Reader, write_chunks, signature as _png_signature
+from png import Reader, signature as _png_signature
 
-from ..errors import UnknownKeyType, FileToSignNotExists, BadgeSignedFileExists, ErrorSigningFile, PrivateKeyReadError
-from ..util import md5_string, sha1_string, sha256_string, __version__
-from ..keys import KeyFactory, KeyType
+from ..errors import ErrorSigningFile
+from ..util import md5_string, sha1_string, __version__
+from ..keys import KeyType
 from .badge import BadgeSigned, BadgeType, BadgeImgType, Assertion
 
 from .._jws import sign as jws_sign
+
 
 class Signer():
     def __init__(self, identity=None, evidence=None, expiration=None,
@@ -76,32 +75,32 @@ class Signer():
         """ Generate the JWS Payload using an BadgeSigned Object as input """
 
         if badge.source.key_type is KeyType.RSA:
-            jose_header = { 'alg': 'RS256' }
+            jose_header = {'alg': 'RS256'}
         elif badge.source.key_type is KeyType.ECC:
-            jose_header = { 'alg': 'ES256' }
+            jose_header = {'alg': 'ES256'}
 
         # All this data MUST be a Str string in order to be converted to json properly.
-        recipient_data = dict (
-            identity = badge.get_identity_hashed(),
-            type = 'email',
-            salt = badge.get_salt(),
-            hashed = 'true'
+        recipient_data = dict(
+            identity=badge.get_identity_hashed(),
+            type='email',
+            salt=badge.get_salt(),
+            hashed='true'
         )
 
         if self.badge_type is BadgeType.SIGNED:
             verify_data = dict(
-                type = 'signed',
-                url = badge.source.verify_key_url
+                type='signed',
+                url=badge.source.verify_key_url
             )
 
         payload = dict(
-                        uid = 0 if self.deterministic else badge.get_serial_num(),
-                        recipient = recipient_data,
-                        image = badge.source.image_url,
-                        badge = badge.source.json_url,
-                        verify = verify_data,
-                        issuedOn = 0 if self.deterministic else int(time.time())
-                     )
+            uid=0 if self.deterministic else badge.get_serial_num(),
+            recipient=recipient_data,
+            image=badge.source.image_url,
+            badge=badge.source.json_url,
+            verify=verify_data,
+            issuedOn=0 if self.deterministic else int(time.time())
+        )
 
         if badge.expiration:
             payload['expires'] = badge.expiration
@@ -130,7 +129,6 @@ class Signer():
         elif badge.image_type is BadgeImgType.PNG:
             return self.has_png_assertion(badge)
 
-
     def append_svg_assertion(self, badge):
         """ Append the assertion to a SVG File """
 
@@ -140,7 +138,7 @@ class Signer():
         svg_tag = svg_doc.getElementsByTagName('svg').item(0)
         assertion_tag = svg_doc.createElement("openbadges:assertion")
         assertion_tag.attributes['xmlns:openbadges'] = 'http://openbadges.org'
-        assertion_tag.attributes['verify']= badge.get_assertion()
+        assertion_tag.attributes['verify'] = badge.get_assertion()
         svg_tag.appendChild(assertion_tag)
         svg_tag.appendChild(svg_doc.createComment(' Signed with OpenBadgesLib %s ' % __version__))
 
@@ -158,13 +156,13 @@ class Signer():
         for chunk in png.chunks():
             chunks.append(chunk)
 
-        itxt_data = b'openbadges' + pack('BBBBB',0,0,0,0,0) + badge.get_assertion().encode('utf-8')
+        itxt_data = b'openbadges' + pack('BBBBB', 0, 0, 0, 0, 0) + badge.get_assertion().encode('utf-8')
         itxt = ('iTXt', itxt_data)
-        chunks.insert(len(chunks)-1,itxt)
+        chunks.insert(len(chunks)-1, itxt)
 
         text_data = 'Comment Signed with OpenBadgesLib %s' % __version__
         text = ('tEXt', text_data.encode('utf-8'))
-        chunks.insert(len(chunks)-1,text)
+        chunks.insert(len(chunks)-1, text)
 
         for tag, data in chunks:
             badge.signed = badge.signed + pack("!I", len(data))

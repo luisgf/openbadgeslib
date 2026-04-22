@@ -29,20 +29,24 @@
     POSSIBILITY OF SUCH DAMAGE.
 """
 
-import os, os.path, sys, shutil
+import os
+import os.path
+import sys
+import shutil
+
 
 def main():
-    if (len(sys.argv) != 2) or (sys.argv[1] == '-h') :
-        sys.exit('%s DIRECTORY' %sys.argv[0])
+    if (len(sys.argv) != 2) or (sys.argv[1] == '-h'):
+        sys.exit('%s DIRECTORY' % sys.argv[0])
 
     directory = sys.argv[1]
 
-    if os.path.lexists(directory) :
+    if os.path.lexists(directory):
         raise FileExistsError(directory)
 
     umask = os.umask(0o077)  # rwx------
     os.mkdir(directory)
-    for subdir in ['keys', 'images', 'log'] :
+    for subdir in ['keys', 'images', 'log']:
         os.mkdir(os.path.join(directory, subdir))
     os.umask(umask)
 
@@ -50,6 +54,6 @@ def main():
     destination = os.path.join(directory, 'config.ini')
     shutil.copyfile(source, destination)
 
+
 if __name__ == '__main__':
     main()
-

@@ -93,7 +93,7 @@ class OpenBadgeCredential:
     recipient_id: str          # 'mailto:email@example.com' or a DID
     achievement: Achievement
     id: Optional[str] = None   # auto-generated as 'urn:uuid:…' if absent
-    name: Optional[str] = None # defaults to achievement.name
+    name: Optional[str] = None  # defaults to achievement.name
     issuance_date: Optional[datetime] = None   # defaults to now (UTC)
     expiration_date: Optional[datetime] = None
     evidence_url: Optional[str] = None

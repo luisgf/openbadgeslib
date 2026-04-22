@@ -30,34 +30,37 @@
 """
 
 import argparse
-import sys, os
+import sys
+import os
 
 from .verifier import Verifier
-from .errors import LibOpenBadgesException, VerifierExceptions
+from .errors import VerifierExceptions
 from .confparser import ConfParser
 from .badge import BadgeSigned, BadgeStatus
 from .util import __version__
 
 # Entry Point
+
+
 def main():
     parser = argparse.ArgumentParser(description='Badge Verifier Parameters')
     parser.add_argument('-c', '--config', default='config.ini',
-            help='Specify the config.ini file to use')
+                        help='Specify the config.ini file to use')
     parser.add_argument('-i', '--filein', required=True,
-            help='Specify the input file to verify the signature')
+                        help='Specify the input file to verify the signature')
     parser.add_argument('-r', '--receptor', required=True,
-            help='Specify the email of the receptor of the badge')
+                        help='Specify the email of the receptor of the badge')
     parser.add_argument('-l', '--local', metavar='BADGE',
-            help='Do the verification using the local configuration')
+                        help='Do the verification using the local configuration')
     parser.add_argument('-k', '--pubkey', metavar='FILE',
-            help='(OB3) Path to the PEM public key file used for verification')
+                        help='(OB3) Path to the PEM public key file used for verification')
     parser.add_argument('-s', '--show', action='store_true',
-            help='Show the assertion/credential of the OpenBadge being verified.')
+                        help='Show the assertion/credential of the OpenBadge being verified.')
     parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
-            metavar='VERSION',
-            help='OpenBadges specification version: 2 (default, JWS) or 3 (JWT-VC).')
+                        metavar='VERSION',
+                        help='OpenBadges specification version: 2 (default, JWS) or 3 (JWT-VC).')
     parser.add_argument('-v', '--version', action='version',
-            version=__version__ )
+                        version=__version__)
     args = parser.parse_args()
 
     if not args.filein or not args.receptor:
@@ -162,7 +165,7 @@ def _verify_ob3(args):
         sys.exit(-1)
 
     expected_id = args.receptor if args.receptor.startswith('mailto:') \
-                  else 'mailto:' + args.receptor
+        else 'mailto:' + args.receptor
 
     if args.show:
         print('[+] Credential issuer  : %s' % credential.issuer.name)
@@ -180,6 +183,6 @@ def _verify_ob3(args):
               % (credential.recipient_id, expected_id))
         sys.exit(-1)
 
+
 if __name__ == '__main__':
     main()
-

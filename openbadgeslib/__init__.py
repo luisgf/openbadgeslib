@@ -22,7 +22,7 @@
 """
 
 # ── OpenBadges 2.0 ─────────────────────────────────────────────────────────────
-from .ob2 import (
+from .ob2 import (  # noqa: F401
     Signer, Verifier, VerifyInfo,
     Badge, BadgeSigned, Assertion,
     BadgeStatus, BadgeImgType, BadgeType,
@@ -30,11 +30,11 @@ from .ob2 import (
 )
 
 # ── OpenBadges 3.0 ─────────────────────────────────────────────────────────────
-from .ob3 import (
+from .ob3 import (  # noqa: F401
     OB3Signer, OB3Verifier, OB3VerificationError,
     OpenBadgeCredential, Achievement, Issuer,
 )
 
 # ── Shared utilities ────────────────────────────────────────────────────────────
-from .keys import KeyFactory, KeyRSA, KeyECC
-from .util import __version__
+from .keys import KeyFactory, KeyRSA, KeyECC  # noqa: F401
+from .util import __version__  # noqa: F401

@@ -21,20 +21,21 @@
         License along with this library.
 """
 
-import os, sys
+import os
+import sys
 from enum import Enum
 
 from Crypto.PublicKey import RSA
-from ecdsa import SigningKey, VerifyingKey, NIST256p
+from ecdsa import SigningKey, VerifyingKey
 from xml.dom.minidom import parseString
 from png import Reader
 from struct import unpack
 
-from ..confparser import ConfParser
 from ..keys import KeyType, detect_key_type
 from ..errors import BadgeImgFormatUnsupported, AssertionFormatIncorrect, ErrorParsingFile
 from .._jws import utils as jws_utils
 from ..util import hash_email, download_file
+
 
 class BadgeStatus(Enum):
     VALID = 1
@@ -44,13 +45,16 @@ class BadgeStatus(Enum):
     IDENTITY_ERROR = 5
     NONE = 6
 
+
 class BadgeImgType(Enum):
     SVG = 0
     PNG = 1
 
+
 class BadgeType(Enum):
     SIGNED = 0
     HOSTED = 1
+
 
 class Assertion():
     def __init__(self, header=None, body=None, signature=None):
@@ -63,7 +67,7 @@ class Assertion():
         try:
             header, body, signature = data.split(b'.')
             return Assertion(header, body, signature)
-        except:
+        except Exception:
             raise AssertionFormatIncorrect()
 
     def decode_header(self):
@@ -86,6 +90,7 @@ class Assertion():
 
     def __str__(self):
         return 'Header: %s\nBody: %s\nSignature: %s' % (self.header, self.body, self.signature)
+
 
 class Badge():
     def __init__(self, ini_name=None, name=None, description=None, image_type=None,
@@ -164,9 +169,13 @@ class Badge():
                          privkey_pem=privkey_pem,
                          pubkey_pem=pubkey_pem)
 
-
     def __str__(self):
-        return 'INI Name: %s\nName: %s\nDescription: %s\nImage Type: %s\nImage Url: %s\nKey Type: %s\nVerify Key: %s\nJSON Url: %s\n' % (self.ini_name, self.name, self.description, self.image_type, self.image_url, self.key_type, self.verify_key_url, self.json_url)
+        return (
+            'INI Name: %s\nName: %s\nDescription: %s\nImage Type: %s\n'
+            'Image Url: %s\nKey Type: %s\nVerify Key: %s\nJSON Url: %s\n'
+            % (self.ini_name, self.name, self.description, self.image_type,
+               self.image_url, self.key_type, self.verify_key_url, self.json_url)
+        )
 
     def urls_has_problems(self):
         """ Check if urls in Badge are corrects and online """
@@ -176,7 +185,7 @@ class Badge():
 
         try:
             data = download_file(self.image_url)
-        except:
+        except Exception:
             pass
         finally:
             if not data:
@@ -185,7 +194,7 @@ class Badge():
 
         try:
             data = download_file(self.criteria_url)
-        except:
+        except Exception:
             pass
         finally:
             if not data:
@@ -194,7 +203,7 @@ class Badge():
 
         try:
             data = download_file(self.json_url)
-        except:
+        except Exception:
             pass
         finally:
             if not data:
@@ -203,7 +212,7 @@ class Badge():
 
         try:
             data = download_file(self.verify_key_url)
-        except:
+        except Exception:
             pass
         finally:
             if not data:
@@ -211,6 +220,7 @@ class Badge():
                 error = True
 
         return error
+
 
 class BadgeSigned():
     """ A Signed Badge Object """
@@ -237,10 +247,8 @@ class BadgeSigned():
             file_data = file.read()              # Binary Data Signed
 
         if file_name.lower().endswith('.svg'):
-            img_type = BadgeImgType.SVG
             assertion = extract_svg_assertion(file_data)
         elif file_name.lower().endswith('.png'):
-            img_type = BadgeImgType.PNG
             assertion = extract_png_assertion(file_data)
         else:
             raise BadgeImgFormatUnsupported('The image format for %s is not supported' % file_name)
@@ -248,19 +256,19 @@ class BadgeSigned():
         body = assertion.decode_body()
 
         try:
-            evidence=body['evidence']
+            evidence = body['evidence']
         except KeyError:
-            evidence=None
+            evidence = None
 
         try:
-            expiration=body['expires']
+            expiration = body['expires']
         except KeyError:
-            expiration=None
+            expiration = None
 
         try:
             pubkey_pem = download_file(body['verify']['url'])
             key_type = detect_key_type(pubkey_pem)
-        except:
+        except Exception:
             pubkey_pem = None
             key_type = None
             print('Unable to verify OpenBadge Signature. The URL pointing to verify key doesn\'t exists.')
@@ -280,9 +288,9 @@ class BadgeSigned():
         return badge_sig
 
     def save_to_file(self, file_name):
-         with open(file_name, 'wb') as f:
-                f.write(self.signed)
-         self.file_out = file_name
+        with open(file_name, 'wb') as f:
+            f.write(self.signed)
+        self.file_out = file_name
 
     def get_identity(self):
         return self.identity.decode('utf-8')
@@ -302,12 +310,16 @@ class BadgeSigned():
         return self.serial_num.decode('utf-8')
 
     def __str__(self):
-        return 'Serial Num: %s\nIdentity: %s\nEvidence %s\nExpiration: %s\nSalt: %s\n' % (self.serial_num, self.identity, self.evidence, self.expiration, self.salt)
+        return (
+            'Serial Num: %s\nIdentity: %s\nEvidence %s\nExpiration: %s\nSalt: %s\n'
+            % (self.serial_num, self.identity, self.evidence, self.expiration, self.salt)
+        )
 
     def get_signkey_pem(self):
         """ Return the public key pem used to sign the openbadge """
 
         return self.source.pubkey_pem
+
 
 def extract_svg_assertion(file_data):
     """ Extract the assertion embeded in a SVG file. """
@@ -319,10 +331,11 @@ def extract_svg_assertion(file_data):
         # Extract the assertion
         xml_node = svg_doc.getElementsByTagName("openbadges:assertion")
         return Assertion.decode(xml_node[0].attributes['verify'].nodeValue.encode('utf-8'))
-    except:
+    except Exception:
         raise ErrorParsingFile('Error Parsing SVG file: ')
     finally:
         svg_doc.unlink()
+
 
 def extract_png_assertion(file_data):
     png = Reader(bytes=file_data)

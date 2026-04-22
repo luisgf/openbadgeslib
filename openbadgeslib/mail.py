@@ -27,9 +27,10 @@ from os.path import basename
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.utils import COMMASPACE, formatdate
+from email.utils import formatdate
 from email.header import Header
 from .badge import BadgeImgType
+
 
 class BadgeMail():
     def __init__(self, smtp_server='localhost', smtp_port=25, use_ssl=False,
@@ -50,7 +51,7 @@ class BadgeMail():
         msg['Date'] = formatdate(localtime=True)
         msg['To'] = Header(badge.get_identity(), 'utf-8')
 
-        msg.attach(MIMEText(self.body,'plain','utf-8'))
+        msg.attach(MIMEText(self.body, 'plain', 'utf-8'))
 
         if badge.source.image_type is BadgeImgType.SVG:
             mime_type = 'svg+xml'
@@ -99,6 +100,6 @@ class BadgeMail():
     def set_body(self, body):
         self.body = body
 
+
 if __name__ == '__main__':
     pass
-

@@ -24,7 +24,6 @@
 __version__ = '1.0.2'
 
 import hashlib
-import ssl
 from urllib import request
 from urllib.parse import urlparse
 
@@ -36,14 +35,18 @@ def _hash_string(hash_name, string):
     h.update(string)
     return h.hexdigest().encode('latin-1')
 
+
 def sha1_string(string):
     return _hash_string('sha1', string)
+
 
 def sha256_string(string):
     return _hash_string('sha256', string)
 
+
 def md5_string(string):
     return _hash_string('md5', string)
+
 
 def hash_email(email, salt):
     if isinstance(email, str):
@@ -51,6 +54,7 @@ def hash_email(email, salt):
     if isinstance(salt, str):
         salt = salt.encode('utf-8')
     return sha256_string(email + salt)
+
 
 def download_file(url):
     """Download a file from server over HTTPS with proper TLS validation."""
@@ -61,6 +65,7 @@ def download_file(url):
 
     with request.urlopen(url, timeout=30) as response:
         return response.read()
+
 
 def show_ecc_disclaimer():
     print("""    DISCLAIMER!

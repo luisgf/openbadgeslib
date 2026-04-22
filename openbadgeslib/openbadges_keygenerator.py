@@ -29,7 +29,9 @@
     POSSIBILITY OF SUCH DAMAGE.
 """
 
-import argparse, os.path, sys
+import argparse
+import os.path
+import sys
 
 from .logs import Logger
 from .keys import KeyFactory
@@ -39,19 +41,21 @@ from .util import __version__
 global log
 
 # Entry Point
+
+
 def main():
     parser = argparse.ArgumentParser(description='Key Generation Parameters')
     parser.add_argument('-c', '--config', default='config.ini',
-            help='Specify the config.ini file to use')
+                        help='Specify the config.ini file to use')
     parser.add_argument('-g', '--genkey', metavar='BADGE',
-            help=('Generate a new Key pair '
-                'for the specified Badge. Key type is taken from profile.'))
+                        help=('Generate a new Key pair '
+                              'for the specified Badge. Key type is taken from profile.'))
     parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
-            metavar='VERSION',
-            help='OpenBadges specification version to use: 2 (default) or 3. '
-                 'Key material is identical for both versions.')
+                        metavar='VERSION',
+                        help='OpenBadges specification version to use: 2 (default) or 3. '
+                        'Key material is identical for both versions.')
     parser.add_argument('-v', '--version', action='version',
-            version=__version__ )
+                        version=__version__)
     args = parser.parse_args()
 
     if not args.genkey:
@@ -62,20 +66,20 @@ def main():
 
         badge = 'badge_' + args.genkey
         if conf:
-            if badge not in conf :
+            if badge not in conf:
                 sys.exit("Badge '%s' doesn't exist in the configuration file"
-                        %args.genkey)
+                         % args.genkey)
             private_key = conf[badge]['private_key']
             public_key = conf[badge]['public_key']
 
-            for i in (private_key, public_key) :
+            for i in (private_key, public_key):
                 if os.path.exists(i):
                     print('[!] Key file is present at %s' % i)
                     sys.exit(1)
 
             log = Logger(base_log=conf['paths']['base_log'],
-                      general=conf['logs']['general'],
-                      signer=conf['logs']['signer'])
+                         general=conf['logs']['general'],
+                         signer=conf['logs']['signer'])
 
             try:
                 log.console.info("Generating OpenBadges %s key pair for issuer '%s'"
@@ -98,6 +102,6 @@ def main():
         else:
             print('ERROR: Config file %s NOT exists or is empty' % args.config)
 
+
 if __name__ == '__main__':
     main()
-

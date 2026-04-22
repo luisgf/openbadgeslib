@@ -24,6 +24,7 @@
 import logging
 import os
 
+
 class Logger():
     def __init__(self, *args, **kwargs):
         self.main = self.init_log(logger='general', base_log=kwargs['base_log'],

@@ -31,20 +31,23 @@
 
 import argparse
 import json
-import os, os.path, sys, shutil
+import os
+import os.path
+import shutil
 
 from urllib.parse import urljoin
 from .confparser import ConfParser
 from .util import __version__
+
 
 def main():
     parser = argparse.ArgumentParser(description='Publisher Parameters')
     parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-o', '--output', required=True, help='Specify the output directory to save the public files')
     parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
-            metavar='VERSION',
-            help='OpenBadges specification version: 2 (default) or 3.')
-    parser.add_argument('-v', '--version', action='version', version=__version__ )
+                        metavar='VERSION',
+                        help='OpenBadges specification version: 2 (default) or 3.')
+    parser.add_argument('-v', '--version', action='version', version=__version__)
     args = parser.parse_args()
 
     if args.ob_version == '3':
@@ -58,7 +61,7 @@ def main():
     conf = cf.read_conf()
 
     if args.output:
-        if os.path.lexists(args.output) :
+        if os.path.lexists(args.output):
             raise FileExistsError(args.output)
 
         umask = os.umask(0o077)  # rwx------
@@ -97,38 +100,43 @@ def main():
 
         os.umask(umask)
 
-        print('Please configure your Web server to publish the folder %s as %s' % (args.output, conf['issuer']['publish_url']))
+        print('Please configure your Web server to publish the folder %s as %s' %
+              (args.output, conf['issuer']['publish_url']))
 
     else:
         parser.print_help()
+
 
 def create_issuer_json(conf):
     publish_url = conf['issuer']['publish_url']
     image_url = urljoin(publish_url, conf['issuer']['image'])
     rev_url = urljoin(publish_url, conf['issuer']['revocationList'])
 
-    issuer = dict(url = conf['issuer']['url'],
-            email = conf['issuer']['email'],
-            name = conf['issuer']['name'],
-            revocationList = rev_url,
-            image = image_url)
+    issuer = dict(url=conf['issuer']['url'],
+                  email=conf['issuer']['email'],
+                  name=conf['issuer']['name'],
+                  revocationList=rev_url,
+                  image=image_url)
 
     return json.dumps(issuer, sort_keys=True, ensure_ascii=True)
 
+
 def create_revocation_json(conf):
     return json.dumps(dict(), sort_keys=True, ensure_ascii=True)
+
 
 def create_badge_json(conf, badge_name):
     publish_url = conf['issuer']['publish_url']
     image_url = urljoin(publish_url, conf[badge_name]['image'])
     issuer_url = urljoin(publish_url, 'organization.json')
 
-    badge = dict(image = image_url, criteria = conf[badge_name]['criteria'],
-                name = conf[badge_name]['name'],
-                description = conf[badge_name]['description'],
-                issuer = issuer_url)
+    badge = dict(image=image_url, criteria=conf[badge_name]['criteria'],
+                 name=conf[badge_name]['name'],
+                 description=conf[badge_name]['description'],
+                 issuer=issuer_url)
 
     return json.dumps(badge, sort_keys=True, ensure_ascii=True)
+
 
 if __name__ == '__main__':
     main()

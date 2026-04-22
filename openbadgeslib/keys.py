@@ -21,23 +21,18 @@
         License along with this library.
 """
 
+from .errors import UnknownKeyType
+from ecdsa import SigningKey, VerifyingKey, NIST256p
+from Crypto.PublicKey import RSA
+from enum import Enum
 import logging
 logger = logging.getLogger(__name__)
 
-import os
-import sys
-
-from enum import Enum
-from Crypto.PublicKey import RSA
-from ecdsa import SigningKey, VerifyingKey, NIST256p
-
-from .errors import UnknownKeyType, PrivateKeySaveError, \
-        PublicKeySaveError, GenPrivateKeyError, \
-        GenPublicKeyError, PrivateKeyReadError, PublicKeyReadError
 
 class KeyType(Enum):
     RSA = 'RSA 2048'
     ECC = 'ECC NIST256p'
+
 
 def KeyFactory(key_type=KeyType.RSA):
     """ Key Factory Object, Return a Given object type passing a name
@@ -48,6 +43,7 @@ def KeyFactory(key_type=KeyType.RSA):
         return KeyRSA()
     else:
         raise UnknownKeyType()
+
 
 class KeyBase():
     def __init__(self):
@@ -61,6 +57,7 @@ class KeyBase():
     def get_pub_key(self):
         """ Return the crypto oject """
         return self.pub_key
+
 
 class KeyRSA(KeyBase):
     def __init__(self, key_size=2048):
@@ -91,6 +88,7 @@ class KeyRSA(KeyBase):
 
     def get_pub_key_pem(self):
         return self.pub_key.export_key('PEM')
+
 
 class KeyECC(KeyBase):
     """ Elliptic Curve Cryptography Factory class """
@@ -126,25 +124,26 @@ class KeyECC(KeyBase):
     def get_pub_key_pem(self):
         return self.pub_key.to_pem()
 
+
 def detect_key_type(pem_data):
     """ Positive Key type detection """
 
     try:
         RSA.import_key(pem_data)
         return KeyType.RSA
-    except:
+    except Exception:
         pass
 
     try:
         VerifyingKey.from_pem(pem_data)
         return KeyType.ECC
-    except:
+    except Exception:
         pass
 
     try:
         SigningKey.from_pem(pem_data)
         return KeyType.ECC
-    except:
+    except Exception:
         pass
 
     raise UnknownKeyType('Unable to guess Key type')

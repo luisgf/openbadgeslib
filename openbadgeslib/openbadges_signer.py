@@ -30,11 +30,13 @@
 """
 
 import argparse
-import sys, os, os.path, time
+import sys
+import os
+import os.path
+import time
 
 from datetime import datetime, timezone, timedelta
 
-from .logs import Logger
 from .keys import KeyType, detect_key_type
 from .signer import Signer
 from .errors import LibOpenBadgesException, SignerExceptions
@@ -44,24 +46,27 @@ from .mail import BadgeMail
 from .util import __version__
 
 # Entry Point
+
+
 def main():
     parser = argparse.ArgumentParser(description='Badge Signer Parameters')
     parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-b', '--badge', required=True, help='Specify the badge name for sign')
     parser.add_argument('-r', '--receptor', required=True, help='Specify the receptor email of the badge')
-    parser.add_argument('-o', '--output', default=os.path.curdir, help='Specify the output directory to save the badge.')
+    parser.add_argument('-o', '--output', default=os.path.curdir,
+                        help='Specify the output directory to save the badge.')
     parser.add_argument('-M', '--mail-badge', action='store_true', help='Send Badge to user mail')
     parser.add_argument('-e', '--evidence', help='Set an URL to the user evidence')
     parser.add_argument('-E', '--no-evidence', action='store_true', help='Do not use evidence')
     parser.add_argument('-x', '--expires', type=int, help='Set badge expiration after x days.')
     parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
-            metavar='VERSION',
-            help='OpenBadges specification version: 2 (default, JWS) or 3 (JWT-VC).')
+                        metavar='VERSION',
+                        help='OpenBadges specification version: 2 (default, JWS) or 3 (JWT-VC).')
     parser.add_argument('-d', '--debug', action='store_true', help='Show debug messages in runtime.')
-    parser.add_argument('-v', '--version', action='version', version=__version__ )
+    parser.add_argument('-v', '--version', action='version', version=__version__)
     args = parser.parse_args()
 
-    if bool(args.no_evidence) != (args.evidence is None) :  # XOR
+    if bool(args.no_evidence) != (args.evidence is None):  # XOR
         sys.exit("Please, choose '-e' OR '-E'")
 
     evidence = args.evidence  # If no evidence, evidence=None
@@ -76,7 +81,7 @@ def main():
             print('ERROR: The config file %s NOT exists or is empty' % args.config)
             sys.exit(-1)
 
-        if not badge in conf:
+        if badge not in conf:
             print('ERROR: %s is not defined in this config file' % args.badge)
             sys.exit(-1)
 
@@ -132,9 +137,9 @@ def _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence):
         badge_signed.save_to_file(badge_file_out)
 
         if bool(args.mail_badge):
-            server   = conf['smtp']['smtp_server']
-            port     = conf['smtp']['smtp_port']
-            use_ssl  = conf['smtp']['use_ssl']
+            server = conf['smtp']['smtp_server']
+            port = conf['smtp']['smtp_port']
+            use_ssl = conf['smtp']['use_ssl']
             mail_from = conf['smtp']['mail_from']
             username = conf['smtp'].get('username')
             password = conf['smtp'].get('password')
@@ -205,6 +210,6 @@ def _sign_ob3(args, conf, badge, badge_obj, badge_file_out, evidence):
     msg = '%s %s OB3 SIGNED for %s' % (datetime.today().isoformat(), badge, args.receptor)
     print('%s at: %s' % (msg, badge_file_out))
 
+
 if __name__ == '__main__':
     main()
-

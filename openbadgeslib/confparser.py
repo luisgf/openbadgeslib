@@ -21,11 +21,11 @@
         License along with this library.
 """
 
+from configparser import ConfigParser, ExtendedInterpolation
 import os
 import logging
 logger = logging.getLogger(__name__)
 
-from configparser import ConfigParser, ExtendedInterpolation, Error, NoOptionError
 
 class ConfParser():
     def __init__(self, config_file='config.ini'):
@@ -39,7 +39,7 @@ class ConfParser():
 
         try:
             self.parser.read(self.config_file)
-        except UnicodeDecodeError as e:
+        except UnicodeDecodeError:
             # We should raise an UnicodeDecodeError, but the error message is too cryptic.#
             raise ValueError("The encoding of the configuration file and the default encoding of "
                              "the operating system mismatch") from None
@@ -48,6 +48,7 @@ class ConfParser():
             full_path = os.path.abspath(abs_path)
             self.parser['paths']['base'] = full_path
         return self.parser
+
 
 if __name__ == '__main__':
     pass
