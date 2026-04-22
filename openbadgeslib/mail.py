@@ -79,7 +79,7 @@ class BadgeMail():
             smtp.sendmail(self.mail_from, badge.get_identity(), msg.as_string())
             smtp.quit()
         except SMTPDataError as err:
-            print('[!] Error sending mail to: %s. %s' % (mail_to, err))
+            print('[!] Error sending mail to: %s. %s' % (badge.get_identity(), err))
 
     def get_mail_content(self, file):
         """ Return the Subject and Body of the Email. The first line of the file
