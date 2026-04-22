@@ -1,0 +1,12 @@
+<?xml version="1.0" ?><!DOCTYPE svg  PUBLIC '-//W3C//DTD SVG 1.1//EN'  'http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd'><svg height="1024" id="Wikimedia logo" version="1.1" viewBox="-599 -599 1198 1198" width="1024" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<defs>
+  <clipPath id="mask">
+    <path d="M 47.5,-87.5 v 425 h -95 v -425 l -552,-552 v 1250 h 1199 v -1250 z"/>
+  </clipPath>
+</defs>
+<g clip-path="url(#mask)">
+  <circle fill="#396" id="green parts" r="336.5"/>
+  <circle fill="none" id="blue arc" r="480.25" stroke="#069" stroke-width="135.5"/>
+</g>
+<circle cy="-379.5" fill="#900" id="red circle" r="184.5"/>
+</svg>

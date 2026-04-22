@@ -1,0 +1,120 @@
+* v1.0.1 - 20260422
+
+  - OpenBadges 3.0 support (W3C Verifiable Credentials / JWT-VC):
+    new openbadgeslib.ob3 subpackage with OpenBadgeCredential, Issuer,
+    Achievement data model; OB3Signer for JWT-VC signing and SVG/PNG
+    baking; OB3Verifier for JWT-VC verification and token extraction.
+
+  - OpenBadges 2.0 implementation moved to openbadgeslib.ob2 subpackage.
+    Top-level badge.py / signer.py / verifier.py kept as backward-
+    compatible shims so existing code continues to work unchanged.
+
+  - All CLI tools (openbadges-keygenerator, openbadges-signer,
+    openbadges-verifier, openbadges-publish) gained a -V / --ob-version
+    flag to select the specification version (2 or 3, default 2).
+
+  - openbadges-verifier: new -k / --pubkey FILE option to supply the
+    public key directly when verifying OB3 badges without a config file.
+
+  - Python 3.10+ compatibility: removed distutils (dropped in 3.12),
+    packaging migrated to pyproject.toml with setuptools.build_meta.
+
+  - Replaced abandoned pycrypto with pycryptodome >= 3.20.
+
+  - Replaced custom bundled JWS engine (3dparty/jws/) with PyJWT[crypto]
+    algorithm classes (RS256/384/512, ES256/384/512). Internal module
+    moved to openbadgeslib/_jws/. Old 3dparty/ directory removed.
+
+  - TLS security fix: download_file now uses ssl.create_default_context()
+    instead of the deprecated PROTOCOL_TLSv1 / CERT_NONE settings.
+
+  - pypng API update: signature constant renamed, chunk tags now bytes.
+
+  - Copyright year range updated to 2014-2026 across all source files.
+
+  - Bug fixes: verifier signature check logic, ECC private-key detection,
+    hash_email str/bytes coercion.
+
+  - Test suite: 203 tests, 89% line coverage.
+
+* v0.4.2
+ - Adding support to verifying external openbadges.
+ - Adding a new parameter to show assertion before verifing
+ - OpenBadges URLs are verified before the signing process
+
+* v0.4
+ - Support for PNG!. Now the library is capable of verify and sign OpenBadges
+   in PNG format.
+
+ - Support for sendmails badges via mail.
+
+ - Badge signes are registered in a log file.
+
+ - Mail code now supports SMTP auth. The config file need modifications.
+   See the example.
+
+* v0.3
+
+  - The email is not encoded anymore in the filename, when creating
+    a new badge.
+
+  - When creating a badge, "-o" is optional.
+
+  - When specified, "-o" is suppose to be a directory.
+
+  - We can specify "-E" or "--no-evidence" parameter when creating
+    a new badge.
+
+  - When creating a new badge we need now to choose EXPLICITLY between
+    providing evidence or not.
+
+  - Now badge sections in the INI file must be prefixed with "badge_".
+
+    UPGRADE: If your badge is called "ponente2014", rename it to
+    "badge_ponente2014".
+
+  - Now each badge can have a different key.
+
+    UPGRADE: Move your current key configuration to the badge section,
+    renaming "private" to "private_key" and "public" to "public_key".
+
+    UPGRADE: Now "openbadges-keygenerator -g" requires a badge name.
+
+  - "openbadges-verifier" changes its parameter from "-lk" to "-l"and
+    now it needs the name of the badge to locale its public key.
+
+  - "openbadges-verifier" now accept a parameter -x for specify the
+    expiration for a badge.
+
+  - "openbadges-verifier" now check the revocation status and the expiration
+    dates of badges.
+
+* v0.2.1 - 20141216
+
+  - config.ini allows now to configure the badge json url and image url.
+
+  - Signer now uses randomly salted emails by default in assertions.
+
+  - Compatibility with more SVG formats.
+
+  - Documentation in "docs" directory.
+
+* v0.2 - 20141210
+
+  - "openbadges-init".
+
+  - New configuration format. If you are using 0.1 format, you must
+    migrate by hand.
+
+  - Tests!.
+
+  - Use proper logging instead of simple "prints".
+
+  - Massive cleanup of internal imports.
+
+  - Do not change "sys.path".
+
+* v0.1 - 20141201
+
+  - Initial release.
+

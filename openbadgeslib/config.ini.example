@@ -1,0 +1,62 @@
+;
+; OpenBadges Lib configuration example for RSA keys.
+;
+
+; Paths to the keys and log
+[paths]
+base         = .
+base_key     = ${base}/keys
+base_log     = ${base}/log
+base_image   = ${base}/images
+
+; Log configuration. Stored in ${base_log}
+[logs]
+general = general.log
+signer  = signer.log
+
+; SMTP Configuration
+[smtp]
+smtp_server = localhost
+smtp_port = 25
+use_ssl = False
+mail_from = no-reply@issuer.badge
+; Uncomment this if your SMTP server needs authentication
+;login =
+;password =
+
+; Configuration of the OpenBadges issuer.
+[issuer]
+name           = OpenBadge issuer
+url            = https://www.issuer.badge
+image          = issuer_logo.png
+email          = issuer_mail@issuer.badge
+publish_url    = https://openbadges.issuer.badge/issuer/
+revocationList = revoked.json
+
+;Badge configuration sections.
+[badge_1]
+name        = Badge 1
+description = Given to any user that install this library
+local_image = image_badge1.svg
+image       = https://www.issuer.badge/issuer/badge_1/badge1.svg
+criteria    = https://www.issuer.badge/issuer/badge_1/criteria.html
+verify_key  = https://www.issuer.badge/issuer/badge_1/verify_rsa_key.pem
+badge       = https://www.issuer.badge/issuer/badge_1/badge.json
+private_key = ${paths:base_key}/sign_rsa_key_1.pem
+public_key  = ${paths:base_key}/verify_rsa_key_1.pem
+;alignement  =
+;tags        =
+
+[badge_2]
+name        = Badge 2
+description = Given to any user that promote the library
+local_image = image_badge2.svg
+image       = https://www.issuer.badge/issuer/badge_2/badge2.svg
+criteria    = https://www.issuer.badge/issuer/badge_2/criteria.html
+verify_key  = https://www.issuer.badge/issuer/badge_2/verify_rsa_key.pem
+badge       = https://www.issuer.badge/issuer/badge_2/badge.json
+private_key = ${paths:base_key}/sign_rsa_key_2.pem
+public_key  = ${paths:base_key}/verify_rsa_key_2.pem
+;alignement =
+;tags       =
+

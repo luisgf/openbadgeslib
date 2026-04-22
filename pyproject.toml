@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openbadgeslib"
+version = "1.0.2"
+description = "A library to sign and verify OpenBadges"
+readme = "README.txt"
+license = { text = "LGPLv3" }
+authors = [
+    { name = "Luis González Fernández", email = "luisgf@luisgf.es" },
+    { name = "Jesús Cea Avión", email = "jcea@jcea.es" },
+]
+keywords = ["openbadges"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Natural Language :: English",
+    "Natural Language :: Spanish",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "pycryptodome>=3.20",
+    "ecdsa>=0.19",
+    "pypng>=0.20220715.0",
+    "PyJWT[crypto]>=2.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+]
+
+[project.urls]
+Homepage = "https://openbadges.luisgf.es/"
+
+[project.scripts]
+openbadges-init = "openbadgeslib.openbadges_init:main"
+openbadges-keygenerator = "openbadgeslib.openbadges_keygenerator:main"
+openbadges-signer = "openbadgeslib.openbadges_signer:main"
+openbadges-verifier = "openbadgeslib.openbadges_verifier:main"
+openbadges-publish = "openbadgeslib.openbadges_publish:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["openbadgeslib*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["openbadgeslib"]
+omit = [
+    "openbadgeslib/openbadges_*.py",
+    "openbadgeslib/mail.py",
+    "openbadgeslib/logs.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "if __name__ == .__main__.:",
+    "pass$",
+]

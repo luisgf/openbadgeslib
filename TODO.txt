@@ -1,0 +1,27 @@
+=========
+TODO LIST
+
+- Documentar el uso del API
+
+- el validador debería sacarte algo de info de algoritmos
+    "validando badge hospedado"
+
+- Tutorial paso a paso de uso.
+- Implementar un modo dry, que "genere el assertion pero no lo añada al fichero"
+- Añadir modo debug al generador de claves y al verificador.
+
+- 20141216: Tampering with Openbadges (inserting a valid asertion in another
+  image) should be detected and notified.
+
+- 20141216: keeping INI and webserver configuration in sync should
+  be easy. For instance, just indicate the URL of the badge
+  configuration and the signing process would download (and cache)
+  the details. Think about it.
+
+- 20141216: Would be nice if Timestamps in the Badges were
+  indicating the correct timezone. Could be difficult, though.
+  Think about it.
+
+
+
+
