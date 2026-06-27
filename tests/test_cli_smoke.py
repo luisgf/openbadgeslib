@@ -255,3 +255,151 @@ def test_badgemail_send_handles_connection_error(svg_rsa_badge, capsys):
         mail.send(signed)  # must not raise
 
     assert 'Error sending mail' in capsys.readouterr().out
+
+
+def _signed_for_mail(badge, suffix, identity='user@example.com'):
+    from openbadgeslib.signer import Signer
+    from openbadgeslib.badge import BadgeType
+    signed = Signer(identity=identity, badge_type=BadgeType.SIGNED,
+                    deterministic=True).sign_badge(badge)
+    signed.file_out = 'badge.' + suffix
+    return signed
+
+
+def test_badgemail_send_success_invokes_smtp(svg_rsa_badge):
+    from unittest.mock import MagicMock
+    from openbadgeslib.mail import BadgeMail
+    signed = _signed_for_mail(svg_rsa_badge, 'svg')
+    mail = BadgeMail('localhost', 25, False, 'from@example.com',
+                     username='u', password='p')
+    mail.set_subject('s')
+    mail.set_body('b')
+    smtp = MagicMock()
+    with patch('openbadgeslib.mail.SMTP', return_value=smtp):
+        mail.send(signed)
+    smtp.login.assert_called_once_with('u', 'p')
+    smtp.sendmail.assert_called_once()
+    smtp.quit.assert_called_once()
+
+
+def test_badgemail_send_uses_ssl_and_png_mime(png_rsa_badge):
+    from unittest.mock import MagicMock
+    from openbadgeslib.mail import BadgeMail
+    signed = _signed_for_mail(png_rsa_badge, 'png')
+    mail = BadgeMail('localhost', 465, True, 'from@example.com')
+    mail.set_subject('s')
+    mail.set_body('b')
+    smtp = MagicMock()
+    with patch('openbadgeslib.mail.SMTP_SSL', return_value=smtp) as ssl_ctor:
+        mail.send(signed)
+    ssl_ctor.assert_called_once()
+    smtp.sendmail.assert_called_once()
+
+
+def test_badgemail_auth_error_exits(svg_rsa_badge):
+    import pytest
+    from unittest.mock import MagicMock
+    from smtplib import SMTPAuthenticationError
+    from openbadgeslib.mail import BadgeMail
+    signed = _signed_for_mail(svg_rsa_badge, 'svg')
+    mail = BadgeMail('localhost', 25, False, 'from@example.com',
+                     username='u', password='bad')
+    mail.set_subject('s')
+    mail.set_body('b')
+    smtp = MagicMock()
+    smtp.login.side_effect = SMTPAuthenticationError(535, b'bad creds')
+    with patch('openbadgeslib.mail.SMTP', return_value=smtp):
+        with pytest.raises(SystemExit):
+            mail.send(signed)
+
+
+def test_get_mail_content_empty_file_returns_none(tmp_path):
+    from openbadgeslib.mail import BadgeMail
+    empty = tmp_path / 'empty.txt'
+    empty.write_text('')
+    mail = BadgeMail('localhost', 25, False, 'from@example.com')
+    assert mail.get_mail_content(str(empty)) == (None, None)
+
+
+def test_get_mail_content_parses_subject_and_body(tmp_path):
+    from openbadgeslib.mail import BadgeMail
+    f = tmp_path / 'mail.txt'
+    f.write_text('Subject line\nbody line 1\nbody line 2\n')
+    mail = BadgeMail('localhost', 25, False, 'from@example.com')
+    subject, body = mail.get_mail_content(str(f))
+    assert subject == 'Subject line'
+    assert 'body line 1' in body
+
+
+# ── openbadges-signer OB2 end-to-end ────────────────────────────────────────────
+
+def _write_ob2_sign_config(tmp_path, key='rsa', img='svg'):
+    from pathlib import Path
+    tests_dir = Path(__file__).parent
+    logdir = tmp_path / 'log'
+    logdir.mkdir()
+    maildir = tmp_path / 'badgemail.txt'
+    maildir.write_text('Your badge\nCongratulations!\n')
+    cfg = tmp_path / 'cfg.ini'
+    cfg.write_text(
+        "[paths]\n"
+        f"base = {tmp_path}\n"
+        f"base_key = {tests_dir}\n"
+        f"base_log = {logdir}\n"
+        f"base_image = {tests_dir / 'images'}\n\n"
+        "[logs]\ngeneral = general.log\nsigner = signer.log\n\n"
+        "[smtp]\nsmtp_server = localhost\nsmtp_port = 25\nuse_ssl = False\n"
+        "mail_from = no-reply@example.com\n\n"
+        "[issuer]\nname = Test Issuer\nurl = https://example.com\n"
+        "publish_url = https://example.com/issuer/\nrevocationList = revocation.json\n\n"
+        "[badge_1]\nname = Test Badge\ndescription = Test\n"
+        f"local_image = sample1.{img}\n"
+        f"image = https://example.com/badge.{img}\n"
+        "criteria = https://example.com/criteria.html\n"
+        "verify_key = https://example.com/verify.pem\n"
+        "badge = https://example.com/badge.json\n"
+        f"private_key = ${{paths:base_key}}/test_sign_{key}.pem\n"
+        f"public_key = ${{paths:base_key}}/test_verify_{key}.pem\n"
+        f"key_type = {key.upper()}\n"
+        f"mail = {maildir}\n"
+    )
+    return cfg
+
+
+def test_signer_ob2_writes_file_and_log(tmp_path, capsys):
+    from openbadgeslib import openbadges_signer
+    cfg = _write_ob2_sign_config(tmp_path)
+    argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
+            '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '2', '-E']
+    with patch('openbadgeslib.ob2.badge.download_file', return_value=b'data'), \
+         patch.object(sys, 'argv', argv):
+        openbadges_signer.main()
+    out = capsys.readouterr().out
+    assert 'SIGNED' in out
+    assert (tmp_path / 'badge_1_recipient@example.com.svg').is_file()
+    assert (tmp_path / 'log' / 'signer.log').read_text().strip() != ''
+
+
+def test_signer_ob2_mail_badge_sends(tmp_path):
+    from unittest.mock import MagicMock
+    from openbadgeslib import openbadges_signer
+    cfg = _write_ob2_sign_config(tmp_path)
+    argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
+            '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '2', '-E', '-M']
+    smtp = MagicMock()
+    with patch('openbadgeslib.ob2.badge.download_file', return_value=b'data'), \
+         patch('openbadgeslib.mail.SMTP', return_value=smtp), \
+         patch.object(sys, 'argv', argv):
+        openbadges_signer.main()
+    smtp.sendmail.assert_called_once()
+
+
+def test_signer_requires_evidence_choice(tmp_path):
+    import pytest
+    from openbadgeslib import openbadges_signer
+    cfg = _write_ob2_sign_config(tmp_path)
+    argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
+            '-r', 'r@example.com', '-o', str(tmp_path), '-V', '2']  # neither -e nor -E
+    with patch.object(sys, 'argv', argv):
+        with pytest.raises(SystemExit):
+            openbadges_signer.main()

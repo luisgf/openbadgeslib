@@ -102,3 +102,26 @@ class TestBadgeSignedReadFromFile:
         p.write_bytes(b'GIF89a')
         with pytest.raises(BadgeImgFormatUnsupported):
             BadgeSigned.read_from_file(str(p))
+
+    def test_read_signed_svg_ecc(self, tmp_path, signed_svg_ecc, ecc_pub_pem):
+        from openbadgeslib.keys import KeyType
+        path = self._write_temp(tmp_path, signed_svg_ecc.signed, '.svg')
+        with patch('openbadgeslib.ob2.badge.download_file', return_value=ecc_pub_pem):
+            badge = BadgeSigned.read_from_file(path)
+        assert badge.source.key_type is KeyType.ECC
+
+    def test_verify_key_download_failure_raises(self, tmp_path, signed_svg_rsa):
+        from openbadgeslib.errors import ErrorParsingFile
+        path = self._write_temp(tmp_path, signed_svg_rsa.signed, '.svg')
+        with patch('openbadgeslib.ob2.badge.download_file',
+                   side_effect=ValueError('unreachable')):
+            with pytest.raises(ErrorParsingFile):
+                BadgeSigned.read_from_file(path)
+
+    def test_get_serial_num_after_read_is_str(self, tmp_path, signed_svg_rsa, rsa_pub_pem):
+        # Regression for the str/bytes bug: get_serial_num must not crash on a
+        # badge reconstructed from a file (serial is the JSON 'uid').
+        path = self._write_temp(tmp_path, signed_svg_rsa.signed, '.svg')
+        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
+            badge = BadgeSigned.read_from_file(path)
+        assert isinstance(badge.get_serial_num(), str)

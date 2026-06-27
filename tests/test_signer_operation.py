@@ -228,6 +228,15 @@ class TestSignBadgeRoundTrip:
         assert signed.signed is not None
         assert signed.get_assertion() is not None
 
+    def test_signed_assertion_verifies_against_pubkey(self, svg_rsa_badge):
+        # End-to-end: the embedded assertion must actually verify with the
+        # matching public key, not merely exist.
+        from openbadgeslib.verifier import Verifier
+        from openbadgeslib.badge import BadgeStatus
+        signed = self._fresh_signer().sign_badge(svg_rsa_badge)
+        v = Verifier(verify_key=svg_rsa_badge.pubkey_pem)
+        assert v.check_jws_signature(signed).status is BadgeStatus.VALID
+
     def test_sign_svg_ecc_embeds_assertion(self, svg_ecc_badge):
         signed = self._fresh_signer().sign_badge(svg_ecc_badge)
         assert signed.signed is not None
