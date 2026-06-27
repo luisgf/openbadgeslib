@@ -22,6 +22,7 @@ All dependencies (pycryptodome, ecdsa, pypng, PyJWT[crypto], defusedxml) are ins
 - [[Python API OB2]] — `Badge`, `Signer`, `Verifier` for OpenBadges 2.0
 - [[Python API OB3]] — `OpenBadgeCredential`, `OB3Signer`, `OB3Verifier` for OpenBadges 3.0
 - [[Security Model]] — algorithm pinning, trusted keys, and hardened parsing
+- [API Reference](https://luisgf.github.io/openbadgeslib/) — full reference generated from the docstrings (pdoc)
 
 ## Version
 

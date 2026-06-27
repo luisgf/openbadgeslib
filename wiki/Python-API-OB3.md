@@ -1,5 +1,7 @@
 Programmatic guide to the OpenBadges 3.0 layer of `openbadgeslib`: building [W3C Verifiable Credentials](https://www.w3.org/TR/vc-data-model-2.0/), signing them as JWT-VCs, baking them into images, and verifying them. Everything here lives in the `openbadgeslib.ob3` package. For the legacy 2.0 JWS format see [[Python API OB2]].
 
+> The full, always-up-to-date class/function reference is generated from the docstrings: **[API Reference](https://luisgf.github.io/openbadgeslib/)**.
+
 ```python
 from openbadgeslib.ob3 import (
     Achievement, Issuer, OpenBadgeCredential,

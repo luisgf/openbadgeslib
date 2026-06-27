@@ -93,6 +93,19 @@ The workflow at `.github/workflows/ci.yml` runs on every **push to `master`**, e
 
 A separate `publish` job builds the sdist and wheel and uploads to PyPI, but only when a GitHub Release is published and only after the full test matrix passes. That publish flow is documented in [[Releasing]].
 
+## Documentation
+
+Documentation has three sources, all of which stay in sync with the code automatically:
+
+- **Wiki** (this site) — narrative guides and references, edited in the `wiki/` folder of the repo and mirrored to the GitHub Wiki by `.github/workflows/wiki-sync.yml`.
+- **API reference** — generated from the docstrings with [pdoc](https://pdoc.dev) and deployed to GitHub Pages by `.github/workflows/docs.yml`. Build it locally with:
+
+  ```sh
+  pdoc openbadgeslib -o site -d google
+  ```
+
+- **Drift gates** — `tests/test_docs.py` fails CI if a CLI flag is undocumented, a wiki link is broken, or the version is hardcoded, so docs can't silently fall behind the code.
+
 ## Submitting changes
 
 1. Fork the repository on GitHub.

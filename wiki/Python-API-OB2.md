@@ -1,5 +1,7 @@
 Programmatic guide to the Open Badges 2.0 API exposed by `openbadgeslib.ob2`. Everything here mirrors the JWS-signed-assertion model where the assertion is baked into an SVG or PNG image. For the W3C Verifiable Credentials / JWT-VC path see [[Python API OB3]]; for the differences between the two see [[OB2 vs OB3]].
 
+> The full, always-up-to-date class/function reference is generated from the docstrings: **[API Reference](https://luisgf.github.io/openbadgeslib/)**.
+
 All public OB2 names are re-exported from `openbadgeslib.ob2`, so you can import them from one place:
 
 ```python
