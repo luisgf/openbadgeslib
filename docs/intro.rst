@@ -150,9 +150,11 @@ Version 1.0.1 is a major compatibility, modernisation, and feature release:
 * **OpenBadges 2.0 subpackage** — OB2 implementation moved to
   ``openbadgeslib.ob2``; top-level ``badge``, ``signer``, and ``verifier``
   modules kept as backward-compatible shims.
-* **CLI ``--ob-version`` flag** — all four CLI tools accept ``-V {2,3}`` to
-  select the specification version. ``openbadges-verifier`` also gains
-  ``-k / --pubkey FILE`` for supplying a PEM key directly in OB3 mode.
+* **CLI ``--ob-version`` flag** — the four versioned tools (keygenerator,
+  signer, verifier, publish) accept ``-V {2,3}`` to select the specification
+  version; ``openbadges-init`` has no ``-V`` flag. ``openbadges-verifier``
+  also gains ``-k / --pubkey FILE`` for supplying a PEM key directly in OB3
+  mode.
 * **Python 3.10+ support** — removed ``distutils`` (dropped in 3.12);
   packaging migrated to ``pyproject.toml``.
 * **pycryptodome** replaces the abandoned ``pycrypto`` package.
