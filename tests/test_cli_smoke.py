@@ -117,8 +117,8 @@ def test_verifier_ob2_end_to_end_trusted_key(tmp_path, svg_rsa_badge, rsa_pub_pe
     argv = ['openbadges-verifier', '-i', str(badge_file),
             '-r', 'recipient@example.com', '-V', '2', '-k', str(pub)]
     with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem), \
-         patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download), \
-         patch.object(sys, 'argv', argv):
+            patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download), \
+            patch.object(sys, 'argv', argv):
         openbadges_verifier.main()
     assert 'Signature is correct' in capsys.readouterr().out
 
@@ -132,8 +132,8 @@ def test_verifier_ob2_without_trusted_key_warns(tmp_path, svg_rsa_badge, rsa_pub
     argv = ['openbadges-verifier', '-i', str(badge_file),
             '-r', 'recipient@example.com', '-V', '2']
     with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem), \
-         patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download), \
-         patch.object(sys, 'argv', argv):
+            patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download), \
+            patch.object(sys, 'argv', argv):
         openbadges_verifier.main()
     out = capsys.readouterr().out
     assert 'Signature is correct' not in out
@@ -149,8 +149,8 @@ def test_verifier_ob2_wrong_receptor_reports_mismatch(tmp_path, svg_rsa_badge, r
     argv = ['openbadges-verifier', '-i', str(badge_file),
             '-r', 'someone-else@example.com', '-V', '2', '-k', str(pub)]
     with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem), \
-         patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download), \
-         patch.object(sys, 'argv', argv):
+            patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download), \
+            patch.object(sys, 'argv', argv):
         openbadges_verifier.main()
     assert '[-]' in capsys.readouterr().out
 
@@ -372,7 +372,7 @@ def test_signer_ob2_writes_file_and_log(tmp_path, capsys):
     argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
             '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '2', '-E']
     with patch('openbadgeslib.ob2.badge.download_file', return_value=b'data'), \
-         patch.object(sys, 'argv', argv):
+            patch.object(sys, 'argv', argv):
         openbadges_signer.main()
     out = capsys.readouterr().out
     assert 'SIGNED' in out
@@ -388,8 +388,8 @@ def test_signer_ob2_mail_badge_sends(tmp_path):
             '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '2', '-E', '-M']
     smtp = MagicMock()
     with patch('openbadgeslib.ob2.badge.download_file', return_value=b'data'), \
-         patch('openbadgeslib.mail.SMTP', return_value=smtp), \
-         patch.object(sys, 'argv', argv):
+            patch('openbadgeslib.mail.SMTP', return_value=smtp), \
+            patch.object(sys, 'argv', argv):
         openbadges_signer.main()
     smtp.sendmail.assert_called_once()
 

@@ -41,7 +41,7 @@ class BadgeStatus(Enum):
     EXPIRED = 3
     REVOKED = 4
     IDENTITY_ERROR = 5
-    NONE = 6
+    NONE = 6  # unset sentinel (VerifyInfo default); never returned by a real check
 
 
 class BadgeImgType(Enum):

@@ -1,4 +1,3 @@
 #!/bin/sh
-
-python3.4 -m unittest discover -p "test_*.py" $*
-
+# Run the test suite with pytest (the runner configured in pyproject.toml).
+exec python3 -m pytest "$@"

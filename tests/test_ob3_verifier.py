@@ -101,7 +101,7 @@ class TestOB3VerifierVerify:
         from xml.dom.minidom import parseString
         doc = parseString(signed_svg_rsa.signed)
         jws = doc.getElementsByTagName('openbadges:assertion')[0] \
-                  .attributes['verify'].nodeValue
+            .attributes['verify'].nodeValue
         doc.unlink()
         with pytest.raises(OB3VerificationError):
             ob3_rsa_verifier.verify(jws)

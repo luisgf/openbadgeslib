@@ -73,6 +73,19 @@ class TestExtractPNGAssertion:
             extract_png_assertion(png_image)
 
 
+class TestSvgHeaderVariants:
+    """Baking must round-trip whether or not the SVG carries an <?xml?>
+    declaration (and a DOCTYPE), which defusedxml must tolerate."""
+
+    @pytest.mark.parametrize('fixture', ['withxmlheader.svg', 'withoutxmlheader.svg'])
+    def test_bake_extract_roundtrip(self, fixture):
+        from pathlib import Path
+        from openbadgeslib import baking
+        data = (Path(__file__).parent / fixture).read_bytes()
+        baked = baking.bake_svg(data, 'header.payload.sig')
+        assert baking.extract_svg(baked) == 'header.payload.sig'
+
+
 class TestBadgeSignedReadFromFile:
     """Test read_from_file using temp files and mocked network calls."""
 

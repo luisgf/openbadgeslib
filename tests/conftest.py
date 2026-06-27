@@ -23,13 +23,16 @@ def tests_dir_cwd():
 def rsa_priv_pem():
     return (TESTS_DIR / 'test_sign_rsa.pem').read_bytes()
 
+
 @pytest.fixture(scope='session')
 def rsa_pub_pem():
     return (TESTS_DIR / 'test_verify_rsa.pem').read_bytes()
 
+
 @pytest.fixture(scope='session')
 def ecc_priv_pem():
     return (TESTS_DIR / 'test_sign_ecc.pem').read_bytes()
+
 
 @pytest.fixture(scope='session')
 def ecc_pub_pem():
@@ -41,6 +44,7 @@ def ecc_pub_pem():
 @pytest.fixture(scope='session')
 def svg_image():
     return (TESTS_DIR / 'images' / 'sample1.svg').read_bytes()
+
 
 @pytest.fixture(scope='session')
 def png_image():
@@ -67,11 +71,13 @@ def _make_badge(key_type, priv_pem, pub_pem, image_type, image, img_ext):
         pubkey_pem=pub_pem,
     )
 
+
 @pytest.fixture(scope='session')
 def svg_rsa_badge(rsa_priv_pem, rsa_pub_pem, svg_image):
     from openbadgeslib.badge import BadgeImgType
     from openbadgeslib.keys import KeyType
     return _make_badge(KeyType.RSA, rsa_priv_pem, rsa_pub_pem, BadgeImgType.SVG, svg_image, 'svg')
+
 
 @pytest.fixture(scope='session')
 def svg_ecc_badge(ecc_priv_pem, ecc_pub_pem, svg_image):
@@ -79,11 +85,13 @@ def svg_ecc_badge(ecc_priv_pem, ecc_pub_pem, svg_image):
     from openbadgeslib.keys import KeyType
     return _make_badge(KeyType.ECC, ecc_priv_pem, ecc_pub_pem, BadgeImgType.SVG, svg_image, 'svg')
 
+
 @pytest.fixture(scope='session')
 def png_rsa_badge(rsa_priv_pem, rsa_pub_pem, png_image):
     from openbadgeslib.badge import BadgeImgType
     from openbadgeslib.keys import KeyType
     return _make_badge(KeyType.RSA, rsa_priv_pem, rsa_pub_pem, BadgeImgType.PNG, png_image, 'png')
+
 
 @pytest.fixture(scope='session')
 def png_ecc_badge(ecc_priv_pem, ecc_pub_pem, png_image):
@@ -99,17 +107,21 @@ def _sign(badge, identity='test@example.com'):
     from openbadgeslib.badge import BadgeType
     return Signer(identity=identity, badge_type=BadgeType.SIGNED, deterministic=True).sign_badge(badge)
 
+
 @pytest.fixture(scope='session')
 def signed_svg_rsa(svg_rsa_badge):
     return _sign(svg_rsa_badge)
+
 
 @pytest.fixture(scope='session')
 def signed_svg_ecc(svg_ecc_badge):
     return _sign(svg_ecc_badge)
 
+
 @pytest.fixture(scope='session')
 def signed_png_rsa(png_rsa_badge):
     return _sign(png_rsa_badge)
+
 
 @pytest.fixture(scope='session')
 def signed_png_ecc(png_ecc_badge):
@@ -141,9 +153,11 @@ def _make_badge_for_verify(badge):
     )
     return badge_verify, VERIFY_IDENTITY
 
+
 @pytest.fixture  # function-scoped: tests mutate the badge (tampered sig, expiration)
 def badge_for_verify_rsa(svg_rsa_badge):
     return _make_badge_for_verify(svg_rsa_badge)
+
 
 @pytest.fixture  # function-scoped: same reason
 def badge_for_verify_ecc(svg_ecc_badge):
@@ -177,20 +191,24 @@ def ob3_credential():
         issuance_date=datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
     )
 
+
 @pytest.fixture(scope='session')
 def ob3_rsa_signer(rsa_priv_pem):
     from openbadgeslib.ob3 import OB3Signer
     return OB3Signer(privkey_pem=rsa_priv_pem, algorithm='RS256')
+
 
 @pytest.fixture(scope='session')
 def ob3_ecc_signer(ecc_priv_pem):
     from openbadgeslib.ob3 import OB3Signer
     return OB3Signer(privkey_pem=ecc_priv_pem, algorithm='ES256')
 
+
 @pytest.fixture(scope='session')
 def ob3_rsa_verifier(rsa_pub_pem):
     from openbadgeslib.ob3 import OB3Verifier
     return OB3Verifier(pubkey_pem=rsa_pub_pem)
+
 
 @pytest.fixture(scope='session')
 def ob3_ecc_verifier(ecc_pub_pem):

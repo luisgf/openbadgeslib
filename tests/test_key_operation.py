@@ -13,6 +13,7 @@ from openbadgeslib.errors import UnknownKeyType
 from openbadgeslib.confparser import ConfParser
 from openbadgeslib.keys import detect_key_type, KeyRSA, KeyECC, KeyType
 
+
 class check_key_factory(unittest.TestCase) :
     def test_rsa(self) :
         key = keys.KeyFactory(keys.KeyType.RSA)
@@ -24,6 +25,7 @@ class check_key_factory(unittest.TestCase) :
 
     def test_unknown(self) :
         self.assertRaises(UnknownKeyType, keys.KeyFactory, 'XXX')
+
 
 class checkKeysBase :
     @classmethod
@@ -65,6 +67,7 @@ class checkKeysBase :
         verifier = self._verifier(public_key)
         self.assertFalse(verifier(msg, test_signature))
 
+
 class checkKeysRSA(checkKeysBase, unittest.TestCase) :
     _KEY = keys.KeyRSA
     _PUBLICKEYNAME = 'test_verify_rsa.pem'
@@ -72,9 +75,9 @@ class checkKeysRSA(checkKeysBase, unittest.TestCase) :
 
     def _checkPrivateFraming(self, private_key_pem) :
         self.assertEqual(private_key_pem[0],
-                b'-----BEGIN RSA PRIVATE KEY-----')
+                         b'-----BEGIN RSA PRIVATE KEY-----')
         self.assertEqual(private_key_pem[-1],
-                b'-----END RSA PRIVATE KEY-----')
+                         b'-----END RSA PRIVATE KEY-----')
 
     def _importSigningKey(self, private_key) :
         return RSA.importKey(private_key)
@@ -98,6 +101,7 @@ class checkKeysRSA(checkKeysBase, unittest.TestCase) :
                 return False
         return verify
 
+
 class checkKeysECC(checkKeysBase, unittest.TestCase) :
 
     _KEY = keys.KeyECC
@@ -106,9 +110,9 @@ class checkKeysECC(checkKeysBase, unittest.TestCase) :
 
     def _checkPrivateFraming(self, private_key_pem) :
         self.assertEqual(private_key_pem[0],
-                b'-----BEGIN EC PRIVATE KEY-----')
+                         b'-----BEGIN EC PRIVATE KEY-----')
         self.assertEqual(private_key_pem[-1],
-                b'-----END EC PRIVATE KEY-----')
+                         b'-----END EC PRIVATE KEY-----')
 
     def _importSigningKey(self, private_key) :
         return ecdsa.SigningKey.from_pem(private_key)
@@ -118,13 +122,13 @@ class checkKeysECC(checkKeysBase, unittest.TestCase) :
 
     def _signer(self, private_key) :
         sign = functools.partial(private_key.sign_deterministic,
-                hashfunc = hashlib.sha256)
+                                 hashfunc=hashlib.sha256)
         return sign
 
     def _verifier(self, public_key) :
         def verify(msg, signature) :
             try :
-                public_key.verify(signature, msg, hashfunc = hashlib.sha256)
+                public_key.verify(signature, msg, hashfunc=hashlib.sha256)
             except ecdsa.BadSignatureError :
                 return False
             return True
