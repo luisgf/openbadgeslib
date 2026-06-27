@@ -4,11 +4,20 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* Unreleased
+* v1.1.2 - 2026-06-27
 
   - The -d/--debug flag now actually enables DEBUG-level console logging. It was
     previously parsed but ignored in openbadges-signer; it is now wired up and
     also added to openbadges-keygenerator and openbadges-verifier.
+
+  - Packaging metadata refreshed: README is now Markdown, and the project URLs
+    point to the GitHub Wiki (documentation) and the GitHub Pages API reference
+    instead of the old homepage.
+
+  - Docs & infra: the version is single-sourced from util.__version__; CI gates
+    catch doc drift (CLI flags, wiki links); an auto-generated pdoc API site and
+    an auto-synced wiki were added; Changelog normalised; CONTRIBUTORS.txt
+    removed (see docs/authors.rst); pending work is now tracked in GitHub Issues.
 
 
 * v1.1.1 - 2026-06-27
