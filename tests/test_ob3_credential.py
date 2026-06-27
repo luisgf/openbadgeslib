@@ -1,6 +1,5 @@
 """Tests for the OpenBadges 3.0 credential data model."""
-import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from openbadgeslib.ob3.credential import (
     Achievement, Issuer, OpenBadgeCredential, OB3_CONTEXT, _iso, _parse_iso,

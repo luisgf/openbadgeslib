@@ -16,19 +16,3 @@ class SignatureError(Exception):
 
 class RouteMissingError(Exception):
     pass
-
-
-class RouteEndpointError(Exception):
-    pass
-
-
-class AlgorithmNotImplemented(Exception):
-    pass
-
-
-class ParameterNotImplemented(Exception):
-    pass
-
-
-class ParameterNotUnderstood(Exception):
-    pass

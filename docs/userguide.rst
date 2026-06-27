@@ -27,7 +27,7 @@ The key algorithm (RSA or ECC) is taken from the badge's ``key_type`` field
 .. code-block:: sh
 
     $ openbadges-keygenerator -c ./config/config.ini -g 1
-    INFO - Generating OpenBadges 2 key pair for issuer 'My Organisation'
+    INFO - Generating OpenBadges 2 RSA key pair for issuer 'My Organisation'
     INFO - Private key saved at: ./config/keys/sign_rsa_key_1.pem
     INFO - Public key saved at:  ./config/keys/verify_rsa_key_1.pem
 
@@ -54,8 +54,10 @@ The signing process takes a badge image (SVG or PNG) defined in ``config.ini``
 and a recipient email address. Use ``-V / --ob-version`` to choose the
 specification version (default: ``2``).
 
-Optionally you can attach an **evidence URL** (a link to proof of the earned)
-and an **expiration** in days (``-x DAYS``).
+You must choose explicitly whether the badge carries evidence: pass either
+``-e / --evidence URL`` (a link to proof of the achievement) **or**
+``-E / --no-evidence``. Supplying neither (or both) is an error. An
+**expiration** in days is optional (``-x DAYS``).
 
 **OpenBadges 2.0 (JWS)**
 
@@ -65,13 +67,21 @@ and an **expiration** in days (``-x DAYS``).
         -r recipient@example.com \
         -e https://example.com/proof \
         -o /tmp/
-    2026-04-22T10:00:00 badge_1 SIGNED for recipient@example.com
-    UID 73f8981f125ffc060b43847728c0bddcbb8e24f4
-    Output: /tmp/badge_1_recipient@example.com.svg
+    2026-04-22T10:00:00 badge_1 SIGNED for recipient@example.com UID 73f8981f...c0bddcbb8e24f4 at: /tmp/badge_1_recipient@example.com.svg
 
 The signed file embeds a :term:`JWS` :term:`Assertion`. For SVG the assertion
 is stored as an ``<openbadges:assertion>`` XML element; for PNG it is stored in
 an ``iTXt`` metadata chunk.
+
+Emailing the badge
+~~~~~~~~~~~~~~~~~~
+
+Pass ``-M / --mail-badge`` to email the signed badge to the recipient after
+signing. This requires an ``[smtp]`` section in ``config.ini`` (server, port,
+``use_ssl``, ``mail_from`` and optional ``username``/``password``) and a
+``mail`` entry in the badge section pointing to a text file whose first line is
+the subject and whose remaining lines are the body. See
+:doc:`installation` for the configuration keys.
 
 **OpenBadges 3.0 (JWT-VC)**
 
@@ -95,19 +105,26 @@ Use ``-V / --ob-version`` to choose the specification version (default: ``2``).
 
 **OpenBadges 2.0 (JWS)**
 
-The verification tool extracts the embedded :term:`Assertion`, downloads the
-issuer's public key from the URL in the assertion, checks the cryptographic
-signature, and verifies the recipient identity.
+The verification tool extracts the embedded :term:`Assertion`, checks the
+cryptographic signature, and verifies the recipient identity.
+
+To get a trusted ``[+] Signature is correct`` result you must supply the
+issuer's public key out-of-band, via ``-l BADGE`` (read from ``config.ini``)
+or ``-k / --pubkey FILE``:
 
 .. code-block:: sh
 
     $ openbadges-verifier -i /tmp/badge_1_recipient@example.com.svg \
-        -r recipient@example.com
+        -r recipient@example.com -l 1
     [+] Signature is correct for the identity recipient@example.com
 
+.. warning::
+    If you supply no trusted key, the verifier falls back to the key the badge
+    itself points to. The signature is then only *internally consistent* — a
+    self-signed forgery would pass — so the tool reports a ``[~]`` warning
+    instead of ``[+]``. Always pin a trusted key with ``-l`` or ``-k``.
+
 The ``-s / --show`` flag prints the decoded assertion before the result.
-Use ``-l BADGE`` to verify against a local config instead of downloading
-the public key from the network.
 
 The verification steps performed are:
 

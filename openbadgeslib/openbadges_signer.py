@@ -39,8 +39,7 @@ from datetime import datetime, timezone, timedelta
 
 from .keys import KeyType, detect_key_type
 from .signer import Signer
-from .errors import (LibOpenBadgesException, SignerExceptions,
-                     BadgeImgFormatUnsupported)
+from .errors import BadgeImgFormatUnsupported
 from .confparser import ConfParser
 from .badge import Badge, BadgeImgType, BadgeType
 from .mail import BadgeMail
@@ -86,32 +85,26 @@ def main():
             print('ERROR: %s is not defined in this config file' % args.badge)
             sys.exit(-1)
 
-        try:
-            badge_obj = Badge.create_from_conf(conf, badge)
+        badge_obj = Badge.create_from_conf(conf, badge)
 
-            if badge_obj.image_type is BadgeImgType.PNG:
-                fbase = '%s_%s.png' % (badge, args.receptor)
-            elif badge_obj.image_type is BadgeImgType.SVG:
-                fbase = '%s_%s.svg' % (badge, args.receptor)
-            else:
-                raise BadgeImgFormatUnsupported(
-                    'Unsupported image type: %r' % (badge_obj.image_type,))
+        if badge_obj.image_type is BadgeImgType.PNG:
+            fbase = '%s_%s.png' % (badge, args.receptor)
+        elif badge_obj.image_type is BadgeImgType.SVG:
+            fbase = '%s_%s.svg' % (badge, args.receptor)
+        else:
+            raise BadgeImgFormatUnsupported(
+                'Unsupported image type: %r' % (badge_obj.image_type,))
 
-            badge_file_out = os.path.join(args.output, fbase)
+        badge_file_out = os.path.join(args.output, fbase)
 
-            if os.path.isfile(badge_file_out):
-                print('A %s OpenBadge has already signed for %s in %s' % (args.badge, args.receptor, badge_file_out))
-                sys.exit(-1)
+        if os.path.isfile(badge_file_out):
+            print('A %s OpenBadge has already signed for %s in %s' % (args.badge, args.receptor, badge_file_out))
+            sys.exit(-1)
 
-            if args.ob_version == '3':
-                _sign_ob3(args, conf, badge, badge_obj, badge_file_out, evidence)
-            else:
-                _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence)
-
-        except SignerExceptions:
-            raise
-        except LibOpenBadgesException:
-            raise
+        if args.ob_version == '3':
+            _sign_ob3(args, conf, badge, badge_obj, badge_file_out, evidence)
+        else:
+            _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence)
 
 
 def _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence):

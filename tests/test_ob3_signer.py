@@ -2,7 +2,7 @@
 import pytest
 from xml.dom.minidom import parseString
 
-from openbadgeslib.ob3 import OB3Signer, OB3Verifier
+from openbadgeslib.ob3 import OB3Signer
 
 
 # ── OB3Signer construction ─────────────────────────────────────────────────────

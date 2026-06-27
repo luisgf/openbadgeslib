@@ -119,6 +119,16 @@ Sample config.ini
     general = general.log
     signer  = signer.log
 
+    ; SMTP server, used by `openbadges-signer -M` to email the signed badge.
+    [smtp]
+    smtp_server = localhost
+    smtp_port   = 25
+    use_ssl     = False
+    mail_from   = no-reply@example.com
+    ; Uncomment if your SMTP server requires authentication:
+    ;username   =
+    ;password   =
+
     ; Issuer information
     [issuer]
     name           = My Organisation
@@ -140,6 +150,7 @@ Sample config.ini
     private_key = ${paths:base_key}/sign_rsa_key_1.pem
     public_key  = ${paths:base_key}/verify_rsa_key_1.pem
     key_type    = RSA              ; RSA (default) or ECC
+    ;mail       = ${paths:base}/badge_1_mail.txt   ; subject + body for `-M`
 
 .. note::
 

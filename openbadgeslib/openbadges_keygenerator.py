@@ -35,10 +35,8 @@ import sys
 
 from .logs import Logger
 from .keys import KeyFactory, KeyType
-from .errors import KeyGenExceptions
 from .confparser import ConfParser
 from .util import __version__
-global log
 
 # Entry Point
 
@@ -93,24 +91,20 @@ def main():
                          general=conf['logs']['general'],
                          signer=conf['logs']['signer'])
 
-            try:
-                log.console.info("Generating OpenBadges %s %s key pair for issuer '%s'"
-                                 % (args.ob_version, key_type.name, conf['issuer']['name']))
+            log.console.info("Generating OpenBadges %s %s key pair for issuer '%s'"
+                             % (args.ob_version, key_type.name, conf['issuer']['name']))
 
-                kf = KeyFactory(key_type)
-                priv_key_pem, pub_key_pem = kf.generate_keypair()
+            kf = KeyFactory(key_type)
+            priv_key_pem, pub_key_pem = kf.generate_keypair()
 
-                with open(private_key, 'wb') as f:
-                    f.write(priv_key_pem)
+            with open(private_key, 'wb') as f:
+                f.write(priv_key_pem)
 
-                with open(public_key, 'wb') as f:
-                    f.write(pub_key_pem)
+            with open(public_key, 'wb') as f:
+                f.write(pub_key_pem)
 
-                log.console.info('Private key saved at: %s' % private_key)
-                log.console.info('Public key saved at: %s' % public_key)
-
-            except KeyGenExceptions:
-                raise
+            log.console.info('Private key saved at: %s' % private_key)
+            log.console.info('Public key saved at: %s' % public_key)
         else:
             print('ERROR: Config file %s NOT exists or is empty' % args.config)
 

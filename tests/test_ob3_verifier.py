@@ -1,10 +1,9 @@
 """Tests for the OpenBadges 3.0 verifier."""
 import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from openbadgeslib.ob3 import (
-    OB3Signer, OB3Verifier, OB3VerificationError, OpenBadgeCredential,
-    Achievement, Issuer,
+    OB3Verifier, OB3VerificationError, OpenBadgeCredential,
 )
 
 
@@ -58,7 +57,8 @@ class TestOB3VerifierVerify:
     def test_tampered_payload_raises(
         self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential
     ):
-        import base64, json
+        import base64
+        import json
         token = ob3_rsa_signer.sign(ob3_credential)
         header, payload_b64, sig = token.split('.')
         # Decode → modify → re-encode

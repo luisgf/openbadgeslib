@@ -75,23 +75,11 @@ class UnknownKeyType(KeyGenExceptions):
 """ Signer Exceptions """
 
 
-class FileToSignNotExists(SignerExceptions):
-    pass
-
-
 class ErrorSigningFile(SignerExceptions):
     pass
 
 
-class BadgeSignedFileExists(SignerExceptions):
-    pass
-
-
 """ Verifier Exceptions """
-
-
-class PayloadFormatIncorrect(VerifierExceptions):
-    pass
 
 
 class AssertionFormatIncorrect(VerifierExceptions):
@@ -102,19 +90,11 @@ class NotIdentityInAssertion(VerifierExceptions):
     pass
 
 
-class NoPubKeySpecified(VerifierExceptions):
-    pass
-
-
 class ErrorParsingFile(VerifierExceptions):
     pass
 
 
-""" Badge Object Exceptios """
-
-
-class BadgeNotExists(LibOpenBadgesException):
-    pass
+""" Badge Object Exceptions """
 
 
 class BadgeImgFormatUnsupported(LibOpenBadgesException):

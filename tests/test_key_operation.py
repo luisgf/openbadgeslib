@@ -1,18 +1,17 @@
+import functools
+import hashlib
 import unittest
-from unittest.mock import Mock, patch, mock_open, call
 
-import functools, hashlib
-
-import test_common
-
-from openbadgeslib import keys
-from openbadgeslib.errors import UnknownKeyType
-from openbadgeslib.confparser import ConfParser
-
+import pytest
 import ecdsa
 from Crypto.PublicKey import RSA
 from Crypto.Signature import pkcs1_15 as PKCS1_v1_5
 from Crypto.Hash import SHA256
+
+from openbadgeslib import keys
+from openbadgeslib.errors import UnknownKeyType
+from openbadgeslib.confparser import ConfParser
+from openbadgeslib.keys import detect_key_type, KeyRSA, KeyECC, KeyType
 
 class check_key_factory(unittest.TestCase) :
     def test_rsa(self) :
@@ -135,10 +134,6 @@ class checkKeysECC(checkKeysBase, unittest.TestCase) :
 
 # ── pytest-style tests using session fixtures from conftest.py ─────────────────
 
-import pytest
-from openbadgeslib.keys import detect_key_type, KeyRSA, KeyECC, KeyType
-from openbadgeslib.errors import UnknownKeyType
-
 
 class TestDetectKeyType:
     def test_rsa_public_key_detected(self, rsa_pub_pem):
@@ -228,4 +223,3 @@ class TestKeyECCReadWrite:
         k2.read_public_key(pub_pem)
         assert k2.get_priv_key_pem() == priv_pem
         assert k2.get_pub_key_pem() == pub_pem
-

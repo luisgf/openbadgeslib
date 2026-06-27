@@ -1,22 +1,18 @@
 import unittest
-from unittest.mock import Mock, patch, mock_open, call
 
-import functools, hashlib
-import json
-
-import test_common
-
+import pytest
 
 from openbadgeslib import signer
-from openbadgeslib.errors import UnknownKeyType
+from openbadgeslib.signer import Signer
 from openbadgeslib.confparser import ConfParser
-from openbadgeslib.util import md5_string
-from openbadgeslib.logs import Logger
 from openbadgeslib.keys import KeyType
-from openbadgeslib.badge import Badge, BadgeType, BadgeImgType, Assertion, BadgeSigned
-from openbadgeslib.confparser import ConfParser
+from openbadgeslib.badge import (Badge, BadgeType, BadgeImgType, Assertion,
+                                 BadgeSigned, extract_svg_assertion,
+                                 extract_png_assertion)
+from openbadgeslib.errors import ErrorSigningFile
 
-class check_badge(unittest.TestCase) :
+
+class check_badge(unittest.TestCase):
     def test_check_testconf(self):
         """ Badge entry in config.ini """
         
@@ -219,11 +215,6 @@ class check_signer(unittest.TestCase):
 
 
 # ── pytest-style tests using session fixtures from conftest.py ─────────────────
-
-import pytest
-from openbadgeslib.signer import Signer
-from openbadgeslib.badge import BadgeType, BadgeImgType, extract_svg_assertion, extract_png_assertion
-from openbadgeslib.errors import ErrorSigningFile
 
 
 class TestSignBadgeRoundTrip:

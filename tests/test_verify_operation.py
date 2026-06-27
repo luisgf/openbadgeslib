@@ -1,24 +1,10 @@
-import unittest
-from unittest.mock import Mock, patch, mock_open, call
-
-import functools, hashlib
-
-import test_common
-
-from openbadgeslib import verifier
-from openbadgeslib.errors import UnknownKeyType
-from openbadgeslib.confparser import ConfParser
-from openbadgeslib.keys import KeyType
-
-
-# ── pytest-style tests using session fixtures from conftest.py ─────────────────
+import time
 
 import pytest
-import time
-from openbadgeslib.verifier import Verifier, VerifyInfo
-from openbadgeslib.badge import BadgeStatus, BadgeSigned, Assertion
-from openbadgeslib._jws.exceptions import SignatureError as JWSSignatureError
-from conftest import VERIFY_IDENTITY, VERIFY_SALT
+from unittest.mock import patch
+
+from openbadgeslib.verifier import Verifier
+from openbadgeslib.badge import BadgeStatus, BadgeSigned
 
 
 class TestCheckJWSSignature:
@@ -251,4 +237,3 @@ class TestEmbeddedKeyFallback:
             .check_jws_signature(badge).status is BadgeStatus.VALID
         assert Verifier(verify_key=ecc_pub_pem, identity=identity)\
             .check_jws_signature(badge).status is BadgeStatus.SIGNATURE_ERROR
-

@@ -55,7 +55,7 @@ class KeyBase():
         return self.priv_key
 
     def get_pub_key(self):
-        """ Return the crypto oject """
+        """ Return the crypto object """
         return self.pub_key
 
 
@@ -80,7 +80,7 @@ class KeyRSA(KeyBase):
         self.priv_key = RSA.import_key(key_pem)
 
     def read_public_key(self, key_pem=None):
-        """ Read the public key from file """
+        """ Read the public key from param in PEM format """
         self.pub_key = RSA.import_key(key_pem)
 
     def get_priv_key_pem(self):
@@ -104,18 +104,18 @@ class KeyECC(KeyBase):
         self.priv_key = SigningKey.generate(curve=self._key_curve)
         priv_key_pem = self.priv_key.to_pem()
 
-        # Public Key name is the hash of the public key
+        # Derive the public (verifying) key from the private key.
         self.pub_key = self.priv_key.get_verifying_key()
         pub_key_pem = self.pub_key.to_pem()
 
         return priv_key_pem, pub_key_pem
 
     def read_private_key(self, key_pem=None):
-        """ Read the private key from files """
+        """ Read the private key from param in PEM format """
         self.priv_key = SigningKey.from_pem(key_pem)
 
     def read_public_key(self, key_pem=None):
-        """ Read the public key from files """
+        """ Read the public key from param in PEM format """
         self.pub_key = VerifyingKey.from_pem(key_pem)
 
     def get_priv_key_pem(self):
