@@ -25,16 +25,11 @@ import os
 import os.path
 import time
 
-from struct import pack
-from defusedxml.minidom import parseString
-from zlib import crc32
-
-from png import Reader, signature as _png_signature
-
 from ..errors import ErrorSigningFile, BadgeImgFormatUnsupported, UnknownKeyType
 from ..util import md5_string, sha1_string, __version__
 from ..keys import KeyType
 from .badge import BadgeSigned, BadgeType, BadgeImgType, Assertion
+from .. import baking
 
 from .._jws import sign as jws_sign
 
@@ -146,67 +141,18 @@ class Signer():
 
     def append_svg_assertion(self, badge):
         """ Append the assertion to a SVG File """
-
-        svg_doc = parseString(badge.source.image)
-
-        # Assertion
-        svg_tag = svg_doc.getElementsByTagName('svg').item(0)
-        assertion_tag = svg_doc.createElement("openbadges:assertion")
-        assertion_tag.attributes['xmlns:openbadges'] = 'http://openbadges.org'
-        assertion_tag.attributes['verify'] = badge.get_assertion()
-        svg_tag.appendChild(assertion_tag)
-        svg_tag.appendChild(svg_doc.createComment(' Signed with OpenBadgesLib %s ' % __version__))
-
-        badge.signed = svg_doc.toxml().encode('utf-8')
-        svg_doc.unlink()
+        badge.signed = baking.bake_svg(
+            badge.source.image, badge.get_assertion(),
+            comment=' Signed with OpenBadgesLib %s ' % __version__)
 
     def append_png_assertion(self, badge):
         """ Append the assertion to a PNG file """
-
-        badge.signed = _png_signature
-
-        chunks = list()
-        png = Reader(bytes=badge.source.image)
-
-        for chunk in png.chunks():
-            chunks.append(chunk)
-
-        itxt_data = b'openbadges' + pack('BBBBB', 0, 0, 0, 0, 0) + badge.get_assertion().encode('utf-8')
-        itxt = ('iTXt', itxt_data)
-        chunks.insert(len(chunks)-1, itxt)
-
-        text_data = 'Comment Signed with OpenBadgesLib %s' % __version__
-        text = ('tEXt', text_data.encode('utf-8'))
-        chunks.insert(len(chunks)-1, text)
-
-        for tag, data in chunks:
-            badge.signed = badge.signed + pack("!I", len(data))
-            if isinstance(tag, str):
-                tag = tag.encode('iso8859-1')
-            badge.signed = badge.signed + tag
-            badge.signed = badge.signed + data
-            checksum = crc32(tag)
-            checksum = crc32(data, checksum)
-            checksum &= 2**32-1
-            badge.signed = badge.signed + pack("!I", checksum)
+        badge.signed = baking.bake_png(
+            badge.source.image, badge.get_assertion(),
+            text_comment='Comment Signed with OpenBadgesLib %s' % __version__)
 
     def has_svg_assertion(self, badge):
-        xml_doc = parseString(badge.image)
-        has_assertion = False
-
-        if xml_doc.getElementsByTagName('openbadges:assertion'):
-            has_assertion = True
-
-        xml_doc.unlink()
-        return has_assertion
+        return baking.has_svg(badge.image)
 
     def has_png_assertion(self, badge):
-        png = Reader(bytes=badge.image)
-
-        for tag, data in png.chunks():
-            tag_str = tag.decode('ascii') if isinstance(tag, bytes) else tag
-            if tag_str == 'iTXt':
-                if data.startswith(b'openbadges'):
-                    return True
-
-        return False
+        return baking.has_png(badge.image)

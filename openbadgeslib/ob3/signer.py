@@ -20,34 +20,12 @@
         License along with this library.
 """
 
-from struct import pack
-from defusedxml.minidom import parseString
-from zlib import crc32
-
 import jwt
-from png import Reader, signature as _png_signature
 
 from .credential import OpenBadgeCredential, _SUPPORTED_ALGORITHMS
 from ..util import __version__
-
-
-def _to_pem(key):
-    """Convert a pycryptodome or ecdsa key object to PEM bytes; pass through bytes/str."""
-    try:
-        from Crypto.PublicKey import RSA as _RSA
-        if isinstance(key, _RSA.RsaKey):
-            return key.export_key('PEM')
-    except ImportError:
-        pass
-    try:
-        from ecdsa import SigningKey as _SK, VerifyingKey as _VK
-        if isinstance(key, (_SK, _VK)):
-            return key.to_pem()
-    except ImportError:
-        pass
-    if isinstance(key, (bytes, str)):
-        return key
-    raise TypeError(f"Unsupported key type: {type(key)}")
+from ..keys import key_to_pem
+from .. import baking
 
 
 class OB3Signer:
@@ -67,7 +45,7 @@ class OB3Signer:
                 f"Unsupported algorithm {algorithm!r}. "
                 f"Choose from: {sorted(_SUPPORTED_ALGORITHMS)}"
             )
-        self.privkey_pem = _to_pem(privkey_pem)
+        self.privkey_pem = key_to_pem(privkey_pem)
         self.algorithm = algorithm
 
     # ── core signing ───────────────────────────────────────────────────────────
@@ -87,22 +65,9 @@ class OB3Signer:
         viewers can extract the token regardless of version.
         """
         token = self.sign(credential)
-        svg_doc = parseString(svg_bytes)
-        svg_tag = svg_doc.getElementsByTagName('svg').item(0)
-
-        node = svg_doc.createElement("openbadges:assertion")
-        node.attributes['xmlns:openbadges'] = 'http://openbadges.org'
-        node.attributes['verify'] = token
-        svg_tag.appendChild(node)
-        svg_tag.appendChild(
-            svg_doc.createComment(
-                ' Signed with OpenBadgesLib %s (OB 3.0 JWT-VC) ' % __version__
-            )
-        )
-
-        result = svg_doc.toxml().encode('utf-8')
-        svg_doc.unlink()
-        return result
+        return baking.bake_svg(
+            svg_bytes, token,
+            comment=' Signed with OpenBadgesLib %s (OB 3.0 JWT-VC) ' % __version__)
 
     def sign_into_png(self, credential: OpenBadgeCredential, png_bytes: bytes) -> bytes:
         """Embed a signed credential into a PNG badge image.
@@ -111,24 +76,4 @@ class OB3Signer:
         matching the OB 2.0 baking format.
         """
         token = self.sign(credential)
-
-        chunks = list(Reader(bytes=png_bytes).chunks())
-        itxt_data = (
-            b'openbadges'
-            + pack('BBBBB', 0, 0, 0, 0, 0)
-            + token.encode('utf-8')
-        )
-        # Insert before the final IEND chunk
-        chunks.insert(len(chunks) - 1, ('iTXt', itxt_data))
-
-        out = _png_signature
-        for tag, data in chunks:
-            out += pack("!I", len(data))
-            if isinstance(tag, str):
-                tag = tag.encode('iso8859-1')
-            out += tag + data
-            checksum = crc32(tag)
-            checksum = crc32(data, checksum) & 0xFFFFFFFF
-            out += pack("!I", checksum)
-
-        return out
+        return baking.bake_png(png_bytes, token)

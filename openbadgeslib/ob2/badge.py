@@ -26,15 +26,13 @@ from enum import Enum
 
 from Crypto.PublicKey import RSA
 from ecdsa import SigningKey, VerifyingKey
-from defusedxml.minidom import parseString
-from png import Reader
-from struct import unpack
 
 from ..keys import KeyType, detect_key_type
 from ..errors import (BadgeImgFormatUnsupported, AssertionFormatIncorrect,
                       ErrorParsingFile, UnknownKeyType)
 from .._jws import utils as jws_utils
 from ..util import hash_email, download_file
+from .. import baking
 
 
 class BadgeStatus(Enum):
@@ -313,31 +311,17 @@ class BadgeSigned():
 def extract_svg_assertion(file_data):
     """ Extract the assertion embeded in a SVG file. """
 
-    svg_doc = None
     try:
-        # Parse the SVG XML
-        svg_doc = parseString(file_data)
-
-        # Extract the assertion
-        xml_node = svg_doc.getElementsByTagName("openbadges:assertion")
-        return Assertion.decode(xml_node[0].attributes['verify'].nodeValue.encode('utf-8'))
+        token = baking.extract_svg(file_data)
     except Exception as err:
         raise ErrorParsingFile('Error parsing SVG file: %s' % err) from err
-    finally:
-        # parseString may fail before svg_doc is bound; guard the cleanup so
-        # the finally cannot raise NameError and mask the real error.
-        if svg_doc is not None:
-            svg_doc.unlink()
+    if token is None:
+        raise ErrorParsingFile('No OpenBadges assertion found in SVG file')
+    return Assertion.decode(token.encode('utf-8'))
 
 
 def extract_png_assertion(file_data):
-    png = Reader(bytes=file_data)
-
-    for tag, data in png.chunks():
-        tag_str = tag.decode('ascii') if isinstance(tag, bytes) else tag
-        if tag_str == 'iTXt' and data.startswith(b'openbadges'):
-            fmt_len = len(data) - 15   # 15=len('openbadges'+pack('BBBBB'))
-            fmt = '<10s5B%ds' % fmt_len
-            return Assertion.decode(unpack(fmt, data)[6])
-
-    raise AssertionFormatIncorrect('No OpenBadges assertion found in PNG file')
+    token = baking.extract_png(file_data)
+    if token is None:
+        raise AssertionFormatIncorrect('No OpenBadges assertion found in PNG file')
+    return Assertion.decode(token.encode('utf-8'))

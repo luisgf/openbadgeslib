@@ -125,6 +125,22 @@ class KeyECC(KeyBase):
         return self.pub_key.to_pem()
 
 
+def key_to_pem(key):
+    """Convert a pycryptodome RSA or ecdsa key object to PEM bytes.
+
+    Bytes/str are passed through unchanged. Centralised here so the OB2 JWS
+    layer and both OB3 signer/verifier share one implementation instead of
+    three hand-maintained copies.
+    """
+    if isinstance(key, RSA.RsaKey):
+        return key.export_key('PEM')
+    if isinstance(key, (SigningKey, VerifyingKey)):
+        return key.to_pem()
+    if isinstance(key, (bytes, str)):
+        return key
+    raise UnknownKeyType('Unsupported key object type: %r' % type(key))
+
+
 def detect_key_type(pem_data):
     """ Positive Key type detection """
 

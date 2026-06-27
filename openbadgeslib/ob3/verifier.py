@@ -20,20 +20,13 @@
         License along with this library.
 """
 
-from defusedxml.minidom import parseString
-
 import jwt
 import jwt.exceptions
-from png import Reader
 
 from .credential import OpenBadgeCredential
 from ..errors import ErrorParsingFile, UnknownKeyType
-from ..keys import KeyType, detect_key_type
-
-# Maximum size (bytes) we will inflate a compressed iTXt token to. A JWT-VC is
-# a few KB; this cap stops a crafted zlib bomb from exhausting memory during
-# extraction, which happens before any signature is verified.
-_MAX_ITXT_DECOMPRESSED = 256 * 1024
+from ..keys import KeyType, detect_key_type, key_to_pem
+from .. import baking
 
 # Signature algorithms accepted per key family. The signer only ever emits the
 # 256-bit variant, but we accept the whole family for interop while still
@@ -49,39 +42,6 @@ class OB3VerificationError(Exception):
     """Raised when a JWT-VC credential fails verification."""
 
 
-def _to_pem(key):
-    """Convert a pycryptodome or ecdsa key object to PEM bytes; pass through bytes/str."""
-    try:
-        from Crypto.PublicKey import RSA as _RSA
-        if isinstance(key, _RSA.RsaKey):
-            return key.export_key('PEM')
-    except ImportError:
-        pass
-    try:
-        from ecdsa import VerifyingKey as _VK
-        if isinstance(key, _VK):
-            return key.to_pem()
-    except ImportError:
-        pass
-    if isinstance(key, (bytes, str)):
-        return key
-    raise TypeError(f"Unsupported key type: {type(key)}")
-
-
-def _bounded_inflate(data: bytes, limit: int = _MAX_ITXT_DECOMPRESSED) -> bytes:
-    """Inflate zlib *data*, refusing to produce more than *limit* bytes.
-
-    Guards against decompression bombs in iTXt chunks of untrusted PNG badges.
-    """
-    import zlib
-    inflator = zlib.decompressobj()
-    out = inflator.decompress(data, limit)
-    if inflator.unconsumed_tail:
-        raise OB3VerificationError(
-            "Compressed token exceeds the %d-byte limit" % limit)
-    return out
-
-
 class OB3Verifier:
     """Verifies OpenBadges 3.0 JWT-VC credentials.
 
@@ -91,7 +51,7 @@ class OB3Verifier:
     """
 
     def __init__(self, pubkey_pem) -> None:
-        self.pubkey_pem = _to_pem(pubkey_pem)
+        self.pubkey_pem = key_to_pem(pubkey_pem)
         # Pin the accepted algorithms to this key's type so the token header
         # cannot dictate the algorithm (alg:none / HMAC downgrade / cross-type
         # confusion are all rejected up front rather than trusted).
@@ -182,20 +142,13 @@ class OB3Verifier:
     @staticmethod
     def extract_token_from_svg(svg_bytes: bytes) -> str:
         """Extract the JWT-VC token embedded in a baked SVG badge."""
-        doc = None
         try:
-            doc = parseString(svg_bytes)
-            nodes = doc.getElementsByTagName('openbadges:assertion')
-            if not nodes:
-                raise OB3VerificationError("No openbadges:assertion element found in SVG")
-            return nodes[0].attributes['verify'].nodeValue
-        except OB3VerificationError:
-            raise
+            token = baking.extract_svg(svg_bytes)
         except Exception as exc:
             raise ErrorParsingFile(f"Could not parse SVG: {exc}") from exc
-        finally:
-            if doc is not None:
-                doc.unlink()
+        if token is None:
+            raise OB3VerificationError("No openbadges:assertion element found in SVG")
+        return token
 
     @staticmethod
     def extract_token_from_png(png_bytes: bytes) -> str:
@@ -206,22 +159,10 @@ class OB3Verifier:
         on a fixed byte offset, so tokens baked by other conformant tools — with
         a non-empty language tag or compressed text — are also recovered.
         """
-        for tag, data in Reader(bytes=png_bytes).chunks():
-            tag_str = tag.decode('ascii') if isinstance(tag, bytes) else tag
-            if tag_str != 'iTXt':
-                continue
-
-            # iTXt layout: keyword \0 comp_flag comp_method lang \0 trans \0 text
-            keyword, sep, rest = data.partition(b'\x00')
-            if sep != b'\x00' or keyword != b'openbadges' or len(rest) < 2:
-                continue
-            compression_flag = rest[0]
-            _, sep_lang, rest = rest[2:].partition(b'\x00')   # drop language tag
-            _, sep_trans, text = rest.partition(b'\x00')      # drop translated keyword
-            if sep_lang != b'\x00' or sep_trans != b'\x00':
-                continue
-            if compression_flag:
-                text = _bounded_inflate(text)
-            return text.decode('utf-8')
-
-        raise OB3VerificationError("No openbadges iTXt chunk found in PNG")
+        try:
+            token = baking.extract_png(png_bytes)
+        except baking.DecompressionLimitExceeded as exc:
+            raise OB3VerificationError(str(exc)) from exc
+        if token is None:
+            raise OB3VerificationError("No openbadges iTXt chunk found in PNG")
+        return token

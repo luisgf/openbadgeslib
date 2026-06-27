@@ -6,6 +6,9 @@ from .exceptions import SignatureError, MissingKey, MissingSigner, MissingVerifi
 from jwt.algorithms import RSAAlgorithm, ECAlgorithm
 from jwt.exceptions import InvalidKeyError
 
+from ..keys import KeyType, detect_key_type, key_to_pem
+from ..errors import UnknownKeyType
+
 _ALGORITHMS = {
     'RS256': (RSAAlgorithm, RSAAlgorithm.SHA256),
     'RS384': (RSAAlgorithm, RSAAlgorithm.SHA384),
@@ -14,19 +17,6 @@ _ALGORITHMS = {
     'ES384': (ECAlgorithm,  ECAlgorithm.SHA384),
     'ES512': (ECAlgorithm,  ECAlgorithm.SHA512),
 }
-
-
-def _key_to_pem(key):
-    """Convert a pycryptodome or ecdsa key object to PEM bytes; pass through bytes/str."""
-    from Crypto.PublicKey import RSA as _RSA
-    from ecdsa import SigningKey as _SK, VerifyingKey as _VK
-    if isinstance(key, _RSA.RsaKey):
-        return key.export_key('PEM')
-    if isinstance(key, (_SK, _VK)):
-        return key.to_pem()
-    if isinstance(key, (bytes, str)):
-        return key
-    raise ValueError(f"Unsupported key type: {type(key)}")
 
 
 def _algo_for(alg_name):
@@ -44,10 +34,8 @@ def _allowed_algs_for_key(key):
     from dictating the algorithm (cross-type confusion, and—were a symmetric
     entry ever added to _ALGORITHMS—the classic RS256->HS256 downgrade).
     """
-    from ..keys import KeyType, detect_key_type
-    from ..errors import UnknownKeyType
     try:
-        key_type = detect_key_type(_key_to_pem(key))
+        key_type = detect_key_type(key_to_pem(key))
     except UnknownKeyType:
         return set()
     if key_type is KeyType.RSA:
@@ -68,7 +56,7 @@ def sign(header_dict, payload_dict, key):
     signing_input = utils.encode(header_dict) + b'.' + utils.encode(payload_dict)
     algo = _algo_for(alg_name)
     try:
-        prepared = algo.prepare_key(_key_to_pem(key))
+        prepared = algo.prepare_key(key_to_pem(key))
         return algo.sign(signing_input, prepared)
     except (InvalidKeyError, ValueError) as exc:
         raise SignatureError(str(exc)) from exc
@@ -103,7 +91,7 @@ def verify_block(msg, key=None):
 
     algo = _algo_for(alg_name)
     try:
-        prepared = algo.prepare_key(_key_to_pem(key))
+        prepared = algo.prepare_key(key_to_pem(key))
         valid = algo.verify(signing_input, prepared, raw_sig)
     except (InvalidKeyError, ValueError) as exc:
         raise SignatureError(str(exc)) from exc
