@@ -37,11 +37,10 @@ import time
 
 from datetime import datetime, timezone, timedelta
 
-from .keys import KeyType, detect_key_type
-from .signer import Signer
+from .keys import detect_key_type, alg_for_key_type
 from .errors import BadgeImgFormatUnsupported
-from .confparser import ConfParser
-from .badge import Badge, BadgeImgType, BadgeType
+from .confparser import read_config_or_exit, resolve_badge_section
+from .ob2 import Signer, Badge, BadgeImgType, BadgeType
 from .mail import BadgeMail
 from .util import __version__, normalize_recipient_id
 
@@ -72,18 +71,8 @@ def main():
     evidence = args.evidence  # If no evidence, evidence=None
 
     if args.badge:
-        cf = ConfParser(args.config)
-        conf = cf.read_conf()
-
-        badge = 'badge_' + args.badge
-
-        if not conf:
-            print('ERROR: The config file %s NOT exists or is empty' % args.config)
-            sys.exit(-1)
-
-        if badge not in conf:
-            print('ERROR: %s is not defined in this config file' % args.badge)
-            sys.exit(-1)
+        conf = read_config_or_exit(args.config)
+        badge = resolve_badge_section(conf, args.badge)
 
         badge_obj = Badge.create_from_conf(conf, badge)
 
@@ -191,7 +180,7 @@ def _sign_ob3(args, conf, badge, badge_obj, badge_file_out, evidence):
     )
 
     key_type = detect_key_type(badge_obj.privkey_pem)
-    algorithm = 'RS256' if key_type is KeyType.RSA else 'ES256'
+    algorithm = alg_for_key_type(key_type)
 
     signer = OB3Signer(privkey_pem=badge_obj.privkey_pem, algorithm=algorithm)
 

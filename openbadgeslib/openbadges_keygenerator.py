@@ -35,7 +35,7 @@ import sys
 
 from .logs import Logger
 from .keys import KeyFactory, KeyType
-from .confparser import ConfParser
+from .confparser import read_config_or_exit, resolve_badge_section
 from .util import __version__
 
 # Entry Point
@@ -60,53 +60,47 @@ def main():
 
     if not args.genkey:
         parser.print_help()
+        return
+
+    conf = read_config_or_exit(args.config)
+    badge = resolve_badge_section(conf, args.genkey)
+
+    private_key = conf[badge]['private_key']
+    public_key = conf[badge]['public_key']
+
+    # Key type comes from the badge profile (default RSA).
+    key_type_name = conf[badge].get('key_type', 'RSA').strip().upper()
+    if key_type_name == 'ECC':
+        key_type = KeyType.ECC
+    elif key_type_name == 'RSA':
+        key_type = KeyType.RSA
     else:
-        cparser = ConfParser(args.config)
-        conf = cparser.read_conf()
+        sys.exit("Unknown key_type %r for badge '%s' (use RSA or ECC)"
+                 % (key_type_name, args.genkey))
 
-        badge = 'badge_' + args.genkey
-        if conf:
-            if badge not in conf:
-                sys.exit("Badge '%s' doesn't exist in the configuration file"
-                         % args.genkey)
-            private_key = conf[badge]['private_key']
-            public_key = conf[badge]['public_key']
+    for i in (private_key, public_key):
+        if os.path.exists(i):
+            print('[!] Key file is present at %s' % i)
+            sys.exit(1)
 
-            # Key type comes from the badge profile (default RSA).
-            key_type_name = conf[badge].get('key_type', 'RSA').strip().upper()
-            if key_type_name == 'ECC':
-                key_type = KeyType.ECC
-            elif key_type_name == 'RSA':
-                key_type = KeyType.RSA
-            else:
-                sys.exit("Unknown key_type %r for badge '%s' (use RSA or ECC)"
-                         % (key_type_name, args.genkey))
+    log = Logger(base_log=conf['paths']['base_log'],
+                 general=conf['logs']['general'],
+                 signer=conf['logs']['signer'])
 
-            for i in (private_key, public_key):
-                if os.path.exists(i):
-                    print('[!] Key file is present at %s' % i)
-                    sys.exit(1)
+    log.console.info("Generating OpenBadges %s %s key pair for issuer '%s'"
+                     % (args.ob_version, key_type.name, conf['issuer']['name']))
 
-            log = Logger(base_log=conf['paths']['base_log'],
-                         general=conf['logs']['general'],
-                         signer=conf['logs']['signer'])
+    kf = KeyFactory(key_type)
+    priv_key_pem, pub_key_pem = kf.generate_keypair()
 
-            log.console.info("Generating OpenBadges %s %s key pair for issuer '%s'"
-                             % (args.ob_version, key_type.name, conf['issuer']['name']))
+    with open(private_key, 'wb') as f:
+        f.write(priv_key_pem)
 
-            kf = KeyFactory(key_type)
-            priv_key_pem, pub_key_pem = kf.generate_keypair()
+    with open(public_key, 'wb') as f:
+        f.write(pub_key_pem)
 
-            with open(private_key, 'wb') as f:
-                f.write(priv_key_pem)
-
-            with open(public_key, 'wb') as f:
-                f.write(pub_key_pem)
-
-            log.console.info('Private key saved at: %s' % private_key)
-            log.console.info('Public key saved at: %s' % public_key)
-        else:
-            print('ERROR: Config file %s NOT exists or is empty' % args.config)
+    log.console.info('Private key saved at: %s' % private_key)
+    log.console.info('Public key saved at: %s' % public_key)
 
 
 if __name__ == '__main__':

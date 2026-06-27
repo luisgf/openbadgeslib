@@ -33,13 +33,29 @@ import argparse
 import sys
 import os
 
-from .verifier import Verifier
 from .errors import VerifierExceptions
-from .confparser import ConfParser
-from .badge import BadgeSigned, BadgeStatus
+from .confparser import read_config_or_exit, resolve_badge_section
+from .ob2 import Verifier, BadgeSigned, BadgeStatus
 from .util import __version__
 
 # Entry Point
+
+
+def _resolve_trusted_pubkey(args):
+    """Return the operator-supplied trusted public key PEM, or None if neither
+    --local nor --pubkey was given. Shared by the OB2 and OB3 verify paths."""
+    if args.local:
+        conf = read_config_or_exit(args.config)
+        section = resolve_badge_section(conf, args.local)
+        with open(conf[section]['public_key'], 'rb') as f:
+            return f.read()
+    if args.pubkey:
+        if not os.path.isfile(args.pubkey):
+            print('[!] Public key file %s NOT exists.' % args.pubkey)
+            sys.exit(-1)
+        with open(args.pubkey, 'rb') as f:
+            return f.read()
+    return None
 
 
 def main():
@@ -80,37 +96,15 @@ def main():
 
 def _verify_ob2(args):
     """Verify a badge using OpenBadges 2.0 (JWS)."""
-    conf = None
-    if args.local:
-        cf = ConfParser(args.config)
-        conf = cf.read_conf()
-        if not conf:
-            print('[!] The config file %s NOT exists or is empty' % args.config)
-            sys.exit(-1)
-
     try:
         badge = BadgeSigned.read_from_file(args.filein)
 
-        # A "trusted" key is one the operator supplied out-of-band (config or
-        # an explicit file). Falling back to the key the badge itself points to
+        # A trusted key is one the operator supplied out-of-band (config or an
+        # explicit file). Falling back to the key the badge itself points to
         # only proves the badge is internally consistent, NOT who issued it.
-        trusted = False
-        if args.local:
-            badge_name = 'badge_' + args.local
-            if badge_name not in conf:
-                sys.exit('There is no "%s" badge in the configuration' % args.local)
-            with open(conf[badge_name]['public_key'], 'rb') as f:
-                local_pubkey = f.read()
-            trusted = True
-        elif args.pubkey:
-            if not os.path.isfile(args.pubkey):
-                print('[!] Public key file %s NOT exists.' % args.pubkey)
-                sys.exit(-1)
-            with open(args.pubkey, 'rb') as f:
-                local_pubkey = f.read()
-            trusted = True
-        else:
-            local_pubkey = badge.get_signkey_pem()
+        trusted_pubkey = _resolve_trusted_pubkey(args)
+        trusted = trusted_pubkey is not None
+        local_pubkey = trusted_pubkey if trusted else badge.get_signkey_pem()
 
         v = Verifier(verify_key=local_pubkey, identity=args.receptor)
         if args.show:
@@ -140,26 +134,8 @@ def _verify_ob3(args):
     from .ob3 import OB3Verifier, OB3VerificationError
     from .errors import ErrorParsingFile
 
-    # Resolve the public key
-    pub_pem = None
-    if args.local:
-        cf = ConfParser(args.config)
-        conf = cf.read_conf()
-        if not conf:
-            print('[!] The config file %s NOT exists or is empty' % args.config)
-            sys.exit(-1)
-        badge_name = 'badge_' + args.local
-        if badge_name not in conf:
-            sys.exit('There is no "%s" badge in the configuration' % args.local)
-        with open(conf[badge_name]['public_key'], 'rb') as f:
-            pub_pem = f.read()
-    elif args.pubkey:
-        if not os.path.isfile(args.pubkey):
-            print('[!] Public key file %s NOT exists.' % args.pubkey)
-            sys.exit(-1)
-        with open(args.pubkey, 'rb') as f:
-            pub_pem = f.read()
-    else:
+    pub_pem = _resolve_trusted_pubkey(args)
+    if pub_pem is None:
         print('[!] OB3 verification requires --local BADGE or --pubkey FILE')
         sys.exit(-1)
 

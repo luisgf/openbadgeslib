@@ -83,6 +83,22 @@ class OB3Verifier:
         ``credentialSubject.id`` matches; otherwise the caller MUST compare
         ``credential.recipient_id`` itself.
         """
+        payload = self._decode_payload(token)
+        credential = self._build_credential(payload)
+
+        if expected_recipient is not None:
+            expected = normalize_recipient_id(expected_recipient)
+            if credential.recipient_id != expected:
+                raise OB3VerificationError(
+                    "Recipient mismatch: credential is for %s, expected %s"
+                    % (credential.recipient_id, expected)
+                )
+
+        return credential
+
+    def _decode_payload(self, token):
+        """Verify the signature (algorithm pinned to the key type) and return
+        the decoded JWT payload."""
         try:
             header = jwt.get_unverified_header(token)
         except jwt.exceptions.DecodeError as exc:
@@ -96,7 +112,7 @@ class OB3Verifier:
             )
 
         try:
-            payload = jwt.decode(
+            return jwt.decode(
                 token,
                 self.pubkey_pem,
                 algorithms=self._allowed_algorithms,
@@ -111,13 +127,18 @@ class OB3Verifier:
         except jwt.exceptions.InvalidTokenError as exc:
             raise OB3VerificationError(str(exc)) from exc
 
+    @staticmethod
+    def _build_credential(payload):
+        """Validate the vc structure and registered claims, returning the
+        reconstructed credential."""
         if "vc" not in payload:
             raise OB3VerificationError(
                 "JWT payload does not contain a 'vc' claim — "
                 "this may be an OB 2.0 JWS token, not an OB 3.0 JWT-VC"
             )
 
-        vc_types = payload["vc"].get("type", [])
+        vc = payload["vc"]
+        vc_types = vc.get("type", [])
         if isinstance(vc_types, str):
             vc_types = [vc_types]
         if "OpenBadgeCredential" not in vc_types:
@@ -133,7 +154,6 @@ class OB3Verifier:
         # Cross-check the JWT registered claims against the vc body (when the
         # token carries them) so a verified signature cannot pair an iss/sub
         # with a mismatched credential issuer/subject.
-        vc = payload["vc"]
         iss = payload.get("iss")
         if iss is not None and iss != (vc.get("issuer") or {}).get("id"):
             raise OB3VerificationError(
@@ -142,14 +162,6 @@ class OB3Verifier:
         if sub is not None and sub != (vc.get("credentialSubject") or {}).get("id"):
             raise OB3VerificationError(
                 "JWT 'sub' does not match the credentialSubject id")
-
-        if expected_recipient is not None:
-            expected = normalize_recipient_id(expected_recipient)
-            if credential.recipient_id != expected:
-                raise OB3VerificationError(
-                    "Recipient mismatch: credential is for %s, expected %s"
-                    % (credential.recipient_id, expected)
-                )
 
         return credential
 

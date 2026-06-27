@@ -23,8 +23,27 @@
 
 from configparser import ConfigParser, ExtendedInterpolation
 import os
+import sys
 import logging
 logger = logging.getLogger(__name__)
+
+
+def read_config_or_exit(config_file):
+    """Read a config file for a CLI tool, exiting with a clear message if it is
+    missing or empty. Shared by all the console-script entrypoints."""
+    conf = ConfParser(config_file).read_conf()
+    if not conf:
+        print('[!] The config file %s does not exist or is empty' % config_file)
+        sys.exit(-1)
+    return conf
+
+
+def resolve_badge_section(conf, name):
+    """Return the ``badge_<name>`` section name, exiting if it is not defined."""
+    section = 'badge_' + name
+    if section not in conf:
+        sys.exit('There is no "%s" badge in the configuration' % name)
+    return section
 
 
 class ConfParser():

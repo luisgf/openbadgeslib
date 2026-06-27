@@ -29,7 +29,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate
 from email.header import Header
-from .badge import BadgeImgType
+from .ob2 import BadgeImgType
 from .errors import BadgeImgFormatUnsupported
 
 

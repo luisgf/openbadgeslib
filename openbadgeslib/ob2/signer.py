@@ -25,9 +25,9 @@ import os
 import os.path
 import time
 
-from ..errors import ErrorSigningFile, BadgeImgFormatUnsupported, UnknownKeyType
+from ..errors import ErrorSigningFile, BadgeImgFormatUnsupported
 from ..util import md5_string, sha1_string, __version__
-from ..keys import KeyType
+from ..keys import alg_for_key_type
 from .badge import BadgeSigned, BadgeType, BadgeImgType, Assertion
 from .. import baking
 
@@ -72,13 +72,7 @@ class Signer():
     def generate_jws(self, badge):
         """ Generate the JWS Payload using an BadgeSigned Object as input """
 
-        if badge.source.key_type is KeyType.RSA:
-            jose_header = {'alg': 'RS256'}
-        elif badge.source.key_type is KeyType.ECC:
-            jose_header = {'alg': 'ES256'}
-        else:
-            raise UnknownKeyType(
-                'Unsupported key type: %r' % (badge.source.key_type,))
+        jose_header = {'alg': alg_for_key_type(badge.source.key_type)}
 
         # All this data MUST be a Str string in order to be converted to json properly.
         recipient_data = dict(

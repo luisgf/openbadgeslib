@@ -125,6 +125,15 @@ class KeyECC(KeyBase):
         return self.pub_key.to_pem()
 
 
+def alg_for_key_type(key_type):
+    """Return the JWS algorithm the library signs with for a given key type."""
+    if key_type is KeyType.RSA:
+        return 'RS256'
+    if key_type is KeyType.ECC:
+        return 'ES256'
+    raise UnknownKeyType('No signing algorithm for key type: %r' % (key_type,))
+
+
 def key_to_pem(key):
     """Convert a pycryptodome RSA or ecdsa key object to PEM bytes.
 
