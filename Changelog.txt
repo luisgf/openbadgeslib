@@ -1,12 +1,18 @@
-* v1.1.1 - 20260627
+OpenBadgesLib - Changelog
+=========================
+
+Newest first. Dates are ISO 8601 (YYYY-MM-DD).
+
+
+* v1.1.1 - 2026-06-27
 
   - OB3: recipient identifiers are normalised through one shared helper, fixing
     a DID being corrupted into 'mailto:did:...'; the verifier CLI now delegates
     recipient binding to OB3Verifier.verify() instead of re-implementing it.
 
-  - OB3: verify() cross-checks the JWT registered claims against the vc body —
+  - OB3: verify() cross-checks the JWT registered claims against the vc body -
     a token whose 'iss'/'sub' disagree with the credential issuer/subject is
-    rejected — and OB3VerificationError now inherits from LibOpenBadgesException
+    rejected - and OB3VerificationError now inherits from LibOpenBadgesException
     so one except clause covers both OB2 and OB3.
 
   - Refactor: shared keys.alg_for_key_type and CLI config helpers
@@ -24,7 +30,8 @@
   - CI: a GitHub Actions workflow runs flake8 and the test suite on Python
     3.10-3.13 for every push and pull request.
 
-* v1.1.0 - 20260627
+
+* v1.1.0 - 2026-06-27
 
   - SECURITY: signature verification now pins the accepted algorithm to the
     verification key's type instead of trusting the token header. OB3Verifier
@@ -63,7 +70,8 @@
     cover OB3 on the landing page and document the SMTP/email-badge feature;
     test import hygiene tidied. 236 tests pass, 87% line coverage.
 
-* v1.0.2 - 20260618
+
+* v1.0.2 - 2026-06-18
 
   - SECURITY: OB2 verification now uses the operator-supplied trusted key when
     one is given, instead of always trusting the key the badge points to. A
@@ -104,7 +112,8 @@
     the coverage omit list that hid those modules; expiration tests rewritten to
     model real timestamps.
 
-* v1.0.1 - 20260422
+
+* v1.0.1 - 2026-04-22
 
   - OpenBadges 3.0 support (W3C Verifiable Credentials / JWT-VC):
     new openbadgeslib.ob3 subpackage with OpenBadgeCredential, Issuer,
@@ -112,8 +121,8 @@
     baking; OB3Verifier for JWT-VC verification and token extraction.
 
   - OpenBadges 2.0 implementation moved to openbadgeslib.ob2 subpackage.
-    Top-level badge.py / signer.py / verifier.py kept as backward-
-    compatible shims so existing code continues to work unchanged.
+    Top-level badge.py / signer.py / verifier.py kept as backward-compatible
+    shims so existing code continues to work unchanged.
 
   - All CLI tools (openbadges-keygenerator, openbadges-signer,
     openbadges-verifier, openbadges-publish) gained a -V / --ob-version
@@ -144,84 +153,88 @@
 
   - Test suite: 203 tests, 89% line coverage.
 
+
 * v0.4.2
- - Adding support to verifying external openbadges.
- - Adding a new parameter to show assertion before verifing
- - OpenBadges URLs are verified before the signing process
+
+  - Adding support to verifying external openbadges.
+
+  - Adding a new parameter to show assertion before verifying.
+
+  - OpenBadges URLs are verified before the signing process.
+
 
 * v0.4
- - Support for PNG!. Now the library is capable of verify and sign OpenBadges
-   in PNG format.
 
- - Support for sendmails badges via mail.
+  - Support for PNG. The library can now verify and sign OpenBadges in PNG
+    format.
 
- - Badge signes are registered in a log file.
+  - Support for sending badges via mail.
 
- - Mail code now supports SMTP auth. The config file need modifications.
-   See the example.
+  - Badge signatures are registered in a log file.
+
+  - Mail code now supports SMTP auth. The config file needs modifications;
+    see the example.
+
 
 * v0.3
 
-  - The email is not encoded anymore in the filename, when creating
-    a new badge.
+  - The email is no longer encoded in the filename when creating a new badge.
 
   - When creating a badge, "-o" is optional.
 
-  - When specified, "-o" is suppose to be a directory.
+  - When specified, "-o" is supposed to be a directory.
 
-  - We can specify "-E" or "--no-evidence" parameter when creating
-    a new badge.
+  - We can specify "-E" or "--no-evidence" when creating a new badge.
 
-  - When creating a new badge we need now to choose EXPLICITLY between
+  - When creating a new badge we now need to choose EXPLICITLY between
     providing evidence or not.
 
-  - Now badge sections in the INI file must be prefixed with "badge_".
-
-    UPGRADE: If your badge is called "ponente2014", rename it to
+  - Badge sections in the INI file must now be prefixed with "badge_".
+    UPGRADE: if your badge is called "ponente2014", rename it to
     "badge_ponente2014".
 
-  - Now each badge can have a different key.
-
-    UPGRADE: Move your current key configuration to the badge section,
+  - Each badge can now have a different key.
+    UPGRADE: move your current key configuration to the badge section,
     renaming "private" to "private_key" and "public" to "public_key".
+    UPGRADE: "openbadges-keygenerator -g" now requires a badge name.
 
-    UPGRADE: Now "openbadges-keygenerator -g" requires a badge name.
+  - "openbadges-verifier" changes its parameter from "-lk" to "-l" and now
+    needs the name of the badge to locate its public key.
 
-  - "openbadges-verifier" changes its parameter from "-lk" to "-l"and
-    now it needs the name of the badge to locale its public key.
+  - "openbadges-verifier" now accepts a parameter -x to specify the expiration
+    for a badge.
 
-  - "openbadges-verifier" now accept a parameter -x for specify the
-    expiration for a badge.
-
-  - "openbadges-verifier" now check the revocation status and the expiration
+  - "openbadges-verifier" now checks the revocation status and the expiration
     dates of badges.
 
-* v0.2.1 - 20141216
 
-  - config.ini allows now to configure the badge json url and image url.
+* v0.2.1 - 2014-12-16
+
+  - config.ini now allows configuring the badge json url and image url.
 
   - Signer now uses randomly salted emails by default in assertions.
 
   - Compatibility with more SVG formats.
 
-  - Documentation in "docs" directory.
+  - Documentation in the "docs" directory.
 
-* v0.2 - 20141210
+
+* v0.2 - 2014-12-10
 
   - "openbadges-init".
 
-  - New configuration format. If you are using 0.1 format, you must
+  - New configuration format. If you are using the 0.1 format, you must
     migrate by hand.
 
-  - Tests!.
+  - Tests.
 
-  - Use proper logging instead of simple "prints".
+  - Use proper logging instead of simple "print" calls.
 
   - Massive cleanup of internal imports.
 
   - Do not change "sys.path".
 
-* v0.1 - 20141201
+
+* v0.1 - 2014-12-01
 
   - Initial release.
-
