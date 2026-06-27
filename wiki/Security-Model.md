@@ -126,6 +126,14 @@ if sub is not None and sub != (vc.get("credentialSubject") or {}).get("id"):
 
 It also requires the `vc` claim to be present and to carry the `OpenBadgeCredential` type, so an OB2 JWS token (which has no `vc` claim) is rejected with a clear message rather than misinterpreted.
 
+## What the signature binds — the assertion, not the image
+
+The signature covers the **assertion / credential** (recipient, achievement, issuer, dates, URLs), **not the bytes of the carrier image**. This is by design in OpenBadges: the embedded assertion is the canonical, verifiable artifact, and a correct consumer reads and validates those signed fields — it does not trust the surrounding pixels.
+
+A practical consequence: a *valid* assertion can be lifted from one badge image and embedded into a different image, and it will still verify. That is **not a forgery** — the recipient, achievement and issuer are unchanged and still validly signed; only the decorative image differs. Nothing in the signed claims can be altered without breaking the signature.
+
+Binding the signature to the image bytes (e.g. hashing the pixels into the payload) is deliberately **not** done: it is not part of the OB 2.0/3.0 specifications (other verifiers would ignore it, hurting interoperability) and it is fragile — baking the token changes the image, and any later re-encoding, optimisation or metadata edit would break the hash and flag legitimate badges as tampered. Trust the assertion, not the picture.
+
 ## Guidance for safe use
 
 - **Always supply a trusted key** (`--local` or `--pubkey`) when you need a real positive verdict. Treat a `[~]` "internally consistent only" result as *unverified provenance*, never as proof of issuer identity.
