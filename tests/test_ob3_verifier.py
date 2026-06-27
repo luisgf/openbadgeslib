@@ -121,6 +121,15 @@ class TestOB3VerifierVerify:
         with pytest.raises(OB3VerificationError, match="not allowed for this key"):
             ob3_rsa_verifier.verify(token)
 
+    def test_alg_none_token_rejected(self, ob3_rsa_verifier, ob3_credential):
+        # Classic unsecured-JWT attack: an unsigned token with {"alg":"none"}.
+        # Key pinning must reject it before any signature check is skipped.
+        import jwt as _jwt
+        payload = ob3_credential.to_jwt_payload()
+        token = _jwt.encode(payload, key=None, algorithm='none')
+        with pytest.raises(OB3VerificationError, match="not allowed for this key"):
+            ob3_rsa_verifier.verify(token)
+
 
 class TestOB3VerifierRecipientBinding:
     def test_matching_expected_recipient_ok(self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential):
@@ -174,6 +183,19 @@ class TestExtractFromSVG:
         with pytest.raises(ErrorParsingFile):
             OB3Verifier.extract_token_from_svg(b'not xml at all')
 
+    def test_entity_expansion_svg_is_rejected(self):
+        # Billion-laughs: defusedxml must refuse entity-expansion before it can
+        # exhaust memory (SEC-3). It surfaces as a parse error, not a hang.
+        from openbadgeslib.errors import ErrorParsingFile
+        billion = (
+            b'<?xml version="1.0"?>\n'
+            b'<!DOCTYPE lolz [<!ENTITY lol "lol">'
+            b'<!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">]>\n'
+            b'<svg>&lol2;</svg>'
+        )
+        with pytest.raises(ErrorParsingFile):
+            OB3Verifier.extract_token_from_svg(billion)
+
 
 # ── extract_token_from_png() ───────────────────────────────────────────────────
 
@@ -196,6 +218,41 @@ class TestExtractFromPNG:
     def test_unsigned_png_raises(self, png_image):
         with pytest.raises(OB3VerificationError, match="No openbadges"):
             OB3Verifier.extract_token_from_png(png_image)
+
+    @staticmethod
+    def _bake_compressed_itxt(png_image, text_bytes):
+        """Insert an openbadges iTXt chunk with the compression flag set,
+        mirroring the writer layout but with zlib-compressed text."""
+        import zlib
+        from struct import pack
+        from zlib import crc32
+        from png import Reader, signature as _png_signature
+        # keyword \0 comp_flag=1 comp_method=0 lang \0 trans \0 <compressed text>
+        itxt_data = b'openbadges' + pack('BBBBB', 0, 1, 0, 0, 0) + zlib.compress(text_bytes)
+        chunks = list(Reader(bytes=png_image).chunks())
+        chunks.insert(len(chunks) - 1, ('iTXt', itxt_data))
+        out = _png_signature
+        for tag, data in chunks:
+            out += pack('!I', len(data))
+            if isinstance(tag, str):
+                tag = tag.encode('iso8859-1')
+            out += tag + data
+            checksum = crc32(tag)
+            checksum = crc32(data, checksum) & 0xFFFFFFFF
+            out += pack('!I', checksum)
+        return out
+
+    def test_compressed_itxt_token_is_extracted(self, png_image):
+        # A conformant compressed iTXt token must be inflated and recovered.
+        png = self._bake_compressed_itxt(png_image, b'header.payload.signature')
+        assert OB3Verifier.extract_token_from_png(png) == 'header.payload.signature'
+
+    def test_decompression_bomb_is_rejected(self, png_image):
+        # A small chunk that inflates past the cap must be refused, not expanded
+        # into memory (SEC-4).
+        png = self._bake_compressed_itxt(png_image, b'A' * (5 * 1024 * 1024))
+        with pytest.raises(OB3VerificationError, match="limit"):
+            OB3Verifier.extract_token_from_png(png)
 
 
 # ── end-to-end roundtrips ──────────────────────────────────────────────────────

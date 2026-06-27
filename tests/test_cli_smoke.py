@@ -86,6 +86,85 @@ def test_verifier_ob3_end_to_end(tmp_path, rsa_priv_pem, rsa_pub_pem, svg_image,
     assert 'valid' in capsys.readouterr().out.lower()
 
 
+# ── openbadges-verifier OB2 end-to-end ──────────────────────────────────────────
+
+def _make_signed_ob2_svg(tmp_path, badge, identity='recipient@example.com'):
+    """Sign an OB2 SVG badge to a file and return its path."""
+    from openbadgeslib.signer import Signer
+    from openbadgeslib.badge import BadgeType
+    signed = Signer(identity=identity, badge_type=BadgeType.SIGNED,
+                    deterministic=True).sign_badge(badge)
+    badge_file = tmp_path / 'badge.svg'
+    badge_file.write_bytes(signed.signed)
+    return badge_file
+
+
+def _fake_revocation_download(url, *a, **k):
+    """Stand in for the badge.json -> issuer.json -> revocationList chain,
+    reporting the badge as not revoked."""
+    import json as _json
+    if url.endswith('badge.json'):
+        return _json.dumps({'issuer': 'https://example.com/issuer.json'}).encode()
+    return _json.dumps({}).encode()   # issuer JSON: no revocationList
+
+
+def test_verifier_ob2_end_to_end_trusted_key(tmp_path, svg_rsa_badge, rsa_pub_pem, capsys):
+    from openbadgeslib import openbadges_verifier
+    badge_file = _make_signed_ob2_svg(tmp_path, svg_rsa_badge)
+    pub = tmp_path / 'verify.pem'
+    pub.write_bytes(rsa_pub_pem)
+
+    argv = ['openbadges-verifier', '-i', str(badge_file),
+            '-r', 'recipient@example.com', '-V', '2', '-k', str(pub)]
+    with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem), \
+         patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download), \
+         patch.object(sys, 'argv', argv):
+        openbadges_verifier.main()
+    assert 'Signature is correct' in capsys.readouterr().out
+
+
+def test_verifier_ob2_without_trusted_key_warns(tmp_path, svg_rsa_badge, rsa_pub_pem, capsys):
+    # No --local/--pubkey: the embedded key is used and the result must be
+    # reported as internally-consistent-only, not '[+] correct' (SEC-2).
+    from openbadgeslib import openbadges_verifier
+    badge_file = _make_signed_ob2_svg(tmp_path, svg_rsa_badge)
+
+    argv = ['openbadges-verifier', '-i', str(badge_file),
+            '-r', 'recipient@example.com', '-V', '2']
+    with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem), \
+         patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download), \
+         patch.object(sys, 'argv', argv):
+        openbadges_verifier.main()
+    out = capsys.readouterr().out
+    assert 'Signature is correct' not in out
+    assert 'does NOT prove issuer identity' in out
+
+
+def test_verifier_ob2_wrong_receptor_reports_mismatch(tmp_path, svg_rsa_badge, rsa_pub_pem, capsys):
+    from openbadgeslib import openbadges_verifier
+    badge_file = _make_signed_ob2_svg(tmp_path, svg_rsa_badge)
+    pub = tmp_path / 'verify.pem'
+    pub.write_bytes(rsa_pub_pem)
+
+    argv = ['openbadges-verifier', '-i', str(badge_file),
+            '-r', 'someone-else@example.com', '-V', '2', '-k', str(pub)]
+    with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem), \
+         patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download), \
+         patch.object(sys, 'argv', argv):
+        openbadges_verifier.main()
+    assert '[-]' in capsys.readouterr().out
+
+
+def test_verifier_missing_file_exits(tmp_path):
+    import pytest
+    from openbadgeslib import openbadges_verifier
+    argv = ['openbadges-verifier', '-i', str(tmp_path / 'nope.svg'),
+            '-r', 'recipient@example.com', '-V', '2']
+    with patch.object(sys, 'argv', argv):
+        with pytest.raises(SystemExit):
+            openbadges_verifier.main()
+
+
 # ── openbadges-signer → openbadges-verifier (OB3 CLI roundtrip) ─────────────────
 
 def test_signer_ob3_then_verify_roundtrip(tmp_path, capsys):

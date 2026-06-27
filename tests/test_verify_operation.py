@@ -201,3 +201,54 @@ class TestCheckRevocation:
                    side_effect=self._fake_download(badge, badge_json, issuer_json, {})):
             assert v.check_revocation(badge) is None
 
+    def test_issuer_without_issuer_url_raises_clean_error(self, badge_for_verify_rsa):
+        # A badge JSON missing 'issuer' must raise a VerifierException, not a
+        # raw KeyError/TypeError (SEC-5 guard).
+        import json as _json
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        with patch('openbadgeslib.ob2.verifier.download_file',
+                   return_value=_json.dumps({}).encode()):  # badge JSON has no 'issuer'
+            with pytest.raises(AssertionFormatIncorrect):
+                v.check_revocation(badge)
+
+    def test_non_json_issuer_body_raises_clean_error(self, badge_for_verify_rsa):
+        import json as _json
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+
+        def fake_download(url, *a, **k):
+            if url == badge.source.json_url:
+                return _json.dumps({'issuer': 'https://example.com/issuer.json'}).encode()
+            return b'<<not json>>'   # issuer body is garbage
+
+        with patch('openbadgeslib.ob2.verifier.download_file', side_effect=fake_download):
+            with pytest.raises(AssertionFormatIncorrect):
+                v.check_revocation(badge)
+
+
+class TestEmbeddedKeyFallback:
+    """The verify_key=None path trusts the key embedded in the badge itself —
+    the trust-on-first-use branch a forger can exploit. These pin its behaviour
+    so the security trade-off can never silently change (SEC-2 / TEST-1)."""
+
+    def test_fallback_uses_badge_embedded_key(self, badge_for_verify_rsa):
+        # No operator key: verification falls back to badge.source.pub_key,
+        # which here is the genuine signing key, so it verifies.
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(verify_key=None, identity=identity)
+        assert v.check_jws_signature(badge).status is BadgeStatus.VALID
+
+    def test_self_signed_badge_passes_untrusted_but_fails_when_key_pinned(
+            self, badge_for_verify_rsa, ecc_pub_pem):
+        # With no trusted key the badge self-describes its own verifying key, so
+        # even a self-signed forgery looks VALID. Pinning a different trusted
+        # issuer key rejects it — demonstrating why a trusted key is required.
+        badge, identity = badge_for_verify_rsa
+        assert Verifier(verify_key=None, identity=identity)\
+            .check_jws_signature(badge).status is BadgeStatus.VALID
+        assert Verifier(verify_key=ecc_pub_pem, identity=identity)\
+            .check_jws_signature(badge).status is BadgeStatus.SIGNATURE_ERROR
+
