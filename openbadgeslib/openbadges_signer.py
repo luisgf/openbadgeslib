@@ -47,7 +47,7 @@ from .util import __version__, normalize_recipient_id
 # Entry Point
 
 
-def main():
+def build_parser():
     parser = argparse.ArgumentParser(description='Badge Signer Parameters')
     parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-b', '--badge', required=True, help='Specify the badge name for sign')
@@ -63,7 +63,11 @@ def main():
                         help='OpenBadges specification version: 2 (default, JWS) or 3 (JWT-VC).')
     parser.add_argument('-d', '--debug', action='store_true', help='Show debug messages in runtime.')
     parser.add_argument('-v', '--version', action='version', version=__version__)
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    args = build_parser().parse_args()
 
     if bool(args.no_evidence) != (args.evidence is None):  # XOR
         sys.exit("Please, choose '-e' OR '-E'")

@@ -40,7 +40,7 @@ from .confparser import ConfParser
 from .util import __version__
 
 
-def main():
+def build_parser():
     parser = argparse.ArgumentParser(description='Publisher Parameters')
     parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-o', '--output', required=True, help='Specify the output directory to save the public files')
@@ -48,6 +48,11 @@ def main():
                         metavar='VERSION',
                         help='OpenBadges specification version: 2 (default) or 3.')
     parser.add_argument('-v', '--version', action='version', version=__version__)
+    return parser
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
 
     if args.ob_version == '3':

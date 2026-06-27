@@ -41,7 +41,7 @@ from .util import __version__
 # Entry Point
 
 
-def main():
+def build_parser():
     parser = argparse.ArgumentParser(description='Key Generation Parameters')
     parser.add_argument('-c', '--config', default='config.ini',
                         help='Specify the config.ini file to use')
@@ -56,6 +56,11 @@ def main():
                         'Key material is identical for both versions.')
     parser.add_argument('-v', '--version', action='version',
                         version=__version__)
+    return parser
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
 
     if not args.genkey:
