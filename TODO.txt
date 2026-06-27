@@ -1,21 +1,16 @@
 =========
 TODO LIST
 
-- el validador debería sacarte algo de info de algoritmos
-    "validando badge hospedado"
+Open ideas / future work. (Older 2014-era musings live in this file's git
+history; resolved items have been removed.)
 
-- Implementar un modo dry, que "genere el assertion pero no lo añada al fichero"
-- Añadir modo debug (-d) al generador de claves y al verificador
-  (el firmador ya lo tiene).
+- Dry-run mode for openbadges-signer: generate the assertion/credential but
+  do not write it into the output image file.
 
-- 20141216: Tampering with Openbadges (inserting a valid asertion in another
-  image) should be detected and notified.
+- Wire up the signer's -d/--debug flag (currently parsed but never used) to the
+  Logger, and add the same flag to openbadges-keygenerator and
+  openbadges-verifier.
 
-- 20141216: keeping INI and webserver configuration in sync should
-  be easy. For instance, just indicate the URL of the badge
-  configuration and the signing process would download (and cache)
-  the details. Think about it.
-
-- 20141216: Would be nice if Timestamps in the Badges were
-  indicating the correct timezone. Could be difficult, though.
-  Think about it.
+- Detect tampering where a *valid* assertion is lifted from one badge and
+  inserted into a different image. The OB2 signature does not bind to the image
+  bytes, so an image swap is not currently detected.
