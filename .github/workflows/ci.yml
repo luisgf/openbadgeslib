@@ -6,6 +6,7 @@ on:
   pull_request:
   release:
     types: [published]
+  workflow_dispatch:   # manual "publish current master to PyPI" trigger
 
 jobs:
   test:
@@ -38,10 +39,10 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    # Only when a GitHub Release is published, and only if the whole test
-    # matrix above succeeded ("si todo ha ido bien").
+    # On a published GitHub Release, or a manual workflow_dispatch, and only if
+    # the whole test matrix above succeeded ("si todo ha ido bien").
     needs: test
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
