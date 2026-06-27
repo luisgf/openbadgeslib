@@ -25,6 +25,22 @@ import logging
 import os
 
 
+def enable_debug_logging(debug=False):
+    """Route library log messages to the console for the CLI tools.
+
+    With ``debug=True`` DEBUG-level messages are shown; otherwise only INFO and
+    above. Idempotent — safe to call once per CLI invocation (it will not stack
+    duplicate console handlers).
+    """
+    root = logging.getLogger()
+    if not any(getattr(h, '_obl_console', False) for h in root.handlers):
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
+        handler._obl_console = True
+        root.addHandler(handler)
+    root.setLevel(logging.DEBUG if debug else logging.INFO)
+
+
 class Logger():
     def __init__(self, *args, **kwargs):
         self.main = self.init_log(logger='general', base_log=kwargs['base_log'],

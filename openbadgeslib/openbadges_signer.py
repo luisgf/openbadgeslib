@@ -30,6 +30,7 @@
 """
 
 import argparse
+import logging
 import sys
 import os
 import os.path
@@ -40,9 +41,12 @@ from datetime import datetime, timezone, timedelta
 from .keys import detect_key_type, alg_for_key_type
 from .errors import BadgeImgFormatUnsupported
 from .confparser import read_config_or_exit, resolve_badge_section
+from .logs import enable_debug_logging
 from .ob2 import Signer, Badge, BadgeImgType, BadgeType
 from .mail import BadgeMail
 from .util import __version__, normalize_recipient_id
+
+logger = logging.getLogger(__name__)
 
 # Entry Point
 
@@ -68,6 +72,7 @@ def build_parser():
 
 def main():
     args = build_parser().parse_args()
+    enable_debug_logging(args.debug)
 
     if bool(args.no_evidence) != (args.evidence is None):  # XOR
         sys.exit("Please, choose '-e' OR '-E'")
@@ -75,6 +80,8 @@ def main():
     evidence = args.evidence  # If no evidence, evidence=None
 
     if args.badge:
+        logger.debug("Signing badge '%s' for %s (OB %s, output %s)",
+                     args.badge, args.receptor, args.ob_version, args.output)
         conf = read_config_or_exit(args.config)
         badge = resolve_badge_section(conf, args.badge)
 
@@ -106,6 +113,9 @@ def _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence):
         expiration = int(time.time()) + args.expires * 86400
     else:
         expiration = None
+
+    logger.debug("OB2 sign: key_type=%s image_type=%s expires=%s evidence=%s",
+                 badge_obj.key_type, badge_obj.image_type, expiration, evidence)
 
     # Checking url reachability..
     if badge_obj.urls_has_problems():
@@ -185,6 +195,8 @@ def _sign_ob3(args, conf, badge, badge_obj, badge_file_out, evidence):
 
     key_type = detect_key_type(badge_obj.privkey_pem)
     algorithm = alg_for_key_type(key_type)
+    logger.debug("OB3 sign: key_type=%s algorithm=%s recipient=%s",
+                 key_type, algorithm, recipient_id)
 
     signer = OB3Signer(privkey_pem=badge_obj.privkey_pem, algorithm=algorithm)
 

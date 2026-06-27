@@ -403,3 +403,40 @@ def test_signer_requires_evidence_choice(tmp_path):
     with patch.object(sys, 'argv', argv):
         with pytest.raises(SystemExit):
             openbadges_signer.main()
+
+
+# ── --debug flag wiring ─────────────────────────────────────────────────────────
+
+def test_enable_debug_logging_sets_level():
+    import logging
+    from openbadgeslib.logs import enable_debug_logging
+    enable_debug_logging(True)
+    assert logging.getLogger().level == logging.DEBUG
+    enable_debug_logging(False)
+    assert logging.getLogger().level == logging.INFO
+
+
+def test_all_cli_tools_expose_debug_flag():
+    import importlib
+    for name in ('openbadges_signer', 'openbadges_verifier', 'openbadges_keygenerator'):
+        mod = importlib.import_module(f'openbadgeslib.{name}')
+        opts = {o for a in mod.build_parser()._actions for o in a.option_strings}
+        assert '--debug' in opts, f'{name} is missing --debug'
+
+
+def test_verifier_debug_flag_emits_debug_records(tmp_path, svg_rsa_badge, rsa_pub_pem, caplog):
+    import logging
+    from openbadgeslib import openbadges_verifier
+    badge_file = _make_signed_ob2_svg(tmp_path, svg_rsa_badge)
+    pub = tmp_path / 'verify.pem'
+    pub.write_bytes(rsa_pub_pem)
+
+    argv = ['openbadges-verifier', '-i', str(badge_file),
+            '-r', 'recipient@example.com', '-V', '2', '-k', str(pub), '-d']
+    with caplog.at_level(logging.DEBUG, logger='openbadgeslib.openbadges_verifier'):
+        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem), \
+                patch('openbadgeslib.ob2.verifier.download_file',
+                      side_effect=_fake_revocation_download), \
+                patch.object(sys, 'argv', argv):
+            openbadges_verifier.main()
+    assert any(r.levelno == logging.DEBUG for r in caplog.records)

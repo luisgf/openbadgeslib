@@ -7,10 +7,6 @@ history; resolved items have been removed.)
 - Dry-run mode for openbadges-signer: generate the assertion/credential but
   do not write it into the output image file.
 
-- Wire up the signer's -d/--debug flag (currently parsed but never used) to the
-  Logger, and add the same flag to openbadges-keygenerator and
-  openbadges-verifier.
-
 - Detect tampering where a *valid* assertion is lifted from one badge and
   inserted into a different image. The OB2 signature does not bind to the image
   bytes, so an image swap is not currently detected.

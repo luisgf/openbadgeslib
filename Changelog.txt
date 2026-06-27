@@ -4,6 +4,13 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* Unreleased
+
+  - The -d/--debug flag now actually enables DEBUG-level console logging. It was
+    previously parsed but ignored in openbadges-signer; it is now wired up and
+    also added to openbadges-keygenerator and openbadges-verifier.
+
+
 * v1.1.1 - 2026-06-27
 
   - OB3: recipient identifiers are normalised through one shared helper, fixing

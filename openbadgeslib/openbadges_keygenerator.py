@@ -54,6 +54,8 @@ def build_parser():
                         metavar='VERSION',
                         help='OpenBadges specification version to use: 2 (default) or 3. '
                         'Key material is identical for both versions.')
+    parser.add_argument('-d', '--debug', action='store_true',
+                        help='Show debug messages at runtime.')
     parser.add_argument('-v', '--version', action='version',
                         version=__version__)
     return parser
@@ -90,8 +92,11 @@ def main():
 
     log = Logger(base_log=conf['paths']['base_log'],
                  general=conf['logs']['general'],
-                 signer=conf['logs']['signer'])
+                 signer=conf['logs']['signer'],
+                 show_debug=args.debug)
 
+    log.console.debug("key_type=%s private=%s public=%s"
+                      % (key_type.name, private_key, public_key))
     log.console.info("Generating OpenBadges %s %s key pair for issuer '%s'"
                      % (args.ob_version, key_type.name, conf['issuer']['name']))
 

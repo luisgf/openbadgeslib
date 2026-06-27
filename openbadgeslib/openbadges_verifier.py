@@ -30,13 +30,17 @@
 """
 
 import argparse
+import logging
 import sys
 import os
 
 from .errors import VerifierExceptions
 from .confparser import read_config_or_exit, resolve_badge_section
+from .logs import enable_debug_logging
 from .ob2 import Verifier, BadgeSigned, BadgeStatus
 from .util import __version__
+
+logger = logging.getLogger(__name__)
 
 # Entry Point
 
@@ -76,6 +80,8 @@ def build_parser():
     parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
                         metavar='VERSION',
                         help='OpenBadges specification version: 2 (default, JWS) or 3 (JWT-VC).')
+    parser.add_argument('-d', '--debug', action='store_true',
+                        help='Show debug messages at runtime.')
     parser.add_argument('-v', '--version', action='version',
                         version=__version__)
     return parser
@@ -84,10 +90,14 @@ def build_parser():
 def main():
     parser = build_parser()
     args = parser.parse_args()
+    enable_debug_logging(args.debug)
 
     if not args.filein or not args.receptor:
         parser.print_help()
         return
+
+    logger.debug("Verifying %s as OpenBadges %s for %s",
+                 args.filein, args.ob_version, args.receptor)
 
     if not os.path.isfile(args.filein):
         print('[!] Badge file %s NOT exists.' % args.filein)
@@ -110,12 +120,15 @@ def _verify_ob2(args):
         trusted_pubkey = _resolve_trusted_pubkey(args)
         trusted = trusted_pubkey is not None
         local_pubkey = trusted_pubkey if trusted else badge.get_signkey_pem()
+        logger.debug("OB2 verify: trusted_key=%s (source=%s)",
+                     trusted, 'operator' if trusted else 'badge-embedded')
 
         v = Verifier(verify_key=local_pubkey, identity=args.receptor)
         if args.show:
             v.print_payload(badge)
 
         check = v.get_badge_status(badge)
+        logger.debug("OB2 verify result: %s", check.status.name)
 
         if check.status is BadgeStatus.VALID:
             if trusted:

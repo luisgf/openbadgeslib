@@ -36,7 +36,7 @@ Generates a PEM key pair (private signing key + public verification key) for a b
 ### Synopsis
 
 ```sh
-openbadges-keygenerator -g BADGE [-c FILE] [-V {2,3}]
+openbadges-keygenerator -g BADGE [-c FILE] [-V {2,3}] [-d]
 ```
 
 | Short | Long | Meaning | Default |
@@ -44,6 +44,7 @@ openbadges-keygenerator -g BADGE [-c FILE] [-V {2,3}]
 | `-c` | `--config` | Config file to use | `config.ini` |
 | `-g` | `--genkey BADGE` | Generate a key pair for section `[badge_<BADGE>]` (the suffix after `badge_`) | none (prints help) |
 | `-V` | `--ob-version {2,3}` | OB spec version; key material is identical for both | `2` |
+| `-d` | `--debug` | Show debug messages at runtime | off |
 | `-v` | `--version` | Print version and exit | — |
 
 The command refuses to overwrite: if either key file already exists it prints `[!] Key file is present at <path>` and exits with status 1.
@@ -121,7 +122,7 @@ Extracts the embedded assertion/credential from a signed badge image, checks the
 ### Synopsis
 
 ```sh
-openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [-V {2,3}]
+openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [-V {2,3}] [-d]
 ```
 
 | Short | Long | Meaning | Default |
@@ -133,6 +134,7 @@ openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [-V 
 | `-k` | `--pubkey FILE` | Verify against this trusted PEM public key file (OB2 and OB3) | none |
 | `-s` | `--show` | Print the assertion/credential before the result | off |
 | `-V` | `--ob-version {2,3}` | `2` = JWS, `3` = JWT-VC | `2` |
+| `-d` | `--debug` | Show debug messages at runtime | off |
 | `-v` | `--version` | Print version and exit | — |
 
 ### Example (OB2, trusted via local config)
