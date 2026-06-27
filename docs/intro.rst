@@ -82,6 +82,28 @@ Verification performs the following checks in order:
    email address against the hashed identity in the assertion.
 
 
+v1.1.1 changes
+--------------
+
+Version 1.1.1 is a follow-up fix, refactor and tooling release:
+
+* **OB3 fixes** — recipient identifiers go through one shared normalisation
+  helper, so a DID is no longer corrupted into ``mailto:did:...``; the verifier
+  CLI delegates recipient binding to ``OB3Verifier.verify()``; ``verify()``
+  cross-checks the JWT ``iss``/``sub`` claims against the credential body; and
+  ``OB3VerificationError`` now inherits from ``LibOpenBadgesException`` so a
+  single ``except`` covers both OB 2.0 and OB 3.0.
+* **Refactor** — a shared ``alg_for_key_type`` and CLI config/key helpers
+  remove duplicated boilerplate; first-party modules import
+  ``openbadgeslib.ob2`` directly instead of the back-compat shims; the
+  oversized ``verify``/``main``/``_verify_ob3`` functions were decomposed.
+* **Type hints** were added on the OB2/core byte-vs-str boundaries.
+* **Tests & CI** — the OB2 signer CLI, the mail subsystem and
+  ``read_from_file`` edge cases are now covered (258 tests, 92 % coverage; the
+  whole repo is flake8-clean), and a GitHub Actions workflow lints and tests on
+  Python 3.10-3.13.
+
+
 v1.1.0 changes
 --------------
 

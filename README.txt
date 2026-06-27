@@ -179,6 +179,20 @@ Build the HTML docs::
 Changelog
 ---------
 
+**v1.1.1** (2026-06-27)
+
+* **OB3 fixes** — recipient identifiers are normalised through one shared
+  helper (a DID is no longer corrupted into ``mailto:did:...``); ``verify()``
+  cross-checks the JWT ``iss``/``sub`` claims against the credential and
+  ``OB3VerificationError`` now inherits from ``LibOpenBadgesException``
+* **Refactor** — shared ``alg_for_key_type`` and CLI config/key helpers,
+  first-party code imports ``openbadgeslib.ob2`` directly, and the oversized
+  verify/sign functions were decomposed
+* **Type hints** added on the OB2/core byte-vs-str boundaries
+* **Tests & CI** — OB2 signer CLI, mail and ``read_from_file`` edges covered
+  (258 tests, 92 % coverage; repo is flake8-clean); a GitHub Actions workflow
+  lints and tests on Python 3.10-3.13
+
 **v1.1.0** (2026-06-27)
 
 * **Security — algorithm pinning** — verification now pins the accepted
