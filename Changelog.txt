@@ -1,3 +1,42 @@
+* v1.1.0 - 20260627
+
+  - SECURITY: signature verification now pins the accepted algorithm to the
+    verification key's type instead of trusting the token header. OB3Verifier
+    derives the RS*/ES* family from the key and passes it to jwt.decode;
+    _jws.verify_block rejects any header alg that doesn't match the key. This
+    blocks cross-type confusion and any none/HMAC downgrade.
+
+  - SECURITY: SVG badge XML is parsed with defusedxml, defusing entity-expansion
+    (billion-laughs) DoS on untrusted badges. New defusedxml dependency.
+
+  - SECURITY: iTXt PNG token extraction caps zlib decompression at 256 KB to
+    stop a decompression-bomb DoS during extraction (before verification).
+
+  - SECURITY: the OB2 verifier CLI now distinguishes a trusted operator key
+    (--local/--pubkey) from the badge's own embedded key. Without a trusted key
+    it reports the signature as internally-consistent-only, not "[+] correct"
+    (the embedded key proves nothing about issuer identity). --pubkey now
+    applies to OB2 as well as OB3.
+
+  - SECURITY: check_revocation guards the issuer / revocation-list downloads and
+    JSON parsing, raising a clean VerifierException instead of a raw error.
+
+  - Fixed: _jws base64url padding (wrong when the length was a multiple of 4);
+    BadgeSigned.get_serial_num crashed on badges read from a file (str vs bytes);
+    Verifier.check_identity crashed instead of skipping when no identity was
+    given; extract_svg_assertion could raise NameError masking the real error;
+    unknown key/image types now fail loudly instead of UnboundLocalError.
+
+  - Refactor: a single keys.key_to_pem() replaces three drifting copies, and a
+    new openbadgeslib.baking module is the one home for the SVG/PNG carrier
+    format (OB2 and OB3 share it; the OB2 fixed-offset PNG reader is gone in
+    favour of the structured iTXt parser).
+
+  - Cleanup: removed the redundant setup.py, the stale committed dist/ artifacts
+    and generated MANIFEST, and several never-raised exception classes; docs now
+    cover OB3 on the landing page and document the SMTP/email-badge feature;
+    test import hygiene tidied. 236 tests pass, 87% line coverage.
+
 * v1.0.2 - 20260618
 
   - SECURITY: OB2 verification now uses the operator-supplied trusted key when

@@ -179,6 +179,26 @@ Build the HTML docs::
 Changelog
 ---------
 
+**v1.1.0** (2026-06-27)
+
+* **Security — algorithm pinning** — verification now pins the accepted
+  signature algorithm to the key's type (RS*/ES*) instead of trusting the
+  token header, blocking cross-type confusion and any ``none``/HMAC downgrade
+* **Security — hardened parsing** — SVG is parsed with ``defusedxml`` (defusing
+  billion-laughs DoS) and compressed PNG ``iTXt`` tokens are inflated with a
+  256 KB cap (defusing decompression bombs); adds a ``defusedxml`` dependency
+* **Security — OB2 CLI trust** — the verifier only reports ``[+] Signature is
+  correct`` when a trusted key is supplied (``--local``/``--pubkey``);
+  otherwise it warns that the result is internally consistent only
+* **Bug fixes** — base64url padding, ``get_serial_num`` on file-loaded badges,
+  ``check_identity`` with no identity, SVG-parse error masking, and loud
+  failures for unknown key/image types
+* **Refactor** — one ``keys.key_to_pem`` and a shared ``openbadgeslib.baking``
+  module remove the OB2/OB3 duplication (key conversion and SVG/PNG carrier)
+* **Cleanup** — dropped ``setup.py``, stale ``dist/`` artifacts, ``MANIFEST``
+  and dead exceptions; OB3 documented on the landing page; SMTP feature
+  documented; 236 tests, 87 % line coverage
+
 **v1.0.2** (2026-06-18)
 
 * **Security** — OB2 verification uses the operator-supplied trusted key when

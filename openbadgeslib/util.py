@@ -21,7 +21,7 @@
         License along with this library.
 """
 
-__version__ = '1.0.2'
+__version__ = '1.1.0'
 
 import hashlib
 from urllib import request

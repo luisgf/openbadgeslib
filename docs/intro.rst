@@ -82,6 +82,36 @@ Verification performs the following checks in order:
    email address against the hashed identity in the assertion.
 
 
+v1.1.0 changes
+--------------
+
+Version 1.1.0 is a security-hardening, bug-fix and refactor release:
+
+* **Algorithm pinning** — verification pins the accepted signature algorithm to
+  the verification key's type (RS* for RSA, ES* for ECC) instead of trusting
+  the token header, so cross-type confusion and any ``none``/HMAC downgrade are
+  rejected up front.
+* **Hardened untrusted-input parsing** — SVG badges are parsed with
+  ``defusedxml`` (defusing billion-laughs entity expansion) and compressed PNG
+  ``iTXt`` tokens are inflated with a 256 KB cap (defusing decompression bombs).
+  Adds a ``defusedxml`` runtime dependency.
+* **OB 2.0 CLI trust** — ``openbadges-verifier`` reports ``[+] Signature is
+  correct`` only when a trusted key is supplied (``--local`` / ``--pubkey``);
+  otherwise it warns that the signature is internally consistent only, because
+  the badge-embedded key proves nothing about issuer identity. ``--pubkey``
+  now works for OB 2.0 too.
+* **Bug fixes** — corrected the ``_jws`` base64url padding; ``get_serial_num``
+  no longer crashes on badges read from a file; ``check_identity`` skips the
+  check (instead of crashing) when no identity is supplied; SVG parse errors are
+  reported instead of masked; unknown key/image types fail loudly.
+* **Refactor** — a single ``keys.key_to_pem`` replaces three diverging copies,
+  and a new ``openbadgeslib.baking`` module is the single home for the SVG/PNG
+  carrier format shared by OB 2.0 and OB 3.0.
+* **Cleanup & tests** — removed the redundant ``setup.py``, stale ``dist/``
+  artifacts, the generated ``MANIFEST`` and never-raised exceptions; documented
+  OB 3.0 on the landing page and the SMTP feature. 236 tests, 87 % line coverage.
+
+
 v1.0.2 changes
 --------------
 
