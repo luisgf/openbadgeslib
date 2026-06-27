@@ -21,6 +21,7 @@
         License along with this library.
 """
 
+from typing import Union
 from .errors import UnknownKeyType
 from ecdsa import SigningKey, VerifyingKey, NIST256p
 from Crypto.PublicKey import RSA
@@ -125,7 +126,7 @@ class KeyECC(KeyBase):
         return self.pub_key.to_pem()
 
 
-def alg_for_key_type(key_type):
+def alg_for_key_type(key_type: 'KeyType') -> str:
     """Return the JWS algorithm the library signs with for a given key type."""
     if key_type is KeyType.RSA:
         return 'RS256'
@@ -134,7 +135,7 @@ def alg_for_key_type(key_type):
     raise UnknownKeyType('No signing algorithm for key type: %r' % (key_type,))
 
 
-def key_to_pem(key):
+def key_to_pem(key) -> Union[str, bytes]:
     """Convert a pycryptodome RSA or ecdsa key object to PEM bytes.
 
     Bytes/str are passed through unchanged. Centralised here so the OB2 JWS
@@ -150,7 +151,7 @@ def key_to_pem(key):
     raise UnknownKeyType('Unsupported key object type: %r' % type(key))
 
 
-def detect_key_type(pem_data):
+def detect_key_type(pem_data: Union[str, bytes]) -> 'KeyType':
     """ Positive Key type detection """
 
     try:

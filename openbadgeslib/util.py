@@ -24,11 +24,15 @@
 __version__ = '1.1.0'
 
 import hashlib
+from typing import Optional, Union
 from urllib import request
 from urllib.parse import urlparse
 
+# A value that is accepted as either text or raw bytes (encoded to UTF-8).
+StrOrBytes = Union[str, bytes]
 
-def _hash_string(hash_name, string):
+
+def _hash_string(hash_name: str, string: StrOrBytes) -> bytes:
     h = hashlib.new(hash_name)
     if isinstance(string, str):
         string = string.encode('utf-8')
@@ -37,19 +41,19 @@ def _hash_string(hash_name, string):
     return h.hexdigest().encode('ascii')
 
 
-def sha1_string(string):
+def sha1_string(string: StrOrBytes) -> bytes:
     return _hash_string('sha1', string)
 
 
-def sha256_string(string):
+def sha256_string(string: StrOrBytes) -> bytes:
     return _hash_string('sha256', string)
 
 
-def md5_string(string):
+def md5_string(string: StrOrBytes) -> bytes:
     return _hash_string('md5', string)
 
 
-def normalize_recipient_id(value):
+def normalize_recipient_id(value: Optional[str]) -> Optional[str]:
     """Normalize a recipient identifier to its credentialSubject.id form.
 
     A bare email address gets a ``mailto:`` scheme; DIDs and identifiers that
@@ -64,7 +68,7 @@ def normalize_recipient_id(value):
     return value
 
 
-def hash_email(email, salt):
+def hash_email(email: StrOrBytes, salt: StrOrBytes) -> bytes:
     if isinstance(email, str):
         email = email.encode('utf-8')
     if isinstance(salt, str):
@@ -72,7 +76,7 @@ def hash_email(email, salt):
     return sha256_string(email + salt)
 
 
-def download_file(url, allow_insecure=False):
+def download_file(url: str, allow_insecure: bool = False) -> bytes:
     """Download a file over HTTPS using urllib's default TLS validation.
 
     Non-HTTPS URLs are rejected by default: the verification key is the
@@ -94,7 +98,7 @@ def download_file(url, allow_insecure=False):
         return response.read()
 
 
-def show_ecc_disclaimer():
+def show_ecc_disclaimer() -> None:
     print("""    DISCLAIMER!
 
     You are running the program with support for Elliptic

@@ -23,6 +23,7 @@
 
 import os
 from enum import Enum
+from typing import Optional, Union
 
 from Crypto.PublicKey import RSA
 from ecdsa import SigningKey, VerifyingKey
@@ -275,21 +276,22 @@ class BadgeSigned():
             f.write(self.signed)
         self.file_out = file_name
 
-    def get_identity(self):
+    def get_identity(self) -> str:
         return self.identity.decode('utf-8')
 
-    def get_identity_hashed(self):
+    def get_identity_hashed(self) -> str:
         return (b'sha256$' + hash_email(self.identity, self.salt)).decode('utf-8')
 
-    def get_salt(self):
+    def get_salt(self) -> str:
         return self.salt.decode('utf-8')
 
-    def get_assertion(self):
+    def get_assertion(self) -> Optional[str]:
         if self.assertion:
             if self.assertion.signature:
                 return self.assertion.get_assertion().decode('utf-8')
+        return None
 
-    def get_serial_num(self):
+    def get_serial_num(self) -> str:
         # serial_num is ascii bytes for a freshly-signed badge (sha1_string)
         # but a str/int for one read back from a file (JSON 'uid'); handle both.
         if isinstance(self.serial_num, (bytes, bytearray)):
@@ -302,7 +304,7 @@ class BadgeSigned():
             % (self.serial_num, self.identity, self.evidence, self.expiration, self.salt)
         )
 
-    def get_signkey_pem(self):
+    def get_signkey_pem(self) -> Union[str, bytes]:
         """ Return the public key pem used to sign the openbadge """
 
         return self.source.pubkey_pem
