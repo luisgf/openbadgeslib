@@ -106,6 +106,12 @@ Documentation has three sources, all of which stay in sync with the code automat
 
 - **Drift gates** — `tests/test_docs.py` fails CI if a CLI flag is undocumented, a wiki link is broken, or the version is hardcoded, so docs can't silently fall behind the code.
 
+## Issues and roadmap
+
+Bug reports and planned work are tracked in
+[GitHub Issues](https://github.com/luisgf/openbadgeslib/issues). There is no
+in-repo TODO file; open an issue to propose or pick up work.
+
 ## Submitting changes
 
 1. Fork the repository on GitHub.
