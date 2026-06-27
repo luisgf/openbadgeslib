@@ -53,7 +53,8 @@ def main():
     parser.add_argument('-l', '--local', metavar='BADGE',
                         help='Do the verification using the local configuration')
     parser.add_argument('-k', '--pubkey', metavar='FILE',
-                        help='(OB3) Path to the PEM public key file used for verification')
+                        help='Path to the trusted PEM public key file used for '
+                             'verification (OB2 and OB3)')
     parser.add_argument('-s', '--show', action='store_true',
                         help='Show the assertion/credential of the OpenBadge being verified.')
     parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
@@ -90,12 +91,24 @@ def _verify_ob2(args):
     try:
         badge = BadgeSigned.read_from_file(args.filein)
 
+        # A "trusted" key is one the operator supplied out-of-band (config or
+        # an explicit file). Falling back to the key the badge itself points to
+        # only proves the badge is internally consistent, NOT who issued it.
+        trusted = False
         if args.local:
             badge_name = 'badge_' + args.local
             if badge_name not in conf:
                 sys.exit('There is no "%s" badge in the configuration' % args.local)
             with open(conf[badge_name]['public_key'], 'rb') as f:
                 local_pubkey = f.read()
+            trusted = True
+        elif args.pubkey:
+            if not os.path.isfile(args.pubkey):
+                print('[!] Public key file %s NOT exists.' % args.pubkey)
+                sys.exit(-1)
+            with open(args.pubkey, 'rb') as f:
+                local_pubkey = f.read()
+            trusted = True
         else:
             local_pubkey = badge.get_signkey_pem()
 
@@ -106,7 +119,14 @@ def _verify_ob2(args):
         check = v.get_badge_status(badge)
 
         if check.status is BadgeStatus.VALID:
-            print('[+] Signature is correct for the identity %s' % v.get_identity())
+            if trusted:
+                print('[+] Signature is correct for the identity %s' % v.get_identity())
+            else:
+                print('[~] Signature is internally consistent for %s, but it was '
+                      'verified against the key embedded in the badge itself, not a '
+                      'trusted issuer key. This does NOT prove issuer identity. '
+                      'Re-run with --local BADGE or --pubkey FILE to anchor trust.'
+                      % v.get_identity())
         else:
             print('[-] ', check.msg)
 

@@ -21,7 +21,7 @@
 """
 
 from struct import pack
-from xml.dom.minidom import parseString
+from defusedxml.minidom import parseString
 from zlib import crc32
 
 import jwt

@@ -26,7 +26,7 @@ from enum import Enum
 
 from Crypto.PublicKey import RSA
 from ecdsa import SigningKey, VerifyingKey
-from xml.dom.minidom import parseString
+from defusedxml.minidom import parseString
 from png import Reader
 from struct import unpack
 

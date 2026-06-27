@@ -114,10 +114,11 @@ class TestOB3VerifierVerify:
         self, ob3_rsa_verifier, ob3_credential
     ):
         import jwt as _jwt
-        # Craft a token with HS256 in the header (not in _SUPPORTED_ALGORITHMS)
+        # Craft a token with HS256 in the header. The verifier pins the allowed
+        # algorithms to its (RSA) key type, so HS256 is rejected up front.
         payload = ob3_credential.to_jwt_payload()
         token = _jwt.encode(payload, 'secret', algorithm='HS256')
-        with pytest.raises(OB3VerificationError, match="Unsupported algorithm"):
+        with pytest.raises(OB3VerificationError, match="not allowed for this key"):
             ob3_rsa_verifier.verify(token)
 
 

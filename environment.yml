@@ -10,6 +10,7 @@ dependencies:
   - pypng>=0.20220715.0
   - pyjwt>=2.8          # PyJWT[crypto] — 'crypto' extra not supported in conda
   - cryptography        # required by pyjwt[crypto]
+  - defusedxml>=0.7     # hardened XML parsing of untrusted SVG badges
 
   # Development / testing
   - pytest>=8.0

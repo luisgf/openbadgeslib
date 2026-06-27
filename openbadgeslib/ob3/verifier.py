@@ -20,14 +20,29 @@
         License along with this library.
 """
 
-from xml.dom.minidom import parseString
+from defusedxml.minidom import parseString
 
 import jwt
 import jwt.exceptions
 from png import Reader
 
-from .credential import OpenBadgeCredential, _SUPPORTED_ALGORITHMS
-from ..errors import ErrorParsingFile
+from .credential import OpenBadgeCredential
+from ..errors import ErrorParsingFile, UnknownKeyType
+from ..keys import KeyType, detect_key_type
+
+# Maximum size (bytes) we will inflate a compressed iTXt token to. A JWT-VC is
+# a few KB; this cap stops a crafted zlib bomb from exhausting memory during
+# extraction, which happens before any signature is verified.
+_MAX_ITXT_DECOMPRESSED = 256 * 1024
+
+# Signature algorithms accepted per key family. The signer only ever emits the
+# 256-bit variant, but we accept the whole family for interop while still
+# binding the algorithm to the key type (an RSA key can never validate an ES*
+# token and vice-versa).
+_ALGORITHMS_BY_KEY_TYPE = {
+    KeyType.RSA: ['RS256', 'RS384', 'RS512'],
+    KeyType.ECC: ['ES256', 'ES384', 'ES512'],
+}
 
 
 class OB3VerificationError(Exception):
@@ -53,6 +68,20 @@ def _to_pem(key):
     raise TypeError(f"Unsupported key type: {type(key)}")
 
 
+def _bounded_inflate(data: bytes, limit: int = _MAX_ITXT_DECOMPRESSED) -> bytes:
+    """Inflate zlib *data*, refusing to produce more than *limit* bytes.
+
+    Guards against decompression bombs in iTXt chunks of untrusted PNG badges.
+    """
+    import zlib
+    inflator = zlib.decompressobj()
+    out = inflator.decompress(data, limit)
+    if inflator.unconsumed_tail:
+        raise OB3VerificationError(
+            "Compressed token exceeds the %d-byte limit" % limit)
+    return out
+
+
 class OB3Verifier:
     """Verifies OpenBadges 3.0 JWT-VC credentials.
 
@@ -63,6 +92,15 @@ class OB3Verifier:
 
     def __init__(self, pubkey_pem) -> None:
         self.pubkey_pem = _to_pem(pubkey_pem)
+        # Pin the accepted algorithms to this key's type so the token header
+        # cannot dictate the algorithm (alg:none / HMAC downgrade / cross-type
+        # confusion are all rejected up front rather than trusted).
+        try:
+            key_type = detect_key_type(self.pubkey_pem)
+        except UnknownKeyType as exc:
+            raise OB3VerificationError(
+                "Unsupported verification key type: %s" % exc) from exc
+        self._allowed_algorithms = _ALGORITHMS_BY_KEY_TYPE[key_type]
 
     # ── verification ───────────────────────────────────────────────────────────
 
@@ -85,17 +123,18 @@ class OB3Verifier:
         except jwt.exceptions.DecodeError as exc:
             raise OB3VerificationError(f"Invalid JWT: {exc}") from exc
 
-        alg = header.get('alg', 'RS256')
-        if alg not in _SUPPORTED_ALGORITHMS:
+        alg = header.get('alg')
+        if alg not in self._allowed_algorithms:
             raise OB3VerificationError(
-                f"Unsupported algorithm in token header: {alg!r}"
+                "Algorithm %r in token header is not allowed for this key "
+                "(expected one of %s)" % (alg, self._allowed_algorithms)
             )
 
         try:
             payload = jwt.decode(
                 token,
                 self.pubkey_pem,
-                algorithms=[alg],
+                algorithms=self._allowed_algorithms,
                 options={"verify_aud": False},
             )
         except jwt.exceptions.ExpiredSignatureError as exc:
@@ -182,8 +221,7 @@ class OB3Verifier:
             if sep_lang != b'\x00' or sep_trans != b'\x00':
                 continue
             if compression_flag:
-                import zlib
-                text = zlib.decompress(text)
+                text = _bounded_inflate(text)
             return text.decode('utf-8')
 
         raise OB3VerificationError("No openbadges iTXt chunk found in PNG")

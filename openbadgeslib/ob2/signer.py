@@ -26,7 +26,7 @@ import os.path
 import time
 
 from struct import pack
-from xml.dom.minidom import parseString
+from defusedxml.minidom import parseString
 from zlib import crc32
 
 from png import Reader, signature as _png_signature

@@ -115,8 +115,17 @@ class Verifier():
         except Exception:
             raise AssertionFormatIncorrect("Badge JSON format incorrect at %s" % json_url)
 
-        issuer_json = download_file(badge_obj['issuer'])
-        issuer = jws_utils.from_json(issuer_json)
+        issuer_url = badge_obj.get('issuer')
+        if not issuer_url:
+            raise AssertionFormatIncorrect(
+                "Badge JSON at %s has no 'issuer' URL" % json_url)
+        issuer_json = download_file(issuer_url)
+        if not issuer_json:
+            raise AssertionFormatIncorrect("Issuer JSON doesn't exist %s" % issuer_url)
+        try:
+            issuer = jws_utils.from_json(issuer_json)
+        except Exception:
+            raise AssertionFormatIncorrect("Issuer JSON format incorrect at %s" % issuer_url)
 
         # revocationList is optional in OpenBadges 2.0; its absence means the
         # issuer publishes no revocations, so the badge is simply not revoked.
@@ -124,7 +133,14 @@ class Verifier():
         if not revocation_url:
             return None
 
-        revocation = jws_utils.from_json(download_file(revocation_url))
+        revocation_json = download_file(revocation_url)
+        if not revocation_json:
+            return None
+        try:
+            revocation = jws_utils.from_json(revocation_json)
+        except Exception:
+            raise AssertionFormatIncorrect(
+                "Revocation list format incorrect at %s" % revocation_url)
 
         if revocation:
             for badge_id in revocation:

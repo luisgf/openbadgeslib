@@ -37,6 +37,26 @@ def _algo_for(alg_name):
     return cls(hash_id)
 
 
+def _allowed_algs_for_key(key):
+    """Signature algorithms permitted for a verification key, bound to its type.
+
+    Binding the accepted algorithm to the key type stops a forged JWS header
+    from dictating the algorithm (cross-type confusion, and—were a symmetric
+    entry ever added to _ALGORITHMS—the classic RS256->HS256 downgrade).
+    """
+    from ..keys import KeyType, detect_key_type
+    from ..errors import UnknownKeyType
+    try:
+        key_type = detect_key_type(_key_to_pem(key))
+    except UnknownKeyType:
+        return set()
+    if key_type is KeyType.RSA:
+        return {'RS256', 'RS384', 'RS512'}
+    if key_type is KeyType.ECC:
+        return {'ES256', 'ES384', 'ES512'}
+    return set()
+
+
 def sign(header_dict, payload_dict, key):
     """Sign header+payload dicts and return raw signature bytes."""
     if key is None:
@@ -71,6 +91,12 @@ def verify_block(msg, key=None):
     alg_name = header.get('alg')
     if not alg_name:
         raise MissingVerifier("JWS header is missing 'alg'")
+
+    allowed = _allowed_algs_for_key(key)
+    if allowed and alg_name not in allowed:
+        raise SignatureError(
+            "Algorithm %r in JWS header is not allowed for this key type"
+            % alg_name)
 
     signing_input = head_b64 + b'.' + payload_b64
     raw_sig = utils.from_base64(sig_b64)
