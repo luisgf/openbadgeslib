@@ -39,7 +39,8 @@ from datetime import datetime, timezone, timedelta
 
 from .keys import KeyType, detect_key_type
 from .signer import Signer
-from .errors import LibOpenBadgesException, SignerExceptions
+from .errors import (LibOpenBadgesException, SignerExceptions,
+                     BadgeImgFormatUnsupported)
 from .confparser import ConfParser
 from .badge import Badge, BadgeImgType, BadgeType
 from .mail import BadgeMail
@@ -92,6 +93,9 @@ def main():
                 fbase = '%s_%s.png' % (badge, args.receptor)
             elif badge_obj.image_type is BadgeImgType.SVG:
                 fbase = '%s_%s.svg' % (badge, args.receptor)
+            else:
+                raise BadgeImgFormatUnsupported(
+                    'Unsupported image type: %r' % (badge_obj.image_type,))
 
             badge_file_out = os.path.join(args.output, fbase)
 

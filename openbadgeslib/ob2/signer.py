@@ -31,7 +31,7 @@ from zlib import crc32
 
 from png import Reader, signature as _png_signature
 
-from ..errors import ErrorSigningFile
+from ..errors import ErrorSigningFile, BadgeImgFormatUnsupported, UnknownKeyType
 from ..util import md5_string, sha1_string, __version__
 from ..keys import KeyType
 from .badge import BadgeSigned, BadgeType, BadgeImgType, Assertion
@@ -68,6 +68,9 @@ class Signer():
             self.append_svg_assertion(out)
         elif badge_obj.image_type is BadgeImgType.PNG:
             self.append_png_assertion(out)
+        else:
+            raise BadgeImgFormatUnsupported(
+                'Unsupported image type: %r' % (badge_obj.image_type,))
 
         return out
 
@@ -78,6 +81,9 @@ class Signer():
             jose_header = {'alg': 'RS256'}
         elif badge.source.key_type is KeyType.ECC:
             jose_header = {'alg': 'ES256'}
+        else:
+            raise UnknownKeyType(
+                'Unsupported key type: %r' % (badge.source.key_type,))
 
         # All this data MUST be a Str string in order to be converted to json properly.
         recipient_data = dict(
@@ -134,6 +140,9 @@ class Signer():
             return self.has_svg_assertion(badge)
         elif badge.image_type is BadgeImgType.PNG:
             return self.has_png_assertion(badge)
+        else:
+            raise BadgeImgFormatUnsupported(
+                'Unsupported image type: %r' % (badge.image_type,))
 
     def append_svg_assertion(self, badge):
         """ Append the assertion to a SVG File """

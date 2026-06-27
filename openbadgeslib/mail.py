@@ -30,6 +30,7 @@ from email.mime.text import MIMEText
 from email.utils import formatdate
 from email.header import Header
 from .badge import BadgeImgType
+from .errors import BadgeImgFormatUnsupported
 
 
 class BadgeMail():
@@ -57,6 +58,9 @@ class BadgeMail():
             mime_type = 'svg+xml'
         elif badge.source.image_type is BadgeImgType.PNG:
             mime_type = 'png'
+        else:
+            raise BadgeImgFormatUnsupported(
+                'Unsupported image type: %r' % (badge.source.image_type,))
 
         image = MIMEImage(badge.source.image,
                           Content_Disposition='attachment; filename=%s' % basename(badge.file_out),

@@ -145,14 +145,15 @@ class Verifier():
             return None
 
     def check_identity(self, badge):
+        # No identity supplied means signature-only verification: skip the
+        # recipient check instead of crashing on hash_email(None, ...).
+        if self.identity is None:
+            return True
         try:
             email_salt = badge.salt if badge.salt else b''
             email_hashed = b'sha256$' + hash_email(self.identity, email_salt)
 
-            if email_hashed == badge.identity:
-                return True
-            else:
-                return False
+            return email_hashed == badge.identity
         except Exception:
             raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
 

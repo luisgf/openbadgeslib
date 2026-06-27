@@ -31,7 +31,8 @@ from png import Reader
 from struct import unpack
 
 from ..keys import KeyType, detect_key_type
-from ..errors import BadgeImgFormatUnsupported, AssertionFormatIncorrect, ErrorParsingFile
+from ..errors import (BadgeImgFormatUnsupported, AssertionFormatIncorrect,
+                      ErrorParsingFile, UnknownKeyType)
 from .._jws import utils as jws_utils
 from ..util import hash_email, download_file
 
@@ -121,6 +122,10 @@ class Badge():
                 self.pub_key = VerifyingKey.from_pem(self.pubkey_pem)
             if self.privkey_pem:
                 self.priv_key = SigningKey.from_pem(self.privkey_pem)
+        elif self.key_type is not None:
+            # key_type=None is a valid "no key material yet" state; any other
+            # value is an unsupported key type and must fail loudly.
+            raise UnknownKeyType('Unsupported key type: %r' % (self.key_type,))
 
     @staticmethod
     def create_from_conf(conf, badge):
@@ -287,7 +292,11 @@ class BadgeSigned():
                 return self.assertion.get_assertion().decode('utf-8')
 
     def get_serial_num(self):
-        return self.serial_num.decode('utf-8')
+        # serial_num is ascii bytes for a freshly-signed badge (sha1_string)
+        # but a str/int for one read back from a file (JSON 'uid'); handle both.
+        if isinstance(self.serial_num, (bytes, bytearray)):
+            return self.serial_num.decode('utf-8')
+        return str(self.serial_num)
 
     def __str__(self):
         return (
@@ -304,17 +313,21 @@ class BadgeSigned():
 def extract_svg_assertion(file_data):
     """ Extract the assertion embeded in a SVG file. """
 
+    svg_doc = None
     try:
-        # Parse de SVG XML
+        # Parse the SVG XML
         svg_doc = parseString(file_data)
 
         # Extract the assertion
         xml_node = svg_doc.getElementsByTagName("openbadges:assertion")
         return Assertion.decode(xml_node[0].attributes['verify'].nodeValue.encode('utf-8'))
-    except Exception:
-        raise ErrorParsingFile('Error Parsing SVG file: ')
+    except Exception as err:
+        raise ErrorParsingFile('Error parsing SVG file: %s' % err) from err
     finally:
-        svg_doc.unlink()
+        # parseString may fail before svg_doc is bound; guard the cleanup so
+        # the finally cannot raise NameError and mask the real error.
+        if svg_doc is not None:
+            svg_doc.unlink()
 
 
 def extract_png_assertion(file_data):

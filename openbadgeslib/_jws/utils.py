@@ -2,9 +2,12 @@ import base64
 import json
 
 
-def base64url_decode(input):
-    input += b'=' * (4 - (len(input) % 4))
-    return base64.urlsafe_b64decode(input)
+def base64url_decode(data):
+    # JWS/JWT base64url strips the '=' padding; restore it before decoding.
+    # The required pad count is (-len) % 4, which is 0 when the length is
+    # already a multiple of 4 (the old `4 - len % 4` wrongly added 4 there).
+    data += b'=' * (-len(data) % 4)
+    return base64.urlsafe_b64decode(data)
 
 
 def base64url_encode(input):
