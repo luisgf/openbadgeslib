@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "openbadgeslib"
 dynamic = ["version"]
 description = "A library to sign and verify OpenBadges"
-readme = "README.txt"
+readme = "README.md"
 license = { text = "LGPLv3" }
 authors = [
     { name = "Luis González Fernández", email = "luisgf@luisgf.es" },
@@ -43,7 +43,11 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://openbadges.luisgf.es/"
+Homepage = "https://github.com/luisgf/openbadgeslib"
+Documentation = "https://github.com/luisgf/openbadgeslib/wiki"
+"API Reference" = "https://luisgf.github.io/openbadgeslib/"
+Source = "https://github.com/luisgf/openbadgeslib"
+Changelog = "https://github.com/luisgf/openbadgeslib/blob/master/Changelog.txt"
 
 [project.scripts]
 openbadges-init = "openbadgeslib.openbadges_init:main"

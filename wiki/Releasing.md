@@ -2,35 +2,35 @@ How to cut a new `openbadgeslib` release: bump the version in the source, update
 
 ## Where the version lives
 
-The version is declared in **three** places that must stay in sync. Bump all of them for every release:
-
-- `pyproject.toml` — the `[project]` `version` field (currently `version = "1.1.1"`).
-- `openbadgeslib/util.py` — the `__version__` string (currently `__version__ = '1.1.1'`).
-- `docs/conf.py` — the Sphinx docs version.
-
-There is no single source of truth, so a release where these disagree will ship a wheel whose metadata and `__version__` differ. Double-check all three.
+The version is **single-sourced** from `openbadgeslib/util.py` (`__version__`).
+`pyproject.toml` reads it dynamically (`[tool.setuptools.dynamic]`) and
+`docs/conf.py` parses the same file, so you only ever edit one place. The
+`test_version_is_single_sourced` test fails CI if a static version is
+reintroduced.
 
 ## Release steps
 
 Replace `X.Y.Z` with the new version throughout.
 
-1. **Bump the version** in the three files above.
+1. **Bump the version** in `openbadgeslib/util.py` (`__version__`). That is the
+   only place to edit.
 
    ```bash
-   # edit each, then sanity-check they all match
-   grep -n 'version' pyproject.toml | head
    python -c "import openbadgeslib.util as u; print(u.__version__)"
    ```
 
-2. **Add a `Changelog.txt` entry.** Entries are newest-first; follow the existing format (`* vX.Y.Z - YYYYMMDD` header, then dash-prefixed bullets, with `SECURITY:` markers on security-relevant lines):
+2. **Add a `Changelog.txt` entry.** Entries are newest-first; follow the
+   existing format (`* vX.Y.Z - YYYY-MM-DD` header, then `  - ` dash-prefixed
+   bullets, with `SECURITY:` markers on security-relevant lines):
 
    ```text
-   * vX.Y.Z - 20260627
+   * vX.Y.Z - 2026-06-27
 
      - Short description of each change.
    ```
 
-   Mirror the user-facing highlights in `README.txt` and `docs/intro.rst` so the landing page and the changelog don't drift.
+   `README.md` links to `Changelog.txt` rather than duplicating it, so there is
+   nothing to mirror there.
 
 3. **Run the checks locally** before tagging — CI runs the same `flake8` + `pytest` gate (see [[Contributing]]):
 
@@ -43,7 +43,7 @@ Replace `X.Y.Z` with the new version throughout.
 4. **Commit** the version bump and changelog:
 
    ```bash
-   git add pyproject.toml openbadgeslib/util.py docs/conf.py Changelog.txt README.txt docs/intro.rst
+   git add openbadgeslib/util.py Changelog.txt
    git commit -m "Release vX.Y.Z"
    git push origin master
    ```
@@ -66,15 +66,20 @@ Replace `X.Y.Z` with the new version throughout.
 The workflow is `.github/workflows/ci.yml`. It has two jobs:
 
 - **test** runs on every `push` to `master` and every pull request, across the Python `3.10`, `3.11`, `3.12`, and `3.13` matrix (`fail-fast: false`). Each leg installs `".[dev]"`, runs `flake8 openbadgeslib tests`, then `pytest --cov`.
-- **publish** runs **only** when a GitHub Release is *published* (`if: github.event_name == 'release'`) and `needs: test`, so it runs **only if the whole test matrix passed**. It builds the sdist and wheel with `python -m build` and uploads them to PyPI via `pypa/gh-action-pypi-publish`.
+- **publish** runs when a GitHub Release is *published* **or** the workflow is
+  triggered manually (`workflow_dispatch`), and `needs: test`, so it runs
+  **only if the whole test matrix passed**. It builds the sdist and wheel with
+  `python -m build` and uploads them to PyPI via `pypa/gh-action-pypi-publish`.
 
 ```yaml
 publish:
   needs: test
-  if: github.event_name == 'release'
+  if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
 ```
 
-This means: tagging alone does nothing; pushing a tag without a published Release does nothing; and a Release whose tests fail will **not** publish.
+This means: tagging alone does nothing; a Release whose tests fail will **not**
+publish; and you can publish the current `master` on demand from
+**Actions → CI → Run workflow** (or `gh workflow run ci.yml`).
 
 ## The PyPI token
 
