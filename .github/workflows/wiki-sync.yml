@@ -1,0 +1,59 @@
+name: Sync Wiki
+
+# Mirrors the wiki/ folder in this repo to the GitHub Wiki whenever it changes
+# on master. The wiki/ folder is the single source of truth: pages edited
+# directly in the wiki web UI will be overwritten by the next sync.
+#
+# One-time setup: enable Settings -> Features -> Wikis and create the first
+# page in the web UI (that initialises the <repo>.wiki.git repo). Then run this
+# workflow (it runs automatically on the next push to wiki/, or trigger it
+# manually from the Actions tab).
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'wiki/**'
+      - '.github/workflows/wiki-sync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mirror wiki/ to the GitHub Wiki
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          wiki_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git"
+          tmp="$(mktemp -d)"
+
+          if ! git clone --depth 1 "$wiki_url" "$tmp" 2>/dev/null; then
+            echo "::error::Could not clone the wiki repo. Enable Wikis in Settings and create the first page once, then re-run this workflow."
+            exit 1
+          fi
+
+          # Replace the wiki contents with the staging folder (keep .git).
+          find "$tmp" -mindepth 1 -maxdepth 1 -not -name '.git' -exec rm -rf {} +
+          cp wiki/*.md "$tmp"/
+
+          cd "$tmp"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Wiki already up to date."
+          else
+            git commit -m "Sync wiki from ${GITHUB_SHA::7}"
+            git push
+          fi
