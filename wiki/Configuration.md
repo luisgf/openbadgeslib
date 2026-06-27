@@ -1,0 +1,167 @@
+openbadgeslib is driven by a single `config.ini` file (created by `openbadges-init`, see [[Quick Start]]). It defines paths, logs, optional SMTP delivery, the issuer profile and one section per badge. Every console script accepts `-c/--config` to point at this file (default `config.ini`).
+
+The parser uses Python's `configparser` with **ExtendedInterpolation**, so values can reference other values with `${...}` (see [[#extendedinterpolation]] below). A working template ships as `openbadgeslib/config.ini.example`.
+
+## File structure
+
+A `config.ini` contains these sections:
+
+- `[paths]` — base directories for keys, logs and images.
+- `[logs]` — log file names.
+- `[smtp]` — mail server settings, used only by `openbadges-signer -M`.
+- `[issuer]` — the issuing organisation profile.
+- `[badge_<name>]` — one section per badge; the `<name>` suffix is what you pass as the badge id on the command line.
+
+### `[paths]`
+
+| Key | Example | Meaning |
+| --- | --- | --- |
+| `base` | `.` | Root directory; all other paths build on it. |
+| `base_key` | `${base}/keys` | Where key pairs are read/written. |
+| `base_log` | `${base}/log` | Where log files are written. |
+| `base_image` | `${base}/images` | Where source badge images (`local_image`) are read from. |
+
+```ini
+[paths]
+base         = .
+base_key     = ${base}/keys
+base_log     = ${base}/log
+base_image   = ${base}/images
+```
+
+`base_image` is joined with each badge's `local_image` to load the artwork that gets signed. `base_key` and `base_log` are used by `openbadges-keygenerator` and the signer respectively.
+
+### `[logs]`
+
+| Key | Example | Meaning |
+| --- | --- | --- |
+| `general` | `general.log` | General log file (key generation, etc.). |
+| `signer` | `signer.log` | Signer audit log; OB2 signing appends one line per signed badge. |
+
+```ini
+[logs]
+general = general.log
+signer  = signer.log
+```
+
+Both files live under `${paths:base_log}`. On each OB2 sign the signer appends a line of the form `<timestamp> <badge> SIGNED for <identity> UID <serial>` to the `signer` log.
+
+### `[smtp]`
+
+Used **only** when you sign with `openbadges-signer -M/--mail-badge`. If you never mail badges, the section can stay at its defaults.
+
+| Key | Example | Meaning |
+| --- | --- | --- |
+| `smtp_server` | `localhost` | SMTP host. |
+| `smtp_port` | `25` | SMTP port. |
+| `use_ssl` | `False` | Parsed as a boolean; `True` uses an SSL connection. Use `True`/`False` (a literal `False` string is not silently treated as truthy). |
+| `mail_from` | `no-reply@issuer.badge` | Envelope/sender address. |
+| `username` | *(commented)* | Optional SMTP auth user. Leave commented if the server needs no auth. |
+| `password` | *(commented)* | Optional SMTP auth password. |
+
+```ini
+[smtp]
+smtp_server = localhost
+smtp_port = 25
+use_ssl = False
+mail_from = no-reply@issuer.badge
+; Uncomment this if your SMTP server needs authentication
+;username =
+;password =
+```
+
+`username` and `password` are read with `.get()`, so omitting (or commenting) them is fine for unauthenticated servers. The recipient address comes from the signer's `-r/--receptor` argument, and the message subject/body come from the badge's `mail` file (see below).
+
+### `[issuer]`
+
+The issuing organisation. These values feed both the published metadata (`openbadges-publish`, OB2) and the OB3 credential issuer object.
+
+| Key | Example | Meaning |
+| --- | --- | --- |
+| `name` | `OpenBadge issuer` | Issuer display name. |
+| `url` | `https://www.issuer.badge` | Issuer homepage URL. |
+| `image` | `issuer_logo.png` | Issuer logo; for OB2 publishing it is resolved against `publish_url`. |
+| `email` | `issuer_mail@issuer.badge` | Issuer contact email. |
+| `publish_url` | `https://openbadges.issuer.badge/issuer/` | Public base URL where the published folder will be served. Also used as the OB3 issuer `id`. |
+| `revocationList` | `revoked.json` | Revocation list file name; resolved against `publish_url` in the published `organization.json`. |
+
+```ini
+[issuer]
+name           = OpenBadge issuer
+url            = https://www.issuer.badge
+image          = issuer_logo.png
+email          = issuer_mail@issuer.badge
+publish_url    = https://openbadges.issuer.badge/issuer/
+revocationList = revoked.json
+```
+
+For OB3 the issuer `id` is taken from `publish_url`, falling back to `url` if `publish_url` is absent. For OB2, `openbadges-publish` writes an `organization.json` and joins `image` and `revocationList` onto `publish_url`.
+
+### `[badge_<name>]`
+
+Define one section per badge. The part after `badge_` is the badge id you pass to the scripts (e.g. `[badge_1]` is used as `-b 1` / `-g 1`).
+
+| Key | Example | Meaning |
+| --- | --- | --- |
+| `name` | `Badge 1` | Badge display name. |
+| `description` | `Given to any user...` | Badge description. |
+| `local_image` | `image_badge1.svg` | Source image file under `${paths:base_image}`; `.svg` or `.png` determines the output format. |
+| `image` | `https://.../badge1.svg` | Public URL of the badge image. |
+| `criteria` | `https://.../criteria.html` | URL of the badge criteria. |
+| `verify_key` | `https://.../verify_rsa_key.pem` | Public URL where the verify (public) key is hosted (OB2). |
+| `badge` | `https://.../badge.json` | Public URL of the badge JSON / OB3 achievement id. |
+| `private_key` | `${paths:base_key}/sign_rsa_key_1.pem` | Path to the signing (private) key. |
+| `public_key` | `${paths:base_key}/verify_rsa_key_1.pem` | Path to the verify (public) key. |
+| `key_type` | `RSA` | Algorithm for `openbadges-keygenerator`: `RSA` (default) or `ECC`. |
+| `mail` | `${paths:base}/badge_1_mail.txt` | Path to the mail template used by `openbadges-signer -M`. |
+
+```ini
+[badge_1]
+name        = Badge 1
+description = Given to any user that install this library
+local_image = image_badge1.svg
+image       = https://www.issuer.badge/issuer/badge_1/badge1.svg
+criteria    = https://www.issuer.badge/issuer/badge_1/criteria.html
+verify_key  = https://www.issuer.badge/issuer/badge_1/verify_rsa_key.pem
+badge       = https://www.issuer.badge/issuer/badge_1/badge.json
+private_key = ${paths:base_key}/sign_rsa_key_1.pem
+public_key  = ${paths:base_key}/verify_rsa_key_1.pem
+key_type    = RSA
+;mail        = ${paths:base}/badge_1_mail.txt
+```
+
+Notes on behaviour:
+
+- `key_type` is read only by `openbadges-keygenerator`; it is case-insensitive and accepts `RSA` or `ECC` (anything else aborts). At sign/verify time the actual algorithm is detected from the key material itself.
+- The image format is decided by `local_image`'s extension (`.svg` or `.png`); any other extension is rejected.
+- `mail` is only required when signing with `-M`. Uncomment it and point it at a template file to enable email delivery.
+- `private_key` / `public_key` must already exist before signing; generate them with `openbadges-keygenerator -g <name>` (see [[Keys and Errors]]).
+
+## ExtendedInterpolation `${...}`
+
+Values may reference other values to avoid repetition:
+
+- `${name}` references another key **in the same section** (e.g. `base_key = ${base}/keys` inside `[paths]`).
+- `${section:name}` references a key **in another section** (e.g. `private_key = ${paths:base_key}/sign_rsa_key_1.pem` pulls `base_key` from `[paths]`).
+
+```ini
+[paths]
+base     = /srv/badges
+base_key = ${base}/keys          ; -> /srv/badges/keys
+
+[badge_1]
+private_key = ${paths:base_key}/sign_rsa_key_1.pem
+; -> /srv/badges/keys/sign_rsa_key_1.pem
+```
+
+This lets you change `base` once and have every dependent path update automatically. Because interpolation uses the literal `$` character, escape a real dollar sign as `$$` if you ever need one in a value.
+
+## Where each script reads config
+
+| Script | Sections used |
+| --- | --- |
+| `openbadges-keygenerator` | `[paths]`, `[logs]`, `[issuer]`, `[badge_<name>]` (`private_key`, `public_key`, `key_type`) |
+| `openbadges-signer` | `[paths]`, `[logs]`, `[smtp]` (with `-M`), `[issuer]` (OB3), `[badge_<name>]` |
+| `openbadges-publish` | `[issuer]`, `[badge_<name>]` (OB2 only; OB3 needs no publication) |
+
+For the full flag list of each command see [[CLI Reference]]. For end-to-end recipes (issuing, mailing, publishing) see [[Guides]].
