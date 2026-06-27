@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openbadgeslib"
-version = "1.1.1"
+dynamic = ["version"]
 description = "A library to sign and verify OpenBadges"
 readme = "README.txt"
 license = { text = "LGPLv3" }
@@ -54,6 +54,11 @@ openbadges-publish = "openbadgeslib.openbadges_publish:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["openbadgeslib*"]
+
+# Single source of truth for the version: openbadgeslib/util.py __version__.
+# setuptools reads it by AST (no import), so it stays in sync automatically.
+[tool.setuptools.dynamic]
+version = { attr = "openbadgeslib.util.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,3 +1,7 @@
+[![CI](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml/badge.svg)](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/openbadgeslib.svg)](https://pypi.org/project/openbadgeslib/)
+[![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue.svg)](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml)
+
 **openbadgeslib** is a Python library and CLI for signing and verifying [Open Badges](https://www.imsglobal.org/activity/digital-badges) baked into SVG and PNG image files. It supports both **OpenBadges 2.0** (JWS assertions) and **OpenBadges 3.0** (W3C Verifiable Credentials as JWT-VC).
 
 **OB 2.0 (JWS) vs OB 3.0 (JWT-VC):** OB2 embeds a JWS-signed assertion in the badge image; OB3 issues a W3C Verifiable Credential as a JWT-VC and bakes that token into the image instead. See [[OB2 vs OB3]] for the full comparison.
@@ -21,6 +25,7 @@ All dependencies (pycryptodome, ecdsa, pypng, PyJWT[crypto], defusedxml) are ins
 
 ## Version
 
-Current release: **1.1.1** (2026-06-27). This release normalises OB3 recipient identifiers through one shared helper, cross-checks the JWT `iss`/`sub` claims against the credential in `verify()`, and ships a flake8-clean repo with 258 tests at 92% line coverage on Python 3.10–3.13.
-
-See the [Changelog](https://github.com/luisgf/openbadgeslib/blob/master/Changelog.txt) for full history and [[Releasing]] for the release process.
+Tested on Python 3.10–3.13 (see the CI badge above). For what's in the current
+release and the full history, see the
+[Changelog](https://github.com/luisgf/openbadgeslib/blob/master/Changelog.txt);
+for how releases are cut, see [[Releasing]].
