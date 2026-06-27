@@ -24,8 +24,9 @@ import jwt
 import jwt.exceptions
 
 from .credential import OpenBadgeCredential
-from ..errors import ErrorParsingFile, UnknownKeyType
+from ..errors import ErrorParsingFile, UnknownKeyType, LibOpenBadgesException
 from ..keys import KeyType, detect_key_type, key_to_pem
+from ..util import normalize_recipient_id
 from .. import baking
 
 # Signature algorithms accepted per key family. The signer only ever emits the
@@ -38,8 +39,12 @@ _ALGORITHMS_BY_KEY_TYPE = {
 }
 
 
-class OB3VerificationError(Exception):
-    """Raised when a JWT-VC credential fails verification."""
+class OB3VerificationError(LibOpenBadgesException):
+    """Raised when a JWT-VC credential fails verification.
+
+    Inherits from LibOpenBadgesException so callers can catch every library
+    error (OB2 and OB3) with a single ``except``.
+    """
 
 
 class OB3Verifier:
@@ -125,10 +130,21 @@ class OB3Verifier:
         except (KeyError, ValueError, TypeError) as exc:
             raise OB3VerificationError(f"Malformed credential payload: {exc}") from exc
 
+        # Cross-check the JWT registered claims against the vc body (when the
+        # token carries them) so a verified signature cannot pair an iss/sub
+        # with a mismatched credential issuer/subject.
+        vc = payload["vc"]
+        iss = payload.get("iss")
+        if iss is not None and iss != (vc.get("issuer") or {}).get("id"):
+            raise OB3VerificationError(
+                "JWT 'iss' does not match the credential issuer")
+        sub = payload.get("sub")
+        if sub is not None and sub != (vc.get("credentialSubject") or {}).get("id"):
+            raise OB3VerificationError(
+                "JWT 'sub' does not match the credentialSubject id")
+
         if expected_recipient is not None:
-            expected = expected_recipient
-            if not expected.startswith('mailto:') and '@' in expected:
-                expected = 'mailto:' + expected
+            expected = normalize_recipient_id(expected_recipient)
             if credential.recipient_id != expected:
                 raise OB3VerificationError(
                     "Recipient mismatch: credential is for %s, expected %s"

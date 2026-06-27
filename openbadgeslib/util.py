@@ -49,6 +49,21 @@ def md5_string(string):
     return _hash_string('md5', string)
 
 
+def normalize_recipient_id(value):
+    """Normalize a recipient identifier to its credentialSubject.id form.
+
+    A bare email address gets a ``mailto:`` scheme; DIDs and identifiers that
+    already carry a scheme are returned unchanged. Shared by the OB3 signer and
+    verifier so both agree (an unconditional ``mailto:`` prefix would corrupt a
+    DID into ``mailto:did:...``).
+    """
+    if value is None:
+        return None
+    if not value.startswith('mailto:') and '@' in value:
+        return 'mailto:' + value
+    return value
+
+
 def hash_email(email, salt):
     if isinstance(email, str):
         email = email.encode('utf-8')

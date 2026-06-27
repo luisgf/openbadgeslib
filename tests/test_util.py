@@ -7,6 +7,7 @@ import pytest
 from openbadgeslib.util import (
     sha1_string, sha256_string, md5_string,
     hash_email, download_file, show_ecc_disclaimer,
+    normalize_recipient_id,
     __version__,
 )
 
@@ -131,3 +132,17 @@ class TestMisc:
     def test_version_is_string(self):
         assert isinstance(__version__, str)
         assert len(__version__) > 0
+
+
+class TestNormalizeRecipientId:
+    def test_bare_email_gets_mailto(self):
+        assert normalize_recipient_id('a@b.com') == 'mailto:a@b.com'
+
+    def test_existing_mailto_unchanged(self):
+        assert normalize_recipient_id('mailto:a@b.com') == 'mailto:a@b.com'
+
+    def test_did_passthrough(self):
+        assert normalize_recipient_id('did:example:123') == 'did:example:123'
+
+    def test_none_passthrough(self):
+        assert normalize_recipient_id(None) is None

@@ -178,15 +178,14 @@ def _verify_ob3(args):
         print('[-] Could not extract OB3 token: %s' % exc)
         sys.exit(-1)
 
+    # Let the library own recipient binding (it normalises mailto:/DID and
+    # compares), instead of re-implementing the comparison here.
     try:
         verifier = OB3Verifier(pubkey_pem=pub_pem)
-        credential = verifier.verify(token)
+        credential = verifier.verify(token, expected_recipient=args.receptor)
     except OB3VerificationError as exc:
         print('[-] OB3 verification failed: %s' % exc)
         sys.exit(-1)
-
-    expected_id = args.receptor if args.receptor.startswith('mailto:') \
-        else 'mailto:' + args.receptor
 
     if args.show:
         print('[+] Credential issuer  : %s' % credential.issuer.name)
@@ -197,12 +196,7 @@ def _verify_ob3(args):
         if credential.evidence_url:
             print('[+] Evidence           : %s' % credential.evidence_url)
 
-    if credential.recipient_id == expected_id:
-        print('[+] OB3 signature is valid for the identity %s' % args.receptor)
-    else:
-        print('[-] Identity mismatch: credential is for %s, expected %s'
-              % (credential.recipient_id, expected_id))
-        sys.exit(-1)
+    print('[+] OB3 signature is valid for the identity %s' % args.receptor)
 
 
 if __name__ == '__main__':

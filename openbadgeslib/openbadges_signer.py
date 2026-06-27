@@ -43,7 +43,7 @@ from .errors import BadgeImgFormatUnsupported
 from .confparser import ConfParser
 from .badge import Badge, BadgeImgType, BadgeType
 from .mail import BadgeMail
-from .util import __version__
+from .util import __version__, normalize_recipient_id
 
 # Entry Point
 
@@ -176,9 +176,7 @@ def _sign_ob3(args, conf, badge, badge_obj, badge_file_out, evidence):
         image_url=badge_section.get('image'),
     )
 
-    recipient_id = args.receptor
-    if not recipient_id.startswith('mailto:'):
-        recipient_id = 'mailto:' + recipient_id
+    recipient_id = normalize_recipient_id(args.receptor)
 
     expiration_date = None
     if args.expires:

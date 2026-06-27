@@ -130,6 +130,34 @@ class TestOB3VerifierVerify:
         with pytest.raises(OB3VerificationError, match="not allowed for this key"):
             ob3_rsa_verifier.verify(token)
 
+    def test_iss_claim_must_match_credential_issuer(
+        self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential
+    ):
+        # A validly-signed token whose registered 'iss' disagrees with the vc
+        # issuer must be rejected (SEC-6).
+        import jwt as _jwt
+        payload = ob3_credential.to_jwt_payload()
+        payload['iss'] = 'https://attacker.example/issuer'
+        token = _jwt.encode(payload, rsa_priv_pem, algorithm='RS256')
+        with pytest.raises(OB3VerificationError, match="iss"):
+            ob3_rsa_verifier.verify(token)
+
+    def test_sub_claim_must_match_subject_id(
+        self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential
+    ):
+        import jwt as _jwt
+        payload = ob3_credential.to_jwt_payload()
+        payload['sub'] = 'mailto:attacker@evil.com'
+        token = _jwt.encode(payload, rsa_priv_pem, algorithm='RS256')
+        with pytest.raises(OB3VerificationError, match="sub"):
+            ob3_rsa_verifier.verify(token)
+
+    def test_verification_error_is_a_library_exception(self):
+        # OB3VerificationError must be catchable as the shared library base so a
+        # single except covers both OB2 and OB3 (ARCH-9).
+        from openbadgeslib.errors import LibOpenBadgesException
+        assert issubclass(OB3VerificationError, LibOpenBadgesException)
+
 
 class TestOB3VerifierRecipientBinding:
     def test_matching_expected_recipient_ok(self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential):
@@ -146,6 +174,16 @@ class TestOB3VerifierRecipientBinding:
         token = ob3_rsa_signer.sign(ob3_credential)
         with pytest.raises(OB3VerificationError, match="mismatch"):
             ob3_rsa_verifier.verify(token, expected_recipient='attacker@evil.com')
+
+    def test_did_recipient_passthrough(self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential):
+        # A DID recipient must not be mangled into 'mailto:did:...': signer and
+        # verifier both pass it through unchanged (DRY-5).
+        from dataclasses import replace
+        did = 'did:example:abc123'
+        cred = replace(ob3_credential, recipient_id=did)
+        token = ob3_rsa_signer.sign(cred)
+        restored = ob3_rsa_verifier.verify(token, expected_recipient=did)
+        assert restored.recipient_id == did
 
     def test_non_openbadge_credential_type_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
         import jwt as _jwt
