@@ -179,6 +179,25 @@ Build the HTML docs::
 Changelog
 ---------
 
+**v1.0.2** (2026-06-18)
+
+* **Security** — OB2 verification uses the operator-supplied trusted key when
+  provided (a forged badge can no longer self-describe its verify key); and
+  ``download_file`` rejects non-HTTPS URLs by default (the verify key is the
+  root of trust)
+* **Expiration fix** — badges are now considered expired relative to the
+  current time, not relative to their own issue date
+* **CLI fixes** — ``openbadges-publish`` now publishes every badge with its
+  verify key; ``openbadges-keygenerator`` honours a ``key_type`` (RSA/ECC) field
+  in the badge profile; SMTP ``use_ssl`` is parsed as a boolean and mail
+  connection errors no longer crash a successful sign
+* **OB 3.0** — credentials use the W3C VC 2.0 data model
+  (``validFrom``/``validUntil``); ``OB3Verifier.verify()`` gained an optional
+  ``expected_recipient`` argument and asserts the credential type; PNG token
+  extraction parses the iTXt chunk properly
+* Logs are appended (no longer truncated on every run); expanded test coverage
+  of the CLI tools, publishing, mail, and revocation
+
 **v1.0.1** (2026-04-22)
 
 * **OpenBadges 3.0 support** — new ``openbadgeslib.ob3`` subpackage:

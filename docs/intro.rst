@@ -46,7 +46,7 @@ Python version
 --------------
 
 The library requires **Python >= 3.10**. It has been tested on Python 3.10,
-3.11, 3.12, and 3.14.
+3.11, and 3.12.
 
 
 How signing works
@@ -70,12 +70,41 @@ How verification works
 Verification performs the following checks in order:
 
 1. Extract the JWS token from the image file.
-2. Download the issuer's public key from the URL embedded in the token.
-3. Verify the JWS cryptographic signature.
-4. Check the badge has not been revoked (via the issuer's revocation list).
-5. Check the badge has not expired.
+2. Obtain the issuer's public key: a locally supplied trusted key is used when
+   provided; otherwise the key is downloaded **over HTTPS** from the URL
+   embedded in the token (plain HTTP is rejected, as the key is the root of
+   trust).
+3. Verify the JWS cryptographic signature against that key.
+4. Check the badge has not been revoked (via the issuer's revocation list, if any).
+5. Check the badge has not expired (comparing the expiration date against the
+   current time).
 6. Verify the recipient identity by comparing the SHA-256 hash of the supplied
    email address against the hashed identity in the assertion.
+
+
+v1.0.2 changes
+--------------
+
+Version 1.0.2 is a security and correctness release:
+
+* **Security** — OB 2.0 verification now uses the operator-supplied trusted key
+  when one is provided, rather than always trusting the verification key the
+  badge points to; and ``download_file`` rejects non-HTTPS URLs by default.
+* **Expiration** — a badge is considered expired relative to the current time,
+  not to its own issue date (expired badges were previously reported valid).
+* **CLI** — ``openbadges-publish`` now publishes every badge together with its
+  verification key; ``openbadges-keygenerator`` honours a ``key_type``
+  (RSA/ECC) field in the badge profile; SMTP ``use_ssl`` is parsed as a boolean
+  and mail connection failures no longer crash a successful sign.
+* **OpenBadges 3.0** — credentials now use the W3C VC 2.0 data model
+  (``validFrom`` / ``validUntil``, ``/ns/credentials/v2`` context, with VC 1.1
+  fields still accepted on read); ``OB3Verifier.verify()`` gained an optional
+  ``expected_recipient`` argument and asserts the credential type; PNG token
+  extraction parses the ``iTXt`` chunk structure rather than a fixed offset.
+* **Robustness & tests** — logs are appended instead of truncated; unsigned
+  PNGs and missing revocation lists are handled gracefully; the test suite now
+  covers the CLI tools, publishing, mail, and revocation (the coverage omit
+  list that hid those modules was removed).
 
 
 v1.0.1 changes

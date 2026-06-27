@@ -87,7 +87,13 @@ class Signer():
             hashed='true'
         )
 
-        if self.badge_type is BadgeType.SIGNED:
+        if self.badge_type is BadgeType.HOSTED:
+            verify_data = dict(
+                type='hosted',
+                url=badge.source.json_url
+            )
+        else:
+            # Default to a signed assertion (BadgeType.SIGNED or unset).
             verify_data = dict(
                 type='signed',
                 url=badge.source.verify_key_url

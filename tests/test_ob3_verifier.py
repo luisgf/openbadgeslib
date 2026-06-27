@@ -121,6 +121,31 @@ class TestOB3VerifierVerify:
             ob3_rsa_verifier.verify(token)
 
 
+class TestOB3VerifierRecipientBinding:
+    def test_matching_expected_recipient_ok(self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential):
+        token = ob3_rsa_signer.sign(ob3_credential)
+        restored = ob3_rsa_verifier.verify(token, expected_recipient='recipient@example.com')
+        assert restored.recipient_id == 'mailto:recipient@example.com'
+
+    def test_matching_expected_recipient_with_mailto_ok(self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential):
+        token = ob3_rsa_signer.sign(ob3_credential)
+        restored = ob3_rsa_verifier.verify(token, expected_recipient='mailto:recipient@example.com')
+        assert restored is not None
+
+    def test_mismatched_expected_recipient_raises(self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential):
+        token = ob3_rsa_signer.sign(ob3_credential)
+        with pytest.raises(OB3VerificationError, match="mismatch"):
+            ob3_rsa_verifier.verify(token, expected_recipient='attacker@evil.com')
+
+    def test_non_openbadge_credential_type_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        import jwt as _jwt
+        payload = ob3_credential.to_jwt_payload()
+        payload['vc']['type'] = ['VerifiableCredential']  # drop OpenBadgeCredential
+        token = _jwt.encode(payload, rsa_priv_pem, algorithm='RS256')
+        with pytest.raises(OB3VerificationError, match="OpenBadgeCredential"):
+            ob3_rsa_verifier.verify(token)
+
+
 # ── extract_token_from_svg() ───────────────────────────────────────────────────
 
 class TestExtractFromSVG:

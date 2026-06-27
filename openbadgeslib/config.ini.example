@@ -21,7 +21,7 @@ smtp_port = 25
 use_ssl = False
 mail_from = no-reply@issuer.badge
 ; Uncomment this if your SMTP server needs authentication
-;login =
+;username =
 ;password =
 
 ; Configuration of the OpenBadges issuer.
@@ -44,8 +44,11 @@ verify_key  = https://www.issuer.badge/issuer/badge_1/verify_rsa_key.pem
 badge       = https://www.issuer.badge/issuer/badge_1/badge.json
 private_key = ${paths:base_key}/sign_rsa_key_1.pem
 public_key  = ${paths:base_key}/verify_rsa_key_1.pem
+; key_type selects the algorithm for openbadges-keygenerator: RSA (default) or ECC
+key_type    = RSA
 ;alignement  =
 ;tags        =
+;mail        = ${paths:base}/badge_1_mail.txt
 
 [badge_2]
 name        = Badge 2
@@ -57,6 +60,8 @@ verify_key  = https://www.issuer.badge/issuer/badge_2/verify_rsa_key.pem
 badge       = https://www.issuer.badge/issuer/badge_2/badge.json
 private_key = ${paths:base_key}/sign_rsa_key_2.pem
 public_key  = ${paths:base_key}/verify_rsa_key_2.pem
+key_type    = RSA
 ;alignement =
 ;tags       =
+;mail       = ${paths:base}/badge_2_mail.txt
 

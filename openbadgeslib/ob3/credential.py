@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 OB3_CONTEXT = [
-    "https://www.w3.org/2018/credentials/v1",
+    "https://www.w3.org/ns/credentials/v2",
     "https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json",
 ]
 
@@ -116,7 +116,7 @@ class OpenBadgeCredential:
             "type": ["VerifiableCredential", "OpenBadgeCredential"],
             "name": self.name,
             "issuer": self.issuer.to_dict(),
-            "issuanceDate": _iso(self.issuance_date),
+            "validFrom": _iso(self.issuance_date),
             "credentialSubject": {
                 "id": self.recipient_id,
                 "type": ["AchievementSubject"],
@@ -124,7 +124,7 @@ class OpenBadgeCredential:
             },
         }
         if self.expiration_date:
-            vc["expirationDate"] = _iso(self.expiration_date)
+            vc["validUntil"] = _iso(self.expiration_date)
         if self.evidence_url:
             vc["evidence"] = [{"id": self.evidence_url, "type": ["Evidence"]}]
         return vc
@@ -171,10 +171,12 @@ class OpenBadgeCredential:
             tags=ach_data.get("tag", []),
         )
 
-        issuance_date = _parse_iso(vc["issuanceDate"])
-        expiration_date = (
-            _parse_iso(vc["expirationDate"]) if "expirationDate" in vc else None
-        )
+        # Accept both VC 2.0 (validFrom/validUntil) and VC 1.1
+        # (issuanceDate/expirationDate) field names for backward compatibility.
+        issued = vc.get("validFrom") or vc.get("issuanceDate")
+        issuance_date = _parse_iso(issued) if issued else None
+        expires = vc.get("validUntil") or vc.get("expirationDate")
+        expiration_date = _parse_iso(expires) if expires else None
         evidence_url = None
         if vc.get("evidence"):
             evidence_url = vc["evidence"][0].get("id")

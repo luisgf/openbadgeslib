@@ -43,7 +43,7 @@ class Logger():
         file_path = os.path.join(base_log, file)
 
         """ Create a file handler """
-        handler = logging.FileHandler(file_path, "w",
+        handler = logging.FileHandler(file_path, "a",
                                       encoding='utf-8', delay=False)
         handler.setLevel(log_level)
         formatter = logging.Formatter("%(asctime)s %(message)s")

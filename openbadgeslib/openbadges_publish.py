@@ -77,26 +77,21 @@ def main():
         with open(revocation_file, "w", encoding='ascii') as f:
             f.write(revocation)
 
-        try:
-            badgeid = 1
+        for badge_name in conf.sections():
+            if not badge_name.startswith('badge_'):
+                continue
 
-            while conf['badge_%d' % badgeid]:
-                badge_name = 'badge_%d' % badgeid
-                badge_path = os.path.join(args.output, conf[badge_name].name)
-                badge_file = os.path.join(badge_path, 'badge.json')
+            badge_path = os.path.join(args.output, badge_name)
+            badge_file = os.path.join(badge_path, 'badge.json')
 
-                os.mkdir(badge_path)
-                with open(badge_file, "w", encoding='ascii') as f:
-                    f.write(create_badge_json(conf, badge_name))
+            os.mkdir(badge_path)
+            with open(badge_file, "w", encoding='ascii') as f:
+                f.write(create_badge_json(conf, badge_name))
 
-                """ Copy the verify keys """
-                source = conf['keys']['public']
-                destination = os.path.join(badge_path, 'verify.pem')
-                shutil.copyfile(source, destination)
-
-                badgeid += 1
-        except KeyError:
-            pass
+            """ Copy the verify key for this badge """
+            source = conf[badge_name]['public_key']
+            destination = os.path.join(badge_path, 'verify.pem')
+            shutil.copyfile(source, destination)
 
         os.umask(umask)
 

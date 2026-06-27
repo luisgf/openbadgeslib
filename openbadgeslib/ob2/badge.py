@@ -22,7 +22,6 @@
 """
 
 import os
-import sys
 from enum import Enum
 
 from Crypto.PublicKey import RSA
@@ -181,42 +180,23 @@ class Badge():
         """ Check if urls in Badge are corrects and online """
 
         error = False
-        data = None
+        checks = [
+            (self.image_url, 'OpenBadge Image'),
+            (self.criteria_url, 'OpenBadge Criteria'),
+            (self.json_url, 'OpenBadge JSon'),
+            (self.verify_key_url, 'OpenBadge Verify key'),
+        ]
 
-        try:
-            data = download_file(self.image_url)
-        except Exception:
-            pass
-        finally:
+        # 'data' is reset for every URL so a previous success can never mask a
+        # later download failure.
+        for url, label in checks:
+            data = None
+            try:
+                data = download_file(url)
+            except Exception:
+                pass
             if not data:
-                print('[!] OpenBadge Image at config file is pointing to a wrong url: %s' % self.image_url)
-                error = True
-
-        try:
-            data = download_file(self.criteria_url)
-        except Exception:
-            pass
-        finally:
-            if not data:
-                print('[!] OpenBadge Criteria at config file is pointing to a wrong url %s' % self.criteria_url)
-                error = True
-
-        try:
-            data = download_file(self.json_url)
-        except Exception:
-            pass
-        finally:
-            if not data:
-                print('[!] OpenBadge JSon at config file is pointing to a wrong url %s' % self.json_url)
-                error = True
-
-        try:
-            data = download_file(self.verify_key_url)
-        except Exception:
-            pass
-        finally:
-            if not data:
-                print('[!] OpenBadge Verify key at config file is poiting to a wrong url %s' % self.verify_key_url)
+                print('[!] %s at config file is pointing to a wrong url: %s' % (label, url))
                 error = True
 
         return error
@@ -231,10 +211,12 @@ class BadgeSigned():
         self.source = source                     # Badge source object, if exists
         self.signed = None                       # Binary signed data
         self.serial_num = serial_num
-        self.identity = identity
+        # Normalize identity/salt to bytes so the accessors are type-stable
+        # regardless of whether the caller passed str or bytes.
+        self.identity = identity.encode('utf-8') if isinstance(identity, str) else identity
         self.evidence = evidence
         self.expiration = expiration             # Timestamp
-        self.salt = salt
+        self.salt = salt.encode('utf-8') if isinstance(salt, str) else salt
         self.signed_assertion = None             # Signed Assertion
         self.issue_date = issue_date             # Timestamp
         self.assertion = assertion
@@ -268,12 +250,10 @@ class BadgeSigned():
         try:
             pubkey_pem = download_file(body['verify']['url'])
             key_type = detect_key_type(pubkey_pem)
-        except Exception:
-            pubkey_pem = None
-            key_type = None
-            print('Unable to verify OpenBadge Signature. The URL pointing to verify key doesn\'t exists.')
-            print('Url with problems: %s' % body['verify']['url'])
-            sys.exit(-1)
+        except Exception as exc:
+            raise ErrorParsingFile(
+                'Unable to verify OpenBadge: the verify key URL %s could not be '
+                'fetched (%s)' % (body['verify']['url'], exc)) from exc
 
         badge = Badge(image_url=body['image'], verify_key_url=body['verify']['url'],
                       json_url=body['badge'], key_type=key_type,
@@ -342,7 +322,9 @@ def extract_png_assertion(file_data):
 
     for tag, data in png.chunks():
         tag_str = tag.decode('ascii') if isinstance(tag, bytes) else tag
-        if tag_str == 'iTXt':
+        if tag_str == 'iTXt' and data.startswith(b'openbadges'):
             fmt_len = len(data) - 15   # 15=len('openbadges'+pack('BBBBB'))
             fmt = '<10s5B%ds' % fmt_len
             return Assertion.decode(unpack(fmt, data)[6])
+
+    raise AssertionFormatIncorrect('No OpenBadges assertion found in PNG file')

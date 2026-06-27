@@ -22,7 +22,7 @@
 """
 
 import sys
-from smtplib import SMTP_SSL, SMTP, SMTPAuthenticationError, SMTPDataError
+from smtplib import SMTP_SSL, SMTP, SMTPAuthenticationError, SMTPException
 from os.path import basename
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
@@ -79,7 +79,10 @@ class BadgeMail():
 
             smtp.sendmail(self.mail_from, badge.get_identity(), msg.as_string())
             smtp.quit()
-        except SMTPDataError as err:
+        except (SMTPException, OSError) as err:
+            # Connection refused, DNS failure, TLS mismatch, SMTP protocol
+            # errors — the badge is already signed and saved, so report the
+            # mail failure instead of crashing with a traceback.
             print('[!] Error sending mail to: %s. %s' % (badge.get_identity(), err))
 
     def get_mail_content(self, file):

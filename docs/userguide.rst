@@ -20,7 +20,9 @@ Generating a key pair
 
 Key pairs consist of a private signing key and a public verification key,
 both stored as PEM files. Pass the path to ``config.ini`` and the badge
-section number (the digit in ``[badge_1]``, ``[badge_2]``, …):
+section suffix — the part after ``badge_`` (e.g. ``1`` for ``[badge_1]``).
+The key algorithm (RSA or ECC) is taken from the badge's ``key_type`` field
+(default RSA):
 
 .. code-block:: sh
 

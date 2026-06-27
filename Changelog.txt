@@ -1,3 +1,44 @@
+* v1.0.2 - 20260618
+
+  - SECURITY: OB2 verification now uses the operator-supplied trusted key when
+    one is given, instead of always trusting the key the badge points to. A
+    forged badge can no longer self-describe its own verification key.
+
+  - SECURITY: download_file now refuses non-HTTPS URLs by default (the verify
+    key is the OB2 root of trust); pass allow_insecure=True to override.
+
+  - Fixed expiration check: a badge is now considered expired when its
+    expiration date is in the past relative to *now*, not relative to its own
+    issue date (expired badges were previously reported VALID).
+
+  - Fixed openbadges-publish: it copied no verify key and stopped after the
+    first badge (it read a non-existent [keys] section). It now reads each
+    badge's public_key and iterates all badge_* sections.
+
+  - Fixed SMTP: use_ssl is parsed as a boolean (the string 'False' was truthy);
+    connection-level mail errors are caught instead of crashing a successful
+    sign; the example config uses 'username' (matching the code), not 'login'.
+
+  - openbadges-keygenerator now honours a key_type (RSA/ECC) field in the badge
+    profile, so ECC key pairs are reachable from the CLI.
+
+  - OB2 sign log and log files are opened in append mode (were truncated on
+    every run).
+
+  - OB3 credentials use the W3C VC 2.0 data model (validFrom/validUntil,
+    /ns/credentials/v2 context); from_jwt_payload still reads VC 1.1 fields.
+    OB3Verifier.verify() gained an optional expected_recipient argument and now
+    asserts the credential type; PNG token extraction parses the iTXt chunk
+    structure instead of a fixed offset.
+
+  - Robustness: unsigned PNGs raise a clear error instead of crashing;
+    read_from_file raises instead of calling sys.exit; identity is normalised to
+    bytes; revocation handles issuers without a revocationList.
+
+  - Tests: added CLI/publish/keygenerator/mail/revocation coverage and removed
+    the coverage omit list that hid those modules; expiration tests rewritten to
+    model real timestamps.
+
 * v1.0.1 - 20260422
 
   - OpenBadges 3.0 support (W3C Verifiable Credentials / JWT-VC):
@@ -25,8 +66,9 @@
     algorithm classes (RS256/384/512, ES256/384/512). Internal module
     moved to openbadgeslib/_jws/. Old 3dparty/ directory removed.
 
-  - TLS security fix: download_file now uses ssl.create_default_context()
-    instead of the deprecated PROTOCOL_TLSv1 / CERT_NONE settings.
+  - TLS security fix: download_file relies on urllib's default TLS context
+    (certificate validation on) instead of the deprecated PROTOCOL_TLSv1 /
+    CERT_NONE settings.
 
   - pypng API update: signature constant renamed, chunk tags now bytes.
 

@@ -34,7 +34,7 @@ import os.path
 import sys
 
 from .logs import Logger
-from .keys import KeyFactory
+from .keys import KeyFactory, KeyType
 from .errors import KeyGenExceptions
 from .confparser import ConfParser
 from .util import __version__
@@ -48,8 +48,10 @@ def main():
     parser.add_argument('-c', '--config', default='config.ini',
                         help='Specify the config.ini file to use')
     parser.add_argument('-g', '--genkey', metavar='BADGE',
-                        help=('Generate a new Key pair '
-                              'for the specified Badge. Key type is taken from profile.'))
+                        help=("Generate a new key pair for the badge section "
+                              "[badge_<BADGE>] (the suffix after 'badge_'). "
+                              "Key type (RSA/ECC) is taken from the badge's "
+                              "key_type field; default RSA."))
     parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
                         metavar='VERSION',
                         help='OpenBadges specification version to use: 2 (default) or 3. '
@@ -72,6 +74,16 @@ def main():
             private_key = conf[badge]['private_key']
             public_key = conf[badge]['public_key']
 
+            # Key type comes from the badge profile (default RSA).
+            key_type_name = conf[badge].get('key_type', 'RSA').strip().upper()
+            if key_type_name == 'ECC':
+                key_type = KeyType.ECC
+            elif key_type_name == 'RSA':
+                key_type = KeyType.RSA
+            else:
+                sys.exit("Unknown key_type %r for badge '%s' (use RSA or ECC)"
+                         % (key_type_name, args.genkey))
+
             for i in (private_key, public_key):
                 if os.path.exists(i):
                     print('[!] Key file is present at %s' % i)
@@ -82,10 +94,10 @@ def main():
                          signer=conf['logs']['signer'])
 
             try:
-                log.console.info("Generating OpenBadges %s key pair for issuer '%s'"
-                                 % (args.ob_version, conf['issuer']['name']))
+                log.console.info("Generating OpenBadges %s %s key pair for issuer '%s'"
+                                 % (args.ob_version, key_type.name, conf['issuer']['name']))
 
-                kf = KeyFactory()
+                kf = KeyFactory(key_type)
                 priv_key_pem, pub_key_pem = kf.generate_keypair()
 
                 with open(private_key, 'wb') as f:

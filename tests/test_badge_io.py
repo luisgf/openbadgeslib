@@ -66,10 +66,11 @@ class TestExtractPNGAssertion:
         assertion = extract_png_assertion(signed_png_ecc.signed)
         assert isinstance(assertion, Assertion)
 
-    def test_returns_none_for_unsigned_png(self, png_image):
-        # Unsigned PNG has no iTXt chunk → returns None
-        result = extract_png_assertion(png_image)
-        assert result is None
+    def test_unsigned_png_raises(self, png_image):
+        # Unsigned PNG has no openbadges iTXt chunk → clean error, not None.
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        with pytest.raises(AssertionFormatIncorrect):
+            extract_png_assertion(png_image)
 
 
 class TestBadgeSignedReadFromFile:

@@ -9,7 +9,7 @@ isolated and avoids conflicts with other packages.
 Requirements
 ------------
 
-* **Python >= 3.10** (tested on 3.10, 3.11, 3.12, and 3.14)
+* **Python >= 3.10** (tested on 3.10, 3.11, and 3.12)
 * A web server (:term:`Apache`, :term:`Nginx`, or :term:`IIS`) and a valid
   TLS certificate if you intend to publish badge metadata online
 
@@ -139,6 +139,7 @@ Sample config.ini
     badge       = https://badges.example.com/badge_1/badge.json
     private_key = ${paths:base_key}/sign_rsa_key_1.pem
     public_key  = ${paths:base_key}/verify_rsa_key_1.pem
+    key_type    = RSA              ; RSA (default) or ECC
 
 .. note::
 

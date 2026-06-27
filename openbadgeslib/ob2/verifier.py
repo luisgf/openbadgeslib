@@ -43,13 +43,14 @@ class VerifyInfo():
 class Verifier():
     def __init__(self, verify_key=None, identity=None):
         self.verify_key = verify_key
-        self.identity = identity.encode('utf-8')
+        self.identity = identity.encode('utf-8') if identity is not None else None
+        self.key_type = None
 
         if self.verify_key:
             self.key_type = detect_key_type(self.verify_key)
 
     def get_identity(self):
-        return self.identity.decode('utf-8')
+        return self.identity.decode('utf-8') if self.identity is not None else None
 
     def get_badge_status(self, badge):
 
@@ -89,42 +90,55 @@ class Verifier():
         return VerifyInfo(BadgeStatus.VALID, 'OK')
 
     def check_jws_signature(self, badge):
+        # Verify against the operator-supplied trusted key when present, falling
+        # back to the key the badge itself points to only when no trusted key
+        # was given. Trusting solely badge.source.pub_key (downloaded from a URL
+        # inside the untrusted badge) would let an attacker self-sign forgeries.
+        verify_key = self.verify_key if self.verify_key is not None else badge.source.pub_key
         try:
-            jws_verify_block(badge.assertion.get_assertion(), badge.source.pub_key)
+            jws_verify_block(badge.assertion.get_assertion(), verify_key)
             return VerifyInfo(BadgeStatus.VALID, 'OK')
         except JWS_SignatureError as err:
             return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, str(err))
 
     def check_revocation(self, badge):
-        """ Return true if the badge has been revoked """
+        """ Return the revocation reason if the badge has been revoked, else None """
 
-        serial_num = badge.serial_num
+        serial_num = str(badge.serial_num)
+        json_url = badge.source.json_url
 
-        badge_json = download_file(badge.source.json_url)
+        badge_json = download_file(json_url)
         if not badge_json:
-            raise AssertionFormatIncorrect('Badge JSON doesn\'t exists %s' % badge.source.json_url)
+            raise AssertionFormatIncorrect('Badge JSON doesn\'t exists %s' % json_url)
         try:
-            badge = jws_utils.from_json(badge_json)
+            badge_obj = jws_utils.from_json(badge_json)
         except Exception:
-            raise AssertionFormatIncorrect("Badge JSON format incorrect at %s" % badge.source.json_url)
+            raise AssertionFormatIncorrect("Badge JSON format incorrect at %s" % json_url)
 
-        issuer_json = download_file(badge['issuer'])
+        issuer_json = download_file(badge_obj['issuer'])
         issuer = jws_utils.from_json(issuer_json)
 
-        revocation_json = download_file(issuer['revocationList'])
-        revocation = jws_utils.from_json(revocation_json)
+        # revocationList is optional in OpenBadges 2.0; its absence means the
+        # issuer publishes no revocations, so the badge is simply not revoked.
+        revocation_url = issuer.get('revocationList')
+        if not revocation_url:
+            return None
+
+        revocation = jws_utils.from_json(download_file(revocation_url))
 
         if revocation:
             for badge_id in revocation:
-                if badge_id == serial_num:
+                if str(badge_id) == serial_num:
                     return revocation[badge_id]
 
         return None
 
     def check_expiration(self, badge):
-        from time import gmtime, strftime
+        from time import time, gmtime, strftime
 
-        if badge.expiration < badge.issue_date:
+        # A badge is expired when its expiration timestamp is in the past
+        # relative to *now* — not relative to its own issue date.
+        if badge.expiration < time():
             return "%s" % strftime("%a, %d %b %Y %H:%M:%S +0000",
                                    gmtime(badge.expiration))
         else:

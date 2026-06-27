@@ -140,16 +140,24 @@ class TestOpenBadgeCredential:
 
     def test_to_vc_issuance_date_format(self):
         vc = _make_credential().to_vc()
-        assert vc['issuanceDate'] == '2026-01-01T00:00:00Z'
+        assert vc['validFrom'] == '2026-01-01T00:00:00Z'
 
     def test_to_vc_expiration_date_included_when_set(self):
         exp = datetime(2030, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
         vc = _make_credential(expiration_date=exp).to_vc()
-        assert vc['expirationDate'] == '2030-12-31T23:59:59Z'
+        assert vc['validUntil'] == '2030-12-31T23:59:59Z'
 
     def test_to_vc_expiration_omitted_when_none(self):
         vc = _make_credential().to_vc()
-        assert 'expirationDate' not in vc
+        assert 'validUntil' not in vc
+
+    def test_from_jwt_payload_accepts_legacy_vc11_fields(self):
+        # Backward compat: a VC 1.1 credential (issuanceDate/expirationDate)
+        # must still be readable.
+        payload = _make_credential().to_jwt_payload()
+        payload['vc']['issuanceDate'] = payload['vc'].pop('validFrom')
+        restored = OpenBadgeCredential.from_jwt_payload(payload)
+        assert restored.issuance_date == datetime(2026, 1, 1, tzinfo=timezone.utc)
 
     def test_to_vc_evidence_included_when_set(self):
         vc = _make_credential(evidence_url='https://example.com/proof').to_vc()

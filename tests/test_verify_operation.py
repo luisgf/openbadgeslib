@@ -77,18 +77,22 @@ class TestCheckExpiration:
     def test_not_expired_returns_none(self, badge_for_verify_rsa):
         badge, identity = badge_for_verify_rsa
         v = Verifier(identity=identity)
-        # Make badge appear not expired: expiration > issuedOn
-        badge.expiration = int(time.time()) + 10000
-        badge.issue_date = int(time.time())
+        # Expiration in the future relative to now → not expired.
+        now = int(time.time())
+        badge.issue_date = now - 10000
+        badge.expiration = now + 10000
         result = v.check_expiration(badge)
         assert result is None
 
     def test_expired_returns_date_string(self, badge_for_verify_rsa):
         badge, identity = badge_for_verify_rsa
         v = Verifier(identity=identity)
-        # expiration < issuedOn → counts as expired in current logic
-        badge.expiration = 1000
-        badge.issue_date = 2000
+        # Realistic expired badge: issued in the past, expired in the past, but
+        # expiration AFTER issuance. This must be detected as expired (it would
+        # NOT be under the old expiration<issue_date logic).
+        now = int(time.time())
+        badge.issue_date = now - 20000
+        badge.expiration = now - 10000
         result = v.check_expiration(badge)
         assert result is not None
         assert isinstance(result, str)
@@ -126,20 +130,74 @@ class TestGetBadgeStatus:
             result = v.get_badge_status(badge)
         assert result.status is BadgeStatus.IDENTITY_ERROR
 
+    def test_verifier_without_identity_does_not_crash(self, badge_for_verify_rsa):
+        # Verifier(identity=None) must construct cleanly (identity only needed
+        # for check_identity), rather than raising on None.encode().
+        v = Verifier(identity=None)
+        assert v.get_identity() is None
+        assert v.check_jws_signature(badge_for_verify_rsa[0]).status is BadgeStatus.VALID
+
+    def test_trusted_key_is_used_for_verification(self, badge_for_verify_rsa, ecc_pub_pem):
+        # Supplying a non-matching trusted verify_key must fail verification,
+        # proving the operator key (not the badge-embedded key) is used.
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(verify_key=ecc_pub_pem, identity=identity)
+        assert v.check_jws_signature(badge).status is BadgeStatus.SIGNATURE_ERROR
+
     def test_expired_badge_returns_expired(self, badge_for_verify_rsa):
         badge, identity = badge_for_verify_rsa
         v = Verifier(identity=identity)
-        badge.expiration = 1000
-        badge.issue_date = 2000
+        now = int(time.time())
+        badge.issue_date = now - 20000
+        badge.expiration = now - 10000
         with patch.object(v, 'check_revocation', return_value=None):
             result = v.get_badge_status(badge)
         assert result.status is BadgeStatus.EXPIRED
 
 
-class check_verifier_factory(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        # Verifier requires an identity string; omitting it causes AttributeError.
-        # This class exists as a placeholder; real tests are in pytest classes above.
-        pass
+class TestCheckRevocation:
+    """Exercise the real check_revocation network/JSON chaining (mocked I/O)."""
+
+    @staticmethod
+    def _fake_download(badge, badge_json, issuer_json, revocation_json):
+        import json as _json
+
+        def fake_download(url, *a, **k):
+            if url == badge.source.json_url:
+                return _json.dumps(badge_json).encode()
+            if url == badge_json['issuer']:
+                return _json.dumps(issuer_json).encode()
+            if url == issuer_json.get('revocationList'):
+                return _json.dumps(revocation_json).encode()
+            raise AssertionError('unexpected url %s' % url)
+        return fake_download
+
+    def test_revoked_serial_returns_reason(self, badge_for_verify_rsa):
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        badge_json = {'issuer': 'https://example.com/issuer.json'}
+        issuer_json = {'revocationList': 'https://example.com/revoked.json'}
+        revocation_json = {str(badge.serial_num): 'Mistake'}
+        with patch('openbadgeslib.ob2.verifier.download_file',
+                   side_effect=self._fake_download(badge, badge_json, issuer_json, revocation_json)):
+            assert v.check_revocation(badge) == 'Mistake'
+
+    def test_not_revoked_returns_none(self, badge_for_verify_rsa):
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        badge_json = {'issuer': 'https://example.com/issuer.json'}
+        issuer_json = {'revocationList': 'https://example.com/revoked.json'}
+        revocation_json = {'some-other-serial': 'Mistake'}
+        with patch('openbadgeslib.ob2.verifier.download_file',
+                   side_effect=self._fake_download(badge, badge_json, issuer_json, revocation_json)):
+            assert v.check_revocation(badge) is None
+
+    def test_missing_revocation_list_is_not_revoked(self, badge_for_verify_rsa):
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        badge_json = {'issuer': 'https://example.com/issuer.json'}
+        issuer_json = {}  # no revocationList key — must be treated as not revoked
+        with patch('openbadgeslib.ob2.verifier.download_file',
+                   side_effect=self._fake_download(badge, badge_json, issuer_json, {})):
+            assert v.check_revocation(badge) is None
 

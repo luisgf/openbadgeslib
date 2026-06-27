@@ -97,9 +97,14 @@ class TestDownloadFile:
         out = capsys.readouterr().out
         assert 'Warning' not in out
 
-    def test_http_url_prints_warning(self, capsys):
-        with patch('openbadgeslib.util.request.urlopen', return_value=self._mock_urlopen()):
+    def test_http_url_rejected_by_default(self):
+        # HTTP is refused: the verify key is the root of trust.
+        with pytest.raises(ValueError):
             download_file('http://example.com/file.pem')
+
+    def test_http_url_allowed_with_flag_prints_warning(self, capsys):
+        with patch('openbadgeslib.util.request.urlopen', return_value=self._mock_urlopen()):
+            download_file('http://example.com/file.pem', allow_insecure=True)
         out = capsys.readouterr().out
         assert 'Warning' in out
 

@@ -110,8 +110,9 @@ def _verify_ob2(args):
         else:
             print('[-] ', check.msg)
 
-    except VerifierExceptions:
-        raise
+    except VerifierExceptions as exc:
+        print('[-] %s' % exc)
+        sys.exit(-1)
 
 
 def _verify_ob3(args):

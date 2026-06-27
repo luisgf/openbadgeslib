@@ -58,11 +58,6 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 source = ["openbadgeslib"]
-omit = [
-    "openbadgeslib/openbadges_*.py",
-    "openbadgeslib/mail.py",
-    "openbadgeslib/logs.py",
-]
 
 [tool.coverage.report]
 show_missing = true

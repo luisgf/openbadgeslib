@@ -131,7 +131,7 @@ def _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence):
             % (datetime.today().isoformat(), badge,
                badge_signed.get_identity(), badge_signed.get_serial_num())
 
-        with open(sign_log, 'w') as file:
+        with open(sign_log, 'a') as file:
             file.write(msg)
 
         badge_signed.save_to_file(badge_file_out)
@@ -139,7 +139,8 @@ def _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence):
         if bool(args.mail_badge):
             server = conf['smtp']['smtp_server']
             port = conf['smtp']['smtp_port']
-            use_ssl = conf['smtp']['use_ssl']
+            # configparser stores everything as strings; 'False' would be truthy.
+            use_ssl = conf['smtp'].getboolean('use_ssl')
             mail_from = conf['smtp']['mail_from']
             username = conf['smtp'].get('username')
             password = conf['smtp'].get('password')

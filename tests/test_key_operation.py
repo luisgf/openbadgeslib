@@ -29,7 +29,7 @@ class check_key_factory(unittest.TestCase) :
 class checkKeysBase :
     @classmethod
     def setUpClass(cls) :
-        cls.config = ConfParser().read_conf()
+        cls.config = ConfParser('./config1.ini').read_conf()
         cls.key = cls._KEY()
         cls.key._TEST_private_key_pem, cls.key._TEST_public_key_pem = cls.key.generate_keypair()
 
