@@ -158,6 +158,39 @@ class TestOB3VerifierVerify:
         from openbadgeslib.errors import LibOpenBadgesException
         assert issubclass(OB3VerificationError, LibOpenBadgesException)
 
+    # ── malformed (but validly-signed) vc payloads are rejected with a clear
+    #    message, not a raw KeyError/TypeError ───────────────────────────────
+    def _signed_with_vc(self, rsa_priv_pem, ob3_credential, mutate):
+        import jwt as _jwt
+        payload = ob3_credential.to_jwt_payload()
+        mutate(payload)
+        return _jwt.encode(payload, rsa_priv_pem, algorithm='RS256')
+
+    def test_missing_issuer_id_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
+                                     lambda p: p['vc']['issuer'].pop('id'))
+        with pytest.raises(OB3VerificationError, match="vc.issuer.id"):
+            ob3_rsa_verifier.verify(token)
+
+    def test_missing_achievement_name_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        def mutate(p):
+            p['vc']['credentialSubject']['achievement'].pop('name')
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential, mutate)
+        with pytest.raises(OB3VerificationError, match="achievement.name"):
+            ob3_rsa_verifier.verify(token)
+
+    def test_issuer_not_an_object_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
+                                     lambda p: p['vc'].__setitem__('issuer', 'https://e/issuer'))
+        with pytest.raises(OB3VerificationError, match="must be a JSON object"):
+            ob3_rsa_verifier.verify(token)
+
+    def test_malformed_date_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
+                                     lambda p: p['vc'].__setitem__('validFrom', 'not-a-date'))
+        with pytest.raises(OB3VerificationError, match="ISO 8601"):
+            ob3_rsa_verifier.verify(token)
+
 
 class TestOB3VerifierRecipientBinding:
     def test_matching_expected_recipient_ok(self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential):

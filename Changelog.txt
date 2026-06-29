@@ -4,6 +4,16 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* Unreleased
+
+  - SECURITY: harden OB3 JWT-VC parsing. OpenBadgeCredential.from_jwt_payload
+    now validates the structure of the untrusted "vc" claim explicitly (every
+    required object/field is checked, dates must be valid ISO 8601,
+    credentialSubject may be an object or non-empty array) and raises a clear
+    OB3VerificationError naming the offending field instead of surfacing a raw
+    KeyError/TypeError.
+
+
 * v1.1.3 - 2026-06-29
 
   - Typing: the package now ships a py.typed marker (PEP 561) and is fully

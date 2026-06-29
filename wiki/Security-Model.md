@@ -126,6 +126,8 @@ if sub is not None and sub != (vc.get("credentialSubject") or {}).get("id"):
 
 It also requires the `vc` claim to be present and to carry the `OpenBadgeCredential` type, so an OB2 JWS token (which has no `vc` claim) is rejected with a clear message rather than misinterpreted.
 
+Beyond the claim cross-checks, the `vc` body itself is untrusted input, so `from_jwt_payload` validates its **structure** explicitly: every required object (`issuer`, `credentialSubject`, `achievement`) must be a JSON object, the required identity fields (`vc.id`, `issuer.id`, `credentialSubject.id`, `achievement.id`/`name`) must be present and non-empty, dates must be valid ISO 8601, and `credentialSubject` may be a single object or a non-empty array. A malformed credential is rejected with an `OB3VerificationError` that names the offending field, never a raw `KeyError`/`TypeError`.
+
 ## What the signature binds — the assertion, not the image
 
 The signature covers the **assertion / credential** (recipient, achievement, issuer, dates, URLs), **not the bytes of the carrier image**. This is by design in OpenBadges: the embedded assertion is the canonical, verifiable artifact, and a correct consumer reads and validates those signed fields — it does not trust the surrounding pixels.

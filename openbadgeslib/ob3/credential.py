@@ -23,7 +23,7 @@
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, List, Optional
 
 OB3_CONTEXT = [
     "https://www.w3.org/ns/credentials/v2",
@@ -150,25 +150,39 @@ class OpenBadgeCredential:
 
     @classmethod
     def from_jwt_payload(cls, payload: dict) -> "OpenBadgeCredential":
-        """Reconstruct an OpenBadgeCredential from a decoded JWT payload."""
-        vc = payload["vc"]
+        """Reconstruct an OpenBadgeCredential from a decoded JWT payload.
 
-        issuer_data = vc["issuer"]
+        The ``vc`` claim is untrusted input, so its structure is validated
+        explicitly: every required object/field is checked and a clear
+        ``ValueError`` is raised on anything missing or malformed (the OB3
+        verifier wraps these as ``OB3VerificationError``).
+        """
+        vc = _as_dict(payload.get("vc"), "vc")
+
+        issuer_data = _as_dict(vc.get("issuer"), "vc.issuer")
         issuer = Issuer(
-            id=issuer_data["id"],
+            id=_require(issuer_data, "id", "vc.issuer"),
             name=issuer_data.get("name", ""),
             url=issuer_data.get("url"),
             email=issuer_data.get("email"),
-            image_url=(issuer_data.get("image") or {}).get("id"),
+            image_url=_as_dict_or_empty(issuer_data.get("image")).get("id"),
         )
 
-        subj = vc["credentialSubject"]
-        ach_data = subj["achievement"]
-        criteria = ach_data.get("criteria") or {}
-        image = ach_data.get("image") or {}
+        # credentialSubject may be a single object or a (non-empty) array.
+        subj_raw = vc.get("credentialSubject")
+        if isinstance(subj_raw, list):
+            if not subj_raw:
+                raise ValueError("vc.credentialSubject must not be empty")
+            subj_raw = subj_raw[0]
+        subj = _as_dict(subj_raw, "vc.credentialSubject")
+
+        ach_data = _as_dict(subj.get("achievement"),
+                            "vc.credentialSubject.achievement")
+        criteria = _as_dict_or_empty(ach_data.get("criteria"))
+        image = _as_dict_or_empty(ach_data.get("image"))
         achievement = Achievement(
-            id=ach_data["id"],
-            name=ach_data["name"],
+            id=_require(ach_data, "id", "vc.credentialSubject.achievement"),
+            name=_require(ach_data, "name", "vc.credentialSubject.achievement"),
             description=ach_data.get("description", ""),
             criteria_narrative=criteria.get("narrative", ""),
             image_url=image.get("id"),
@@ -178,23 +192,54 @@ class OpenBadgeCredential:
         # Accept both VC 2.0 (validFrom/validUntil) and VC 1.1
         # (issuanceDate/expirationDate) field names for backward compatibility.
         issued = vc.get("validFrom") or vc.get("issuanceDate")
-        issuance_date = _parse_iso(issued) if issued else None
+        issuance_date = _parse_date(issued, "vc.validFrom") if issued else None
         expires = vc.get("validUntil") or vc.get("expirationDate")
-        expiration_date = _parse_iso(expires) if expires else None
+        expiration_date = _parse_date(expires, "vc.validUntil") if expires else None
+
         evidence_url = None
-        if vc.get("evidence"):
-            evidence_url = vc["evidence"][0].get("id")
+        evidence = vc.get("evidence")
+        if isinstance(evidence, list) and evidence and isinstance(evidence[0], dict):
+            evidence_url = evidence[0].get("id")
 
         return cls(
-            id=vc["id"],
+            id=_require(vc, "id", "vc"),
             issuer=issuer,
-            recipient_id=subj["id"],
+            recipient_id=_require(subj, "id", "vc.credentialSubject"),
             achievement=achievement,
             name=vc.get("name"),
             issuance_date=issuance_date,
             expiration_date=expiration_date,
             evidence_url=evidence_url,
         )
+
+
+def _as_dict(value: Any, where: str) -> dict:
+    """Return value if it is a dict, else raise a clear ValueError."""
+    if not isinstance(value, dict):
+        raise ValueError("%s must be a JSON object" % where)
+    return value
+
+
+def _as_dict_or_empty(value: Any) -> dict:
+    """Return value if it is a dict, else an empty dict (optional sub-objects)."""
+    return value if isinstance(value, dict) else {}
+
+
+def _require(data: dict, key: str, where: str) -> Any:
+    """Return data[key], raising a clear ValueError if missing or empty."""
+    value = data.get(key)
+    if value is None or value == "":
+        raise ValueError("missing required field %s.%s" % (where, key))
+    return value
+
+
+def _parse_date(value: Any, where: str) -> datetime:
+    """Parse an ISO 8601 date, raising a clear ValueError naming the field."""
+    try:
+        return _parse_iso(value)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(
+            "invalid ISO 8601 date in %s: %r" % (where, value)) from exc
 
 
 def _parse_iso(s: str) -> datetime:
