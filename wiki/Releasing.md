@@ -3,10 +3,9 @@ How to cut a new `openbadgeslib` release: bump the version in the source, update
 ## Where the version lives
 
 The version is **single-sourced** from `openbadgeslib/util.py` (`__version__`).
-`pyproject.toml` reads it dynamically (`[tool.setuptools.dynamic]`) and
-`docs/conf.py` parses the same file, so you only ever edit one place. The
-`test_version_is_single_sourced` test fails CI if a static version is
-reintroduced.
+`pyproject.toml` reads it dynamically (`[tool.setuptools.dynamic]`), so you only
+ever edit one place. The `test_version_is_single_sourced` test fails CI if a
+static version is reintroduced.
 
 ## Release steps
 

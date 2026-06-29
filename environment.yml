@@ -16,11 +16,8 @@ dependencies:
   - pytest>=8.0
   - pytest-cov>=5.0
 
-  # Documentation (optional)
-  - sphinx>=7
-  - sphinx_rtd_theme
-
-  # Install the library itself in editable mode
+  # Install the library itself in editable mode (with the dev extras:
+  # flake8, mypy, pdoc — the docs are the GitHub Wiki + a pdoc API site).
   - pip
   - pip:
-    - -e .
+    - -e ".[dev]"
