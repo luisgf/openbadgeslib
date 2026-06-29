@@ -42,6 +42,7 @@ dev = [
     "flake8>=7.0",
     "pdoc>=14",
     "mypy>=1.8",
+    "gitlint>=0.19",
 ]
 
 [project.urls]

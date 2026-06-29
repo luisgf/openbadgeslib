@@ -1,0 +1,22 @@
+# Commit message convention for openbadgeslib, enforced in CI by gitlint.
+# See the "Commit messages" section of the Contributing wiki page for the
+# rationale and the full type vocabulary.
+#
+# Format:  type(optional-scope)!: subject
+#   changelog-worthy types: feat, fix, security, perf
+#   silent types:           docs, chore, ci, test, refactor, build, style, release
+#   "!" or a "BREAKING CHANGE:" body trailer marks a breaking change.
+
+[general]
+# A short chore/ci/release commit does not need a body.
+ignore=body-is-missing
+# Merge / revert / fixup / squash commits are ignored by gitlint's defaults.
+
+[title-match-regex]
+regex=^(feat|fix|security|perf|docs|chore|ci|test|refactor|build|style|release)(\([a-z0-9.-]+\))?!?: .+
+
+[title-max-length]
+line-length=80
+
+[body-max-line-length]
+line-length=80

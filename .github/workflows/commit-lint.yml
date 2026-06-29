@@ -1,0 +1,35 @@
+name: Commit lint
+
+# Enforces the commit-message convention (see the Contributing wiki page) with
+# gitlint. Runs on pushes to master (the maintainer's trunk-based flow) and on
+# pull requests (contributors). Only the new commits in the range are linted,
+# never the whole history, so pre-convention commits are never re-flagged.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  commit-lint:
+    name: Lint commit messages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # need the full range to lint commits
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "gitlint==0.19.1"
+      - name: Lint commit messages
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            range="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            range="HEAD~1..HEAD"   # new branch / first push: lint the tip commit
+          else
+            range="${{ github.event.before }}..${{ github.sha }}"
+          fi
+          echo "Linting commit range: $range"
+          gitlint --commits "$range"
