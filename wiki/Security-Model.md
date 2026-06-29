@@ -110,7 +110,7 @@ Note the trust implication: revocation is fetched from the **issuer's host** ove
 
 The signature does not, by itself, bind a badge to a particular recipient — you must request that check explicitly, otherwise it is skipped (not silently failed).
 
-- **OB2:** pass `-i / --identity` (an email). `check_identity` recomputes `sha256$ + hash_email(identity, salt)` and compares it to the badge's identity hash; on mismatch the status is `IDENTITY_ERROR`. With no identity given, the recipient check is skipped.
+- **OB2:** pass `-r / --receptor` (an email). `check_identity` recomputes `sha256$ + hash_email(identity, salt)` and compares it to the badge's identity hash; on mismatch the status is `IDENTITY_ERROR`. With no identity given, the recipient check is skipped.
 - **OB3:** pass `expected_recipient` to `OB3Verifier.verify()`. It is normalised (a bare email gains a `mailto:` scheme, a DID is left untouched) and compared to `credentialSubject.id`. If you do not pass it, *you* must compare `credential.recipient_id` yourself.
 
 ### OB3 cross-checks the JWT claims against the credential
@@ -138,7 +138,7 @@ Binding the signature to the image bytes (e.g. hashing the pixels into the paylo
 
 - **Always supply a trusted key** (`--local` or `--pubkey`) when you need a real positive verdict. Treat a `[~]` "internally consistent only" result as *unverified provenance*, never as proof of issuer identity.
 - **Obtain the issuer's public key out of band** (a channel you trust), not from the badge.
-- **Pass the recipient** (`-i` for OB2, `expected_recipient` for OB3) whenever the badge is meant for a specific person; otherwise the binding is your responsibility.
+- **Pass the recipient** (`-r` for OB2, `expected_recipient` for OB3) whenever the badge is meant for a specific person; otherwise the binding is your responsibility.
 - **Keep `allow_insecure` off.** Do not downgrade downloads to plain HTTP.
 - **Trust revocation only as far as you trust the issuer host** that serves the `revocationList`.
 

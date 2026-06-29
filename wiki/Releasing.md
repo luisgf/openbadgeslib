@@ -32,11 +32,12 @@ Replace `X.Y.Z` with the new version throughout.
    `README.md` links to `Changelog.txt` rather than duplicating it, so there is
    nothing to mirror there.
 
-3. **Run the checks locally** before tagging — CI runs the same `flake8` + `pytest` gate (see [[Contributing]]):
+3. **Run the checks locally** before tagging — CI runs the same `flake8` + `mypy` + `pytest` gate (see [[Contributing]]):
 
    ```bash
    pip install -e ".[dev]"
    flake8 openbadgeslib tests
+   mypy
    pytest --cov=openbadgeslib --cov-report=term-missing
    ```
 
@@ -65,7 +66,7 @@ Replace `X.Y.Z` with the new version throughout.
 
 The workflow is `.github/workflows/ci.yml`. It has two jobs:
 
-- **test** runs on every `push` to `master` and every pull request, across the Python `3.10`, `3.11`, `3.12`, and `3.13` matrix (`fail-fast: false`). Each leg installs `".[dev]"`, runs `flake8 openbadgeslib tests`, then `pytest --cov`.
+- **test** runs on every `push` to `master` and every pull request, across the Python `3.10`, `3.11`, `3.12`, and `3.13` matrix (`fail-fast: false`). Each leg installs `".[dev]"`, runs `flake8 openbadgeslib tests`, then `mypy`, then `pytest --cov`.
 - **publish** runs when a GitHub Release is *published* **or** the workflow is
   triggered manually (`workflow_dispatch`), and `needs: test`, so it runs
   **only if the whole test matrix passed**. It builds the sdist and wheel with

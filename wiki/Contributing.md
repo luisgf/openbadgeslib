@@ -2,7 +2,7 @@ Developer guide for hacking on **openbadgeslib**. It covers setting up an editab
 
 ## Getting started
 
-Clone the repository, create a virtual environment, and install the package in editable mode together with the dev extras (`pytest`, `pytest-cov`, `flake8`):
+Clone the repository, create a virtual environment, and install the package in editable mode together with the dev extras (`pytest`, `pytest-cov`, `flake8`, `mypy`, `pdoc`):
 
 ```sh
 git clone https://github.com/luisgf/openbadgeslib
@@ -67,10 +67,14 @@ openbadgeslib/
     badge.py             backward-compat shim -> ob2.badge
     signer.py            backward-compat shim -> ob2.signer
     verifier.py          backward-compat shim -> ob2.verifier
+    baking.py            shared SVG/PNG token baking + extraction (OB2 + OB3)
     confparser.py        INI config file reader
     errors.py            custom exception hierarchy
     keys.py              KeyRSA, KeyECC, KeyFactory, detect_key_type
+    logs.py              logging setup (file + console, debug toggle)
+    mail.py              BadgeMail: email a signed badge over SMTP
     util.py              hash helpers, download_file, __version__
+    py.typed             PEP 561 marker (the package is typed)
     _jws/                JWS engine (sign / verify_block) backed by PyJWT
     ob2/                 OB 2.0: Badge, BadgeSigned, Assertion, Signer, Verifier
     ob3/                 OB 3.0: Issuer, Achievement, OpenBadgeCredential,
@@ -87,7 +91,7 @@ tests/
     runtests.sh          wrapper that runs python3 -m pytest
 ```
 
-Note: `baking.py` (SVG/PNG embedding) is part of the OB2 implementation; image baking lives alongside the signers in `ob2/` and `ob3/`. The OB2 implementation lives in `ob2/`; the top-level `badge.py`, `signer.py`, and `verifier.py` are one-line re-export shims that keep imports like `from openbadgeslib.badge import Badge` working. New code should prefer `from openbadgeslib.ob2 import ...`. For the difference between the two formats see [[OB2 vs OB3]], and for the public interfaces see [[Python API OB2]] and [[Python API OB3]].
+Note: `baking.py` is a single shared top-level module (`openbadgeslib.baking`) that embeds/extracts the token in the SVG/PNG carrier; both the OB2 and OB3 signers/verifiers call it. The OB2 implementation lives in `ob2/`; the top-level `badge.py`, `signer.py`, and `verifier.py` are one-line re-export shims that keep imports like `from openbadgeslib.badge import Badge` working. New code should prefer `from openbadgeslib.ob2 import ...`. For the difference between the two formats see [[OB2 vs OB3]], and for the public interfaces see [[Python API OB2]] and [[Python API OB3]].
 
 ## Continuous integration
 

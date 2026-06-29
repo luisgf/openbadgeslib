@@ -1,4 +1,4 @@
-This page covers installing **openbadgeslib** 1.1.1 with pip or conda, including a development setup. Once installed, head to [[Quick Start]] to sign your first badge and [[Configuration]] for the `config.ini` reference.
+This page covers installing **openbadgeslib** with pip or conda, including a development setup. Once installed, head to [[Quick Start]] to sign your first badge and [[Configuration]] for the `config.ini` reference.
 
 ## Requirements
 
@@ -47,7 +47,7 @@ cd openbadgeslib
 pip install -e ".[dev]"
 ```
 
-The `[dev]` extra installs `pytest>=8.0`, `pytest-cov>=5.0`, and `flake8>=7.0`.
+The `[dev]` extra installs `pytest>=8.0`, `pytest-cov>=5.0`, `flake8>=7.0`, `mypy>=1.8`, and `pdoc>=14`.
 
 ## Install with conda
 

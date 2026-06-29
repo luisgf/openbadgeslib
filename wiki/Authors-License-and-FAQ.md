@@ -1,4 +1,4 @@
-Credits, licensing terms, and answers to the questions that come up most often when signing and verifying badges with openbadgeslib 1.1.1. Start at [[Home]] for the full table of contents.
+Credits, licensing terms, and answers to the questions that come up most often when signing and verifying badges with openbadgeslib. Start at [[Home]] for the full table of contents.
 
 ## Authors and Credits
 
