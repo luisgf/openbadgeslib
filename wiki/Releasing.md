@@ -31,6 +31,13 @@ Replace `X.Y.Z` with the new version throughout.
    `README.md` links to `Changelog.txt` rather than duplicating it, so there is
    nothing to mirror there.
 
+   The entry is **curated by hand** for now, but the commit history is the
+   source material: commits follow the convention in [[Contributing]], so
+   `git log --pretty='%s%n%b' vX.Y.Z..HEAD` lists the changelog-worthy changes
+   (`feat`/`fix`/`security`/`perf`), and a `Changelog:` trailer on a commit
+   carries the polished wording to copy. This keeps a future auto-generator a
+   small step away without locking it in now.
+
 3. **Run the checks locally** before tagging — CI runs the same `flake8` + `mypy` + `pytest` gate (see [[Contributing]]):
 
    ```bash

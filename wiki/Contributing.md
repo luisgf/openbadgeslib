@@ -2,7 +2,7 @@ Developer guide for hacking on **openbadgeslib**. It covers setting up an editab
 
 ## Getting started
 
-Clone the repository, create a virtual environment, and install the package in editable mode together with the dev extras (`pytest`, `pytest-cov`, `flake8`, `mypy`, `pdoc`):
+Clone the repository, create a virtual environment, and install the package in editable mode together with the dev extras (`pytest`, `pytest-cov`, `flake8`, `mypy`, `pdoc`, `gitlint`):
 
 ```sh
 git clone https://github.com/luisgf/openbadgeslib
@@ -59,6 +59,49 @@ mypy
 
 Make sure both `pytest` and `flake8` pass before opening a pull request.
 
+## Commit messages
+
+Commits follow a [Conventional Commits](https://www.conventionalcommits.org/)-style convention so the history is machine-readable and a changelog can be drafted from it. The format is:
+
+```
+type(optional-scope)!: short summary in the imperative mood
+```
+
+Use a scope like `ob2`/`ob3` when it helps (e.g. `fix(ob3): …`). The vocabulary is fixed:
+
+| Type | Use for | In the changelog? |
+| --- | --- | --- |
+| `feat` | a user-facing feature or capability | **yes** → Added |
+| `fix` | a user-facing bug fix | **yes** → Fixed |
+| `security` | a security-relevant change | **yes** → Security |
+| `perf` | a user-facing performance change | **yes** → Performance |
+| `docs`, `test`, `refactor`, `chore`, `ci`, `build`, `style` | internal changes with no user-visible effect | no (dropped) |
+| `release` | the version-bump/changelog commit | no |
+
+A breaking change is marked with `!` after the type/scope (`feat!:`) or a `BREAKING CHANGE:` trailer in the body.
+
+**Curated changelog line (optional but encouraged).** Changelog entries are still written by hand, but you can capture the polished wording *at commit time* with a `Changelog:` trailer in the body. A future generator (and the maintainer) prefer it over the terse subject:
+
+```
+fix: make -d/--debug actually enable debug logging
+
+Changelog: The -d/--debug flag now enables DEBUG-level console logging
+across all CLI tools (it was parsed but previously ignored).
+```
+
+This convention is enforced in CI by **gitlint** (config in `.gitlint`), which lints the commit messages of every push and pull request. Run it locally before pushing:
+
+```sh
+gitlint                       # lint the latest commit
+gitlint --commits origin/master..HEAD   # lint a branch
+```
+
+You can wire it as a local `commit-msg` hook so it runs automatically:
+
+```sh
+gitlint install-hook
+```
+
 ## Repository layout
 
 ```
@@ -104,6 +147,8 @@ The workflow at `.github/workflows/ci.yml` runs on every **push to `master`**, e
 
 A separate `publish` job builds the sdist and wheel and uploads to PyPI, but only when a GitHub Release is published and only after the full test matrix passes. That publish flow is documented in [[Releasing]].
 
+A second workflow, `.github/workflows/commit-lint.yml`, runs **gitlint** on the new commits of every push and pull request to enforce the [commit-message convention](#commit-messages).
+
 ## Documentation
 
 Documentation has three sources, all of which stay in sync with the code automatically:
@@ -129,4 +174,5 @@ in-repo TODO file; open an issue to propose or pick up work.
 2. Create a feature branch: `git checkout -b feature/my-change`
 3. Write tests for your change.
 4. Ensure `pytest` and `flake8` both pass with no regressions.
-5. Open a pull request against `master`.
+5. Write commit messages that follow the [convention above](#commit-messages) (`gitlint` will check them).
+6. Open a pull request against `master`.

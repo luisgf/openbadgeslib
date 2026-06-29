@@ -47,7 +47,7 @@ cd openbadgeslib
 pip install -e ".[dev]"
 ```
 
-The `[dev]` extra installs `pytest>=8.0`, `pytest-cov>=5.0`, `flake8>=7.0`, `mypy>=1.8`, and `pdoc>=14`.
+The `[dev]` extra installs `pytest>=8.0`, `pytest-cov>=5.0`, `flake8>=7.0`, `mypy>=1.8`, `pdoc>=14`, and `gitlint>=0.19`.
 
 ## Install with conda
 
