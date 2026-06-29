@@ -34,6 +34,8 @@ import logging
 import sys
 import os
 
+from typing import Optional
+
 from .errors import VerifierExceptions
 from .confparser import read_config_or_exit, resolve_badge_section
 from .logs import enable_debug_logging
@@ -45,7 +47,7 @@ logger = logging.getLogger(__name__)
 # Entry Point
 
 
-def _resolve_trusted_pubkey(args):
+def _resolve_trusted_pubkey(args: argparse.Namespace) -> Optional[bytes]:
     """Return the operator-supplied trusted public key PEM, or None if neither
     --local nor --pubkey was given. Shared by the OB2 and OB3 verify paths."""
     if args.local:
@@ -62,7 +64,7 @@ def _resolve_trusted_pubkey(args):
     return None
 
 
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Badge Verifier Parameters')
     parser.add_argument('-c', '--config', default='config.ini',
                         help='Specify the config.ini file to use')
@@ -87,7 +89,7 @@ def build_parser():
     return parser
 
 
-def main():
+def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     enable_debug_logging(args.debug)
@@ -109,7 +111,7 @@ def main():
         _verify_ob2(args)
 
 
-def _verify_ob2(args):
+def _verify_ob2(args: argparse.Namespace) -> None:
     """Verify a badge using OpenBadges 2.0 (JWS)."""
     try:
         badge = BadgeSigned.read_from_file(args.filein)
@@ -147,7 +149,7 @@ def _verify_ob2(args):
         sys.exit(-1)
 
 
-def _verify_ob3(args):
+def _verify_ob3(args: argparse.Namespace) -> None:
     """Verify a badge using OpenBadges 3.0 (JWT-VC)."""
     from .ob3 import OB3Verifier, OB3VerificationError
     from .errors import ErrorParsingFile
@@ -184,7 +186,8 @@ def _verify_ob3(args):
     if args.show:
         print('[+] Credential issuer  : %s' % credential.issuer.name)
         print('[+] Achievement        : %s' % credential.achievement.name)
-        print('[+] Issued on          : %s' % credential.issuance_date.isoformat())
+        issued = credential.issuance_date.isoformat() if credential.issuance_date else 'n/a'
+        print('[+] Issued on          : %s' % issued)
         if credential.expiration_date:
             print('[+] Expires            : %s' % credential.expiration_date.isoformat())
         if credential.evidence_url:

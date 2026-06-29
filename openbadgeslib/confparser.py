@@ -22,13 +22,14 @@
 """
 
 from configparser import ConfigParser, ExtendedInterpolation
+from typing import Optional
 import os
 import sys
 import logging
 logger = logging.getLogger(__name__)
 
 
-def read_config_or_exit(config_file):
+def read_config_or_exit(config_file: str) -> ConfigParser:
     """Read a config file for a CLI tool, exiting with a clear message if it is
     missing or empty. Shared by all the console-script entrypoints."""
     conf = ConfParser(config_file).read_conf()
@@ -38,7 +39,7 @@ def read_config_or_exit(config_file):
     return conf
 
 
-def resolve_badge_section(conf, name):
+def resolve_badge_section(conf: ConfigParser, name: str) -> str:
     """Return the ``badge_<name>`` section name, exiting if it is not defined."""
     section = 'badge_' + name
     if section not in conf:
@@ -47,10 +48,10 @@ def resolve_badge_section(conf, name):
 
 
 class ConfParser():
-    def __init__(self, config_file='config.ini'):
+    def __init__(self, config_file: str = 'config.ini') -> None:
         self.config_file = config_file
 
-    def read_conf(self):
+    def read_conf(self) -> Optional[ConfigParser]:
         if not os.path.isfile(self.config_file):
             return None
 

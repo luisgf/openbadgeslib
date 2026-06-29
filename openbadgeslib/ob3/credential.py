@@ -110,6 +110,8 @@ class OpenBadgeCredential:
 
     def to_vc(self) -> dict:
         """Return the Verifiable Credential JSON object (no JWT wrapper)."""
+        # __post_init__ guarantees issuance_date is set.
+        assert self.issuance_date is not None
         vc: dict = {
             "@context": OB3_CONTEXT,
             "id": self.id,
@@ -131,6 +133,8 @@ class OpenBadgeCredential:
 
     def to_jwt_payload(self) -> dict:
         """Return the JWT payload for a JWT-VC signed credential."""
+        # __post_init__ guarantees issuance_date is set.
+        assert self.issuance_date is not None
         payload: dict = {
             "iss": self.issuer.id,
             "sub": self.recipient_id,

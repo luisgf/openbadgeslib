@@ -35,7 +35,7 @@ import sys
 import shutil
 
 
-def main():
+def main() -> None:
     if (len(sys.argv) != 2) or (sys.argv[1] == '-h'):
         sys.exit('%s DIRECTORY' % sys.argv[0])
 

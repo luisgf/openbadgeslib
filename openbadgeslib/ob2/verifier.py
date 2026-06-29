@@ -21,6 +21,8 @@
         License along with this library.
 """
 
+from typing import Any, Optional
+
 from .badge import BadgeStatus
 from ..util import hash_email, download_file, show_ecc_disclaimer
 from ..keys import KeyType, detect_key_type
@@ -35,13 +37,15 @@ logger = logging.getLogger(__name__)
 
 
 class VerifyInfo():
-    def __init__(self, status=BadgeStatus.NONE, msg=None):
+    def __init__(self, status: BadgeStatus = BadgeStatus.NONE,
+                 msg: Optional[Any] = None) -> None:
         self.status = status
         self.msg = msg
 
 
 class Verifier():
-    def __init__(self, verify_key=None, identity=None):
+    def __init__(self, verify_key: Optional[Any] = None,
+                 identity: Optional[str] = None) -> None:
         self.verify_key = verify_key
         self.identity = identity.encode('utf-8') if identity is not None else None
         self.key_type = None
@@ -49,10 +53,10 @@ class Verifier():
         if self.verify_key:
             self.key_type = detect_key_type(self.verify_key)
 
-    def get_identity(self):
+    def get_identity(self) -> Optional[str]:
         return self.identity.decode('utf-8') if self.identity is not None else None
 
-    def get_badge_status(self, badge):
+    def get_badge_status(self, badge: Any) -> VerifyInfo:
 
         if badge.source.key_type is KeyType.ECC:
             show_ecc_disclaimer()
@@ -89,7 +93,7 @@ class Verifier():
         # OK, all is correct.
         return VerifyInfo(BadgeStatus.VALID, 'OK')
 
-    def check_jws_signature(self, badge):
+    def check_jws_signature(self, badge: Any) -> VerifyInfo:
         # Verify against the operator-supplied trusted key when present, falling
         # back to the key the badge itself points to only when no trusted key
         # was given. Trusting solely badge.source.pub_key (downloaded from a URL
@@ -101,7 +105,7 @@ class Verifier():
         except JWS_SignatureError as err:
             return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, str(err))
 
-    def check_revocation(self, badge):
+    def check_revocation(self, badge: Any) -> Optional[str]:
         """ Return the revocation reason if the badge has been revoked, else None """
 
         serial_num = str(badge.serial_num)
@@ -149,7 +153,7 @@ class Verifier():
 
         return None
 
-    def check_expiration(self, badge):
+    def check_expiration(self, badge: Any) -> Optional[str]:
         from time import time, gmtime, strftime
 
         # A badge is expired when its expiration timestamp is in the past
@@ -160,7 +164,7 @@ class Verifier():
         else:
             return None
 
-    def check_identity(self, badge):
+    def check_identity(self, badge: Any) -> bool:
         # No identity supplied means signature-only verification: skip the
         # recipient check instead of crashing on hash_email(None, ...).
         if self.identity is None:
@@ -173,6 +177,6 @@ class Verifier():
         except Exception:
             raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
 
-    def print_payload(self, badge):
+    def print_payload(self, badge: Any) -> None:
         print('[+] This is the assertion content:')
         print(json.dumps(badge.assertion.decode_body(), sort_keys=True, indent=4))

@@ -30,17 +30,18 @@
 """
 
 import argparse
+import configparser
 import json
 import os
 import os.path
 import shutil
 
 from urllib.parse import urljoin
-from .confparser import ConfParser
+from .confparser import read_config_or_exit
 from .util import __version__
 
 
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Publisher Parameters')
     parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-o', '--output', required=True, help='Specify the output directory to save the public files')
@@ -51,7 +52,7 @@ def build_parser():
     return parser
 
 
-def main():
+def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
@@ -62,8 +63,7 @@ def main():
         print('[i] Recipients verify credentials offline using the issuer\'s public key.')
         return
 
-    cf = ConfParser(args.config)
-    conf = cf.read_conf()
+    conf = read_config_or_exit(args.config)
 
     if args.output:
         if os.path.lexists(args.output):
@@ -107,7 +107,7 @@ def main():
         parser.print_help()
 
 
-def create_issuer_json(conf):
+def create_issuer_json(conf: configparser.ConfigParser) -> str:
     publish_url = conf['issuer']['publish_url']
     image_url = urljoin(publish_url, conf['issuer']['image'])
     rev_url = urljoin(publish_url, conf['issuer']['revocationList'])
@@ -121,11 +121,11 @@ def create_issuer_json(conf):
     return json.dumps(issuer, sort_keys=True, ensure_ascii=True)
 
 
-def create_revocation_json(conf):
+def create_revocation_json(conf: configparser.ConfigParser) -> str:
     return json.dumps(dict(), sort_keys=True, ensure_ascii=True)
 
 
-def create_badge_json(conf, badge_name):
+def create_badge_json(conf: configparser.ConfigParser, badge_name: str) -> str:
     publish_url = conf['issuer']['publish_url']
     image_url = urljoin(publish_url, conf[badge_name]['image'])
     issuer_url = urljoin(publish_url, 'organization.json')

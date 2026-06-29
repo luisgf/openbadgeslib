@@ -29,6 +29,8 @@
 from struct import pack
 from zlib import crc32
 
+from typing import List, Optional, Tuple, Union
+
 from defusedxml.minidom import parseString
 from png import Reader, signature as _png_signature
 
@@ -45,7 +47,7 @@ class DecompressionLimitExceeded(Exception):
     """Raised when a compressed iTXt token inflates beyond the allowed size."""
 
 
-def _bounded_inflate(data, limit=MAX_ITXT_DECOMPRESSED):
+def _bounded_inflate(data: bytes, limit: int = MAX_ITXT_DECOMPRESSED) -> bytes:
     import zlib
     inflator = zlib.decompressobj()
     out = inflator.decompress(data, limit)
@@ -57,7 +59,7 @@ def _bounded_inflate(data, limit=MAX_ITXT_DECOMPRESSED):
 
 # ── SVG ─────────────────────────────────────────────────────────────────────
 
-def bake_svg(image_bytes, token, comment=None):
+def bake_svg(image_bytes: bytes, token: str, comment: Optional[str] = None) -> bytes:
     """Return *image_bytes* with an ``<openbadges:assertion verify=token>``
     element (and an optional XML comment) appended to the root ``<svg>``."""
     svg_doc = parseString(image_bytes)
@@ -74,7 +76,7 @@ def bake_svg(image_bytes, token, comment=None):
         svg_doc.unlink()
 
 
-def has_svg(image_bytes):
+def has_svg(image_bytes: bytes) -> bool:
     """Return True if *image_bytes* already carries an OpenBadges assertion."""
     svg_doc = parseString(image_bytes)
     try:
@@ -83,7 +85,7 @@ def has_svg(image_bytes):
         svg_doc.unlink()
 
 
-def extract_svg(image_bytes):
+def extract_svg(image_bytes: bytes) -> Optional[str]:
     """Return the embedded token string, or None if there is no assertion node.
 
     Raises on malformed XML (left to the caller to map to its own error type).
@@ -102,7 +104,7 @@ def extract_svg(image_bytes):
 
 # ── PNG ─────────────────────────────────────────────────────────────────────
 
-def _serialize_png(chunks):
+def _serialize_png(chunks: List[Tuple[Union[str, bytes], bytes]]) -> bytes:
     out = _png_signature
     for tag, data in chunks:
         out += pack("!I", len(data))
@@ -115,7 +117,7 @@ def _serialize_png(chunks):
     return out
 
 
-def bake_png(image_bytes, token, text_comment=None):
+def bake_png(image_bytes: bytes, token: str, text_comment: Optional[str] = None) -> bytes:
     """Return *image_bytes* with the token stored in an ``openbadges`` iTXt
     chunk (and an optional ``tEXt`` comment chunk) inserted before IEND."""
     chunks = list(Reader(bytes=image_bytes).chunks())
@@ -126,7 +128,7 @@ def bake_png(image_bytes, token, text_comment=None):
     return _serialize_png(chunks)
 
 
-def has_png(image_bytes):
+def has_png(image_bytes: bytes) -> bool:
     """Return True if *image_bytes* already carries an OpenBadges iTXt chunk."""
     for tag, data in Reader(bytes=image_bytes).chunks():
         tag_str = tag.decode('ascii') if isinstance(tag, bytes) else tag
@@ -135,7 +137,7 @@ def has_png(image_bytes):
     return False
 
 
-def extract_png(image_bytes, max_decompressed=MAX_ITXT_DECOMPRESSED):
+def extract_png(image_bytes: bytes, max_decompressed: int = MAX_ITXT_DECOMPRESSED) -> Optional[str]:
     """Return the embedded token string, or None if there is no openbadges
     iTXt chunk.
 

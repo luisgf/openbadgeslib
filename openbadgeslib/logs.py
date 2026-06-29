@@ -23,9 +23,10 @@
 
 import logging
 import os
+from typing import Any
 
 
-def enable_debug_logging(debug=False):
+def enable_debug_logging(debug: bool = False) -> None:
     """Route library log messages to the console for the CLI tools.
 
     With ``debug=True`` DEBUG-level messages are shown; otherwise only INFO and
@@ -34,7 +35,7 @@ def enable_debug_logging(debug=False):
     """
     root = logging.getLogger()
     if not any(getattr(h, '_obl_console', False) for h in root.handlers):
-        handler = logging.StreamHandler()
+        handler: Any = logging.StreamHandler()
         handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
         handler._obl_console = True
         root.addHandler(handler)
@@ -42,7 +43,7 @@ def enable_debug_logging(debug=False):
 
 
 class Logger():
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.main = self.init_log(logger='general', base_log=kwargs['base_log'],
                                   file=kwargs['general'])
         self.signer = self.init_log(logger='signer', base_log=kwargs['base_log'],
@@ -52,8 +53,9 @@ class Logger():
         except KeyError:
             self.console = self.init_console()
 
-    def init_log(self, logger='', base_log=None, log_level=logging.INFO,
-                 file=None):
+    def init_log(self, logger: Any = '', base_log: Any = None,
+                 log_level: int = logging.INFO,
+                 file: Any = None) -> logging.Logger:
         logger = logging.getLogger(logger)
         logger.setLevel(logging.DEBUG)
         file_path = os.path.join(base_log, file)
@@ -68,7 +70,7 @@ class Logger():
 
         return logger
 
-    def init_console(self, show_debug=False):
+    def init_console(self, show_debug: bool = False) -> logging.Logger:
         logger = logging.getLogger()
         logger.setLevel(logging.NOTSET)
 

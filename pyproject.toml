@@ -40,6 +40,7 @@ dev = [
     "pytest-cov>=5.0",
     "flake8>=7.0",
     "pdoc>=14",
+    "mypy>=1.8",
 ]
 
 [project.urls]
@@ -60,10 +61,29 @@ openbadges-publish = "openbadgeslib.openbadges_publish:main"
 where = ["."]
 include = ["openbadgeslib*"]
 
+# Ship the PEP 561 marker so downstream type checkers use our annotations.
+[tool.setuptools.package-data]
+openbadgeslib = ["py.typed"]
+
 # Single source of truth for the version: openbadgeslib/util.py __version__.
 # setuptools reads it by AST (no import), so it stays in sync automatically.
 [tool.setuptools.dynamic]
 version = { attr = "openbadgeslib.util.__version__" }
+
+[tool.mypy]
+python_version = "3.10"
+files = ["openbadgeslib"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+# Third-party dependencies that ship no type information.
+[[tool.mypy.overrides]]
+module = ["Crypto.*", "ecdsa.*", "png.*", "defusedxml.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

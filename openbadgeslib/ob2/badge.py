@@ -23,7 +23,7 @@
 
 import os
 from enum import Enum
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from Crypto.PublicKey import RSA
 from ecdsa import SigningKey, VerifyingKey
@@ -56,46 +56,50 @@ class BadgeType(Enum):
 
 
 class Assertion():
-    def __init__(self, header=None, body=None, signature=None):
-        self.header = header               # In Base64
-        self.body = body                   # In Base64
-        self.signature = signature
+    def __init__(self, header: Optional[bytes] = None, body: Optional[bytes] = None,
+                 signature: Optional[bytes] = None) -> None:
+        self.header: Any = header          # In Base64
+        self.body: Any = body              # In Base64
+        self.signature: Any = signature
 
     @staticmethod
-    def decode(data):
+    def decode(data: bytes) -> 'Assertion':
         try:
             header, body, signature = data.split(b'.')
             return Assertion(header, body, signature)
         except Exception:
             raise AssertionFormatIncorrect()
 
-    def decode_header(self):
+    def decode_header(self) -> Any:
         return jws_utils.decode(self.header)
 
-    def decode_body(self):
+    def decode_body(self) -> Any:
         return jws_utils.decode(self.body)
 
-    def get_assertion(self):
+    def get_assertion(self) -> bytes:
         return self.header + b'.' + self.body + b'.' + self.signature
 
-    def encode_header(self, header):
+    def encode_header(self, header: Any) -> None:
         self.header = jws_utils.encode(header)
 
-    def encode_body(self, body):
+    def encode_body(self, body: Any) -> None:
         self.body = jws_utils.encode(body)
 
-    def encode_signature(self, signature):
+    def encode_signature(self, signature: bytes) -> None:
         self.signature = jws_utils.to_base64(signature)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return 'Header: %s\nBody: %s\nSignature: %s' % (self.header, self.body, self.signature)
 
 
 class Badge():
-    def __init__(self, ini_name=None, name=None, description=None, image_type=None,
-                 image=None, image_url=None, criteria_url=None, json_url=None,
-                 verify_key_url=None, key_type=None, privkey_pem=None,
-                 pubkey_pem=None):
+    def __init__(self, ini_name: Optional[str] = None, name: Optional[str] = None,
+                 description: Optional[str] = None, image_type: Optional[BadgeImgType] = None,
+                 image: Optional[bytes] = None, image_url: Optional[str] = None,
+                 criteria_url: Optional[str] = None, json_url: Optional[str] = None,
+                 verify_key_url: Optional[str] = None, key_type: Optional[KeyType] = None,
+                 privkey_pem: Optional[Union[str, bytes]] = None,
+                 pubkey_pem: Optional[Union[str, bytes]] = None) -> None:
 
         self.ini_name = ini_name
         self.name = name
@@ -127,52 +131,52 @@ class Badge():
             raise UnknownKeyType('Unsupported key type: %r' % (self.key_type,))
 
     @staticmethod
-    def create_from_conf(conf, badge):
+    def create_from_conf(conf: Any, badge: str) -> 'Badge':
         """ Create a Badge Object reading params from config.ini """
 
-        if conf[badge]:
+        """ Keys """
+        with open(conf[badge]['private_key'], 'rb') as key:
+            privkey_pem = key.read()
 
-            """ Keys """
-            with open(conf[badge]['private_key'], 'rb') as key:
-                privkey_pem = key.read()
+        with open(conf[badge]['public_key'], 'rb') as key:
+            pubkey_pem = key.read()
 
-            with open(conf[badge]['public_key'], 'rb') as key:
-                pubkey_pem = key.read()
+        key_type = detect_key_type(pubkey_pem)
 
-            key_type = detect_key_type(pubkey_pem)
+        """ Image """
+        img_path = os.path.join(conf['paths']['base_image'], conf[badge]['local_image'])
 
-            """ Image """
-            img_path = os.path.join(conf['paths']['base_image'], conf[badge]['local_image'])
+        if not os.path.isfile(img_path):
+            print('Badge file %s NOT exists.' % img_path)
+            raise IOError
 
-            if not os.path.isfile(img_path):
-                print('Badge file %s NOT exists.' % img_path)
-                raise IOError
+        with open(img_path, 'rb') as file:
+            img_content = file.read()
 
-            with open(img_path, 'rb') as file:
-                img_content = file.read()
+        if img_path.lower().endswith('.svg'):
+            img_type = BadgeImgType.SVG
+        elif img_path.lower().endswith('.png'):
+            img_type = BadgeImgType.PNG
+        else:
+            raise BadgeImgFormatUnsupported('The image format for %s is not supported' % badge)
 
-            if img_path.lower().endswith('.svg'):
-                img_type = BadgeImgType.SVG
-            elif img_path.lower().endswith('.png'):
-                img_type = BadgeImgType.PNG
-            else:
-                raise BadgeImgFormatUnsupported('The image format for %s is not supported' % badge)
+        """ Object Creation """
+        return Badge(ini_name=badge,
+                     name=conf[badge]['name'],
+                     description=conf[badge]['description'],
+                     image_type=img_type,
+                     image=img_content,
+                     image_url=conf[badge]['image'],
+                     criteria_url=conf[badge]['criteria'],
+                     json_url=conf[badge]['badge'],
+                     verify_key_url=conf[badge]['verify_key'],
+                     key_type=key_type,
+                     privkey_pem=privkey_pem,
+                     pubkey_pem=pubkey_pem)
 
-            """ Object Creation """
-            return Badge(ini_name=badge,
-                         name=conf[badge]['name'],
-                         description=conf[badge]['description'],
-                         image_type=img_type,
-                         image=img_content,
-                         image_url=conf[badge]['image'],
-                         criteria_url=conf[badge]['criteria'],
-                         json_url=conf[badge]['badge'],
-                         verify_key_url=conf[badge]['verify_key'],
-                         key_type=key_type,
-                         privkey_pem=privkey_pem,
-                         pubkey_pem=pubkey_pem)
+        return None
 
-    def __str__(self):
+    def __str__(self) -> str:
         return (
             'INI Name: %s\nName: %s\nDescription: %s\nImage Type: %s\n'
             'Image Url: %s\nKey Type: %s\nVerify Key: %s\nJSON Url: %s\n'
@@ -180,7 +184,7 @@ class Badge():
                self.image_url, self.key_type, self.verify_key_url, self.json_url)
         )
 
-    def urls_has_problems(self):
+    def urls_has_problems(self) -> bool:
         """ Check if urls in Badge are corrects and online """
 
         error = False
@@ -196,7 +200,7 @@ class Badge():
         for url, label in checks:
             data = None
             try:
-                data = download_file(url)
+                data = download_file(url) if url else None
             except Exception:
                 pass
             if not data:
@@ -209,25 +213,29 @@ class Badge():
 class BadgeSigned():
     """ A Signed Badge Object """
 
-    def __init__(self, source=None, serial_num=None, identity=None,
-                 evidence=None, expiration=None, salt=None, issue_date=None,
-                 assertion=None):
-        self.source = source                     # Badge source object, if exists
-        self.signed = None                       # Binary signed data
-        self.serial_num = serial_num
+    def __init__(self, source: Optional[Badge] = None,
+                 serial_num: Optional[Union[str, bytes]] = None,
+                 identity: Optional[Union[str, bytes]] = None,
+                 evidence: Optional[str] = None, expiration: Optional[int] = None,
+                 salt: Optional[Union[str, bytes]] = None,
+                 issue_date: Optional[int] = None,
+                 assertion: Optional[Assertion] = None) -> None:
+        self.source: Any = source                # Badge source object, if exists
+        self.signed: Any = None                  # Binary signed data
+        self.serial_num: Any = serial_num
         # Normalize identity/salt to bytes so the accessors are type-stable
         # regardless of whether the caller passed str or bytes.
-        self.identity = identity.encode('utf-8') if isinstance(identity, str) else identity
+        self.identity: Any = identity.encode('utf-8') if isinstance(identity, str) else identity
         self.evidence = evidence
         self.expiration = expiration             # Timestamp
-        self.salt = salt.encode('utf-8') if isinstance(salt, str) else salt
-        self.signed_assertion = None             # Signed Assertion
+        self.salt: Any = salt.encode('utf-8') if isinstance(salt, str) else salt
+        self.signed_assertion: Any = None        # Signed Assertion
         self.issue_date = issue_date             # Timestamp
         self.assertion = assertion
-        self.file_out = None                     # Path to signed file if saved
+        self.file_out: Optional[str] = None      # Path to signed file if saved
 
     @staticmethod
-    def read_from_file(file_name):
+    def read_from_file(file_name: str) -> 'BadgeSigned':
         """ Read a Signed Badge from file """
         with open(file_name, 'rb') as file:
             file_data = file.read()              # Binary Data Signed
@@ -271,7 +279,7 @@ class BadgeSigned():
                                 assertion=assertion)
         return badge_sig
 
-    def save_to_file(self, file_name):
+    def save_to_file(self, file_name: str) -> None:
         with open(file_name, 'wb') as f:
             f.write(self.signed)
         self.file_out = file_name
@@ -298,7 +306,7 @@ class BadgeSigned():
             return self.serial_num.decode('utf-8')
         return str(self.serial_num)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return (
             'Serial Num: %s\nIdentity: %s\nEvidence %s\nExpiration: %s\nSalt: %s\n'
             % (self.serial_num, self.identity, self.evidence, self.expiration, self.salt)
@@ -310,7 +318,7 @@ class BadgeSigned():
         return self.source.pubkey_pem
 
 
-def extract_svg_assertion(file_data):
+def extract_svg_assertion(file_data: bytes) -> Assertion:
     """ Extract the assertion embeded in a SVG file. """
 
     try:
@@ -322,7 +330,7 @@ def extract_svg_assertion(file_data):
     return Assertion.decode(token.encode('utf-8'))
 
 
-def extract_png_assertion(file_data):
+def extract_png_assertion(file_data: bytes) -> Assertion:
     token = baking.extract_png(file_data)
     if token is None:
         raise AssertionFormatIncorrect('No OpenBadges assertion found in PNG file')

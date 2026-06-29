@@ -30,6 +30,7 @@
 """
 
 import argparse
+import configparser
 import logging
 import sys
 import os
@@ -37,6 +38,7 @@ import os.path
 import time
 
 from datetime import datetime, timezone, timedelta
+from typing import Optional
 
 from .keys import detect_key_type, alg_for_key_type
 from .errors import BadgeImgFormatUnsupported
@@ -51,7 +53,7 @@ logger = logging.getLogger(__name__)
 # Entry Point
 
 
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Badge Signer Parameters')
     parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-b', '--badge', required=True, help='Specify the badge name for sign')
@@ -70,7 +72,7 @@ def build_parser():
     return parser
 
 
-def main():
+def main() -> None:
     args = build_parser().parse_args()
     enable_debug_logging(args.debug)
 
@@ -107,7 +109,8 @@ def main():
             _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence)
 
 
-def _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence):
+def _sign_ob2(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
+              badge_obj: Badge, badge_file_out: str, evidence: Optional[str]) -> None:
     """Sign a badge using OpenBadges 2.0 (JWS)."""
     if args.expires:
         expiration = int(time.time()) + args.expires * 86400
@@ -138,9 +141,9 @@ def _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence):
 
         if bool(args.mail_badge):
             server = conf['smtp']['smtp_server']
-            port = conf['smtp']['smtp_port']
+            port = int(conf['smtp']['smtp_port'])
             # configparser stores everything as strings; 'False' would be truthy.
-            use_ssl = conf['smtp'].getboolean('use_ssl')
+            use_ssl = conf['smtp'].getboolean('use_ssl', False)
             mail_from = conf['smtp']['mail_from']
             username = conf['smtp'].get('username')
             password = conf['smtp'].get('password')
@@ -154,7 +157,8 @@ def _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence):
         print('%s at: %s' % (msg.strip('\n'), badge_file_out))
 
 
-def _sign_ob3(args, conf, badge, badge_obj, badge_file_out, evidence):
+def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
+              badge_obj: Badge, badge_file_out: str, evidence: Optional[str]) -> None:
     """Sign a badge using OpenBadges 3.0 (JWT-VC)."""
     from .ob3 import OB3Signer, Issuer, Achievement, OpenBadgeCredential
 
@@ -192,6 +196,9 @@ def _sign_ob3(args, conf, badge, badge_obj, badge_file_out, evidence):
         evidence_url=evidence,
         expiration_date=expiration_date,
     )
+
+    # create_from_conf always populates these from the badge config section.
+    assert badge_obj.privkey_pem is not None and badge_obj.image is not None
 
     key_type = detect_key_type(badge_obj.privkey_pem)
     algorithm = alg_for_key_type(key_type)

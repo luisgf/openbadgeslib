@@ -25,6 +25,8 @@ import os
 import os.path
 import time
 
+from typing import Any, Dict, Optional, Tuple, Union
+
 from ..errors import ErrorSigningFile, BadgeImgFormatUnsupported
 from ..util import md5_string, sha1_string, __version__
 from ..keys import alg_for_key_type
@@ -35,18 +37,21 @@ from .._jws import sign as jws_sign
 
 
 class Signer():
-    def __init__(self, identity=None, evidence=None, expiration=None,
-                 deterministic=False, badge_type=None):
+    def __init__(self, identity: Optional[Union[str, bytes]] = None,
+                 evidence: Optional[str] = None,
+                 expiration: Optional[int] = None,
+                 deterministic: bool = False,
+                 badge_type: Optional[BadgeType] = None) -> None:
         self.identity = identity
         self.evidence = evidence
         self.expiration = expiration
         self.badge_type = badge_type
         self.deterministic = deterministic
 
-    def generate_uid(self):
+    def generate_uid(self) -> bytes:
         return sha1_string(os.urandom(128))
 
-    def sign_badge(self, badge_obj):
+    def sign_badge(self, badge_obj: Any) -> BadgeSigned:
         if (self.has_assertion(badge_obj)):
             raise ErrorSigningFile('The input file is already signed.')
 
@@ -69,7 +74,7 @@ class Signer():
 
         return out
 
-    def generate_jws(self, badge):
+    def generate_jws(self, badge: BadgeSigned) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """ Generate the JWS Payload using an BadgeSigned Object as input """
 
         jose_header = {'alg': alg_for_key_type(badge.source.key_type)}
@@ -111,7 +116,7 @@ class Signer():
 
         return jose_header, payload
 
-    def generate_assertion(self, badge):
+    def generate_assertion(self, badge: BadgeSigned) -> None:
         """ Generate and Sign and OpenBadge assertion """
 
         header, body = self.generate_jws(badge)
@@ -122,7 +127,7 @@ class Signer():
         badge.assertion.encode_body(body)
         badge.assertion.encode_signature(signature)
 
-    def has_assertion(self, badge):
+    def has_assertion(self, badge: Any) -> bool:
         """ Detect if a Badge is already signed """
 
         if badge.image_type is BadgeImgType.SVG:
@@ -133,20 +138,24 @@ class Signer():
             raise BadgeImgFormatUnsupported(
                 'Unsupported image type: %r' % (badge.image_type,))
 
-    def append_svg_assertion(self, badge):
+    def append_svg_assertion(self, badge: BadgeSigned) -> None:
         """ Append the assertion to a SVG File """
+        assertion = badge.get_assertion()
+        assert assertion is not None  # set by generate_assertion before baking
         badge.signed = baking.bake_svg(
-            badge.source.image, badge.get_assertion(),
+            badge.source.image, assertion,
             comment=' Signed with OpenBadgesLib %s ' % __version__)
 
-    def append_png_assertion(self, badge):
+    def append_png_assertion(self, badge: BadgeSigned) -> None:
         """ Append the assertion to a PNG file """
+        assertion = badge.get_assertion()
+        assert assertion is not None  # set by generate_assertion before baking
         badge.signed = baking.bake_png(
-            badge.source.image, badge.get_assertion(),
+            badge.source.image, assertion,
             text_comment='Comment Signed with OpenBadgesLib %s' % __version__)
 
-    def has_svg_assertion(self, badge):
+    def has_svg_assertion(self, badge: Any) -> bool:
         return baking.has_svg(badge.image)
 
-    def has_png_assertion(self, badge):
+    def has_png_assertion(self, badge: Any) -> bool:
         return baking.has_png(badge.image)

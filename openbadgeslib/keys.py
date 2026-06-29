@@ -21,7 +21,7 @@
         License along with this library.
 """
 
-from typing import Union
+from typing import Any, Optional, Tuple, Union
 from .errors import UnknownKeyType
 from ecdsa import SigningKey, VerifyingKey, NIST256p
 from Crypto.PublicKey import RSA
@@ -35,7 +35,7 @@ class KeyType(Enum):
     ECC = 'ECC NIST256p'
 
 
-def KeyFactory(key_type=KeyType.RSA):
+def KeyFactory(key_type: 'KeyType' = KeyType.RSA) -> 'Union[KeyRSA, KeyECC]':
     """ Key Factory Object, Return a Given object type passing a name
         to the constructor. """
     if key_type == KeyType.ECC:
@@ -47,25 +47,25 @@ def KeyFactory(key_type=KeyType.RSA):
 
 
 class KeyBase():
-    def __init__(self):
-        self.priv_key = None              # crypto Object
-        self.pub_key = None               # crypto Object
+    def __init__(self) -> None:
+        self.priv_key: Any = None         # crypto Object
+        self.pub_key: Any = None          # crypto Object
 
-    def get_priv_key(self):
+    def get_priv_key(self) -> Any:
         """ Return the crypto object """
         return self.priv_key
 
-    def get_pub_key(self):
+    def get_pub_key(self) -> Any:
         """ Return the crypto object """
         return self.pub_key
 
 
 class KeyRSA(KeyBase):
-    def __init__(self, key_size=2048):
+    def __init__(self, key_size: int = 2048) -> None:
         self._key_size = key_size
         super().__init__()
 
-    def generate_keypair(self):
+    def generate_keypair(self) -> Tuple[bytes, bytes]:
         """ Generate a RSA Key, returning in PEM Format """
 
         # RSA Key Generation
@@ -76,29 +76,29 @@ class KeyRSA(KeyBase):
 
         return priv_key_pem, pub_key_pem
 
-    def read_private_key(self, key_pem=None):
+    def read_private_key(self, key_pem: Any = None) -> None:
         """ Read the private key from param in PEM format """
         self.priv_key = RSA.import_key(key_pem)
 
-    def read_public_key(self, key_pem=None):
+    def read_public_key(self, key_pem: Any = None) -> None:
         """ Read the public key from param in PEM format """
         self.pub_key = RSA.import_key(key_pem)
 
-    def get_priv_key_pem(self):
+    def get_priv_key_pem(self) -> bytes:
         return self.priv_key.export_key('PEM')
 
-    def get_pub_key_pem(self):
+    def get_pub_key_pem(self) -> bytes:
         return self.pub_key.export_key('PEM')
 
 
 class KeyECC(KeyBase):
     """ Elliptic Curve Cryptography Factory class """
 
-    def __init__(self, key_curve=NIST256p):
+    def __init__(self, key_curve: Any = NIST256p) -> None:
         self._key_curve = key_curve
         super().__init__()
 
-    def generate_keypair(self):
+    def generate_keypair(self) -> Tuple[bytes, bytes]:
         """ Generate a ECDSA keypair """
 
         # Private key generation
@@ -111,18 +111,18 @@ class KeyECC(KeyBase):
 
         return priv_key_pem, pub_key_pem
 
-    def read_private_key(self, key_pem=None):
+    def read_private_key(self, key_pem: Optional[Union[str, bytes]] = None) -> None:
         """ Read the private key from param in PEM format """
         self.priv_key = SigningKey.from_pem(key_pem)
 
-    def read_public_key(self, key_pem=None):
+    def read_public_key(self, key_pem: Optional[Union[str, bytes]] = None) -> None:
         """ Read the public key from param in PEM format """
         self.pub_key = VerifyingKey.from_pem(key_pem)
 
-    def get_priv_key_pem(self):
+    def get_priv_key_pem(self) -> bytes:
         return self.priv_key.to_pem()
 
-    def get_pub_key_pem(self):
+    def get_pub_key_pem(self) -> bytes:
         return self.pub_key.to_pem()
 
 
@@ -135,7 +135,7 @@ def alg_for_key_type(key_type: 'KeyType') -> str:
     raise UnknownKeyType('No signing algorithm for key type: %r' % (key_type,))
 
 
-def key_to_pem(key) -> Union[str, bytes]:
+def key_to_pem(key: Any) -> Union[str, bytes]:
     """Convert a pycryptodome RSA or ecdsa key object to PEM bytes.
 
     Bytes/str are passed through unchanged. Centralised here so the OB2 JWS

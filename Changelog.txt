@@ -4,6 +4,13 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* Unreleased
+
+  - Typing: the package now ships a py.typed marker (PEP 561) and is fully
+    annotated. mypy (disallow_untyped_defs) runs clean and is enforced in CI,
+    so downstream type checkers can consume openbadgeslib's types.
+
+
 * v1.1.2 - 2026-06-27
 
   - The -d/--debug flag now actually enables DEBUG-level console logging. It was

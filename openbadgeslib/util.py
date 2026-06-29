@@ -24,7 +24,7 @@
 __version__ = '1.1.2'
 
 import hashlib
-from typing import Optional, Union
+from typing import Optional, Union, overload
 from urllib import request
 from urllib.parse import urlparse
 
@@ -51,6 +51,12 @@ def sha256_string(string: StrOrBytes) -> bytes:
 
 def md5_string(string: StrOrBytes) -> bytes:
     return _hash_string('md5', string)
+
+
+@overload
+def normalize_recipient_id(value: str) -> str: ...
+@overload
+def normalize_recipient_id(value: None) -> None: ...
 
 
 def normalize_recipient_id(value: Optional[str]) -> Optional[str]:

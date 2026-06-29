@@ -34,6 +34,9 @@ jobs:
       - name: Lint (flake8)
         run: flake8 openbadgeslib tests
 
+      - name: Type check (mypy)
+        run: mypy
+
       - name: Test (pytest + coverage)
         run: pytest --cov=openbadgeslib --cov-report=term-missing
 

@@ -20,6 +20,8 @@
         License along with this library.
 """
 
+from typing import Any
+
 import jwt
 
 from .credential import OpenBadgeCredential, _SUPPORTED_ALGORITHMS
@@ -39,7 +41,7 @@ class OB3Signer:
                      Supported: RS256/384/512, ES256/384/512.
     """
 
-    def __init__(self, privkey_pem, algorithm: str = 'RS256') -> None:
+    def __init__(self, privkey_pem: Any, algorithm: str = 'RS256') -> None:
         if algorithm not in _SUPPORTED_ALGORITHMS:
             raise ValueError(
                 f"Unsupported algorithm {algorithm!r}. "

@@ -153,6 +153,7 @@ print('Recipient:', restored.recipient_id)
 pytest
 pytest --cov=openbadgeslib      # with coverage report
 flake8 openbadgeslib tests      # lint
+mypy                            # type check (config in pyproject.toml)
 ```
 
 ## Changelog

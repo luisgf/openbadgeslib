@@ -22,6 +22,7 @@
 """
 
 import sys
+from typing import Any, Optional, Tuple
 from smtplib import SMTP_SSL, SMTP, SMTPAuthenticationError, SMTPException
 from os.path import basename
 from email.mime.image import MIMEImage
@@ -34,19 +35,21 @@ from .errors import BadgeImgFormatUnsupported
 
 
 class BadgeMail():
-    def __init__(self, smtp_server='localhost', smtp_port=25, use_ssl=False,
-                 mail_from=None, username=None, password=None):
+    def __init__(self, smtp_server: str = 'localhost', smtp_port: int = 25,
+                 use_ssl: bool = False, mail_from: Optional[str] = None,
+                 username: Optional[str] = None,
+                 password: Optional[str] = None) -> None:
         self.smtp_server = smtp_server
         self.smtp_port = smtp_port
         self.use_ssl = use_ssl
-        self.mail_from = mail_from
-        self.username = username
-        self.password = password
-        self.subject = None
-        self.body = None
+        self.mail_from: Any = mail_from
+        self.username: Any = username
+        self.password: Any = password
+        self.subject: Any = None
+        self.body: Any = None
 
-    def send(self, badge):
-        msg = MIMEMultipart()
+    def send(self, badge: Any) -> None:
+        msg: Any = MIMEMultipart()
         msg['Subject'] = Header(self.subject, 'utf-8')
         msg['From'] = Header(self.mail_from, 'utf-8')
         msg['Date'] = formatdate(localtime=True)
@@ -69,6 +72,7 @@ class BadgeMail():
         msg.attach(image)
 
         try:
+            smtp: Any
             if self.use_ssl:
                 smtp = SMTP_SSL(self.smtp_server, self.smtp_port)
             else:
@@ -89,7 +93,7 @@ class BadgeMail():
             # mail failure instead of crashing with a traceback.
             print('[!] Error sending mail to: %s. %s' % (badge.get_identity(), err))
 
-    def get_mail_content(self, file):
+    def get_mail_content(self, file: str) -> Tuple[Optional[str], Optional[str]]:
         """ Return the Subject and Body of the Email. The first line of the file
         is used as Subject """
 
@@ -101,10 +105,10 @@ class BadgeMail():
         else:
             return None, None
 
-    def set_subject(self, subject):
+    def set_subject(self, subject: Optional[str]) -> None:
         self.subject = subject
 
-    def set_body(self, body):
+    def set_body(self, body: Optional[str]) -> None:
         self.body = body
 
 

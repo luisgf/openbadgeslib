@@ -43,12 +43,18 @@ sh tests/runtests.sh -x        # arguments are passed through
 
 Shared fixtures (key material, badge objects, signed badges) live in `tests/conftest.py`. Session-scoped fixtures are used for performance; fixtures consumed by tests that mutate badge state are function-scoped to avoid cross-test contamination.
 
-## Linting
+## Linting and type checking
 
 Style follows PEP 8 and is enforced with `flake8`, which reads its configuration (including `max-line-length = 120`) from `setup.cfg`. CI lints both the package and the tests:
 
 ```sh
 flake8 openbadgeslib tests
+```
+
+The package is type-annotated and ships a `py.typed` marker (PEP 561), so downstream type checkers pick up its types. Types are checked with `mypy` (config in `pyproject.toml`, `disallow_untyped_defs`), enforced in CI:
+
+```sh
+mypy
 ```
 
 Make sure both `pytest` and `flake8` pass before opening a pull request.
@@ -89,7 +95,8 @@ The workflow at `.github/workflows/ci.yml` runs on every **push to `master`**, e
 
 1. Installs the package with `pip install -e ".[dev]"`.
 2. Lints with `flake8 openbadgeslib tests`.
-3. Tests with `pytest --cov=openbadgeslib --cov-report=term-missing`.
+3. Type-checks with `mypy`.
+4. Tests with `pytest --cov=openbadgeslib --cov-report=term-missing`.
 
 A separate `publish` job builds the sdist and wheel and uploads to PyPI, but only when a GitHub Release is published and only after the full test matrix passes. That publish flow is documented in [[Releasing]].
 

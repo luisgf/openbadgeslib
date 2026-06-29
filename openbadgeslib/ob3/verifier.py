@@ -20,6 +20,8 @@
         License along with this library.
 """
 
+from typing import Any, Optional
+
 import jwt
 import jwt.exceptions
 
@@ -55,7 +57,7 @@ class OB3Verifier:
                     ecdsa key object).
     """
 
-    def __init__(self, pubkey_pem) -> None:
+    def __init__(self, pubkey_pem: Any) -> None:
         self.pubkey_pem = key_to_pem(pubkey_pem)
         # Pin the accepted algorithms to this key's type so the token header
         # cannot dictate the algorithm (alg:none / HMAC downgrade / cross-type
@@ -69,7 +71,8 @@ class OB3Verifier:
 
     # ── verification ───────────────────────────────────────────────────────────
 
-    def verify(self, token: str, expected_recipient: str = None) -> OpenBadgeCredential:
+    def verify(self, token: str,
+               expected_recipient: Optional[str] = None) -> OpenBadgeCredential:
         """Verify a JWT-VC token.
 
         Returns the decoded :class:`OpenBadgeCredential` on success.
@@ -96,7 +99,7 @@ class OB3Verifier:
 
         return credential
 
-    def _decode_payload(self, token):
+    def _decode_payload(self, token: str) -> dict:
         """Verify the signature (algorithm pinned to the key type) and return
         the decoded JWT payload."""
         try:
@@ -128,7 +131,7 @@ class OB3Verifier:
             raise OB3VerificationError(str(exc)) from exc
 
     @staticmethod
-    def _build_credential(payload):
+    def _build_credential(payload: dict) -> OpenBadgeCredential:
         """Validate the vc structure and registered claims, returning the
         reconstructed credential."""
         if "vc" not in payload:

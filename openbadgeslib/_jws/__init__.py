@@ -1,5 +1,7 @@
 """JWS sign/verify backed by PyJWT algorithm implementations (RS256/384/512, ES256/384/512)."""
 
+from typing import Any, Dict, Optional, Set, Union
+
 from . import utils
 from .exceptions import SignatureError, MissingKey, MissingSigner, MissingVerifier, RouteMissingError
 
@@ -19,7 +21,7 @@ _ALGORITHMS = {
 }
 
 
-def _algo_for(alg_name):
+def _algo_for(alg_name: str) -> Any:
     entry = _ALGORITHMS.get(alg_name)
     if entry is None:
         raise RouteMissingError(f"Algorithm {alg_name!r} is not supported")
@@ -27,7 +29,7 @@ def _algo_for(alg_name):
     return cls(hash_id)
 
 
-def _allowed_algs_for_key(key):
+def _allowed_algs_for_key(key: Any) -> Set[str]:
     """Signature algorithms permitted for a verification key, bound to its type.
 
     Binding the accepted algorithm to the key type stops a forged JWS header
@@ -45,7 +47,7 @@ def _allowed_algs_for_key(key):
     return set()
 
 
-def sign(header_dict, payload_dict, key):
+def sign(header_dict: Dict[str, Any], payload_dict: Dict[str, Any], key: Any) -> bytes:
     """Sign header+payload dicts and return raw signature bytes."""
     if key is None:
         raise MissingKey("No signing key provided")
@@ -62,7 +64,7 @@ def sign(header_dict, payload_dict, key):
         raise SignatureError(str(exc)) from exc
 
 
-def verify_block(msg, key=None):
+def verify_block(msg: Union[str, bytes], key: Optional[Any] = None) -> bool:
     """Verify a JWS compact serialization (bytes or str). Returns True or raises SignatureError."""
     if isinstance(msg, str):
         msg = msg.encode('utf-8')

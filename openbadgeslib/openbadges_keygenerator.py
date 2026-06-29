@@ -41,7 +41,7 @@ from .util import __version__
 # Entry Point
 
 
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Key Generation Parameters')
     parser.add_argument('-c', '--config', default='config.ini',
                         help='Specify the config.ini file to use')
@@ -61,7 +61,7 @@ def build_parser():
     return parser
 
 
-def main():
+def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
