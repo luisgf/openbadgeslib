@@ -41,6 +41,21 @@ _ALGORITHMS_BY_KEY_TYPE = {
 }
 
 
+def _claim_object_id(value: Any) -> Any:
+    """Return the ``id`` of a vc sub-object that may be a single object or a
+    (non-empty) array, mirroring OpenBadgeCredential.from_jwt_payload.
+
+    Returns None for any other shape, so the iss/sub cross-checks below simply
+    fail the comparison rather than raising a raw AttributeError on, e.g.,
+    ``[ {…} ].get("id")``.
+    """
+    if isinstance(value, list):
+        value = value[0] if value else None
+    if isinstance(value, dict):
+        return value.get("id")
+    return None
+
+
 class OB3VerificationError(LibOpenBadgesException):
     """Raised when a JWT-VC credential fails verification.
 
@@ -158,11 +173,11 @@ class OB3Verifier:
         # token carries them) so a verified signature cannot pair an iss/sub
         # with a mismatched credential issuer/subject.
         iss = payload.get("iss")
-        if iss is not None and iss != (vc.get("issuer") or {}).get("id"):
+        if iss is not None and iss != _claim_object_id(vc.get("issuer")):
             raise OB3VerificationError(
                 "JWT 'iss' does not match the credential issuer")
         sub = payload.get("sub")
-        if sub is not None and sub != (vc.get("credentialSubject") or {}).get("id"):
+        if sub is not None and sub != _claim_object_id(vc.get("credentialSubject")):
             raise OB3VerificationError(
                 "JWT 'sub' does not match the credentialSubject id")
 

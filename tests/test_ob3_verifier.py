@@ -191,6 +191,31 @@ class TestOB3VerifierVerify:
         with pytest.raises(OB3VerificationError, match="ISO 8601"):
             ob3_rsa_verifier.verify(token)
 
+    # ── array credentialSubject: the sub cross-check must normalise the list to
+    #    its first element, not call .get() on the list (which raised a raw
+    #    AttributeError that escaped verify()) ─────────────────────────────────
+    def test_array_credential_subject_with_matching_sub_verifies(
+        self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential
+    ):
+        def mutate(p):
+            # credentialSubject as a non-empty array; 'sub' still matches its id.
+            p['vc']['credentialSubject'] = [p['vc']['credentialSubject']]
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential, mutate)
+        restored = ob3_rsa_verifier.verify(token)
+        assert isinstance(restored, OpenBadgeCredential)
+        assert restored.recipient_id == ob3_credential.recipient_id
+
+    def test_array_credential_subject_with_mismatched_sub_raises(
+        self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential
+    ):
+        def mutate(p):
+            p['vc']['credentialSubject'] = [p['vc']['credentialSubject']]
+            p['sub'] = 'mailto:attacker@evil.com'
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential, mutate)
+        # Must be a clean OB3VerificationError, not a raw AttributeError.
+        with pytest.raises(OB3VerificationError, match="sub"):
+            ob3_rsa_verifier.verify(token)
+
 
 class TestOB3VerifierRecipientBinding:
     def test_matching_expected_recipient_ok(self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential):

@@ -158,6 +158,16 @@ class TestOpenBadgeCredential:
         restored = OpenBadgeCredential.from_jwt_payload(payload)
         assert restored.issuance_date == datetime(2026, 1, 1, tzinfo=timezone.utc)
 
+    def test_from_jwt_payload_accepts_array_credential_subject(self):
+        # credentialSubject may be a single object or a non-empty array; an
+        # array must be accepted and its first element used.
+        payload = _make_credential().to_jwt_payload()
+        subject = payload['vc']['credentialSubject']
+        payload['vc']['credentialSubject'] = [subject]
+        restored = OpenBadgeCredential.from_jwt_payload(payload)
+        assert restored.recipient_id == 'mailto:user@example.com'
+        assert restored.achievement.name == 'Badge'
+
     def test_to_vc_evidence_included_when_set(self):
         vc = _make_credential(evidence_url='https://example.com/proof').to_vc()
         assert vc['evidence'][0]['id'] == 'https://example.com/proof'
