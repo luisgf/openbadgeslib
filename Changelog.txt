@@ -4,11 +4,15 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* Unreleased
+* v1.1.3 - 2026-06-29
 
   - Typing: the package now ships a py.typed marker (PEP 561) and is fully
     annotated. mypy (disallow_untyped_defs) runs clean and is enforced in CI,
     so downstream type checkers can consume openbadgeslib's types.
+
+  - Docs: fixed stale wiki references surfaced by an audit (OB2 verifier uses
+    -r/--receptor; baking.py is a shared top-level module; dev extras and the CI
+    gate now list mypy/pdoc).
 
 
 * v1.1.2 - 2026-06-27
