@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* Unreleased
+* v1.1.4 - 2026-06-29
 
   - SECURITY: harden OB3 JWT-VC parsing. OpenBadgeCredential.from_jwt_payload
     now validates the structure of the untrusted "vc" claim explicitly (every
@@ -12,6 +12,14 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     credentialSubject may be an object or non-empty array) and raises a clear
     OB3VerificationError naming the offending field instead of surfacing a raw
     KeyError/TypeError.
+
+  - fix: the OB3 verifier's iss/sub cross-check now normalises an array-form
+    credentialSubject to its first element, so a validly-signed token carrying
+    credentialSubject as an array no longer escapes verify() with a raw
+    AttributeError; it verifies (or fails) as an OB3VerificationError.
+
+  - packaging: advertise Python 3.13 support (add the trove classifier; it was
+    already tested in CI and stated in the README).
 
 
 * v1.1.3 - 2026-06-29
