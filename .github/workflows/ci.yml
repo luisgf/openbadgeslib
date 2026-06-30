@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [master]
+    tags: ['v*']       # pushing a vX.Y.Z tag builds, tests, and publishes
   pull_request:
   release:
     types: [published]
@@ -42,10 +43,16 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    # On a published GitHub Release, or a manual workflow_dispatch, and only if
-    # the whole test matrix above succeeded ("si todo ha ido bien").
+    # Fires when a vX.Y.Z tag is pushed, when a GitHub Release is published, or
+    # on a manual workflow_dispatch — and only if the whole test matrix above
+    # succeeded ("si todo ha ido bien"). Pushing the tag is enough; a GitHub
+    # Release is optional (for release notes). skip-existing makes a double
+    # trigger (tag + Release for the same version) a harmless no-op.
     needs: test
-    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'release'
+      || github.event_name == 'workflow_dispatch'
+      || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,3 +71,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
