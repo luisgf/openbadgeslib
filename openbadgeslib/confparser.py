@@ -63,7 +63,17 @@ class ConfParser():
             # We should raise an UnicodeDecodeError, but the error message is too cryptic.#
             raise ValueError("The encoding of the configuration file and the default encoding of "
                              "the operating system mismatch") from None
-        if self.parser['paths']['base'][0] == '.':
+        try:
+            base = self.parser['paths']['base']
+        except KeyError:
+            raise ValueError(
+                "Configuration file %s is missing the [paths] section or its "
+                "'base' key" % self.config_file) from None
+        if not base:
+            raise ValueError(
+                "Configuration file %s has an empty [paths] 'base' value" % self.config_file)
+
+        if base[0] == '.':
             abs_path = os.path.dirname(self.config_file)
             full_path = os.path.abspath(abs_path)
             self.parser['paths']['base'] = full_path

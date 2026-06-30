@@ -28,6 +28,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     memory use against an attacker-influenced URL serving an oversized
     response.
 
+  - fix: ConfParser.read_conf() now raises a clean ValueError instead of a
+    raw KeyError/IndexError when config.ini is missing the [paths] section,
+    its 'base' key, or has an empty 'base' value.
+
 
 * v1.1.5 - 2026-06-30
 
