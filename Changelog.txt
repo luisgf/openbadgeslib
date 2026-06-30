@@ -24,6 +24,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     downgrade gap in the HTTPS-only enforcement used for the OB2 verify key,
     issuer document, and revocation list.
 
+  - SECURITY: download_file() now caps the response body at 5 MiB, bounding
+    memory use against an attacker-influenced URL serving an oversized
+    response.
+
 
 * v1.1.5 - 2026-06-30
 

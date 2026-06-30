@@ -105,6 +105,12 @@ class _HTTPSOnlyRedirectHandler(request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+#: Verify keys, issuer documents, and revocation lists are all small JSON/PEM
+#: payloads; cap reads well above any legitimate size to bound memory use
+#: against an attacker-influenced URL serving an oversized/streamed response.
+MAX_DOWNLOAD_SIZE = 5 * 1024 * 1024  # 5 MiB
+
+
 def download_file(url: str, allow_insecure: bool = False) -> bytes:
     """Download a file over HTTPS using urllib's default TLS validation.
 
@@ -112,7 +118,8 @@ def download_file(url: str, allow_insecure: bool = False) -> bytes:
     OpenBadges 2.0 root of trust, so fetching it over an unauthenticated
     channel would let an active network attacker substitute their own key and
     forge badges. Pass ``allow_insecure=True`` to explicitly permit plain HTTP.
-    A redirect to a non-HTTPS target is rejected the same way.
+    A redirect to a non-HTTPS target is rejected the same way. The response
+    body is bounded to MAX_DOWNLOAD_SIZE to limit memory use.
     """
     u = urlparse(url)
 
@@ -126,7 +133,19 @@ def download_file(url: str, allow_insecure: bool = False) -> bytes:
 
     opener = request.build_opener(_HTTPSOnlyRedirectHandler(allow_insecure))
     with opener.open(url, timeout=30) as response:
-        return response.read()
+        chunks = []
+        total = 0
+        while True:
+            chunk = response.read(65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_DOWNLOAD_SIZE:
+                raise ValueError(
+                    'Refusing to download %s: response exceeds the %d byte limit'
+                    % (url, MAX_DOWNLOAD_SIZE))
+            chunks.append(chunk)
+        return b''.join(chunks)
 
 
 def show_ecc_disclaimer() -> None:
