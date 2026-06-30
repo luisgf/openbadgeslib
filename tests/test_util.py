@@ -79,21 +79,31 @@ class TestHashEmail:
         assert isinstance(result, bytes)
 
 
-class TestDownloadFile:
-    def _mock_urlopen(self, content=b'file content'):
-        mock_resp = MagicMock()
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
-        mock_resp.read.return_value = content
-        return mock_resp
+def _mock_urlopen(content=b'file content'):
+    mock_resp = MagicMock()
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_resp.read.return_value = content
+    return mock_resp
 
+
+def _mock_opener(content=b'file content', open_side_effect=None):
+    mock_opener = MagicMock()
+    if open_side_effect is not None:
+        mock_opener.open.side_effect = open_side_effect
+    else:
+        mock_opener.open.return_value = _mock_urlopen(content)
+    return mock_opener
+
+
+class TestDownloadFile:
     def test_returns_bytes_on_success(self):
-        with patch('openbadgeslib.util.request.urlopen', return_value=self._mock_urlopen()):
+        with patch('openbadgeslib.util.request.build_opener', return_value=_mock_opener()):
             result = download_file('https://example.com/file.pem')
         assert result == b'file content'
 
     def test_https_url_no_warning(self, capsys):
-        with patch('openbadgeslib.util.request.urlopen', return_value=self._mock_urlopen()):
+        with patch('openbadgeslib.util.request.build_opener', return_value=_mock_opener()):
             download_file('https://example.com/file.pem')
         out = capsys.readouterr().out
         assert 'Warning' not in out
@@ -104,23 +114,71 @@ class TestDownloadFile:
             download_file('http://example.com/file.pem')
 
     def test_http_url_allowed_with_flag_prints_warning(self, capsys):
-        with patch('openbadgeslib.util.request.urlopen', return_value=self._mock_urlopen()):
+        with patch('openbadgeslib.util.request.build_opener', return_value=_mock_opener()):
             download_file('http://example.com/file.pem', allow_insecure=True)
         out = capsys.readouterr().out
         assert 'Warning' in out
 
     def test_timeout_is_passed(self):
-        mock = self._mock_urlopen()
-        with patch('openbadgeslib.util.request.urlopen', return_value=mock) as m:
+        mock_opener = _mock_opener()
+        with patch('openbadgeslib.util.request.build_opener', return_value=mock_opener):
             download_file('https://example.com/file')
-        _, kwargs = m.call_args
+        _, kwargs = mock_opener.open.call_args
         assert kwargs.get('timeout') == 30
 
     def test_propagates_network_errors(self):
         from urllib.error import URLError
-        with patch('openbadgeslib.util.request.urlopen', side_effect=URLError('unreachable')):
+        mock_opener = _mock_opener(open_side_effect=URLError('unreachable'))
+        with patch('openbadgeslib.util.request.build_opener', return_value=mock_opener):
             with pytest.raises(URLError):
                 download_file('https://example.com/file')
+
+
+class TestHTTPSOnlyRedirectHandler:
+    """Regression coverage for the redirect scheme-downgrade fix."""
+
+    def _handler(self, allow_insecure=False):
+        from openbadgeslib.util import _HTTPSOnlyRedirectHandler
+        return _HTTPSOnlyRedirectHandler(allow_insecure)
+
+    def _get_request(self):
+        # The base HTTPRedirectHandler.redirect_request (called for an
+        # allowed scheme) requires a real GET/HEAD/POST method, not a
+        # MagicMock-generated one.
+        req = MagicMock()
+        req.get_method.return_value = 'GET'
+        req.get_full_url.return_value = 'https://example.com/original.pem'
+        req.unredirected_hdrs = {}
+        req.headers = {}
+        return req
+
+    def test_rejects_redirect_to_http(self):
+        with pytest.raises(ValueError):
+            self._handler().redirect_request(
+                self._get_request(), None, 302, 'Found', {}, 'http://evil.example.com/key.pem')
+
+    def test_rejects_redirect_to_non_https_scheme(self):
+        with pytest.raises(ValueError):
+            self._handler().redirect_request(
+                self._get_request(), None, 302, 'Found', {}, 'ftp://example.com/key.pem')
+
+    def test_allows_redirect_to_http_when_insecure_allowed(self):
+        req = self._handler(allow_insecure=True).redirect_request(
+            self._get_request(), None, 302, 'Found', {}, 'http://example.com/key.pem')
+        assert req is not None
+
+    def test_allows_redirect_to_https(self):
+        req = self._handler().redirect_request(
+            self._get_request(), None, 302, 'Found', {}, 'https://example.com/key.pem')
+        assert req is not None
+
+    def test_download_file_uses_https_only_redirect_handler(self):
+        from openbadgeslib.util import _HTTPSOnlyRedirectHandler
+        mock_opener = _mock_opener()
+        with patch('openbadgeslib.util.request.build_opener', return_value=mock_opener) as m:
+            download_file('https://example.com/file.pem')
+        (handler,), _ = m.call_args
+        assert isinstance(handler, _HTTPSOnlyRedirectHandler)
 
 
 class TestMisc:

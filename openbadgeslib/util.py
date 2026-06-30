@@ -24,7 +24,7 @@
 __version__ = '1.1.5'
 
 import hashlib
-from typing import Optional, Union, overload
+from typing import Any, Optional, Union, overload
 from urllib import request
 from urllib.parse import urlparse
 
@@ -82,6 +82,29 @@ def hash_email(email: StrOrBytes, salt: StrOrBytes) -> bytes:
     return sha256_string(email + salt)
 
 
+class _HTTPSOnlyRedirectHandler(request.HTTPRedirectHandler):
+    """Reject any redirect whose target is not HTTPS.
+
+    Plain ``urlopen()`` follows redirects with the default HTTPRedirectHandler,
+    which never re-checks scheme: an https:// URL that 302s to http:// (or to
+    an attacker-chosen insecure origin) would be followed transparently,
+    defeating the HTTPS-only check below.
+    """
+
+    def __init__(self, allow_insecure: bool) -> None:
+        self._allow_insecure = allow_insecure
+
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any,
+                         newurl: str) -> Any:
+        new_scheme = urlparse(newurl).scheme
+        if new_scheme != 'https' and not self._allow_insecure:
+            raise ValueError(
+                'Refusing to follow redirect to %s over insecure %r scheme; HTTPS is '
+                'required (pass allow_insecure=True to override).'
+                % (newurl, new_scheme))
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def download_file(url: str, allow_insecure: bool = False) -> bytes:
     """Download a file over HTTPS using urllib's default TLS validation.
 
@@ -89,6 +112,7 @@ def download_file(url: str, allow_insecure: bool = False) -> bytes:
     OpenBadges 2.0 root of trust, so fetching it over an unauthenticated
     channel would let an active network attacker substitute their own key and
     forge badges. Pass ``allow_insecure=True`` to explicitly permit plain HTTP.
+    A redirect to a non-HTTPS target is rejected the same way.
     """
     u = urlparse(url)
 
@@ -100,7 +124,8 @@ def download_file(url: str, allow_insecure: bool = False) -> bytes:
                 % (url, u.scheme))
         print('Warning! %s does not use TLS.' % url)
 
-    with request.urlopen(url, timeout=30) as response:
+    opener = request.build_opener(_HTTPSOnlyRedirectHandler(allow_insecure))
+    with opener.open(url, timeout=30) as response:
         return response.read()
 
 
