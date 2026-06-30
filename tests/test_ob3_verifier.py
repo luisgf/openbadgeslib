@@ -191,6 +191,22 @@ class TestOB3VerifierVerify:
         with pytest.raises(OB3VerificationError, match="ISO 8601"):
             ob3_rsa_verifier.verify(token)
 
+    # ── a non-object 'vc' claim, or a non-str/non-list 'vc.type', must not leak
+    #    a raw AttributeError/TypeError out of verify() ────────────────────────
+    @pytest.mark.parametrize('bad_vc', ['just-a-string', 12345, None, [], True])
+    def test_non_object_vc_claim_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential, bad_vc):
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
+                                     lambda p: p.__setitem__('vc', bad_vc))
+        with pytest.raises(OB3VerificationError, match="object"):
+            ob3_rsa_verifier.verify(token)
+
+    @pytest.mark.parametrize('bad_type', [None, 12345, {'not': 'a list'}])
+    def test_non_list_vc_type_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential, bad_type):
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
+                                     lambda p: p['vc'].__setitem__('type', bad_type))
+        with pytest.raises(OB3VerificationError, match="OpenBadgeCredential"):
+            ob3_rsa_verifier.verify(token)
+
     # ── array credentialSubject: the sub cross-check must normalise the list to
     #    its first element, not call .get() on the list (which raised a raw
     #    AttributeError that escaped verify()) ─────────────────────────────────
