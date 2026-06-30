@@ -267,16 +267,20 @@ class BadgeSigned():
                 'Unable to verify OpenBadge: the verify key URL %s could not be '
                 'fetched (%s)' % (body['verify']['url'], exc)) from exc
 
-        badge = Badge(image_url=body['image'], verify_key_url=body['verify']['url'],
-                      json_url=body['badge'], key_type=key_type,
-                      pubkey_pem=pubkey_pem)
+        try:
+            badge = Badge(image_url=body['image'], verify_key_url=body['verify']['url'],
+                          json_url=body['badge'], key_type=key_type,
+                          pubkey_pem=pubkey_pem)
 
-        badge_sig = BadgeSigned(source=badge, serial_num=body['uid'],
-                                identity=body['recipient']['identity'].encode('utf-8'),
-                                evidence=evidence, expiration=expiration,
-                                salt=body['recipient']['salt'].encode('utf-8'),
-                                issue_date=body['issuedOn'],
-                                assertion=assertion)
+            badge_sig = BadgeSigned(source=badge, serial_num=body['uid'],
+                                    identity=body['recipient']['identity'].encode('utf-8'),
+                                    evidence=evidence, expiration=expiration,
+                                    salt=body['recipient']['salt'].encode('utf-8'),
+                                    issue_date=body['issuedOn'],
+                                    assertion=assertion)
+        except (KeyError, TypeError, AttributeError) as exc:
+            raise AssertionFormatIncorrect(
+                'OpenBadge assertion is missing or has a malformed field: %s' % exc) from exc
         return badge_sig
 
     def save_to_file(self, file_name: str) -> None:
