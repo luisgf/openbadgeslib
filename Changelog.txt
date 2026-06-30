@@ -15,6 +15,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     instead of a raw KeyError/AttributeError when the untrusted JWS body is
     missing required fields (image, badge, uid, recipient, issuedOn).
 
+  - fix: Verifier.get_badge_status() now catches the ValueError download_file()
+    raises for a non-HTTPS revocation/issuer/badge URL and returns a clean
+    SIGNATURE_ERROR instead of letting it escape uncaught.
+
 
 * v1.1.5 - 2026-06-30
 
