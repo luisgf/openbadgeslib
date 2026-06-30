@@ -6,6 +6,21 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v1.1.5 - 2026-06-30
 
+  - SECURITY: generated private key files are now created with exclusive writes
+    and owner-only permissions (0600), avoiding accidental exposure under
+    permissive umasks and preventing overwrite races.
+
+  - SECURITY: openbadges-signer rejects unsafe badge/receptor filename
+    components before composing the output path, blocking traversal through
+    slash, backslash, drive, dot, empty, or NUL-containing values.
+
+  - SECURITY: SMTP authentication now requires use_ssl=True, so configured
+    credentials are not sent over plaintext SMTP.
+
+  - fix: PNG badge detection now requires an exact openbadges iTXt keyword
+    instead of treating unrelated chunks that merely start with "openbadges" as
+    assertions.
+
   - Docs: remove the remaining legacy Sphinx RST reference pages. User and
     developer documentation is maintained in the GitHub Wiki, and the API
     reference is generated for GitHub Pages.
