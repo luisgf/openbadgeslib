@@ -20,7 +20,7 @@ smtp_server = localhost
 smtp_port = 25
 use_ssl = False
 mail_from = no-reply@issuer.badge
-; Uncomment this if your SMTP server needs authentication
+; Uncomment these and set use_ssl = True if your SMTP server needs authentication
 ;username =
 ;password =
 
@@ -64,4 +64,3 @@ key_type    = RSA
 ;alignement =
 ;tags       =
 ;mail       = ${paths:base}/badge_2_mail.txt
-

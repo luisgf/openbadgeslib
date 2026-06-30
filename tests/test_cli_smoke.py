@@ -270,16 +270,25 @@ def test_badgemail_send_success_invokes_smtp(svg_rsa_badge):
     from unittest.mock import MagicMock
     from openbadgeslib.mail import BadgeMail
     signed = _signed_for_mail(svg_rsa_badge, 'svg')
-    mail = BadgeMail('localhost', 25, False, 'from@example.com',
+    mail = BadgeMail('localhost', 465, True, 'from@example.com',
                      username='u', password='p')
     mail.set_subject('s')
     mail.set_body('b')
     smtp = MagicMock()
-    with patch('openbadgeslib.mail.SMTP', return_value=smtp):
+    with patch('openbadgeslib.mail.SMTP_SSL', return_value=smtp):
         mail.send(signed)
     smtp.login.assert_called_once_with('u', 'p')
     smtp.sendmail.assert_called_once()
     smtp.quit.assert_called_once()
+
+
+def test_badgemail_auth_requires_ssl():
+    import pytest
+    from openbadgeslib.mail import BadgeMail
+
+    with pytest.raises(ValueError, match='SMTP authentication requires'):
+        BadgeMail('localhost', 25, False, 'from@example.com',
+                  username='u', password='p')
 
 
 def test_badgemail_send_uses_ssl_and_png_mime(png_rsa_badge):
@@ -302,13 +311,13 @@ def test_badgemail_auth_error_exits(svg_rsa_badge):
     from smtplib import SMTPAuthenticationError
     from openbadgeslib.mail import BadgeMail
     signed = _signed_for_mail(svg_rsa_badge, 'svg')
-    mail = BadgeMail('localhost', 25, False, 'from@example.com',
+    mail = BadgeMail('localhost', 465, True, 'from@example.com',
                      username='u', password='bad')
     mail.set_subject('s')
     mail.set_body('b')
     smtp = MagicMock()
     smtp.login.side_effect = SMTPAuthenticationError(535, b'bad creds')
-    with patch('openbadgeslib.mail.SMTP', return_value=smtp):
+    with patch('openbadgeslib.mail.SMTP_SSL', return_value=smtp):
         with pytest.raises(SystemExit):
             mail.send(signed)
 

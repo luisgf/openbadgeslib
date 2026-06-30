@@ -39,6 +39,8 @@ class BadgeMail():
                  use_ssl: bool = False, mail_from: Optional[str] = None,
                  username: Optional[str] = None,
                  password: Optional[str] = None) -> None:
+        if username and not use_ssl:
+            raise ValueError('SMTP authentication requires use_ssl=True')
         self.smtp_server = smtp_server
         self.smtp_port = smtp_port
         self.use_ssl = use_ssl

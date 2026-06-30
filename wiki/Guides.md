@@ -115,7 +115,7 @@ mail_from = no-reply@issuer.badge
 ;password = secret
 ```
 
-When `use_ssl` is `True` the connection uses SMTP over SSL; otherwise plain SMTP. If `username` is set, the signer authenticates before sending.
+When `use_ssl` is `True` the connection uses SMTP over SSL; otherwise plain SMTP. If `username` is set, `use_ssl` must be `True` so credentials are not sent over a plaintext connection.
 
 2. A `mail` key in the badge section pointing to a text file. The file's first line becomes the email subject; the remaining lines are the body:
 

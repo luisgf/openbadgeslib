@@ -56,7 +56,7 @@ Used **only** when you sign with `openbadges-signer -M/--mail-badge`. If you nev
 | `smtp_port` | `25` | SMTP port. |
 | `use_ssl` | `False` | Parsed as a boolean; `True` uses an SSL connection. Use `True`/`False` (a literal `False` string is not silently treated as truthy). |
 | `mail_from` | `no-reply@issuer.badge` | Envelope/sender address. |
-| `username` | *(commented)* | Optional SMTP auth user. Leave commented if the server needs no auth. |
+| `username` | *(commented)* | Optional SMTP auth user. Requires `use_ssl = True`; leave commented if the server needs no auth. |
 | `password` | *(commented)* | Optional SMTP auth password. |
 
 ```ini
@@ -65,12 +65,12 @@ smtp_server = localhost
 smtp_port = 25
 use_ssl = False
 mail_from = no-reply@issuer.badge
-; Uncomment this if your SMTP server needs authentication
+; Uncomment these and set use_ssl = True if your SMTP server needs authentication
 ;username =
 ;password =
 ```
 
-`username` and `password` are read with `.get()`, so omitting (or commenting) them is fine for unauthenticated servers. The recipient address comes from the signer's `-r/--receptor` argument, and the message subject/body come from the badge's `mail` file (see below).
+`username` and `password` are read with `.get()`, so omitting (or commenting) them is fine for unauthenticated servers. If `username` is set, `use_ssl` must also be `True` so credentials are not sent over plain SMTP. The recipient address comes from the signer's `-r/--receptor` argument, and the message subject/body come from the badge's `mail` file (see below).
 
 ### `[issuer]`
 
