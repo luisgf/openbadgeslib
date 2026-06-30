@@ -4,6 +4,13 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v1.1.5 - 2026-06-30
+
+  - Docs: remove the remaining legacy Sphinx RST reference pages. User and
+    developer documentation is maintained in the GitHub Wiki, and the API
+    reference is generated for GitHub Pages.
+
+
 * v1.1.4 - 2026-06-29
 
   - SECURITY: harden OB3 JWT-VC parsing. OpenBadgeCredential.from_jwt_payload
