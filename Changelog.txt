@@ -32,6 +32,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     raw KeyError/IndexError when config.ini is missing the [paths] section,
     its 'base' key, or has an empty 'base' value.
 
+  - fix: OB3Verifier.verify() now raises OB3VerificationError instead of a
+    raw AttributeError/TypeError when the JWT 'vc' claim is not an object, or
+    its 'type' field is not a string/list.
+
 
 * v1.1.5 - 2026-06-30
 

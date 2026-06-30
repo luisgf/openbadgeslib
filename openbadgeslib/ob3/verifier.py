@@ -156,9 +156,15 @@ class OB3Verifier:
             )
 
         vc = payload["vc"]
+        if not isinstance(vc, dict):
+            raise OB3VerificationError(
+                "JWT 'vc' claim must be an object, got %s" % type(vc).__name__)
+
         vc_types = vc.get("type", [])
         if isinstance(vc_types, str):
             vc_types = [vc_types]
+        elif not isinstance(vc_types, list):
+            vc_types = []
         if "OpenBadgeCredential" not in vc_types:
             raise OB3VerificationError(
                 "JWT 'vc' claim is not an OpenBadgeCredential (type=%r)" % (vc_types,)
