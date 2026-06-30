@@ -32,6 +32,7 @@
 import argparse
 import configparser
 import logging
+import ntpath
 import sys
 import os
 import os.path
@@ -51,6 +52,14 @@ from .util import __version__, normalize_recipient_id
 logger = logging.getLogger(__name__)
 
 # Entry Point
+
+
+def _safe_filename_component(value: str, field_name: str) -> str:
+    if not value or value in ('.', '..') or '\x00' in value:
+        raise ValueError('%s is not safe for use in an output filename' % field_name)
+    if os.path.basename(value) != value or ntpath.basename(value) != value:
+        raise ValueError('%s must not contain path separators' % field_name)
+    return value
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -86,13 +95,19 @@ def main() -> None:
                      args.badge, args.receptor, args.ob_version, args.output)
         conf = read_config_or_exit(args.config)
         badge = resolve_badge_section(conf, args.badge)
+        try:
+            safe_badge = _safe_filename_component(badge, 'badge')
+            safe_receptor = _safe_filename_component(args.receptor, 'receptor')
+        except ValueError as exc:
+            print('ERROR: %s' % exc)
+            sys.exit(-1)
 
         badge_obj = Badge.create_from_conf(conf, badge)
 
         if badge_obj.image_type is BadgeImgType.PNG:
-            fbase = '%s_%s.png' % (badge, args.receptor)
+            fbase = '%s_%s.png' % (safe_badge, safe_receptor)
         elif badge_obj.image_type is BadgeImgType.SVG:
-            fbase = '%s_%s.svg' % (badge, args.receptor)
+            fbase = '%s_%s.svg' % (safe_badge, safe_receptor)
         else:
             raise BadgeImgFormatUnsupported(
                 'Unsupported image type: %r' % (badge_obj.image_type,))

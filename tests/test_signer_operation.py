@@ -6,6 +6,7 @@ from openbadgeslib import signer
 from openbadgeslib.signer import Signer
 from openbadgeslib.confparser import ConfParser
 from openbadgeslib.keys import KeyType
+from openbadgeslib.openbadges_signer import _safe_filename_component
 from openbadgeslib.badge import (Badge, BadgeType, BadgeImgType, Assertion,
                                  BadgeSigned, extract_svg_assertion,
                                  extract_png_assertion)
@@ -336,3 +337,27 @@ class TestSignAlreadySigned:
         s = Signer(identity='a@b.com', badge_type=BadgeType.SIGNED)
         with pytest.raises(ErrorSigningFile):
             s.sign_badge(badge_with_sig)
+
+
+class TestSignerOutputFilenameValidation:
+    @pytest.mark.parametrize('value', [
+        'badge_1',
+        'recipient@example.com',
+        'recipient+label@example.com',
+    ])
+    def test_safe_filename_component_accepts_plain_values(self, value):
+        assert _safe_filename_component(value, 'field') == value
+
+    @pytest.mark.parametrize('value', [
+        '',
+        '.',
+        '..',
+        '../recipient@example.com',
+        'recipient/../../outside',
+        r'recipient\outside',
+        'C:recipient',
+        'recipient\x00@example.com',
+    ])
+    def test_safe_filename_component_rejects_path_values(self, value):
+        with pytest.raises(ValueError):
+            _safe_filename_component(value, 'field')
