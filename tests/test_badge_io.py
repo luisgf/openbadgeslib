@@ -1,11 +1,32 @@
 """Tests for badge image embedding and extraction (SVG / PNG)."""
-import pytest
+from struct import pack
 from unittest.mock import patch
+from zlib import crc32
 
+import pytest
+from png import Reader, signature as png_signature
+
+from openbadgeslib import baking
 from openbadgeslib.badge import (
     Assertion, extract_svg_assertion, extract_png_assertion, BadgeSigned,
 )
 from openbadgeslib.errors import BadgeImgFormatUnsupported
+
+
+def _png_with_inserted_chunk(png_bytes, tag, data, index=1):
+    chunks = list(Reader(bytes=png_bytes).chunks())
+    chunks.insert(index, (tag, data))
+
+    out = png_signature
+    for chunk_tag, chunk_data in chunks:
+        out += pack("!I", len(chunk_data))
+        if isinstance(chunk_tag, str):
+            chunk_tag = chunk_tag.encode('iso8859-1')
+        out += chunk_tag + chunk_data
+        checksum = crc32(chunk_tag)
+        checksum = crc32(chunk_data, checksum) & 0xFFFFFFFF
+        out += pack("!I", checksum)
+    return out
 
 
 class TestAssertionObject:
@@ -71,6 +92,42 @@ class TestExtractPNGAssertion:
         from openbadgeslib.errors import AssertionFormatIncorrect
         with pytest.raises(AssertionFormatIncorrect):
             extract_png_assertion(png_image)
+
+    def test_ignores_unrelated_itxt_before_assertion(self, signed_png_rsa):
+        png_with_comment = _png_with_inserted_chunk(
+            signed_png_rsa.signed,
+            'iTXt',
+            b'comment\x00\x00\x00\x00\x00not-an-openbadges-assertion',
+        )
+
+        extracted = extract_png_assertion(png_with_comment)
+
+        assert extracted.get_assertion() == signed_png_rsa.assertion.get_assertion()
+
+    def test_returns_clean_error_for_only_prefixed_non_keyword_itxt(self, png_image):
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        png_with_comment = _png_with_inserted_chunk(
+            png_image,
+            'iTXt',
+            b'openbadgesevil\x00\x00\x00\x00\x00not-an-assertion',
+        )
+
+        with pytest.raises(AssertionFormatIncorrect):
+            extract_png_assertion(png_with_comment)
+
+
+class TestBakingPNGAssertionDetection:
+    def test_has_png_detects_baked_assertion(self, png_image):
+        assert baking.has_png(baking.bake_png(png_image, 'header.payload.sig')) is True
+
+    def test_has_png_ignores_prefixed_non_keyword_itxt(self, png_image):
+        png_with_comment = _png_with_inserted_chunk(
+            png_image,
+            'iTXt',
+            b'openbadgesevil\x00\x00\x00\x00\x00not-an-assertion',
+        )
+
+        assert baking.has_png(png_with_comment) is False
 
 
 class TestSvgHeaderVariants:

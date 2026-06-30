@@ -47,6 +47,13 @@ class DecompressionLimitExceeded(Exception):
     """Raised when a compressed iTXt token inflates beyond the allowed size."""
 
 
+def _split_openbadges_itxt(data: bytes) -> Optional[bytes]:
+    keyword, sep, rest = data.partition(b'\x00')
+    if sep != b'\x00' or keyword != ITXT_KEYWORD or len(rest) < 2:
+        return None
+    return rest
+
+
 def _bounded_inflate(data: bytes, limit: int = MAX_ITXT_DECOMPRESSED) -> bytes:
     import zlib
     inflator = zlib.decompressobj()
@@ -132,7 +139,7 @@ def has_png(image_bytes: bytes) -> bool:
     """Return True if *image_bytes* already carries an OpenBadges iTXt chunk."""
     for tag, data in Reader(bytes=image_bytes).chunks():
         tag_str = tag.decode('ascii') if isinstance(tag, bytes) else tag
-        if tag_str == 'iTXt' and data.startswith(ITXT_KEYWORD):
+        if tag_str == 'iTXt' and _split_openbadges_itxt(data) is not None:
             return True
     return False
 
@@ -152,9 +159,8 @@ def extract_png(image_bytes: bytes, max_decompressed: int = MAX_ITXT_DECOMPRESSE
         if tag_str != 'iTXt':
             continue
 
-        # iTXt layout: keyword \0 comp_flag comp_method lang \0 trans \0 text
-        keyword, sep, rest = data.partition(b'\x00')
-        if sep != b'\x00' or keyword != ITXT_KEYWORD or len(rest) < 2:
+        rest = _split_openbadges_itxt(data)
+        if rest is None:
             continue
         compression_flag = rest[0]
         _, sep_lang, rest = rest[2:].partition(b'\x00')   # drop language tag
