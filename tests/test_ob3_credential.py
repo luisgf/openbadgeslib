@@ -1,8 +1,10 @@
 """Tests for the OpenBadges 3.0 credential data model."""
 from datetime import datetime, timezone
 
+import pytest
+
 from openbadgeslib.ob3.credential import (
-    Achievement, Issuer, OpenBadgeCredential, OB3_CONTEXT, _iso, _parse_iso,
+    Achievement, Issuer, OpenBadgeCredential, OB3_CONTEXT, _iso, _parse_iso, _parse_date,
 )
 
 
@@ -243,3 +245,10 @@ class TestHelpers:
     def test_parse_iso_roundtrip(self):
         dt = datetime(2026, 7, 15, 8, 0, 0, tzinfo=timezone.utc)
         assert _parse_iso(_iso(dt)) == dt
+
+    @pytest.mark.parametrize('bad_value', [12345, None, [], {}, True])
+    def test_parse_date_non_string_raises_clean_value_error(self, bad_value):
+        # A non-string date claim must not leak a raw AttributeError from
+        # _parse_iso's str.replace() call.
+        with pytest.raises(ValueError):
+            _parse_date(bad_value, 'vc.validFrom')

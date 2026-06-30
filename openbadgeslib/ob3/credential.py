@@ -237,7 +237,7 @@ def _parse_date(value: Any, where: str) -> datetime:
     """Parse an ISO 8601 date, raising a clear ValueError naming the field."""
     try:
         return _parse_iso(value)
-    except (ValueError, TypeError) as exc:
+    except (ValueError, TypeError, AttributeError) as exc:
         raise ValueError(
             "invalid ISO 8601 date in %s: %r" % (where, value)) from exc
 

@@ -191,6 +191,14 @@ class TestOB3VerifierVerify:
         with pytest.raises(OB3VerificationError, match="ISO 8601"):
             ob3_rsa_verifier.verify(token)
 
+    def test_non_string_date_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        # A non-string validFrom must not leak a raw AttributeError out of
+        # verify() (_parse_iso calls str.replace() on it directly).
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
+                                     lambda p: p['vc'].__setitem__('validFrom', 12345))
+        with pytest.raises(OB3VerificationError, match="ISO 8601"):
+            ob3_rsa_verifier.verify(token)
+
     # ── a non-object 'vc' claim, or a non-str/non-list 'vc.type', must not leak
     #    a raw AttributeError/TypeError out of verify() ────────────────────────
     @pytest.mark.parametrize('bad_vc', ['just-a-string', 12345, None, [], True])

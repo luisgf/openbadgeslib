@@ -36,6 +36,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     raw AttributeError/TypeError when the JWT 'vc' claim is not an object, or
     its 'type' field is not a string/list.
 
+  - fix: _parse_date() now raises a clean ValueError instead of a raw
+    AttributeError when a vc date claim (validFrom/validUntil) is not a
+    string.
+
 
 * v1.1.5 - 2026-06-30
 
