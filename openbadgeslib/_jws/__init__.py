@@ -77,7 +77,13 @@ def verify_block(msg: Union[str, bytes], key: Optional[Any] = None) -> bool:
     if key is None:
         raise MissingKey("No verification key provided")
 
-    header = utils.decode(head_b64)
+    try:
+        header = utils.decode(head_b64)
+    except (ValueError, TypeError) as exc:
+        raise SignatureError("Malformed JWS header") from exc
+    if not isinstance(header, dict):
+        raise SignatureError("Malformed JWS header")
+
     alg_name = header.get('alg')
     if not alg_name:
         raise MissingVerifier("JWS header is missing 'alg'")

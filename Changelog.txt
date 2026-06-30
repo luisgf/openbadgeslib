@@ -4,6 +4,14 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* Unreleased
+
+  - fix: JWS header parsing (verify_block) now wraps malformed/non-object
+    headers into SignatureError instead of leaking a raw json.JSONDecodeError,
+    and every openbadgeslib._jws exception now inherits from
+    LibOpenBadgesException so it can no longer escape verify()/sign() uncaught.
+
+
 * v1.1.5 - 2026-06-30
 
   - SECURITY: generated private key files are now created with exclusive writes

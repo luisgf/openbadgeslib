@@ -5,7 +5,7 @@ import pytest
 from openbadgeslib._jws import sign, verify_block
 from openbadgeslib._jws import utils
 from openbadgeslib._jws.exceptions import (
-    SignatureError, RouteMissingError, MissingKey, MissingSigner,
+    SignatureError, RouteMissingError, MissingKey, MissingSigner, MissingVerifier,
 )
 
 
@@ -125,6 +125,33 @@ class TestVerifyBlockEdgeCases:
         jws = _build_jws({'alg': 'RS256'}, PAYLOAD, raw_sig)
         with pytest.raises(MissingKey):
             verify_block(jws, key=None)
+
+    def test_non_json_header_raises_signature_error(self, rsa_pub_pem):
+        """A base64url-valid but non-JSON header must not leak json.JSONDecodeError."""
+        from openbadgeslib.keys import KeyRSA
+        k = KeyRSA()
+        k.read_public_key(rsa_pub_pem)
+        bad_header = utils.to_base64(b'not-json-at-all')
+        jws = bad_header + b'.' + utils.encode(PAYLOAD) + b'.' + utils.to_base64(b'sig')
+        with pytest.raises(SignatureError):
+            verify_block(jws, key=k.get_pub_key())
+
+    def test_non_dict_header_raises_signature_error(self, rsa_pub_pem):
+        """A header that decodes to valid JSON that isn't an object must be rejected cleanly."""
+        from openbadgeslib.keys import KeyRSA
+        k = KeyRSA()
+        k.read_public_key(rsa_pub_pem)
+        list_header = utils.encode(['not', 'a', 'dict'])
+        jws = list_header + b'.' + utils.encode(PAYLOAD) + b'.' + utils.to_base64(b'sig')
+        with pytest.raises(SignatureError):
+            verify_block(jws, key=k.get_pub_key())
+
+
+class TestExceptionHierarchy:
+    def test_all_jws_exceptions_are_libopenbadgesexception(self):
+        from openbadgeslib.errors import LibOpenBadgesException
+        for exc_cls in (MissingKey, MissingSigner, MissingVerifier, SignatureError, RouteMissingError):
+            assert issubclass(exc_cls, LibOpenBadgesException)
 
 
 # ── utils ──────────────────────────────────────────────────────────────────────

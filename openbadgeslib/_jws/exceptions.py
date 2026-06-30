@@ -1,18 +1,25 @@
-class MissingKey(Exception):
+from ..errors import LibOpenBadgesException
+
+
+class JWSException(LibOpenBadgesException):
     pass
 
 
-class MissingSigner(Exception):
+class MissingKey(JWSException):
     pass
 
 
-class MissingVerifier(Exception):
+class MissingSigner(JWSException):
     pass
 
 
-class SignatureError(Exception):
+class MissingVerifier(JWSException):
     pass
 
 
-class RouteMissingError(Exception):
+class SignatureError(JWSException):
+    pass
+
+
+class RouteMissingError(JWSException):
     pass
