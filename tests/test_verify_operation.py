@@ -151,6 +151,15 @@ class TestGetBadgeStatus:
             result = v.get_badge_status(badge)
         assert result.status is BadgeStatus.EXPIRED
 
+    def test_non_https_revocation_url_returns_signature_error(self, badge_for_verify_rsa):
+        # download_file() raises a plain ValueError for a non-HTTPS URL; that
+        # must surface as a clean SIGNATURE_ERROR, not an unhandled exception.
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        with patch.object(v, 'check_revocation', side_effect=ValueError('insecure scheme')):
+            result = v.get_badge_status(badge)
+        assert result.status is BadgeStatus.SIGNATURE_ERROR
+
 
 class TestCheckRevocation:
     """Exercise the real check_revocation network/JSON chaining (mocked I/O)."""

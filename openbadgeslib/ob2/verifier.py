@@ -89,6 +89,12 @@ class Verifier():
             return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, e.reason)
         except URLError as e:
             return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, e.reason)
+        except ValueError as e:
+            # download_file() (used by check_revocation for the badge JSON,
+            # issuer JSON, and revocation list URLs, all attacker-influenced)
+            # raises ValueError for a non-HTTPS URL; treat it the same as the
+            # network-error cases above instead of letting it escape uncaught.
+            return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, str(e))
 
         # OK, all is correct.
         return VerifyInfo(BadgeStatus.VALID, 'OK')
