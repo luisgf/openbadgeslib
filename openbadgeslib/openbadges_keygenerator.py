@@ -30,7 +30,7 @@
 """
 
 import argparse
-import os.path
+import os
 import sys
 
 from .logs import Logger
@@ -39,6 +39,14 @@ from .confparser import read_config_or_exit, resolve_badge_section
 from .util import __version__
 
 # Entry Point
+
+
+def _write_pem_file(path: str, data: bytes, mode: int) -> None:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    fd = os.open(path, flags, mode)
+    with os.fdopen(fd, 'wb') as f:
+        f.write(data)
+    os.chmod(path, mode)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -103,11 +111,8 @@ def main() -> None:
     kf = KeyFactory(key_type)
     priv_key_pem, pub_key_pem = kf.generate_keypair()
 
-    with open(private_key, 'wb') as f:
-        f.write(priv_key_pem)
-
-    with open(public_key, 'wb') as f:
-        f.write(pub_key_pem)
+    _write_pem_file(private_key, priv_key_pem, 0o600)
+    _write_pem_file(public_key, pub_key_pem, 0o644)
 
     log.console.info('Private key saved at: %s' % private_key)
     log.console.info('Public key saved at: %s' % public_key)

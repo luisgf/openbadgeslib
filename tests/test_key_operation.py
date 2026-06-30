@@ -1,5 +1,7 @@
 import functools
 import hashlib
+import os
+import stat
 import unittest
 
 import pytest
@@ -12,6 +14,7 @@ from openbadgeslib import keys
 from openbadgeslib.errors import UnknownKeyType
 from openbadgeslib.confparser import ConfParser
 from openbadgeslib.keys import detect_key_type, KeyRSA, KeyECC, KeyType
+from openbadgeslib.openbadges_keygenerator import _write_pem_file
 
 
 class check_key_factory(unittest.TestCase) :
@@ -227,3 +230,26 @@ class TestKeyECCReadWrite:
         k2.read_public_key(pub_pem)
         assert k2.get_priv_key_pem() == priv_pem
         assert k2.get_pub_key_pem() == pub_pem
+
+
+class TestKeyGeneratorFileWrites:
+    @pytest.mark.skipif(os.name == 'nt', reason='POSIX permissions required')
+    def test_private_key_file_is_owner_only_under_permissive_umask(self, tmp_path):
+        path = tmp_path / 'sign.pem'
+        old_umask = os.umask(0)
+        try:
+            _write_pem_file(str(path), b'private-key', 0o600)
+        finally:
+            os.umask(old_umask)
+
+        assert path.read_bytes() == b'private-key'
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+    def test_write_pem_file_refuses_to_overwrite_existing_file(self, tmp_path):
+        path = tmp_path / 'sign.pem'
+        path.write_bytes(b'existing')
+
+        with pytest.raises(FileExistsError):
+            _write_pem_file(str(path), b'new', 0o600)
+
+        assert path.read_bytes() == b'existing'
