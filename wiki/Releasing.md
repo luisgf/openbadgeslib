@@ -55,17 +55,17 @@ Replace `X.Y.Z` with the new version throughout.
    git push origin master
    ```
 
-5. **Tag the release** with an annotated tag and push it:
+5. **Tag the release** with an annotated tag and push it. **Pushing a `vX.Y.Z` tag is what triggers the build, test and PyPI upload** — no further step is required:
 
    ```bash
    git tag -a vX.Y.Z -m "openbadgeslib vX.Y.Z"
    git push origin vX.Y.Z
    ```
 
-6. **Create the GitHub Release.** Draft a Release for the `vX.Y.Z` tag (Releases → Draft a new release, or `gh release create`) and **Publish** it. Publishing — not merely tagging — is what triggers the upload to PyPI.
+6. **(Optional) Create the GitHub Release** for release notes. The publish already runs from the tag push (step 5), so a Release is no longer required to ship; create one only to attach human-readable notes. Publishing it re-runs the workflow, but `skip-existing` makes the duplicate upload a harmless no-op.
 
    ```bash
-   gh release create vX.Y.Z --title "vX.Y.Z" --notes-file -
+   gh release create vX.Y.Z --verify-tag --title "vX.Y.Z" --notes-file -
    ```
 
 ## What CI does
@@ -73,20 +73,29 @@ Replace `X.Y.Z` with the new version throughout.
 The workflow is `.github/workflows/ci.yml`. It has two jobs:
 
 - **test** runs on every `push` to `master` and every pull request, across the Python `3.10`, `3.11`, `3.12`, and `3.13` matrix (`fail-fast: false`). Each leg installs `".[dev]"`, runs `flake8 openbadgeslib tests`, then `mypy`, then `pytest --cov`.
-- **publish** runs when a GitHub Release is *published* **or** the workflow is
-  triggered manually (`workflow_dispatch`), and `needs: test`, so it runs
-  **only if the whole test matrix passed**. It builds the sdist and wheel with
-  `python -m build` and uploads them to PyPI via `pypa/gh-action-pypi-publish`.
+- **publish** runs when a **`vX.Y.Z` tag is pushed**, when a GitHub Release is
+  *published*, **or** the workflow is triggered manually (`workflow_dispatch`),
+  and `needs: test`, so it runs **only if the whole test matrix passed**. It
+  builds the sdist and wheel with `python -m build` and uploads them to PyPI via
+  `pypa/gh-action-pypi-publish` (with `skip-existing: true`, so re-running or a
+  tag+Release double trigger never fails).
 
 ```yaml
+on:
+  push:
+    tags: ['v*']
 publish:
   needs: test
-  if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+  if: >-
+    github.event_name == 'release'
+    || github.event_name == 'workflow_dispatch'
+    || startsWith(github.ref, 'refs/tags/v')
 ```
 
-This means: tagging alone does nothing; a Release whose tests fail will **not**
-publish; and you can publish the current `master` on demand from
-**Actions → CI → Run workflow** (or `gh workflow run ci.yml`).
+This means: **pushing the tag publishes** (the test matrix still gates it, so a
+tag whose tests fail will **not** publish); a GitHub Release is optional; and you
+can still publish the current `master` on demand from **Actions → CI → Run
+workflow** (or `gh workflow run ci.yml`).
 
 ## The PyPI token
 
