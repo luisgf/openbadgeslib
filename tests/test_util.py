@@ -83,7 +83,8 @@ def _mock_urlopen(content=b'file content'):
     mock_resp = MagicMock()
     mock_resp.__enter__ = lambda s: s
     mock_resp.__exit__ = MagicMock(return_value=False)
-    mock_resp.read.return_value = content
+    # download_file() now reads in chunks until an empty read signals EOF.
+    mock_resp.read.side_effect = [content, b'']
     return mock_resp
 
 
@@ -132,6 +133,27 @@ class TestDownloadFile:
         with patch('openbadgeslib.util.request.build_opener', return_value=mock_opener):
             with pytest.raises(URLError):
                 download_file('https://example.com/file')
+
+    def test_oversized_response_raises(self):
+        from openbadgeslib.util import MAX_DOWNLOAD_SIZE
+        chunk = b'x' * 65536
+        n_chunks = MAX_DOWNLOAD_SIZE // len(chunk) + 2  # guaranteed to exceed the cap
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.read.side_effect = [chunk] * n_chunks + [b'']
+        mock_opener = MagicMock()
+        mock_opener.open.return_value = mock_resp
+        with patch('openbadgeslib.util.request.build_opener', return_value=mock_opener):
+            with pytest.raises(ValueError):
+                download_file('https://example.com/huge-file')
+
+    def test_response_just_under_cap_succeeds(self):
+        from openbadgeslib.util import MAX_DOWNLOAD_SIZE
+        content = b'x' * (MAX_DOWNLOAD_SIZE - 1)
+        with patch('openbadgeslib.util.request.build_opener', return_value=_mock_opener(content)):
+            result = download_file('https://example.com/almost-too-big')
+        assert len(result) == MAX_DOWNLOAD_SIZE - 1
 
 
 class TestHTTPSOnlyRedirectHandler:
