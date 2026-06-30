@@ -33,6 +33,17 @@ class TestCheckJWSSignature:
         result = v.check_jws_signature(badge)
         assert result.status is BadgeStatus.SIGNATURE_ERROR
 
+    def test_malformed_jws_header_returns_signature_error(self, badge_for_verify_rsa):
+        from openbadgeslib._jws import utils as jws_utils
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+
+        # Header is base64url-valid but not JSON at all.
+        badge.assertion.header = jws_utils.to_base64(b'not-json-at-all')
+
+        result = v.check_jws_signature(badge)
+        assert result.status is BadgeStatus.SIGNATURE_ERROR
+
 
 class TestCheckIdentity:
     def test_matching_identity_returns_true(self, badge_for_verify_rsa):
