@@ -10,7 +10,7 @@ from openbadgeslib import baking
 from openbadgeslib.badge import (
     Assertion, extract_svg_assertion, extract_png_assertion, BadgeSigned,
 )
-from openbadgeslib.errors import BadgeImgFormatUnsupported
+from openbadgeslib.errors import BadgeImgFormatUnsupported, AssertionFormatIncorrect
 
 
 def _png_with_inserted_chunk(png_bytes, tag, data, index=1):
@@ -195,3 +195,29 @@ class TestBadgeSignedReadFromFile:
         with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
             badge = BadgeSigned.read_from_file(path)
         assert isinstance(badge.get_serial_num(), str)
+
+    def _badge_with_tampered_body(self, tmp_path, signed_svg_rsa, svg_image, mutate):
+        from openbadgeslib._jws import utils as jws_utils
+
+        assertion = extract_svg_assertion(signed_svg_rsa.signed)
+        body = assertion.decode_body()
+        mutate(body)
+        new_body_b64 = jws_utils.encode(body)
+        tampered = assertion.header + b'.' + new_body_b64 + b'.' + assertion.signature
+
+        baked = baking.bake_svg(svg_image, tampered.decode('utf-8'))
+        return self._write_temp(tmp_path, baked, '.svg')
+
+    def test_missing_recipient_field_raises_clean_error(self, tmp_path, signed_svg_rsa, svg_image, rsa_pub_pem):
+        path = self._badge_with_tampered_body(
+            tmp_path, signed_svg_rsa, svg_image, lambda body: body.pop('recipient'))
+        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
+            with pytest.raises(AssertionFormatIncorrect):
+                BadgeSigned.read_from_file(path)
+
+    def test_missing_uid_field_raises_clean_error(self, tmp_path, signed_svg_rsa, svg_image, rsa_pub_pem):
+        path = self._badge_with_tampered_body(
+            tmp_path, signed_svg_rsa, svg_image, lambda body: body.pop('uid'))
+        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
+            with pytest.raises(AssertionFormatIncorrect):
+                BadgeSigned.read_from_file(path)

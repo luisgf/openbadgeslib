@@ -11,6 +11,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     and every openbadgeslib._jws exception now inherits from
     LibOpenBadgesException so it can no longer escape verify()/sign() uncaught.
 
+  - fix: BadgeSigned.read_from_file() now raises AssertionFormatIncorrect
+    instead of a raw KeyError/AttributeError when the untrusted JWS body is
+    missing required fields (image, badge, uid, recipient, issuedOn).
+
 
 * v1.1.5 - 2026-06-30
 
