@@ -8,15 +8,14 @@
 #   "!" or a "BREAKING CHANGE:" body trailer marks a breaking change.
 
 [general]
-# A short chore/ci/release commit does not need a body.
-ignore=body-is-missing
+# A short chore/ci/release commit does not need a body, and body line length is
+# not enforced: the convention is about a parseable type-prefixed title (so a
+# changelog can be drafted), not body prose wrapping.
+ignore=body-is-missing, body-max-line-length
 # Merge / revert / fixup / squash commits are ignored by gitlint's defaults.
 
 [title-match-regex]
 regex=^(feat|fix|security|perf|docs|chore|ci|test|refactor|build|style|release)(\([a-z0-9.-]+\))?!?: .+
 
 [title-max-length]
-line-length=80
-
-[body-max-line-length]
 line-length=80
