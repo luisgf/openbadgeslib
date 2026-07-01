@@ -7,7 +7,7 @@ import pytest
 from openbadgeslib.util import (
     sha1_string, sha256_string, md5_string,
     hash_email, download_file, show_ecc_disclaimer,
-    normalize_recipient_id,
+    normalize_recipient_id, recipient_ids_match,
     __version__,
 )
 
@@ -226,3 +226,31 @@ class TestNormalizeRecipientId:
 
     def test_none_passthrough(self):
         assert normalize_recipient_id(None) is None
+
+    def test_uppercase_mailto_scheme_not_double_prefixed(self):
+        # The scheme check must be case-insensitive (RFC 6068): an
+        # already-prefixed URI in a different case must not get a second
+        # 'mailto:' prepended.
+        assert normalize_recipient_id('MAILTO:a@b.com') == 'MAILTO:a@b.com'
+
+
+class TestRecipientIdsMatch:
+    def test_mailto_case_insensitive_match(self):
+        assert recipient_ids_match('mailto:John@Example.com', 'mailto:john@example.com')
+
+    def test_mailto_mixed_scheme_case_match(self):
+        assert recipient_ids_match('mailto:a@b.com', 'MAILTO:A@B.COM')
+
+    def test_did_is_case_sensitive(self):
+        assert not recipient_ids_match('did:example:ABC', 'did:example:abc')
+
+    def test_did_exact_match(self):
+        assert recipient_ids_match('did:example:abc', 'did:example:abc')
+
+    def test_none_only_matches_none(self):
+        assert recipient_ids_match(None, None)
+        assert not recipient_ids_match(None, 'mailto:a@b.com')
+        assert not recipient_ids_match('mailto:a@b.com', None)
+
+    def test_different_recipients_do_not_match(self):
+        assert not recipient_ids_match('mailto:a@b.com', 'mailto:c@d.com')

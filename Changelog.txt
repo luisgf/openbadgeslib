@@ -94,6 +94,12 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     creation can no longer leave the umask permanently changed for the rest
     of the process.
 
+  - fix: normalize_recipient_id() no longer double-prefixes an
+    already-mailto: URI whose scheme is spelled in a different case, and
+    OB3Verifier.verify()'s recipient binding now compares mailto: URIs
+    case-insensitively (DIDs remain compared exactly), so a legitimate
+    recipient is no longer wrongly rejected for a casing difference.
+
 
 * v1.1.5 - 2026-06-30
 
