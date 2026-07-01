@@ -6,6 +6,14 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * Unreleased
 
+  - feat: openbadges-verifier gained a --json flag for machine-readable output.
+    It prints a single JSON object ({valid, ob_version, recipient, reason, and
+    version-specific fields such as OB2 trusted/status or OB3
+    issuer/achievement/…}) instead of the human [+]/[-]/[~] lines, and exits 0
+    when valid / non-zero otherwise — usable in CI and services without
+    scraping stdout. The default (human) output and its exit codes are
+    unchanged.
+
   - feat: OB3 issuer DIDs can now be resolved to a verification key. New
     ob3.resolve_did() and OB3Verifier.for_issuer_did() support did:key (Ed25519
     and P-256, self-certifying, offline) and did:web (fetches the DID document
