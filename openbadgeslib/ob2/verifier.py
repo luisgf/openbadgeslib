@@ -26,7 +26,7 @@ from typing import Any, Optional
 from .badge import BadgeStatus
 from ..util import hash_email, download_file, show_ecc_disclaimer
 from ..keys import KeyType, detect_key_type
-from .._jws.exceptions import SignatureError as JWS_SignatureError
+from .._jws.exceptions import JWSException
 from .._jws import verify_block as jws_verify_block
 from .._jws import utils as jws_utils
 from ..errors import AssertionFormatIncorrect, NotIdentityInAssertion
@@ -108,7 +108,10 @@ class Verifier():
         try:
             jws_verify_block(badge.assertion.get_assertion(), verify_key)
             return VerifyInfo(BadgeStatus.VALID, 'OK')
-        except JWS_SignatureError as err:
+        except JWSException as err:
+            # Any JWS-layer failure — bad signature, malformed/missing 'alg',
+            # missing key, unsupported algorithm — is a clean, untrusted-input
+            # driven signature-verification failure, not a library bug.
             return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, str(err))
 
     def check_revocation(self, badge: Any) -> Optional[str]:

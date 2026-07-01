@@ -44,6 +44,32 @@ class TestCheckJWSSignature:
         result = v.check_jws_signature(badge)
         assert result.status is BadgeStatus.SIGNATURE_ERROR
 
+    def test_header_missing_alg_returns_signature_error(self, badge_for_verify_rsa):
+        # verify_block() raises MissingVerifier (a JWSException sibling of
+        # SignatureError) for a header missing 'alg'; check_jws_signature()
+        # must catch that too, not just SignatureError itself.
+        from openbadgeslib._jws import utils as jws_utils
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+
+        badge.assertion.header = jws_utils.encode({'typ': 'JWS'})  # no 'alg'
+
+        result = v.check_jws_signature(badge)
+        assert result.status is BadgeStatus.SIGNATURE_ERROR
+
+    def test_missing_verification_key_returns_signature_error(self, badge_for_verify_rsa):
+        # verify_block() raises MissingKey when no key is available at all
+        # (no trusted key and no badge-embedded key); that must also resolve
+        # to a clean SIGNATURE_ERROR, not an uncaught exception.
+        # badge.source is a shared fixture object (see conftest.py), so patch
+        # its pub_key temporarily rather than mutating it in place.
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+
+        with patch.object(badge.source, 'pub_key', None):
+            result = v.check_jws_signature(badge)
+        assert result.status is BadgeStatus.SIGNATURE_ERROR
+
 
 class TestCheckIdentity:
     def test_matching_identity_returns_true(self, badge_for_verify_rsa):

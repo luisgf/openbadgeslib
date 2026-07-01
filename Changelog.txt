@@ -71,6 +71,11 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     signature segment into SignatureError instead of leaking a raw
     binascii.Error.
 
+  - fix: Verifier.check_jws_signature() now catches the JWSException base
+    class instead of only SignatureError, so a JWS header missing 'alg' or
+    a completely missing verification key resolves to a clean
+    SIGNATURE_ERROR instead of an uncaught exception.
+
 
 * v1.1.5 - 2026-06-30
 
