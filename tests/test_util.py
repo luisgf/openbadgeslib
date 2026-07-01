@@ -226,6 +226,8 @@ class TestSSRFProtection:
         '127.0.0.1', '169.254.169.254', '10.0.0.5', '192.168.1.1',
         '172.16.0.1', '0.0.0.0', '::1', 'fe80::1', 'fc00::1',
         '::ffff:127.0.0.1',
+        # RFC 6598 carrier-grade NAT: not is_private, but not globally routable.
+        '100.64.0.1', '100.127.255.255',
     ])
     def test_private_host_rejected(self, ip):
         with patch('openbadgeslib.util._resolve_host', return_value=[ip]):

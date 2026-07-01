@@ -113,9 +113,15 @@ def _resolve_host(host: str, port: int) -> List[str]:
     return [str(info[4][0]) for info in infos]
 
 
+# RFC 6598 carrier-grade NAT shared address space. Python's ipaddress does not
+# flag it as private/reserved, but it is not globally routable and commonly
+# fronts internal ISP/cloud infrastructure, so it is a valid SSRF target.
+_CGNAT_V4 = ipaddress.ip_network('100.64.0.0/10')
+
+
 def _ip_is_blocked(ip_str: str) -> bool:
-    """True if *ip_str* is a loopback/private/link-local/reserved address a
-    verifier must never be steered into fetching (an SSRF sink)."""
+    """True if *ip_str* is a loopback/private/link-local/reserved/CGNAT address
+    a verifier must never be steered into fetching (an SSRF sink)."""
     try:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
@@ -124,6 +130,8 @@ def _ip_is_blocked(ip_str: str) -> bool:
     # embedded IPv4 address, not the v6 wrapper, or the loopback slips through.
     if ip.version == 6 and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
+    if ip.version == 4 and ip in _CGNAT_V4:
+        return True
     return (ip.is_private or ip.is_loopback or ip.is_link_local
             or ip.is_reserved or ip.is_multicast or ip.is_unspecified)
 
