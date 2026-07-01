@@ -40,6 +40,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     AttributeError when a vc date claim (validFrom/validUntil) is not a
     string.
 
+  - fix: Verifier.check_expiration() now raises AssertionFormatIncorrect
+    instead of a raw TypeError when the untrusted 'expires' claim is not a
+    numeric timestamp.
+
 
 * v1.1.5 - 2026-06-30
 

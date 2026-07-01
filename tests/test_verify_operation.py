@@ -94,6 +94,16 @@ class TestCheckExpiration:
         assert result is not None
         assert isinstance(result, str)
 
+    def test_non_numeric_expiration_raises_clean_error(self, badge_for_verify_rsa):
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        # An untrusted 'expires' claim of the wrong type must not raise a raw
+        # TypeError from the `<` comparison.
+        badge.expiration = 'not-a-timestamp'
+        with pytest.raises(AssertionFormatIncorrect):
+            v.check_expiration(badge)
+
 
 class TestGetBadgeStatus:
     def test_valid_badge_returns_valid(self, badge_for_verify_rsa):
