@@ -179,7 +179,12 @@ class Verifier():
         if revocation:
             for badge_id in revocation:
                 if str(badge_id) == serial_num:
-                    return revocation[badge_id]
+                    # A matched serial means the badge IS revoked, regardless of
+                    # whether the issuer published a (possibly empty/falsy)
+                    # reason. Always return a truthy string so the presence of a
+                    # revocation is never masked by a falsy reason value.
+                    reason = revocation[badge_id]
+                    return str(reason) if reason else 'Revoked (no reason provided)'
 
         return None
 
