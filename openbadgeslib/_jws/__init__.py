@@ -95,7 +95,10 @@ def verify_block(msg: Union[str, bytes], key: Optional[Any] = None) -> bool:
             % alg_name)
 
     signing_input = head_b64 + b'.' + payload_b64
-    raw_sig = utils.from_base64(sig_b64)
+    try:
+        raw_sig = utils.from_base64(sig_b64)
+    except (ValueError, TypeError) as exc:
+        raise SignatureError("Malformed JWS signature") from exc
 
     algo = _algo_for(alg_name)
     try:

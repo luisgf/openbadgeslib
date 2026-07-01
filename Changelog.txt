@@ -67,6 +67,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     that downstream consumers actually read. An expired or not-yet-valid
     credential is now rejected regardless of the JWT claim.
 
+  - fix: verify_block() now wraps a malformed (invalid-length) base64url JWS
+    signature segment into SignatureError instead of leaking a raw
+    binascii.Error.
+
 
 * v1.1.5 - 2026-06-30
 
