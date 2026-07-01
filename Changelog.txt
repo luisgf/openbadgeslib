@@ -22,7 +22,9 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
   - fix: openbadges-signer's -M/--mail-badge now reports a clean error
     instead of crashing when config.ini sets an SMTP username without
-    use_ssl=True; the already-signed badge is still saved.
+    use_ssl=True, when the mail template file is missing/unreadable
+    (OSError), or when the badge section has no 'mail' key (KeyError); the
+    already-signed badge is still saved in every case.
 
   - fix: OB3Signer.sign() now raises ErrorSigningFile instead of leaking a
     raw jwt.exceptions.InvalidKeyError when the requested algorithm doesn't
