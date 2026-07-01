@@ -83,7 +83,7 @@ openbadges-publish -c ./config/config.ini -o ./public -V 2
 
 This produces, under the output directory:
 - `organization.json` — the issuer `Profile` (`@context`, `type`, `id`, name, url, email, image, a `publicKey` array, `revocationList`), built from the `[issuer]` section.
-- `revocation.json` — a conformant `RevocationList` document (an empty `revokedAssertions` array until a badge is revoked).
+- `revoked.json` — a conformant `RevocationList` document (an empty `revokedAssertions` array until a badge is revoked). The filename is the `[issuer]` section's `revocationList` value (`revoked.json` in the scaffolded config).
 - One folder per `[badge_N]` section, each containing `badge.json` (a conformant `BadgeClass`), `key.json` (the `CryptographicKey` that `verification.creator` points at), and a copy of that badge's public key as `verify.pem`.
 
 (Legacy `-V 1` writes the same tree in the pre-2.0 shape: no `@context`/`type`, an empty `revoked.json` object, and no `key.json`.)
