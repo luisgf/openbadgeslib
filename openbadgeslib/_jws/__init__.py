@@ -104,7 +104,11 @@ def verify_block(msg: Union[str, bytes], key: Optional[Any] = None) -> bool:
     try:
         prepared = algo.prepare_key(key_to_pem(key))
         valid = algo.verify(signing_input, prepared, raw_sig)
-    except (InvalidKeyError, ValueError) as exc:
+    except (InvalidKeyError, ValueError, AttributeError, TypeError) as exc:
+        # A private key served where a public key is expected reaches
+        # RSAAlgorithm.verify() as an RSAPrivateKey, which has no .verify()
+        # method — PyJWT lets the resulting AttributeError escape. Treat any
+        # such key/algorithm mismatch as a failed signature, never a crash.
         raise SignatureError(str(exc)) from exc
 
     if not valid:
