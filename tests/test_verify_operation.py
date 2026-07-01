@@ -270,6 +270,51 @@ class TestCheckRevocation:
             with pytest.raises(AssertionFormatIncorrect):
                 v.check_revocation(badge)
 
+    def test_non_object_badge_json_raises_clean_error(self, badge_for_verify_rsa):
+        # Valid JSON that isn't an object (e.g. an array) must not raise a
+        # raw AttributeError from badge_obj.get('issuer').
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        with patch('openbadgeslib.ob2.verifier.download_file', return_value=b'[1, 2, 3]'):
+            with pytest.raises(AssertionFormatIncorrect):
+                v.check_revocation(badge)
+
+    def test_non_object_issuer_json_raises_clean_error(self, badge_for_verify_rsa):
+        import json as _json
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        badge_json = {'issuer': 'https://example.com/issuer.json'}
+
+        def fake_download(url, *a, **k):
+            if url == badge.source.json_url:
+                return _json.dumps(badge_json).encode()
+            return b'"just-a-string"'   # issuer body is valid JSON, not an object
+
+        with patch('openbadgeslib.ob2.verifier.download_file', side_effect=fake_download):
+            with pytest.raises(AssertionFormatIncorrect):
+                v.check_revocation(badge)
+
+    def test_non_object_revocation_json_raises_clean_error(self, badge_for_verify_rsa):
+        import json as _json
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        badge_json = {'issuer': 'https://example.com/issuer.json'}
+        issuer_json = {'revocationList': 'https://example.com/revoked.json'}
+
+        def fake_download(url, *a, **k):
+            if url == badge.source.json_url:
+                return _json.dumps(badge_json).encode()
+            if url == badge_json['issuer']:
+                return _json.dumps(issuer_json).encode()
+            return b'[1, 2, 3]'   # revocation list is valid JSON, not an object
+
+        with patch('openbadgeslib.ob2.verifier.download_file', side_effect=fake_download):
+            with pytest.raises(AssertionFormatIncorrect):
+                v.check_revocation(badge)
+
 
 class TestEmbeddedKeyFallback:
     """The verify_key=None path trusts the key embedded in the badge itself —
