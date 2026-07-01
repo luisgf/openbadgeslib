@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* Unreleased
+* v1.1.6 - 2026-07-01
 
   - fix: OB2 Verifier(verify_key=...) again accepts a live pycryptodome/ecdsa
     key object (not only PEM bytes); the construction-time key-type guard now
