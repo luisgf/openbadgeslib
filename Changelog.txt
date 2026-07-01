@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* Unreleased
+* v1.2.0 - 2026-07-01
 
   - feat: openbadges-verifier gained a --json flag for machine-readable output.
     It prints a single JSON object ({valid, ob_version, recipient, reason, and

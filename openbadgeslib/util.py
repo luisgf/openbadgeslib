@@ -21,7 +21,7 @@
         License along with this library.
 """
 
-__version__ = '1.1.6'
+__version__ = '1.2.0'
 
 import hashlib
 from typing import Any, Optional, Union, overload
