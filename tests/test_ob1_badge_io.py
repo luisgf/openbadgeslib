@@ -167,14 +167,14 @@ class TestBadgeSignedReadFromFile:
 
     def test_read_signed_svg_rsa(self, tmp_path, signed_svg_rsa, rsa_pub_pem):
         path = self._write_temp(tmp_path, signed_svg_rsa.signed, '.svg')
-        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
+        with patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem):
             badge = BadgeSigned.read_from_file(path)
         assert badge.assertion is not None
         assert badge.source.key_type is not None
 
     def test_read_signed_png_rsa(self, tmp_path, signed_png_rsa, rsa_pub_pem):
         path = self._write_temp(tmp_path, signed_png_rsa.signed, '.png')
-        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
+        with patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem):
             badge = BadgeSigned.read_from_file(path)
         assert badge.assertion is not None
 
@@ -187,14 +187,14 @@ class TestBadgeSignedReadFromFile:
     def test_read_signed_svg_ecc(self, tmp_path, signed_svg_ecc, ecc_pub_pem):
         from openbadgeslib.keys import KeyType
         path = self._write_temp(tmp_path, signed_svg_ecc.signed, '.svg')
-        with patch('openbadgeslib.ob2.badge.download_file', return_value=ecc_pub_pem):
+        with patch('openbadgeslib.ob1.badge.download_file', return_value=ecc_pub_pem):
             badge = BadgeSigned.read_from_file(path)
         assert badge.source.key_type is KeyType.ECC
 
     def test_verify_key_download_failure_raises(self, tmp_path, signed_svg_rsa):
         from openbadgeslib.errors import ErrorParsingFile
         path = self._write_temp(tmp_path, signed_svg_rsa.signed, '.svg')
-        with patch('openbadgeslib.ob2.badge.download_file',
+        with patch('openbadgeslib.ob1.badge.download_file',
                    side_effect=ValueError('unreachable')):
             with pytest.raises(ErrorParsingFile):
                 BadgeSigned.read_from_file(path)
@@ -203,7 +203,7 @@ class TestBadgeSignedReadFromFile:
         # Regression for the str/bytes bug: get_serial_num must not crash on a
         # badge reconstructed from a file (serial is the JSON 'uid').
         path = self._write_temp(tmp_path, signed_svg_rsa.signed, '.svg')
-        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
+        with patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem):
             badge = BadgeSigned.read_from_file(path)
         assert isinstance(badge.get_serial_num(), str)
 
@@ -222,14 +222,14 @@ class TestBadgeSignedReadFromFile:
     def test_missing_recipient_field_raises_clean_error(self, tmp_path, signed_svg_rsa, svg_image, rsa_pub_pem):
         path = self._badge_with_tampered_body(
             tmp_path, signed_svg_rsa, svg_image, lambda body: body.pop('recipient'))
-        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
+        with patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem):
             with pytest.raises(AssertionFormatIncorrect):
                 BadgeSigned.read_from_file(path)
 
     def test_missing_uid_field_raises_clean_error(self, tmp_path, signed_svg_rsa, svg_image, rsa_pub_pem):
         path = self._badge_with_tampered_body(
             tmp_path, signed_svg_rsa, svg_image, lambda body: body.pop('uid'))
-        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
+        with patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem):
             with pytest.raises(AssertionFormatIncorrect):
                 BadgeSigned.read_from_file(path)
 
@@ -239,14 +239,14 @@ class TestBadgeSignedReadFromFile:
         # KeyError instead of ErrorParsingFile.
         path = self._badge_with_tampered_body(
             tmp_path, signed_svg_rsa, svg_image, lambda body: body.pop('verify'))
-        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
+        with patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem):
             with pytest.raises(ErrorParsingFile):
                 BadgeSigned.read_from_file(path)
 
     def test_non_dict_verify_field_raises_clean_error(self, tmp_path, signed_svg_rsa, svg_image, rsa_pub_pem):
         path = self._badge_with_tampered_body(
             tmp_path, signed_svg_rsa, svg_image, lambda body: body.__setitem__('verify', 'not-a-dict'))
-        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
+        with patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem):
             with pytest.raises(ErrorParsingFile):
                 BadgeSigned.read_from_file(path)
 
@@ -269,7 +269,7 @@ class TestBadgeSignedReadFromFile:
         # TypeError/AttributeError from the field accesses before the guarded
         # construction block.
         path = self._badge_with_raw_body(tmp_path, signed_svg_rsa, svg_image, raw_body)
-        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
+        with patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem):
             with pytest.raises(AssertionFormatIncorrect):
                 BadgeSigned.read_from_file(path)
 

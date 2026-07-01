@@ -221,7 +221,7 @@ class TestCheckRevocation:
         badge_json = {'issuer': 'https://example.com/issuer.json'}
         issuer_json = {'revocationList': 'https://example.com/revoked.json'}
         revocation_json = {str(badge.serial_num): 'Mistake'}
-        with patch('openbadgeslib.ob2.verifier.download_file',
+        with patch('openbadgeslib.ob1.verifier.download_file',
                    side_effect=self._fake_download(badge, badge_json, issuer_json, revocation_json)):
             assert v.check_revocation(badge) == 'Mistake'
 
@@ -235,7 +235,7 @@ class TestCheckRevocation:
         badge_json = {'issuer': 'https://example.com/issuer.json'}
         issuer_json = {'revocationList': 'https://example.com/revoked.json'}
         revocation_json = {str(badge.serial_num): reason}
-        with patch('openbadgeslib.ob2.verifier.download_file',
+        with patch('openbadgeslib.ob1.verifier.download_file',
                    side_effect=self._fake_download(badge, badge_json, issuer_json, revocation_json)):
             result = v.check_revocation(badge)
         assert result  # truthy
@@ -249,7 +249,7 @@ class TestCheckRevocation:
         badge_json = {'issuer': 'https://example.com/issuer.json'}
         issuer_json = {'revocationList': 'https://example.com/revoked.json'}
         revocation_json = {str(badge.serial_num): reason}
-        with patch('openbadgeslib.ob2.verifier.download_file',
+        with patch('openbadgeslib.ob1.verifier.download_file',
                    side_effect=self._fake_download(badge, badge_json, issuer_json, revocation_json)):
             result = v.get_badge_status(badge)
         assert result.status is BadgeStatus.REVOKED
@@ -260,7 +260,7 @@ class TestCheckRevocation:
         badge_json = {'issuer': 'https://example.com/issuer.json'}
         issuer_json = {'revocationList': 'https://example.com/revoked.json'}
         revocation_json = {'some-other-serial': 'Mistake'}
-        with patch('openbadgeslib.ob2.verifier.download_file',
+        with patch('openbadgeslib.ob1.verifier.download_file',
                    side_effect=self._fake_download(badge, badge_json, issuer_json, revocation_json)):
             assert v.check_revocation(badge) is None
 
@@ -269,7 +269,7 @@ class TestCheckRevocation:
         v = Verifier(identity=identity)
         badge_json = {'issuer': 'https://example.com/issuer.json'}
         issuer_json = {}  # no revocationList key — must be treated as not revoked
-        with patch('openbadgeslib.ob2.verifier.download_file',
+        with patch('openbadgeslib.ob1.verifier.download_file',
                    side_effect=self._fake_download(badge, badge_json, issuer_json, {})):
             assert v.check_revocation(badge) is None
 
@@ -280,7 +280,7 @@ class TestCheckRevocation:
         from openbadgeslib.errors import AssertionFormatIncorrect
         badge, identity = badge_for_verify_rsa
         v = Verifier(identity=identity)
-        with patch('openbadgeslib.ob2.verifier.download_file',
+        with patch('openbadgeslib.ob1.verifier.download_file',
                    return_value=_json.dumps({}).encode()):  # badge JSON has no 'issuer'
             with pytest.raises(AssertionFormatIncorrect):
                 v.check_revocation(badge)
@@ -296,7 +296,7 @@ class TestCheckRevocation:
                 return _json.dumps({'issuer': 'https://example.com/issuer.json'}).encode()
             return b'<<not json>>'   # issuer body is garbage
 
-        with patch('openbadgeslib.ob2.verifier.download_file', side_effect=fake_download):
+        with patch('openbadgeslib.ob1.verifier.download_file', side_effect=fake_download):
             with pytest.raises(AssertionFormatIncorrect):
                 v.check_revocation(badge)
 
@@ -306,7 +306,7 @@ class TestCheckRevocation:
         from openbadgeslib.errors import AssertionFormatIncorrect
         badge, identity = badge_for_verify_rsa
         v = Verifier(identity=identity)
-        with patch('openbadgeslib.ob2.verifier.download_file', return_value=b'[1, 2, 3]'):
+        with patch('openbadgeslib.ob1.verifier.download_file', return_value=b'[1, 2, 3]'):
             with pytest.raises(AssertionFormatIncorrect):
                 v.check_revocation(badge)
 
@@ -322,7 +322,7 @@ class TestCheckRevocation:
                 return _json.dumps(badge_json).encode()
             return b'"just-a-string"'   # issuer body is valid JSON, not an object
 
-        with patch('openbadgeslib.ob2.verifier.download_file', side_effect=fake_download):
+        with patch('openbadgeslib.ob1.verifier.download_file', side_effect=fake_download):
             with pytest.raises(AssertionFormatIncorrect):
                 v.check_revocation(badge)
 
@@ -341,7 +341,7 @@ class TestCheckRevocation:
                 return _json.dumps(issuer_json).encode()
             return b'[1, 2, 3]'   # revocation list is valid JSON, not an object
 
-        with patch('openbadgeslib.ob2.verifier.download_file', side_effect=fake_download):
+        with patch('openbadgeslib.ob1.verifier.download_file', side_effect=fake_download):
             with pytest.raises(AssertionFormatIncorrect):
                 v.check_revocation(badge)
 
@@ -352,7 +352,7 @@ class TestCheckRevocation:
         from openbadgeslib.errors import AssertionFormatIncorrect
         badge, identity = badge_for_verify_rsa
         v = Verifier(identity=identity)
-        with patch('openbadgeslib.ob2.verifier.download_file',
+        with patch('openbadgeslib.ob1.verifier.download_file',
                    return_value=_json.dumps({'issuer': 12345}).encode()):
             with pytest.raises(AssertionFormatIncorrect):
                 v.check_revocation(badge)
@@ -369,7 +369,7 @@ class TestCheckRevocation:
                 return _json.dumps(badge_json).encode()
             return _json.dumps({'revocationList': 12345}).encode()
 
-        with patch('openbadgeslib.ob2.verifier.download_file', side_effect=fake_download):
+        with patch('openbadgeslib.ob1.verifier.download_file', side_effect=fake_download):
             with pytest.raises(AssertionFormatIncorrect):
                 v.check_revocation(badge)
 

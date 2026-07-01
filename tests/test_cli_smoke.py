@@ -171,9 +171,9 @@ def test_verifier_ob2_end_to_end_trusted_key(tmp_path, svg_rsa_badge, rsa_pub_pe
     pub.write_bytes(rsa_pub_pem)
 
     argv = ['openbadges-verifier', '-i', str(badge_file),
-            '-r', 'recipient@example.com', '-V', '2', '-k', str(pub)]
-    with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem), \
-            patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download), \
+            '-r', 'recipient@example.com', '-V', '1', '-k', str(pub)]
+    with patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem), \
+            patch('openbadgeslib.ob1.verifier.download_file', side_effect=_fake_revocation_download), \
             patch.object(sys, 'argv', argv):
         openbadges_verifier.main()
     assert 'Signature is correct' in capsys.readouterr().out
@@ -186,9 +186,9 @@ def test_verifier_ob2_without_trusted_key_warns(tmp_path, svg_rsa_badge, rsa_pub
     badge_file = _make_signed_ob2_svg(tmp_path, svg_rsa_badge)
 
     argv = ['openbadges-verifier', '-i', str(badge_file),
-            '-r', 'recipient@example.com', '-V', '2']
-    with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem), \
-            patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download), \
+            '-r', 'recipient@example.com', '-V', '1']
+    with patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem), \
+            patch('openbadgeslib.ob1.verifier.download_file', side_effect=_fake_revocation_download), \
             patch.object(sys, 'argv', argv):
         openbadges_verifier.main()
     out = capsys.readouterr().out
@@ -203,9 +203,9 @@ def test_verifier_ob2_wrong_receptor_reports_mismatch(tmp_path, svg_rsa_badge, r
     pub.write_bytes(rsa_pub_pem)
 
     argv = ['openbadges-verifier', '-i', str(badge_file),
-            '-r', 'someone-else@example.com', '-V', '2', '-k', str(pub)]
-    with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem), \
-            patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download), \
+            '-r', 'someone-else@example.com', '-V', '1', '-k', str(pub)]
+    with patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem), \
+            patch('openbadgeslib.ob1.verifier.download_file', side_effect=_fake_revocation_download), \
             patch.object(sys, 'argv', argv):
         openbadges_verifier.main()
     assert '[-]' in capsys.readouterr().out
@@ -215,7 +215,7 @@ def test_verifier_missing_file_exits(tmp_path):
     import pytest
     from openbadgeslib import openbadges_verifier
     argv = ['openbadges-verifier', '-i', str(tmp_path / 'nope.svg'),
-            '-r', 'recipient@example.com', '-V', '2']
+            '-r', 'recipient@example.com', '-V', '1']
     with patch.object(sys, 'argv', argv):
         with pytest.raises(SystemExit):
             openbadges_verifier.main()
@@ -230,7 +230,7 @@ def test_verifier_ob2_unsupported_extension_exits_cleanly(tmp_path, capsys):
     badge_file = tmp_path / 'badge.jpg'
     badge_file.write_bytes(b'not really an image')
     argv = ['openbadges-verifier', '-i', str(badge_file),
-            '-r', 'recipient@example.com', '-V', '2']
+            '-r', 'recipient@example.com', '-V', '1']
     with patch.object(sys, 'argv', argv):
         with pytest.raises(SystemExit):
             openbadges_verifier.main()
@@ -264,7 +264,7 @@ def test_verifier_garbage_pubkey_file_exits_cleanly(tmp_path, svg_rsa_badge, cap
     garbage.write_bytes(b'this is not a pem key at all, just garbage text')
 
     argv = ['openbadges-verifier', '-i', str(badge_file),
-            '-r', 'recipient@example.com', '-V', '2', '-k', str(garbage)]
+            '-r', 'recipient@example.com', '-V', '1', '-k', str(garbage)]
     with patch.object(sys, 'argv', argv):
         with pytest.raises(SystemExit):
             openbadges_verifier.main()
@@ -319,7 +319,7 @@ def test_publish_ob2_creates_full_tree(tmp_path):
     silently published nothing is fixed)."""
     from openbadgeslib import openbadges_publish
     out = tmp_path / 'published'
-    argv = ['openbadges-publish', '-c', './config1.ini', '-o', str(out)]
+    argv = ['openbadges-publish', '-c', './config1.ini', '-o', str(out), '-V', '1']
     with patch.object(sys, 'argv', argv):
         openbadges_publish.main()
 
@@ -337,7 +337,7 @@ def test_publish_existing_output_exits_cleanly(tmp_path):
     from openbadgeslib import openbadges_publish
     out = tmp_path / 'published'
     out.mkdir()
-    argv = ['openbadges-publish', '-c', './config1.ini', '-o', str(out)]
+    argv = ['openbadges-publish', '-c', './config1.ini', '-o', str(out), '-V', '1']
     with patch.object(sys, 'argv', argv):
         with pytest.raises(SystemExit):
             openbadges_publish.main()
@@ -355,7 +355,7 @@ def test_publish_restores_umask_when_a_badge_mkdir_fails(tmp_path):
     os.umask(original)  # just peeking; restore immediately
 
     out = tmp_path / 'published'
-    argv = ['openbadges-publish', '-c', './config1.ini', '-o', str(out)]
+    argv = ['openbadges-publish', '-c', './config1.ini', '-o', str(out), '-V', '1']
     real_mkdir = os.mkdir
 
     def flaky_mkdir(path, *a, **k):
@@ -376,7 +376,7 @@ def test_publish_restores_umask_when_a_badge_mkdir_fails(tmp_path):
 # ── Badge.urls_has_problems ─────────────────────────────────────────────────────
 
 def test_urls_has_problems_all_ok(svg_rsa_badge):
-    with patch('openbadgeslib.ob2.badge.download_file', return_value=b'data'):
+    with patch('openbadgeslib.ob1.badge.download_file', return_value=b'data'):
         assert svg_rsa_badge.urls_has_problems() is False
 
 
@@ -391,7 +391,7 @@ def test_urls_has_problems_detects_later_failure(svg_rsa_badge):
             raise ValueError('unreachable')
         return b'data'
 
-    with patch('openbadgeslib.ob2.badge.download_file', side_effect=fake_download):
+    with patch('openbadgeslib.ob1.badge.download_file', side_effect=fake_download):
         assert svg_rsa_badge.urls_has_problems() is True
 
 
@@ -559,8 +559,8 @@ def test_signer_ob2_writes_file_and_log(tmp_path, capsys):
     from openbadgeslib import openbadges_signer
     cfg = _write_ob2_sign_config(tmp_path)
     argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
-            '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '2', '-E']
-    with patch('openbadgeslib.ob2.badge.download_file', return_value=b'data'), \
+            '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '1', '-E']
+    with patch('openbadgeslib.ob1.badge.download_file', return_value=b'data'), \
             patch.object(sys, 'argv', argv):
         openbadges_signer.main()
     out = capsys.readouterr().out
@@ -574,9 +574,9 @@ def test_signer_ob2_mail_badge_sends(tmp_path):
     from openbadgeslib import openbadges_signer
     cfg = _write_ob2_sign_config(tmp_path)
     argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
-            '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '2', '-E', '-M']
+            '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '1', '-E', '-M']
     smtp = MagicMock()
-    with patch('openbadgeslib.ob2.badge.download_file', return_value=b'data'), \
+    with patch('openbadgeslib.ob1.badge.download_file', return_value=b'data'), \
             patch('openbadgeslib.mail.SMTP', return_value=smtp), \
             patch.object(sys, 'argv', argv):
         openbadges_signer.main()
@@ -593,8 +593,8 @@ def test_signer_ob2_mail_badge_auth_without_ssl_reports_clean_error(tmp_path, ca
         'mail_from = no-reply@example.com\n',
         'mail_from = no-reply@example.com\nusername = user\npassword = pass\n'))
     argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
-            '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '2', '-E', '-M']
-    with patch('openbadgeslib.ob2.badge.download_file', return_value=b'data'), \
+            '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '1', '-E', '-M']
+    with patch('openbadgeslib.ob1.badge.download_file', return_value=b'data'), \
             patch.object(sys, 'argv', argv):
         openbadges_signer.main()   # must not raise
     out = capsys.readouterr().out
@@ -613,8 +613,8 @@ def test_signer_ob2_mail_badge_missing_template_reports_clean_error(tmp_path, ca
         'mail = %s\n' % (tmp_path / 'badgemail.txt'),
         'mail = %s\n' % (tmp_path / 'nonexistent-mail.txt')))
     argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
-            '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '2', '-E', '-M']
-    with patch('openbadgeslib.ob2.badge.download_file', return_value=b'data'), \
+            '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '1', '-E', '-M']
+    with patch('openbadgeslib.ob1.badge.download_file', return_value=b'data'), \
             patch.object(sys, 'argv', argv):
         openbadges_signer.main()   # must not raise
     out = capsys.readouterr().out
@@ -628,7 +628,7 @@ def test_signer_requires_evidence_choice(tmp_path):
     from openbadgeslib import openbadges_signer
     cfg = _write_ob2_sign_config(tmp_path)
     argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
-            '-r', 'r@example.com', '-o', str(tmp_path), '-V', '2']  # neither -e nor -E
+            '-r', 'r@example.com', '-o', str(tmp_path), '-V', '1']  # neither -e nor -E
     with patch.object(sys, 'argv', argv):
         with pytest.raises(SystemExit):
             openbadges_signer.main()
@@ -661,10 +661,10 @@ def test_verifier_debug_flag_emits_debug_records(tmp_path, svg_rsa_badge, rsa_pu
     pub.write_bytes(rsa_pub_pem)
 
     argv = ['openbadges-verifier', '-i', str(badge_file),
-            '-r', 'recipient@example.com', '-V', '2', '-k', str(pub), '-d']
+            '-r', 'recipient@example.com', '-V', '1', '-k', str(pub), '-d']
     with caplog.at_level(logging.DEBUG, logger='openbadgeslib.openbadges_verifier'):
-        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem), \
-                patch('openbadgeslib.ob2.verifier.download_file',
+        with patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem), \
+                patch('openbadgeslib.ob1.verifier.download_file',
                       side_effect=_fake_revocation_download), \
                 patch.object(sys, 'argv', argv):
             openbadges_verifier.main()

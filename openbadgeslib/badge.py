@@ -1,5 +1,5 @@
-"""OpenBadges 2.0 badge objects — compatibility shim, re-exports from openbadgeslib.ob2."""
-from .ob2.badge import (
+"""OpenBadges 1.0 (legacy) badge objects — compatibility shim, re-exports from openbadgeslib.ob1."""
+from .ob1.badge import (
     BadgeStatus, BadgeImgType, BadgeType,
     Assertion, Badge, BadgeSigned,
     extract_svg_assertion, extract_png_assertion,
