@@ -225,6 +225,35 @@ class TestCheckRevocation:
                    side_effect=self._fake_download(badge, badge_json, issuer_json, revocation_json)):
             assert v.check_revocation(badge) == 'Mistake'
 
+    @pytest.mark.parametrize('reason', ['', None, False, 0])
+    def test_revoked_serial_with_falsy_reason_still_reports_revoked(self, badge_for_verify_rsa, reason):
+        # A matched serial means REVOKED even when the issuer published a falsy
+        # reason — check_revocation must return a truthy value so the presence
+        # of the revocation is not masked.
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        badge_json = {'issuer': 'https://example.com/issuer.json'}
+        issuer_json = {'revocationList': 'https://example.com/revoked.json'}
+        revocation_json = {str(badge.serial_num): reason}
+        with patch('openbadgeslib.ob2.verifier.download_file',
+                   side_effect=self._fake_download(badge, badge_json, issuer_json, revocation_json)):
+            result = v.check_revocation(badge)
+        assert result  # truthy
+
+    @pytest.mark.parametrize('reason', ['', None, False, 0])
+    def test_get_badge_status_revoked_with_falsy_reason(self, badge_for_verify_rsa, reason):
+        # End-to-end: a revoked badge with a falsy reason must be reported
+        # REVOKED, not VALID (the truthiness-gating bug).
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        badge_json = {'issuer': 'https://example.com/issuer.json'}
+        issuer_json = {'revocationList': 'https://example.com/revoked.json'}
+        revocation_json = {str(badge.serial_num): reason}
+        with patch('openbadgeslib.ob2.verifier.download_file',
+                   side_effect=self._fake_download(badge, badge_json, issuer_json, revocation_json)):
+            result = v.get_badge_status(badge)
+        assert result.status is BadgeStatus.REVOKED
+
     def test_not_revoked_returns_none(self, badge_for_verify_rsa):
         badge, identity = badge_for_verify_rsa
         v = Verifier(identity=identity)
