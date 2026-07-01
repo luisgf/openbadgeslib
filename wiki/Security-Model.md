@@ -106,6 +106,12 @@ if not revocation_url:
 
 Note the trust implication: revocation is fetched from the **issuer's host** over HTTPS. The result is only as trustworthy as that host and its TLS. An absent `revocationList` means "no revocations published", which is treated as not-revoked. All issuer/revocation downloads and JSON parses are guarded — a missing or malformed document raises a clean library error instead of a raw crash.
 
+### OB3 revocation via credentialStatus
+
+The OB3 equivalent is `credentialStatus` (W3C Bitstring Status List v1.0, or the legacy StatusList2021). It is **opt-in** — `OB3Verifier.verify(..., check_status=True)` or the `--check-status` CLI flag — because verification is otherwise fully offline. When enabled, each status entry's `statusListCredential` is fetched over HTTPS, its `encodedList` is base64url-decoded and GZIP-inflated under a size cap (a bounded inflate, so a crafted status list cannot exhaust memory), and the bit at `statusListIndex` is read (MSB-first). A set revocation/suspension bit fails verification.
+
+The check is **fail-closed**: if the status list cannot be fetched or parsed, verification fails rather than passing. It verifies the *published status bit* only — it does **not** verify the status-list credential's own signature, which is a separate trust chain (often a different key); a deployment needing that guarantee must verify the status-list credential independently.
+
 ### Recipient / identity binding
 
 The signature does not, by itself, bind a badge to a particular recipient — you must request that check explicitly, otherwise it is skipped (not silently failed).
@@ -125,6 +131,15 @@ if sub is not None and sub != (vc.get("credentialSubject") or {}).get("id"):
 ```
 
 It also requires the `vc` claim to be present and to carry the `OpenBadgeCredential` type, so an OB2 JWS token (which has no `vc` claim) is rejected with a clear message rather than misinterpreted.
+
+### DID-based issuer identity (OB3)
+
+`OB3Verifier.for_issuer_did(did)` (and the verifier's `--resolve-did` flag) turn an issuer DID into a verification key. Two methods are supported, each with a different trust anchor:
+
+- **did:key** is *self-certifying*: the public key is encoded directly in the identifier (multibase base58btc of a multicodec-prefixed key). Resolving it needs no network and no external trust — the key **is** the identifier.
+- **did:web** trusts the host's **DNS and TLS**: the DID document is fetched from `https://<host>/.well-known/did.json` (or a path-based `did.json`) using the same HTTPS-only, size-capped downloader, and its first verification method (`publicKeyJwk` or `publicKeyMultibase`) is used.
+
+When `--resolve-did` is used, the DID is read from the still-unverified token and resolved; the signature is then checked against the resolved key. Because the DID is the issuer's own claimed identity, this is legitimate trust anchoring for `did:key`/`did:web` — but it is only as strong as that method's anchor (nothing for did:key beyond the key itself; DNS+TLS for did:web). Ledger/anchored methods (did:ion, did:ethr, …) are not resolved.
 
 Beyond the claim cross-checks, the `vc` body itself is untrusted input, so `from_jwt_payload` validates its **structure** explicitly: every required object (`issuer`, `credentialSubject`, `achievement`) must be a JSON object, the required identity fields (`vc.id`, `issuer.id`, `credentialSubject.id`, `achievement.id`/`name`) must be present and non-empty, dates must be valid ISO 8601, and `credentialSubject` may be a single object or a non-empty array. A malformed credential is rejected with an `OB3VerificationError` that names the offending field, never a raw `KeyError`/`TypeError`.
 

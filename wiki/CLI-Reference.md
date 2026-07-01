@@ -122,7 +122,7 @@ Extracts the embedded assertion/credential from a signed badge image, checks the
 ### Synopsis
 
 ```sh
-openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [--check-status] [-V {2,3}] [-d]
+openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [--check-status] [--resolve-did] [-V {2,3}] [-d]
 ```
 
 | Short | Long | Meaning | Default |
@@ -134,6 +134,7 @@ openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [--c
 | `-k` | `--pubkey FILE` | Verify against this trusted PEM public key file (OB2 and OB3) | none |
 | `-s` | `--show` | Print the assertion/credential before the result | off |
 | | `--check-status` | OB3 only: fetch the `credentialStatus` list and reject a revoked/suspended credential (requires network) | off |
+| | `--resolve-did` | OB3 only: when no trusted key is given, resolve the issuer DID (did:key/did:web) from the token to obtain the verification key | off |
 | `-V` | `--ob-version {2,3}` | `2` = JWS, `3` = JWT-VC | `2` |
 | `-d` | `--debug` | Show debug messages at runtime | off |
 | `-v` | `--version` | Print version and exit | — |
@@ -165,7 +166,9 @@ $ openbadges-verifier -i /tmp/badge_1_recipient@example.com.svg \
 [+] OB3 signature is valid for the identity recipient@example.com
 ```
 
-OB3 without `-l`/`-k` exits with `[!] OB3 verification requires --local BADGE or --pubkey FILE`. OB3 verification only supports `.svg` and `.png` inputs.
+OB3 without `-l`/`-k`/`--resolve-did` exits with `[!] OB3 verification requires --local BADGE, --pubkey FILE, or --resolve-did`. OB3 verification only supports `.svg` and `.png` inputs.
+
+With `--resolve-did` and no explicit key, the issuer DID is read from the (still-unverified) token and resolved to a key, and the signature is then checked against it. `did:key` is self-certifying (the key is encoded in the identifier) and needs no network; `did:web` fetches `https://<host>/.well-known/did.json` (or a path-based `did.json`) and therefore trusts the host's DNS and TLS. See [[Security Model]].
 
 ## openbadges-publish
 

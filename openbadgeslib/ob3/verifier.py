@@ -86,6 +86,18 @@ class OB3Verifier:
                 "Unsupported verification key type: %s" % exc) from exc
         self._allowed_algorithms = _ALGORITHMS_BY_KEY_TYPE[key_type]
 
+    @classmethod
+    def for_issuer_did(cls, did: str, download: Any = None) -> "OB3Verifier":
+        """Construct a verifier by resolving an issuer DID to its public key.
+
+        Supports did:key (offline) and did:web (one HTTPS fetch). Raises
+        OB3VerificationError for an unsupported method or a resolution failure.
+        Imported lazily so DID resolution (and its network path) is only pulled
+        in when a caller actually anchors trust on a DID.
+        """
+        from .did import resolve_did
+        return cls(pubkey_pem=resolve_did(did, download=download))
+
     # ── verification ───────────────────────────────────────────────────────────
 
     def verify(self, token: str,

@@ -89,6 +89,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--check-status', action='store_true',
                         help='OB3 only: fetch the credentialStatus list and reject a '
                              'revoked/suspended credential (requires network access).')
+    parser.add_argument('--resolve-did', action='store_true',
+                        help='OB3 only: when no trusted key is supplied, resolve the '
+                             'issuer DID (did:key/did:web) from the token to obtain the '
+                             'verification key (did:web requires network access).')
     parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
                         metavar='VERSION',
                         help='OpenBadges specification version: 2 (default, JWS) or 3 (JWT-VC).')
@@ -163,14 +167,38 @@ def _verify_ob2(args: argparse.Namespace) -> None:
         sys.exit(-1)
 
 
+def _issuer_did_from_token(token: str) -> str:
+    """Read the issuer DID from an unverified JWT-VC (iss, or vc.issuer.id).
+
+    Only used to anchor trust when --resolve-did is set: the DID is read from
+    the untrusted token, resolved to a key, and the signature is then checked
+    against that key (did:key is self-certifying; did:web trusts DNS+TLS)."""
+    import jwt
+    from .ob3 import OB3VerificationError
+    try:
+        payload = jwt.decode(token, options={'verify_signature': False})
+    except jwt.exceptions.PyJWTError as exc:
+        raise OB3VerificationError('could not read token issuer: %s' % exc) from exc
+    iss = payload.get('iss')
+    if not iss:
+        vc = payload.get('vc')
+        if not isinstance(vc, dict):
+            vc = {}
+        issuer = vc.get('issuer')
+        iss = issuer.get('id') if isinstance(issuer, dict) else issuer
+    if not isinstance(iss, str) or not iss.startswith('did:'):
+        raise OB3VerificationError('token issuer is not a DID: %r' % (iss,))
+    return iss
+
+
 def _verify_ob3(args: argparse.Namespace) -> None:
     """Verify a badge using OpenBadges 3.0 (JWT-VC)."""
     from .ob3 import OB3Verifier, OB3VerificationError
     from .errors import ErrorParsingFile
 
     pub_pem = _resolve_trusted_pubkey(args)
-    if pub_pem is None:
-        print('[!] OB3 verification requires --local BADGE or --pubkey FILE')
+    if pub_pem is None and not args.resolve_did:
+        print('[!] OB3 verification requires --local BADGE, --pubkey FILE, or --resolve-did')
         sys.exit(-1)
 
     with open(args.filein, 'rb') as f:
@@ -191,7 +219,12 @@ def _verify_ob3(args: argparse.Namespace) -> None:
     # Let the library own recipient binding (it normalises mailto:/DID and
     # compares), instead of re-implementing the comparison here.
     try:
-        verifier = OB3Verifier(pubkey_pem=pub_pem)
+        if pub_pem is not None:
+            verifier = OB3Verifier(pubkey_pem=pub_pem)
+        else:
+            issuer_did = _issuer_did_from_token(token)
+            print('[*] Resolving issuer DID %s' % issuer_did)
+            verifier = OB3Verifier.for_issuer_did(issuer_did)
         credential = verifier.verify(token, expected_recipient=args.receptor,
                                      check_status=args.check_status)
     except OB3VerificationError as exc:
