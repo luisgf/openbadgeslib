@@ -297,6 +297,26 @@ def test_badgemail_send_success_invokes_smtp(svg_rsa_badge):
     smtp.quit.assert_called_once()
 
 
+def test_badgemail_send_handles_crlf_injection_value_error(svg_rsa_badge, capsys):
+    # smtplib itself raises a bare ValueError as its CRLF header-injection
+    # guard for a malformed from/to address; that must not crash send().
+    from openbadgeslib.mail import BadgeMail
+    from unittest.mock import MagicMock
+
+    signed = _signed_for_mail(svg_rsa_badge, 'svg')
+    mail = BadgeMail(smtp_server='localhost', smtp_port=25, use_ssl=False,
+                     mail_from='from@example.com')
+    mail.set_subject('subject')
+    mail.set_body('body')
+
+    smtp = MagicMock()
+    smtp.sendmail.side_effect = ValueError('An address is only allowed to have <>')
+    with patch('openbadgeslib.mail.SMTP', return_value=smtp):
+        mail.send(signed)  # must not raise
+
+    assert 'Error sending mail' in capsys.readouterr().out
+
+
 def test_badgemail_auth_requires_ssl():
     import pytest
     from openbadgeslib.mail import BadgeMail
