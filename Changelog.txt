@@ -6,6 +6,17 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * Unreleased
 
+  - SECURITY: OB3 credential revocation is now checkable. OB3Verifier.verify()
+    gained an opt-in check_status=True (and openbadges-verifier a --check-status
+    flag) that resolves each credentialStatus entry — Bitstring Status List v1.0
+    and the legacy StatusList2021 — fetches the status list over HTTPS, and
+    rejects a revoked/suspended credential. Previously OB3 had no revocation
+    control at all (a revoked credential verified as VALID). The check is
+    fail-closed when enabled (an unresolvable/malformed status list is a
+    failure, not a pass) and the GZIP inflate of the bitstring is bounded. It
+    verifies the published status bit only, not the status-list credential's own
+    signature (documented).
+
   - feat: Ed25519 (EdDSA) keys are now supported end to end — key generation
     (set key_type = ED25519 in the badge profile), plus OB2 JWS and OB3 JWT-VC
     signing and verification. detect_key_type classifies an Ed25519 PEM

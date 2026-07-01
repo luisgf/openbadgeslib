@@ -122,7 +122,7 @@ Extracts the embedded assertion/credential from a signed badge image, checks the
 ### Synopsis
 
 ```sh
-openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [-V {2,3}] [-d]
+openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [--check-status] [-V {2,3}] [-d]
 ```
 
 | Short | Long | Meaning | Default |
@@ -133,9 +133,12 @@ openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [-V 
 | `-l` | `--local BADGE` | Verify against the public key from this badge section in `config.ini` | none |
 | `-k` | `--pubkey FILE` | Verify against this trusted PEM public key file (OB2 and OB3) | none |
 | `-s` | `--show` | Print the assertion/credential before the result | off |
+| | `--check-status` | OB3 only: fetch the `credentialStatus` list and reject a revoked/suspended credential (requires network) | off |
 | `-V` | `--ob-version {2,3}` | `2` = JWS, `3` = JWT-VC | `2` |
 | `-d` | `--debug` | Show debug messages at runtime | off |
 | `-v` | `--version` | Print version and exit | — |
+
+For OB3, `--check-status` resolves each `credentialStatus` entry (W3C Bitstring Status List v1.0 or the legacy StatusList2021), fetches the referenced status list over HTTPS, and rejects the badge if its revocation/suspension bit is set. It is **fail-closed**: an unreachable or malformed status list is treated as a verification failure, not a pass. Only the published status bit is checked, not the status-list credential's own signature. See [[Security Model]].
 
 ### Example (OB2, trusted via local config)
 

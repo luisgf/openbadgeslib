@@ -86,6 +86,9 @@ def build_parser() -> argparse.ArgumentParser:
              'verification (OB2 and OB3)')
     parser.add_argument('-s', '--show', action='store_true',
                         help='Show the assertion/credential of the OpenBadge being verified.')
+    parser.add_argument('--check-status', action='store_true',
+                        help='OB3 only: fetch the credentialStatus list and reject a '
+                             'revoked/suspended credential (requires network access).')
     parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
                         metavar='VERSION',
                         help='OpenBadges specification version: 2 (default, JWS) or 3 (JWT-VC).')
@@ -189,7 +192,8 @@ def _verify_ob3(args: argparse.Namespace) -> None:
     # compares), instead of re-implementing the comparison here.
     try:
         verifier = OB3Verifier(pubkey_pem=pub_pem)
-        credential = verifier.verify(token, expected_recipient=args.receptor)
+        credential = verifier.verify(token, expected_recipient=args.receptor,
+                                     check_status=args.check_status)
     except OB3VerificationError as exc:
         print('[-] OB3 verification failed: %s' % exc)
         sys.exit(-1)
