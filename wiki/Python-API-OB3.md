@@ -56,7 +56,7 @@ The credential itself. Several fields are auto-filled in `__post_init__`:
 Useful serialisation methods:
 
 - `to_vc()` — the bare Verifiable Credential JSON object (VC Data Model 2.0, with the OB 3.0 context), no JWT wrapper.
-- `to_jwt_payload()` — the JWT-VC payload: registered claims `iss`, `sub`, `jti`, `iat` (and `exp` when expiring) plus the `vc` body.
+- `to_jwt_payload()` — the OB 3.0 native JWT-VC payload: the credential's members at the top level (no `vc` wrapper) plus the registered claims `iss`, `sub`, `jti`, `nbf` (and `exp` when expiring).
 - `OpenBadgeCredential.from_jwt_payload(payload)` — classmethod that reconstructs a credential from a decoded payload (accepts both `validFrom`/`validUntil` and the older `issuanceDate`/`expirationDate` names).
 
 ## Signing — `OB3Signer`
@@ -70,8 +70,8 @@ OB3Signer(privkey_pem, algorithm='RS256')
 | Method | Returns | Purpose |
 | --- | --- | --- |
 | `sign(credential)` | `str` | Compact JWT-VC string. |
-| `sign_into_svg(credential, svg_bytes)` | `bytes` | JWT-VC baked into an `<openbadges:assertion verify="…"/>` element. |
-| `sign_into_png(credential, png_bytes)` | `bytes` | JWT-VC baked into an `iTXt` chunk keyed `openbadges`. |
+| `sign_into_svg(credential, svg_bytes)` | `bytes` | JWT-VC baked into an `<openbadges:credential verify="…"/>` element. |
+| `sign_into_png(credential, png_bytes)` | `bytes` | JWT-VC baked into an `iTXt` chunk keyed `openbadgecredential`. |
 
 The baking format matches OB 2.0, so existing badge viewers can extract the token regardless of version. See [[Signing and Verification]] for the shared baking concepts and [[Keys and Errors]] for generating compatible keys.
 
