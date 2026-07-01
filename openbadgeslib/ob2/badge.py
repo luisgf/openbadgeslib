@@ -272,16 +272,24 @@ class BadgeSigned():
         except KeyError:
             expiration = None
 
+        # Read the verify URL once, before the try block, so a missing or
+        # malformed 'verify' object cannot raise a fresh, unwrapped
+        # KeyError/TypeError when the except clause below re-references it.
+        verify_dict = body.get('verify')
+        verify_url = verify_dict.get('url') if isinstance(verify_dict, dict) else None
+        if not verify_url:
+            raise ErrorParsingFile("OpenBadge assertion body is missing 'verify.url'")
+
         try:
-            pubkey_pem = download_file(body['verify']['url'])
+            pubkey_pem = download_file(verify_url)
             key_type = detect_key_type(pubkey_pem)
         except Exception as exc:
             raise ErrorParsingFile(
                 'Unable to verify OpenBadge: the verify key URL %s could not be '
-                'fetched (%s)' % (body['verify']['url'], exc)) from exc
+                'fetched (%s)' % (verify_url, exc)) from exc
 
         try:
-            badge = Badge(image_url=body['image'], verify_key_url=body['verify']['url'],
+            badge = Badge(image_url=body['image'], verify_key_url=verify_url,
                           json_url=body['badge'], key_type=key_type,
                           pubkey_pem=pubkey_pem)
 
