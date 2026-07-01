@@ -361,3 +361,35 @@ class TestSignerOutputFilenameValidation:
     def test_safe_filename_component_rejects_path_values(self, value):
         with pytest.raises(ValueError):
             _safe_filename_component(value, 'field')
+
+
+class TestSignMalformedImage:
+    """Malformed carrier images must raise ErrorSigningFile, not a raw
+    baking-library exception (mirrors ob2/badge.py's extract_*_assertion)."""
+
+    def test_has_svg_assertion_on_non_xml_raises_error_signing_file(self):
+        badge = Badge(image_type=BadgeImgType.SVG, image=b'not even xml <<<', key_type=KeyType.RSA)
+        s = Signer(identity='a@b.com', badge_type=BadgeType.SIGNED)
+        with pytest.raises(ErrorSigningFile):
+            s.has_assertion(badge)
+
+    def test_has_png_assertion_on_non_png_raises_error_signing_file(self):
+        badge = Badge(image_type=BadgeImgType.PNG, image=b'not a png at all', key_type=KeyType.RSA)
+        s = Signer(identity='a@b.com', badge_type=BadgeType.SIGNED)
+        with pytest.raises(ErrorSigningFile):
+            s.has_assertion(badge)
+
+    def test_sign_svg_without_svg_root_raises_error_signing_file(self, rsa_priv_pem, rsa_pub_pem):
+        # Well-formed XML but no <svg> root: has_svg_assertion succeeds (no
+        # baked assertion found), but bake_svg itself fails since there is
+        # no <svg> element to attach the assertion to.
+        badge = Badge(
+            image_type=BadgeImgType.SVG,
+            image=b'<?xml version="1.0"?><root><child/></root>',
+            key_type=KeyType.RSA,
+            privkey_pem=rsa_priv_pem,
+            pubkey_pem=rsa_pub_pem,
+        )
+        s = Signer(identity='a@b.com', badge_type=BadgeType.SIGNED, deterministic=True)
+        with pytest.raises(ErrorSigningFile):
+            s.sign_badge(badge)

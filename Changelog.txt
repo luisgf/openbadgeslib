@@ -84,6 +84,11 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     instead of a raw AttributeError/TypeError when the fetched badge,
     issuer, or revocation-list JSON is valid JSON but not an object.
 
+  - fix: Signer (OB2) and OB3Signer now wrap baking.has_svg/has_png/bake_svg/
+    bake_png into ErrorSigningFile instead of letting a raw
+    ExpatError/AttributeError/png.FormatError escape when the carrier image
+    is malformed.
+
 
 * v1.1.5 - 2026-06-30
 

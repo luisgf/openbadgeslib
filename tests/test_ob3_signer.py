@@ -114,6 +114,11 @@ class TestSignIntoSVG:
         assert doc.getElementsByTagName('openbadges:assertion').length == 1
         doc.unlink()
 
+    def test_malformed_svg_raises_error_signing_file(self, ob3_rsa_signer, ob3_credential):
+        from openbadgeslib.errors import ErrorSigningFile
+        with pytest.raises(ErrorSigningFile):
+            ob3_rsa_signer.sign_into_svg(ob3_credential, b'not even xml <<<')
+
 
 # ── sign_into_png() ────────────────────────────────────────────────────────────
 
@@ -146,3 +151,8 @@ class TestSignIntoPNG:
             for tag, data in Reader(bytes=result).chunks()
         )
         assert found
+
+    def test_malformed_png_raises_error_signing_file(self, ob3_rsa_signer, ob3_credential):
+        from openbadgeslib.errors import ErrorSigningFile
+        with pytest.raises(ErrorSigningFile):
+            ob3_rsa_signer.sign_into_png(ob3_credential, b'not a png at all')
