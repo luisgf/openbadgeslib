@@ -74,8 +74,11 @@ class OB3Verifier:
                     ecdsa key object).
     """
 
-    def __init__(self, pubkey_pem: Any) -> None:
+    def __init__(self, pubkey_pem: Any, issuer_did: Optional[str] = None) -> None:
         self.pubkey_pem = key_to_pem(pubkey_pem)
+        # When the key was obtained by resolving a DID, remember that DID so
+        # verify() can bind the credential's stated issuer to it (see verify()).
+        self._anchored_did = issuer_did
         # Pin the accepted algorithms to this key's type so the token header
         # cannot dictate the algorithm (alg:none / HMAC downgrade / cross-type
         # confusion are all rejected up front rather than trusted).
@@ -94,9 +97,16 @@ class OB3Verifier:
         OB3VerificationError for an unsupported method or a resolution failure.
         Imported lazily so DID resolution (and its network path) is only pulled
         in when a caller actually anchors trust on a DID.
+
+        The resulting verifier is anchored to ``did``: verify() additionally
+        requires the credential's own issuer id to equal ``did``, so a token
+        signed by the resolved key but *claiming* a different issuer is
+        rejected. For did:key this is implied by the key being the identifier;
+        for did:web (not self-certifying) it is the check that stops an issuer
+        from being spoofed once its document has been fetched.
         """
         from .did import resolve_did
-        return cls(pubkey_pem=resolve_did(did, download=download))
+        return cls(pubkey_pem=resolve_did(did, download=download), issuer_did=did)
 
     # ── verification ───────────────────────────────────────────────────────────
 
@@ -116,6 +126,12 @@ class OB3Verifier:
         ``credentialSubject.id`` matches; otherwise the caller MUST compare
         ``credential.recipient_id`` itself.
 
+        Issuer binding: when this verifier was built via ``for_issuer_did``, the
+        credential's issuer id is additionally required to equal the anchored
+        DID, so a token signed by the resolved key but claiming a different
+        issuer is rejected. A verifier built directly from a public key performs
+        no issuer binding — the caller vouches for the key's owner.
+
         Pass ``check_status=True`` to also check the credential's
         ``credentialStatus`` (revocation) — this performs an HTTPS fetch of the
         referenced status list and fails closed if the credential is revoked or
@@ -124,6 +140,16 @@ class OB3Verifier:
         """
         payload = self._decode_payload(token)
         credential = self._build_credential(payload)
+
+        # Bind the credential to the DID this verifier was anchored to (if any).
+        # for_issuer_did resolves a DID to a key; without this check verify()
+        # would accept a token signed by that key even when the credential
+        # claims a *different* issuer (a did:web is not self-certifying, so its
+        # fetched key is otherwise decoupled from the credential's issuer id).
+        if self._anchored_did is not None and credential.issuer.id != self._anchored_did:
+            raise OB3VerificationError(
+                "Credential issuer %r does not match the DID the verifier was "
+                "anchored to (%r)" % (credential.issuer.id, self._anchored_did))
 
         # The JWT 'exp'/'iat' claims (checked above by PyJWT) are attacker-
         # supplied and can be decoupled from vc.validUntil/validFrom, which is

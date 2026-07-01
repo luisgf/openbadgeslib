@@ -189,3 +189,72 @@ class TestForIssuerDid:
         verifier = OB3Verifier.for_issuer_did(wrong_did)
         with pytest.raises(OB3VerificationError):
             verifier.verify(token)
+
+    def _did_web_key_doc(self, ed25519_pub_pem, did):
+        pub = ser.load_pem_public_key(ed25519_pub_pem)
+        raw = pub.public_bytes(ser.Encoding.Raw, ser.PublicFormat.Raw)
+        jwk = {"kty": "OKP", "crv": "Ed25519", "x": _b64url(raw)}
+        return {
+            "id": did,
+            "verificationMethod": [
+                {"id": did + "#key-1", "type": "JsonWebKey2020",
+                 "controller": did, "publicKeyJwk": jwk},
+            ],
+        }
+
+    def test_did_web_issuer_spoofing_rejected(self, ed25519_priv_pem, ed25519_pub_pem):
+        # did:web is NOT self-certifying: an attacker who controls
+        # did:web:attacker.example (and its key) signs a credential that CLAIMS
+        # a trusted issuer. Anchoring on the attacker DID resolves their key and
+        # the signature is valid, so binding the credential's issuer id to the
+        # anchored DID is the only thing that rejects the forgery.
+        from openbadgeslib.ob3 import OB3Signer, Achievement, Issuer, OpenBadgeCredential
+        attacker_did = 'did:web:attacker.example'
+        doc = self._did_web_key_doc(ed25519_pub_pem, attacker_did)
+        credential = OpenBadgeCredential(
+            id='urn:uuid:00000000-0000-0000-0000-0000000000ce',
+            issuer=Issuer(id='did:web:trusted-university.example', name='Trusted'),
+            recipient_id='mailto:r@example.com',
+            achievement=Achievement(id='https://a.example/1', name='A',
+                                    description='d', criteria_narrative='c'),
+        )
+        token = OB3Signer(privkey_pem=ed25519_priv_pem, algorithm='EdDSA').sign(credential)
+        verifier = OB3Verifier.for_issuer_did(
+            attacker_did, download=lambda url: json.dumps(doc).encode('utf-8'))
+        with pytest.raises(OB3VerificationError, match='issuer'):
+            verifier.verify(token)
+
+    def test_did_web_matching_issuer_verifies(self, ed25519_priv_pem, ed25519_pub_pem):
+        # The honest case: the credential's issuer id equals the anchored DID.
+        from openbadgeslib.ob3 import OB3Signer, Achievement, Issuer, OpenBadgeCredential
+        did = 'did:web:issuer.example'
+        doc = self._did_web_key_doc(ed25519_pub_pem, did)
+        credential = OpenBadgeCredential(
+            id='urn:uuid:00000000-0000-0000-0000-0000000000cf',
+            issuer=Issuer(id=did, name='Issuer'),
+            recipient_id='mailto:r@example.com',
+            achievement=Achievement(id='https://a.example/1', name='A',
+                                    description='d', criteria_narrative='c'),
+        )
+        token = OB3Signer(privkey_pem=ed25519_priv_pem, algorithm='EdDSA').sign(credential)
+        verifier = OB3Verifier.for_issuer_did(
+            did, download=lambda url: json.dumps(doc).encode('utf-8'))
+        cred = verifier.verify(token)
+        assert cred.issuer.id == did
+
+    def test_direct_pubkey_verifier_does_not_bind_issuer(
+        self, ed25519_priv_pem, ed25519_pub_pem
+    ):
+        # A verifier built straight from a key (no DID anchor) performs no
+        # issuer binding — the caller vouches for the key's owner.
+        from openbadgeslib.ob3 import OB3Signer, Achievement, Issuer, OpenBadgeCredential
+        credential = OpenBadgeCredential(
+            id='urn:uuid:00000000-0000-0000-0000-0000000000d0',
+            issuer=Issuer(id='did:web:anything.example', name='Whoever'),
+            recipient_id='mailto:r@example.com',
+            achievement=Achievement(id='https://a.example/1', name='A',
+                                    description='d', criteria_narrative='c'),
+        )
+        token = OB3Signer(privkey_pem=ed25519_priv_pem, algorithm='EdDSA').sign(credential)
+        cred = OB3Verifier(pubkey_pem=ed25519_pub_pem).verify(token)
+        assert cred.issuer.id == 'did:web:anything.example'
