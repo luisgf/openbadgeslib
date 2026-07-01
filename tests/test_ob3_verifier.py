@@ -290,6 +290,38 @@ class TestOB3VerifierVerify:
         with pytest.raises(OB3VerificationError, match="identifier"):
             ob3_rsa_verifier.verify(token)
 
+    # ── enforce @context and required registered claims (#114) ─────────────────
+    @pytest.mark.parametrize('ctx', [
+        None,
+        ['https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json'],   # VC 2.0 missing
+        ['https://www.w3.org/ns/credentials/v2'],                          # OB context missing
+        ['https://example.com/ctx', 'https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json'],
+        'not-an-array',
+    ])
+    def test_bad_context_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential, ctx):
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
+                                     lambda p: p.__setitem__('@context', ctx))
+        with pytest.raises(OB3VerificationError, match="@context"):
+            ob3_rsa_verifier.verify(token)
+
+    def test_missing_iss_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
+                                     lambda p: p.pop('iss'))
+        with pytest.raises(OB3VerificationError, match="iss"):
+            ob3_rsa_verifier.verify(token)
+
+    def test_missing_nbf_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
+                                     lambda p: p.pop('nbf'))
+        with pytest.raises(OB3VerificationError, match="nbf"):
+            ob3_rsa_verifier.verify(token)
+
+    def test_missing_sub_when_subject_has_id_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
+                                     lambda p: p.pop('sub'))
+        with pytest.raises(OB3VerificationError, match="sub"):
+            ob3_rsa_verifier.verify(token)
+
     # ── a non-string id/name field (consumed downstream as a string, e.g.
     #    recipient binding calls .lower()) must not leak a raw AttributeError ───
     @pytest.mark.parametrize('bad_id', [12345, True, ['a'], {'x': 1}])
