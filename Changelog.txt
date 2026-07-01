@@ -11,6 +11,11 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     wraps the key in key_to_pem() first, matching the verification path and
     OB3Verifier.
 
+  - fix: a malformed config.ini (bad INI syntax, an unresolvable ${...}
+    reference, an encoding mismatch, or a missing/empty [paths] base) now makes
+    every CLI exit cleanly with a '[!] ...' message instead of a raw traceback;
+    read_config_or_exit() catches the typed ValueError from read_conf().
+
   - SECURITY: OB2 revocation is now honored even when the issuer publishes an
     empty/falsy reason for a revoked serial. Previously a revoked badge whose
     revocation-list reason was "", null, false, or 0 was reported VALID

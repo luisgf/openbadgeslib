@@ -68,3 +68,30 @@ class TestReadConfBaseValidation:
         path = _write(tmp_path, 'base = .\n\n[paths]\nbase = .\n')
         with pytest.raises(ValueError):
             ConfParser(path).read_conf()
+
+
+class TestReadConfigOrExit:
+    """read_config_or_exit() is the shared CLI wrapper; a malformed config must
+    exit cleanly (SystemExit + '[!] ...'), not leak read_conf()'s ValueError."""
+
+    def test_unresolvable_interpolation_exits_cleanly(self, tmp_path, capsys):
+        from openbadgeslib.confparser import read_config_or_exit
+        path = _write(
+            tmp_path,
+            '[paths]\nbase = .\n\n[issuer]\nname = ${nonexistent:key}\n')
+        with pytest.raises(SystemExit):
+            read_config_or_exit(path)
+        assert capsys.readouterr().out.startswith('[!]')
+
+    def test_invalid_ini_syntax_exits_cleanly(self, tmp_path, capsys):
+        from openbadgeslib.confparser import read_config_or_exit
+        path = _write(tmp_path, '[paths]\nbase = .\nbase = ./other\n')  # duplicate option
+        with pytest.raises(SystemExit):
+            read_config_or_exit(path)
+        assert capsys.readouterr().out.startswith('[!]')
+
+    def test_missing_file_exits_cleanly(self, tmp_path, capsys):
+        from openbadgeslib.confparser import read_config_or_exit
+        with pytest.raises(SystemExit):
+            read_config_or_exit(str(tmp_path / 'missing.ini'))
+        assert 'does not exist or is empty' in capsys.readouterr().out
