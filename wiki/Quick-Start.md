@@ -99,7 +99,7 @@ openbadges-verifier -c ./config/config.ini \
     -r recipient@example.com -V 3 -l 1
 ```
 
-Omitting both `-k` and `-l` prints `[!] OB3 verification requires --local BADGE or --pubkey FILE` and exits. With `-s / --show`, the verifier also prints the issuer name, achievement name, issuance date, expiration (if set), and evidence URL.
+Omitting `-k`, `-l`, and `--resolve-did` prints `[!] OB3 verification requires --local BADGE, --pubkey FILE, or --resolve-did` and exits. `--resolve-did` is a third trust source: it resolves the issuer DID (did:key/did:web) from the token to obtain the verification key (a resolved did:key is reported as untrusted, since the key is self-asserted). With `-s / --show`, the verifier also prints the issuer name, achievement name, issuance date, expiration (if set), and evidence URL.
 
 ## Next steps
 
