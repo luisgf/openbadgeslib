@@ -6,6 +6,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * Unreleased
 
+  - fix: OB3Verifier.verify() now rejects a vc.validFrom/validUntil claim that
+    parses as a timezone-naive ISO 8601 date-time instead of leaking a raw
+    TypeError when compared against the tz-aware expiration check.
+
   - fix: JWS header parsing (verify_block) now wraps malformed/non-object
     headers into SignatureError instead of leaking a raw json.JSONDecodeError,
     and every openbadgeslib._jws exception now inherits from

@@ -244,4 +244,10 @@ def _parse_date(value: Any, where: str) -> datetime:
 
 def _parse_iso(s: str) -> datetime:
     """Parse an ISO 8601 date string, handling trailing Z."""
-    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        # A date-time with no UTC/offset suffix is valid ISO 8601, but verify()
+        # always compares against an aware datetime.now(timezone.utc) — accept
+        # only unambiguously-anchored timestamps.
+        raise ValueError("date is missing a UTC offset: %r" % s)
+    return dt

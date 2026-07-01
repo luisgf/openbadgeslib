@@ -252,3 +252,11 @@ class TestHelpers:
         # _parse_iso's str.replace() call.
         with pytest.raises(ValueError):
             _parse_date(bad_value, 'vc.validFrom')
+
+    def test_parse_iso_naive_datetime_raises_value_error(self):
+        # A UTC/offset-less date-time is valid ISO 8601 but would produce a
+        # naive datetime that can't be compared against the tz-aware "now"
+        # used in verify() — reject it here instead of letting a TypeError
+        # surface downstream.
+        with pytest.raises(ValueError):
+            _parse_iso('2026-01-01T00:00:00')
