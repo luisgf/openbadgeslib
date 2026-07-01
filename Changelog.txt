@@ -6,6 +6,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * Unreleased
 
+  - fix: openbadges-verifier's --local option now checks the configured
+    public_key file exists before opening it, instead of leaking a raw
+    FileNotFoundError past the CLI's error handling.
+
   - fix: OB3Verifier.verify() now rejects a vc.validFrom/validUntil claim that
     parses as a timezone-naive ISO 8601 date-time instead of leaking a raw
     TypeError when compared against the tz-aware expiration check.

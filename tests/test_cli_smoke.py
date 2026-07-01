@@ -209,6 +209,23 @@ def test_verifier_missing_file_exits(tmp_path):
             openbadges_verifier.main()
 
 
+def test_verifier_local_missing_pubkey_file_exits_cleanly(tmp_path):
+    # The --local branch of _resolve_trusted_pubkey must guard a missing
+    # public_key path the same way the --pubkey branch already does, instead
+    # of leaking a raw FileNotFoundError.
+    import argparse
+    import pytest
+    from openbadgeslib import openbadges_verifier
+
+    cfg = tmp_path / 'config.ini'
+    cfg.write_text(
+        '[paths]\nbase = .\n\n'
+        '[badge_missing]\npublic_key = %s\n' % (tmp_path / 'nonexistent.pem'))
+    args = argparse.Namespace(local='missing', pubkey=None, config=str(cfg))
+    with pytest.raises(SystemExit):
+        openbadges_verifier._resolve_trusted_pubkey(args)
+
+
 def test_verifier_local_and_pubkey_are_mutually_exclusive():
     # wiki/CLI-Reference.md documents -l/-k as mutually exclusive; enforce
     # that in argparse itself instead of silently letting -l win.
