@@ -55,7 +55,7 @@ JSON Web Signature (RFC 7515): content secured with a digital signature in a JSO
 JSON Web Token (RFC 7519): an application of [JWS](#jws) whose payload is a JSON object of claims. [PyJWT](#pyjwt) implements the signing and verification algorithms used here.
 
 ### JWT-VC
-A [JWT](#jwt) used as a W3C Verifiable Credential proof format. The payload carries standard claims (`iss`, `sub`, `jti`, `iat`, `exp`) plus a `vc` claim holding the full credential object. OB3 uses JWT-VC to sign `OpenBadgeCredential` documents. See [[OB2 vs OB3]].
+A [JWT](#jwt) used as a W3C Verifiable Credential proof format. OB3 uses the OB 3.0 **native** VC-JWT (§8.2.4.1): the credential's members sit at the top level of the JWT payload — there is no `vc` claim wrapper — alongside the registered claims `iss`, `sub`, `jti`, `nbf` (and `exp` when the credential expires; the library emits no `iat`). OB3 signs `OpenBadgeCredential` documents this way. See [[OB2 vs OB3]].
 
 ## L
 
