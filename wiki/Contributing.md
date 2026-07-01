@@ -106,11 +106,11 @@ gitlint install-hook
 
 ```
 openbadgeslib/
-    __init__.py          unified public API (OB2 + OB3 + shared keys/util)
-    badge.py             backward-compat shim -> ob2.badge
-    signer.py            backward-compat shim -> ob2.signer
-    verifier.py          backward-compat shim -> ob2.verifier
-    baking.py            shared SVG/PNG token baking + extraction (OB2 + OB3)
+    __init__.py          unified public API (OB1 + OB2 + OB3 + shared keys/util)
+    badge.py             backward-compat shim -> ob1.badge
+    signer.py            backward-compat shim -> ob1.signer
+    verifier.py          backward-compat shim -> ob1.verifier
+    baking.py            shared SVG/PNG token baking + extraction (OB1/OB2/OB3)
     confparser.py        INI config file reader
     errors.py            custom exception hierarchy
     keys.py              KeyRSA, KeyECC, KeyFactory, detect_key_type
@@ -119,7 +119,10 @@ openbadgeslib/
     util.py              hash helpers, download_file, __version__
     py.typed             PEP 561 marker (the package is typed)
     _jws/                JWS engine (sign / verify_block) backed by PyJWT
-    ob2/                 OB 2.0: Badge, BadgeSigned, Assertion, Signer, Verifier
+    ob1/                 OB 1.0 (legacy): Badge, BadgeSigned, Assertion, Signer, Verifier
+    ob2/                 OB 2.0 (strict): OB2Signer, OB2Verifier, Assertion, and the
+                         model dataclasses (BadgeClass, Profile, CryptographicKey,
+                         RevocationList)
     ob3/                 OB 3.0: Issuer, Achievement, OpenBadgeCredential,
                          OB3Signer, OB3Verifier (W3C VC / JWT-VC)
     openbadges_init.py          CLI: openbadges-init
