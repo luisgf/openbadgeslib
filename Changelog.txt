@@ -56,6 +56,11 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     CRLF header-injection guard for a malformed from/recipient address,
     reporting a clean mail-failure message instead of crashing.
 
+  - fix: ConfParser.read_conf() now eagerly resolves every ${...}
+    ExtendedInterpolation reference at load time, raising a clean ValueError
+    for a malformed reference instead of letting a raw configparser
+    exception escape lazily, deep inside a CLI tool.
+
 
 * v1.1.5 - 2026-06-30
 

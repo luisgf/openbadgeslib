@@ -33,3 +33,21 @@ class TestReadConfBaseValidation:
 
     def test_nonexistent_file_returns_none(self, tmp_path):
         assert ConfParser(str(tmp_path / 'missing.ini')).read_conf() is None
+
+    def test_bad_interpolation_reference_raises_clean_value_error(self, tmp_path):
+        # ExtendedInterpolation resolves ${...} lazily; a bad reference in a
+        # section other than [paths] must surface here, at load time, as a
+        # clean ValueError — not as a raw configparser.Error deep inside a
+        # CLI tool the first time that key happens to be read.
+        path = _write(tmp_path, '[paths]\nbase = .\n\n[badge_1]\nimage = ${missing}/x.svg\n')
+        with pytest.raises(ValueError):
+            ConfParser(path).read_conf()
+
+    def test_valid_interpolation_reference_resolves(self, tmp_path):
+        path = _write(
+            tmp_path,
+            '[paths]\nbase = .\nbase_image = ${base}/images\n\n'
+            '[badge_1]\nimage = ${paths:base_image}/x.svg\n',
+        )
+        conf = ConfParser(path).read_conf()
+        assert conf['badge_1']['image'] == '%s/images/x.svg' % conf['paths']['base']
