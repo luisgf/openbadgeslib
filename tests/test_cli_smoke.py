@@ -31,6 +31,35 @@ def test_init_creates_directories_with_restrictive_permissions(tmp_path):
         assert mode == 0o700, '%s has mode %o, expected 0700' % (path, mode)
 
 
+def test_init_restores_umask_when_a_subdirectory_mkdir_fails(tmp_path):
+    # If any mkdir after os.umask(0o077) raises, the original umask must
+    # still be restored — otherwise it stays at 0o077 for the rest of the
+    # process (test_cli_smoke.py runs entrypoints in-process).
+    import os
+    import pytest
+    from openbadgeslib import openbadges_init
+
+    original = os.umask(0)
+    os.umask(original)  # just peeking; restore immediately
+
+    target = tmp_path / 'config'
+    real_mkdir = os.mkdir
+
+    def flaky_mkdir(path, *a, **k):
+        if str(path).endswith('images'):
+            raise OSError('simulated mkdir failure')
+        return real_mkdir(path, *a, **k)
+
+    with patch.object(sys, 'argv', ['openbadges-init', str(target)]):
+        with patch('openbadgeslib.openbadges_init.os.mkdir', side_effect=flaky_mkdir):
+            with pytest.raises(OSError):
+                openbadges_init.main()
+
+    after = os.umask(0)
+    os.umask(after)
+    assert after == original
+
+
 # ── openbadges-keygenerator honours key_type from the badge profile ─────────────
 
 def _write_keygen_config(tmp_path, key_type):
@@ -226,6 +255,36 @@ def test_publish_ob2_creates_full_tree(tmp_path):
     for name in ('badge_test_1', 'badge_test_2', 'badge_test_3', 'badge_test_4'):
         assert (out / name / 'badge.json').is_file()
         assert (out / name / 'verify.pem').is_file()
+
+
+def test_publish_restores_umask_when_a_badge_mkdir_fails(tmp_path):
+    # If any step after os.umask(0o077) raises (a badge section's mkdir, a
+    # missing public_key file, ...), the original umask must still be
+    # restored rather than staying at 0o077 for the rest of the process.
+    import os
+    import pytest
+    from openbadgeslib import openbadges_publish
+
+    original = os.umask(0)
+    os.umask(original)  # just peeking; restore immediately
+
+    out = tmp_path / 'published'
+    argv = ['openbadges-publish', '-c', './config1.ini', '-o', str(out)]
+    real_mkdir = os.mkdir
+
+    def flaky_mkdir(path, *a, **k):
+        if 'badge_test_1' in str(path):
+            raise OSError('simulated mkdir failure')
+        return real_mkdir(path, *a, **k)
+
+    with patch.object(sys, 'argv', argv):
+        with patch('openbadgeslib.openbadges_publish.os.mkdir', side_effect=flaky_mkdir):
+            with pytest.raises(OSError):
+                openbadges_publish.main()
+
+    after = os.umask(0)
+    os.umask(after)
+    assert after == original
 
 
 # ── Badge.urls_has_problems ─────────────────────────────────────────────────────
