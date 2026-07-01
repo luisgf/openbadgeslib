@@ -19,7 +19,7 @@ openbadges-keygenerator -c ./config/config.ini -g 1
 ```
 
 ```
-INFO - Generating OpenBadges 2 RSA key pair for issuer 'My Organisation'
+INFO - Generating OpenBadges 2 RSA key pair for issuer 'OpenBadge issuer'
 INFO - Private key saved at: ./config/keys/sign_rsa_key_1.pem
 INFO - Public key saved at:  ./config/keys/verify_rsa_key_1.pem
 ```
