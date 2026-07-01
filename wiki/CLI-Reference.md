@@ -53,15 +53,15 @@ The command refuses to overwrite: if either key file already exists it prints `[
 
 ```sh
 $ openbadges-keygenerator -c ./config/config.ini -g 1
-INFO - Generating OpenBadges 2 RSA key pair for issuer 'OpenBadge issuer'
+INFO - Generating OpenBadges 3 RSA key pair for issuer 'OpenBadge issuer'
 INFO - Private key saved at: ./config/keys/sign_rsa_key_1.pem
 INFO - Public key saved at:  ./config/keys/verify_rsa_key_1.pem
 ```
 
-`-V 3` is accepted for consistency but produces identical key material:
+Key material is identical for every version, so `-V` changes only the version shown in the log line; `-V 1` / `-V 2` produce the same keys:
 
 ```sh
-$ openbadges-keygenerator -c ./config/config.ini -g 1 -V 3
+$ openbadges-keygenerator -c ./config/config.ini -g 1 -V 2
 ```
 
 ## openbadges-signer
