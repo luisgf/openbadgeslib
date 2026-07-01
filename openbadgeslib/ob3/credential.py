@@ -20,17 +20,39 @@
         License along with this library.
 """
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
+_VC2_CONTEXT = "https://www.w3.org/ns/credentials/v2"
+
 OB3_CONTEXT = [
-    "https://www.w3.org/ns/credentials/v2",
+    _VC2_CONTEXT,
     "https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json",
 ]
 
+# The OB v3p0 context URI, optionally version-pinned (…/context-3.0.3.json),
+# mirroring the JSON Schema's @context[1] pattern.
+_OB_CONTEXT_RE = re.compile(
+    r'^https://purl\.imsglobal\.org/spec/ob/v3p0/context(-\d+\.\d+\.\d+)?\.json$')
+
 _SUPPORTED_ALGORITHMS = {'RS256', 'RS384', 'RS512', 'ES256', 'ES384', 'ES512', 'EdDSA'}
+
+
+def _validate_context(ctx: Any) -> None:
+    """Validate an OpenBadgeCredential ``@context`` per the schema: an array
+    whose first item is the VC 2.0 context and whose second is the OB v3p0
+    context; extra items may follow. Raises ValueError otherwise."""
+    if not isinstance(ctx, list) or len(ctx) < 2:
+        raise ValueError(
+            "@context must be an array with the VC 2.0 and OB v3p0 contexts")
+    if ctx[0] != _VC2_CONTEXT:
+        raise ValueError("@context[0] must be %r" % (_VC2_CONTEXT,))
+    if not (isinstance(ctx[1], str) and _OB_CONTEXT_RE.match(ctx[1])):
+        raise ValueError(
+            "@context[1] must be the OB v3p0 context URI, got %r" % (ctx[1],))
 
 
 def _iso(dt: datetime) -> str:
@@ -180,6 +202,8 @@ class OpenBadgeCredential:
         coexist at the top level and are simply ignored by the field reads here.
         """
         vc = _as_dict(payload, "credential")
+
+        _validate_context(vc.get("@context"))
 
         # issuer may be a Profile object or a bare string IRI (both schema-valid).
         issuer_raw = vc.get("issuer")

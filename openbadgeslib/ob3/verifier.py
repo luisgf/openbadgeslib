@@ -259,17 +259,23 @@ class OB3Verifier:
         except (KeyError, ValueError, TypeError) as exc:
             raise OB3VerificationError(f"Malformed credential payload: {exc}") from exc
 
-        # Cross-check the registered claims against the credential body so a
-        # verified signature cannot pair an iss/sub with a mismatched
-        # credential issuer/subject.
+        # OB3 §8.2.6.1: iss and nbf are REQUIRED registered claims, and iss MUST
+        # equal the credential issuer id. sub is required (and must match) when
+        # the subject carries an id. Enforcing presence — not only cross-checking
+        # when present — stops a token that omits these claims from verifying.
         iss = payload.get("iss")
-        if iss is not None and iss != _claim_object_id(vc.get("issuer")):
-            raise OB3VerificationError(
-                "JWT 'iss' does not match the credential issuer")
+        if iss is None:
+            raise OB3VerificationError("JWT payload is missing the required 'iss' claim")
+        if iss != _claim_object_id(vc.get("issuer")):
+            raise OB3VerificationError("JWT 'iss' does not match the credential issuer")
+        if payload.get("nbf") is None:
+            raise OB3VerificationError("JWT payload is missing the required 'nbf' claim")
         sub = payload.get("sub")
-        if sub is not None and sub != _claim_object_id(vc.get("credentialSubject")):
-            raise OB3VerificationError(
-                "JWT 'sub' does not match the credentialSubject id")
+        subject_id = _claim_object_id(vc.get("credentialSubject"))
+        if subject_id is not None and sub is None:
+            raise OB3VerificationError("JWT payload is missing the required 'sub' claim")
+        if sub is not None and sub != subject_id:
+            raise OB3VerificationError("JWT 'sub' does not match the credentialSubject id")
 
         return credential
 

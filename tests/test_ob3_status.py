@@ -172,6 +172,10 @@ class TestCredentialStatusParsing:
     def _payload(self, status):
         # OB3 native VC-JWT: the payload IS the credential (no 'vc' wrapper).
         return {
+            "@context": [
+                "https://www.w3.org/ns/credentials/v2",
+                "https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json",
+            ],
             "id": "urn:uuid:1",
             "type": ["VerifiableCredential", "OpenBadgeCredential"],
             "issuer": {"id": "https://i.example", "name": "I"},
