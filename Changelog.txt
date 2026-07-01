@@ -6,6 +6,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * Unreleased
 
+  - fix: Badge.create_from_conf() now raises PrivateKeyReadError/
+    PublicKeyReadError instead of a raw FileNotFoundError/OSError when a
+    configured private_key/public_key path does not exist.
+
   - fix: openbadges-verifier's --local option now checks the configured
     public_key file exists before opening it, instead of leaking a raw
     FileNotFoundError past the CLI's error handling.
