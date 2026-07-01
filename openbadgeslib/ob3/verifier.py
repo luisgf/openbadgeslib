@@ -229,6 +229,8 @@ class OB3Verifier:
             token = baking.extract_png(png_bytes)
         except baking.DecompressionLimitExceeded as exc:
             raise OB3VerificationError(str(exc)) from exc
+        except Exception as exc:
+            raise ErrorParsingFile(f"Could not parse PNG: {exc}") from exc
         if token is None:
             raise OB3VerificationError("No openbadges iTXt chunk found in PNG")
         return token

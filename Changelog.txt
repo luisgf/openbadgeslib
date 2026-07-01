@@ -6,6 +6,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * Unreleased
 
+  - fix: OB3Verifier.extract_token_from_png() now raises ErrorParsingFile
+    instead of leaking a raw UnicodeDecodeError when a PNG's "openbadges"
+    iTXt chunk contains malformed UTF-8 text.
+
   - fix: OB2 Verifier.__init__ now raises VerifierExceptions instead of a raw
     UnknownKeyType when a supplied verify_key is not a recognizable PEM key,
     matching the guard OB3Verifier already has.
