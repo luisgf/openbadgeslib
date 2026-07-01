@@ -90,7 +90,9 @@ class OpenBadgeCredential:
     """An OpenBadges 3.0 credential (W3C Verifiable Credential)."""
 
     issuer: Issuer
-    recipient_id: str          # 'mailto:email@example.com' or a DID
+    # 'mailto:email@example.com' or a DID; Optional because OB3 makes
+    # credentialSubject.id optional (identity may travel via 'identifier').
+    recipient_id: Optional[str]
     achievement: Achievement
     id: Optional[str] = None   # auto-generated as 'urn:uuid:…' if absent
     name: Optional[str] = None  # defaults to achievement.name
@@ -124,11 +126,13 @@ class OpenBadgeCredential:
             "issuer": self.issuer.to_dict(),
             "validFrom": _iso(self.issuance_date),
             "credentialSubject": {
-                "id": self.recipient_id,
                 "type": ["AchievementSubject"],
                 "achievement": self.achievement.to_dict(),
             },
         }
+        # credentialSubject.id is optional; emit it only when present.
+        if self.recipient_id is not None:
+            vc["credentialSubject"]["id"] = self.recipient_id
         if self.expiration_date:
             vc["validUntil"] = _iso(self.expiration_date)
         if self.evidence_url:
@@ -177,14 +181,21 @@ class OpenBadgeCredential:
         """
         vc = _as_dict(payload, "credential")
 
-        issuer_data = _as_dict(vc.get("issuer"), "vc.issuer")
-        issuer = Issuer(
-            id=_require(issuer_data, "id", "vc.issuer"),
-            name=issuer_data.get("name", ""),
-            url=issuer_data.get("url"),
-            email=issuer_data.get("email"),
-            image_url=_as_dict_or_empty(issuer_data.get("image")).get("id"),
-        )
+        # issuer may be a Profile object or a bare string IRI (both schema-valid).
+        issuer_raw = vc.get("issuer")
+        if isinstance(issuer_raw, str):
+            if not issuer_raw:
+                raise ValueError("field vc.issuer must not be empty")
+            issuer = Issuer(id=issuer_raw, name="")
+        else:
+            issuer_data = _as_dict(issuer_raw, "vc.issuer")
+            issuer = Issuer(
+                id=_require(issuer_data, "id", "vc.issuer"),
+                name=issuer_data.get("name", ""),
+                url=issuer_data.get("url"),
+                email=issuer_data.get("email"),
+                image_url=_as_dict_or_empty(issuer_data.get("image")).get("id"),
+            )
 
         # credentialSubject may be a single object or a (non-empty) array.
         subj_raw = vc.get("credentialSubject")
@@ -229,10 +240,23 @@ class OpenBadgeCredential:
         else:
             credential_status = []
 
+        # credentialSubject.id is optional (schema); identity may instead be
+        # conveyed via one or more 'identifier' objects. Reject only when BOTH
+        # are absent — a subject with no identity at all is non-conformant.
+        recipient_id = subj.get("id")
+        if recipient_id is not None and not isinstance(recipient_id, str):
+            raise ValueError("field vc.credentialSubject.id must be a string")
+        if not recipient_id:                        # None or empty string
+            identifiers = subj.get("identifier")
+            if not (isinstance(identifiers, list) and identifiers):
+                raise ValueError(
+                    "vc.credentialSubject must have an 'id' or an 'identifier'")
+            recipient_id = None
+
         return cls(
             id=_require(vc, "id", "vc"),
             issuer=issuer,
-            recipient_id=_require(subj, "id", "vc.credentialSubject"),
+            recipient_id=recipient_id,
             achievement=achievement,
             name=vc.get("name"),
             issuance_date=issuance_date,
