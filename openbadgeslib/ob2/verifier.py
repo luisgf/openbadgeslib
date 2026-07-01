@@ -48,11 +48,14 @@ class Verifier():
                  identity: Optional[str] = None) -> None:
         self.verify_key = verify_key
         self.identity = identity.encode('utf-8') if identity is not None else None
-        self.key_type = None
 
         if self.verify_key:
+            # Not stored: the actual alg-pinning security control
+            # (_allowed_algs_for_key) re-derives the key type itself from the
+            # key it verifies against. This call exists only to reject an
+            # unrecognizable verify_key early, with a clean exception.
             try:
-                self.key_type = detect_key_type(self.verify_key)
+                detect_key_type(self.verify_key)
             except UnknownKeyType as exc:
                 raise VerifierExceptions(str(exc)) from exc
 
