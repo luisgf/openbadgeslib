@@ -51,3 +51,20 @@ class TestReadConfBaseValidation:
         )
         conf = ConfParser(path).read_conf()
         assert conf['badge_1']['image'] == '%s/images/x.svg' % conf['paths']['base']
+
+    def test_duplicate_section_raises_value_error(self, tmp_path):
+        # DuplicateSectionError raises directly from parser.read(), before
+        # [paths]/base is ever touched.
+        path = _write(tmp_path, '[paths]\nbase = .\n\n[paths]\nbase = .\n')
+        with pytest.raises(ValueError):
+            ConfParser(path).read_conf()
+
+    def test_duplicate_option_raises_value_error(self, tmp_path):
+        path = _write(tmp_path, '[paths]\nbase = .\nbase = ./other\n')
+        with pytest.raises(ValueError):
+            ConfParser(path).read_conf()
+
+    def test_missing_section_header_raises_value_error(self, tmp_path):
+        path = _write(tmp_path, 'base = .\n\n[paths]\nbase = .\n')
+        with pytest.raises(ValueError):
+            ConfParser(path).read_conf()
