@@ -104,6 +104,23 @@ class TestCheckCredentialStatus:
         with pytest.raises(OB3VerificationError):
             check_credential_status(cred, download=lambda url: jwt_like.encode('ascii'))
 
+    def test_multibit_statussize_is_rejected(self):
+        # statusSize > 1 (multi-bit entries) is not supported: _bit_set assumes
+        # one bit per entry, so honouring it would read the wrong bits. Fail
+        # closed rather than misreport a revoked credential as valid.
+        doc = _status_list_doc(set_indices=[7])
+        doc['credentialSubject']['statusSize'] = 2
+        cred = _credential([_status_entry(94)])
+        with pytest.raises(OB3VerificationError, match='statusSize'):
+            check_credential_status(cred, download=_downloader(doc))
+
+    def test_explicit_statussize_one_is_accepted(self):
+        # An explicit statusSize of 1 is the default single-bit case.
+        doc = _status_list_doc(set_indices=[7])
+        doc['credentialSubject']['statusSize'] = 1
+        cred = _credential([_status_entry(94)])  # index 94 unset -> not revoked
+        check_credential_status(cred, download=_downloader(doc))
+
     # ── fail-closed paths ────────────────────────────────────────────────────
 
     def test_fetch_error_fails_closed(self):

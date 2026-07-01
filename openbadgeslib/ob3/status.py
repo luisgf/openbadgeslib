@@ -88,6 +88,20 @@ def _check_entry(entry: dict, download: Callable[[str], bytes]) -> None:
 
     try:
         subject = _status_list_subject(raw)
+        # Bitstring Status List v1.0 allows statusSize > 1 (multi-bit entries).
+        # _bit_set below assumes exactly one bit per entry, so honouring a
+        # larger statusSize would read the wrong bits and could misreport a
+        # revoked credential as valid. Fail closed on an unsupported size rather
+        # than silently returning the wrong verdict. Absent/1 keeps 1-bit logic.
+        status_size = subject.get("statusSize", 1)
+        try:
+            status_size = int(status_size)
+        except (TypeError, ValueError):
+            raise OB3VerificationError("invalid statusSize: %r" % (status_size,))
+        if status_size != 1:
+            raise OB3VerificationError(
+                "unsupported statusSize %d: only single-bit status entries are "
+                "supported" % status_size)
         encoded = subject.get("encodedList")
         if not isinstance(encoded, str) or not encoded:
             raise OB3VerificationError("status list credential has no encodedList")
