@@ -92,7 +92,7 @@ PEP 8 — Style Guide for Python Code, the coding conventions followed by this p
 Portable Network Graphics, a raster image format with lossless compression. One of the two image formats openbadgeslib can bake an OB2 assertion into.
 
 ### pycryptodome
-A self-contained Python package of low-level cryptographic primitives (a maintained fork of `pycrypto`). Used for RSA and ECC key generation and PEM serialisation.
+A self-contained Python package of low-level cryptographic primitives (a maintained fork of `pycrypto`). Used for RSA key generation and PEM serialisation (ECC is handled by `ecdsa`, Ed25519 by `cryptography`).
 
 ### PyJWT
 A Python library for encoding/decoding JSON Web Tokens. openbadgeslib uses `jwt.algorithms.RSAAlgorithm`, `jwt.algorithms.ECAlgorithm`, and `jwt.algorithms.OKPAlgorithm` (Ed25519/EdDSA) for JWS signing and verification; requires the `cryptography` package (installed via `PyJWT[crypto]`). See [[Installation]].

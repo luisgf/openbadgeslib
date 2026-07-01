@@ -27,6 +27,7 @@ serialisation) and **OpenBadges 3.0** (W3C Verifiable Credentials / JWT-VC).
 - [ecdsa](https://pypi.org/project/ecdsa/) >= 0.19
 - [pypng](https://pypi.org/project/pypng/) >= 0.20220715.0
 - [PyJWT[crypto]](https://pypi.org/project/PyJWT/) >= 2.8
+- [cryptography](https://pypi.org/project/cryptography/) >= 42
 - [defusedxml](https://pypi.org/project/defusedxml/) >= 0.7
 
 ## Installation
