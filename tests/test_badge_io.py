@@ -250,6 +250,29 @@ class TestBadgeSignedReadFromFile:
             with pytest.raises(ErrorParsingFile):
                 BadgeSigned.read_from_file(path)
 
+    def _badge_with_raw_body(self, tmp_path, signed_svg_rsa, svg_image, raw_body):
+        """Bake a badge whose JWS body is an arbitrary (possibly non-object)
+        JSON value, not a mutated copy of the original dict."""
+        from openbadgeslib._jws import utils as jws_utils
+
+        assertion = extract_svg_assertion(signed_svg_rsa.signed)
+        new_body_b64 = jws_utils.encode(raw_body)
+        tampered = assertion.header + b'.' + new_body_b64 + b'.' + assertion.signature
+        baked = baking.bake_svg(svg_image, tampered.decode('utf-8'))
+        return self._write_temp(tmp_path, baked, '.svg')
+
+    @pytest.mark.parametrize('raw_body', [[1, 2, 3], 'just-a-string', 42, None, True])
+    def test_non_object_body_raises_clean_error(
+        self, tmp_path, signed_svg_rsa, svg_image, rsa_pub_pem, raw_body
+    ):
+        # A body that decodes to a valid-JSON non-object must not leak a raw
+        # TypeError/AttributeError from the field accesses before the guarded
+        # construction block.
+        path = self._badge_with_raw_body(tmp_path, signed_svg_rsa, svg_image, raw_body)
+        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
+            with pytest.raises(AssertionFormatIncorrect):
+                BadgeSigned.read_from_file(path)
+
 
 class TestBadgeInitCorruptKey:
     """A corrupt/mismatched private key must not leak a raw ValueError/binascii.Error."""
