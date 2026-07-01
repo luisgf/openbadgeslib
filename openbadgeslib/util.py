@@ -24,7 +24,9 @@
 __version__ = '1.2.0'
 
 import hashlib
-from typing import Any, Optional, Union, overload
+import ipaddress
+import socket
+from typing import Any, List, Optional, Union, overload
 from urllib import request
 from urllib.parse import urlparse
 
@@ -99,17 +101,78 @@ def hash_email(email: StrOrBytes, salt: StrOrBytes) -> bytes:
     return sha256_string(email + salt)
 
 
+def _resolve_host(host: str, port: int) -> List[str]:
+    """Resolve *host* to a list of IP-address strings.
+
+    A thin wrapper over socket.getaddrinfo, kept as the single dependency seam
+    the SSRF host check uses so tests can patch resolution without the network.
+    """
+    infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    return [info[4][0] for info in infos]
+
+
+def _ip_is_blocked(ip_str: str) -> bool:
+    """True if *ip_str* is a loopback/private/link-local/reserved address a
+    verifier must never be steered into fetching (an SSRF sink)."""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return True  # unparseable address: fail closed
+    # An IPv4-mapped IPv6 address (::ffff:127.0.0.1) must be judged by its
+    # embedded IPv4 address, not the v6 wrapper, or the loopback slips through.
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return (ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_reserved or ip.is_multicast or ip.is_unspecified)
+
+
+def _assert_public_host(url: str) -> None:
+    """Raise ValueError if *url*'s host resolves to any non-public address.
+
+    download_file is called with fully attacker-controlled URLs: a did:web
+    host, a credentialStatus list, and the OB2 badge/issuer/revocationList URLs
+    all come from untrusted badge data. Without this check a verifier can be
+    steered into GETting cloud-metadata endpoints (169.254.169.254), loopback
+    admin interfaces, or RFC1918 internal hosts (SSRF). Every resolved address
+    is checked, and the check is re-applied to redirect targets in
+    _HTTPSOnlyRedirectHandler (a public host can 30x to an internal address).
+
+    This is a pre-connection check; it does not on its own defeat DNS rebinding
+    (a name that resolves public here but private at connect time), which would
+    require pinning the socket to the validated address.
+    """
+    parts = urlparse(url)
+    host = parts.hostname
+    if not host:
+        raise ValueError('Refusing to download %s: URL has no host' % url)
+    try:
+        addrs = _resolve_host(host, parts.port or 443)
+    except OSError as exc:
+        raise ValueError(
+            'Could not resolve host %r for %s: %s' % (host, url, exc)) from exc
+    if not addrs:
+        raise ValueError('Could not resolve host %r for %s' % (host, url))
+    for ip_str in addrs:
+        if _ip_is_blocked(ip_str):
+            raise ValueError(
+                'Refusing to download %s: host %r resolves to non-public address '
+                '%s (possible SSRF). Pass allow_private=True to override.'
+                % (url, host, ip_str))
+
+
 class _HTTPSOnlyRedirectHandler(request.HTTPRedirectHandler):
-    """Reject any redirect whose target is not HTTPS.
+    """Reject any redirect whose target is not HTTPS or resolves to a
+    non-public host.
 
     Plain ``urlopen()`` follows redirects with the default HTTPRedirectHandler,
-    which never re-checks scheme: an https:// URL that 302s to http:// (or to
-    an attacker-chosen insecure origin) would be followed transparently,
-    defeating the HTTPS-only check below.
+    which never re-checks scheme or host: an https:// URL that 302s to http://
+    (or to an attacker-chosen insecure/internal origin) would be followed
+    transparently, defeating the HTTPS-only and public-host checks below.
     """
 
-    def __init__(self, allow_insecure: bool) -> None:
+    def __init__(self, allow_insecure: bool, allow_private: bool = False) -> None:
         self._allow_insecure = allow_insecure
+        self._allow_private = allow_private
 
     def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any,
                          newurl: str) -> Any:
@@ -119,6 +182,8 @@ class _HTTPSOnlyRedirectHandler(request.HTTPRedirectHandler):
                 'Refusing to follow redirect to %s over insecure %r scheme; HTTPS is '
                 'required (pass allow_insecure=True to override).'
                 % (newurl, new_scheme))
+        if not self._allow_private:
+            _assert_public_host(newurl)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -128,15 +193,23 @@ class _HTTPSOnlyRedirectHandler(request.HTTPRedirectHandler):
 MAX_DOWNLOAD_SIZE = 5 * 1024 * 1024  # 5 MiB
 
 
-def download_file(url: str, allow_insecure: bool = False) -> bytes:
+def download_file(url: str, allow_insecure: bool = False,
+                  allow_private: bool = False) -> bytes:
     """Download a file over HTTPS using urllib's default TLS validation.
 
     Non-HTTPS URLs are rejected by default: the verification key is the
     OpenBadges 2.0 root of trust, so fetching it over an unauthenticated
     channel would let an active network attacker substitute their own key and
     forge badges. Pass ``allow_insecure=True`` to explicitly permit plain HTTP.
-    A redirect to a non-HTTPS target is rejected the same way. The response
-    body is bounded to MAX_DOWNLOAD_SIZE to limit memory use.
+    A redirect to a non-HTTPS target is rejected the same way.
+
+    The destination host is also required to resolve to a public address:
+    because the URL is attacker-influenced (a did:web host, a credentialStatus
+    list, an OB2 badge/issuer/revocationList URL), fetching a private/loopback/
+    link-local target would be a server-side request forgery (SSRF) sink. Pass
+    ``allow_private=True`` to permit internal hosts (e.g. a private deployment).
+    The check is re-applied to redirect targets. The response body is bounded to
+    MAX_DOWNLOAD_SIZE to limit memory use.
     """
     u = urlparse(url)
 
@@ -148,7 +221,11 @@ def download_file(url: str, allow_insecure: bool = False) -> bytes:
                 % (url, u.scheme))
         print('Warning! %s does not use TLS.' % url)
 
-    opener = request.build_opener(_HTTPSOnlyRedirectHandler(allow_insecure))
+    if not allow_private:
+        _assert_public_host(url)
+
+    opener = request.build_opener(
+        _HTTPSOnlyRedirectHandler(allow_insecure, allow_private))
     with opener.open(url, timeout=30) as response:
         chunks = []
         total = 0

@@ -98,6 +98,14 @@ def _mock_opener(content=b'file content', open_side_effect=None):
 
 
 class TestDownloadFile:
+    @pytest.fixture(autouse=True)
+    def _public_resolver(self):
+        # download_file now resolves the host and rejects non-public IPs. Pin
+        # resolution to a fixed public address so these behavioural tests stay
+        # hermetic (no DNS) — SSRF blocking is covered by TestSSRFProtection.
+        with patch('openbadgeslib.util._resolve_host', return_value=['93.184.216.34']):
+            yield
+
     def test_returns_bytes_on_success(self):
         with patch('openbadgeslib.util.request.build_opener', return_value=_mock_opener()):
             result = download_file('https://example.com/file.pem')
@@ -159,6 +167,13 @@ class TestDownloadFile:
 class TestHTTPSOnlyRedirectHandler:
     """Regression coverage for the redirect scheme-downgrade fix."""
 
+    @pytest.fixture(autouse=True)
+    def _public_resolver(self):
+        # The redirect handler now also rejects a redirect to a non-public host;
+        # pin resolution so the "allowed" redirect cases stay hermetic.
+        with patch('openbadgeslib.util._resolve_host', return_value=['93.184.216.34']):
+            yield
+
     def _handler(self, allow_insecure=False):
         from openbadgeslib.util import _HTTPSOnlyRedirectHandler
         return _HTTPSOnlyRedirectHandler(allow_insecure)
@@ -201,6 +216,65 @@ class TestHTTPSOnlyRedirectHandler:
             download_file('https://example.com/file.pem')
         (handler,), _ = m.call_args
         assert isinstance(handler, _HTTPSOnlyRedirectHandler)
+
+
+class TestSSRFProtection:
+    """download_file must refuse attacker-controlled URLs that resolve to
+    non-public hosts (cloud metadata, loopback, RFC1918)."""
+
+    @pytest.mark.parametrize('ip', [
+        '127.0.0.1', '169.254.169.254', '10.0.0.5', '192.168.1.1',
+        '172.16.0.1', '0.0.0.0', '::1', 'fe80::1', 'fc00::1',
+        '::ffff:127.0.0.1',
+    ])
+    def test_private_host_rejected(self, ip):
+        with patch('openbadgeslib.util._resolve_host', return_value=[ip]):
+            with pytest.raises(ValueError):
+                download_file('https://internal.example/x')
+
+    def test_literal_metadata_ip_rejected(self):
+        # A literal IP needs no DNS: getaddrinfo returns it directly, so this
+        # exercises the real resolver + classifier without touching the network.
+        with pytest.raises(ValueError):
+            download_file('https://169.254.169.254/latest/meta-data/')
+
+    def test_literal_loopback_ipv6_rejected(self):
+        with pytest.raises(ValueError):
+            download_file('https://[::1]:8080/admin')
+
+    def test_percent_encoded_localhost_port_rejected(self):
+        # Mirrors a did:web:localhost%3A8080 URL after unquoting.
+        with pytest.raises(ValueError):
+            download_file('https://localhost:8080/issuer/did.json')
+
+    def test_public_host_allowed(self):
+        with patch('openbadgeslib.util._resolve_host', return_value=['93.184.216.34']), \
+                patch('openbadgeslib.util.request.build_opener', return_value=_mock_opener()):
+            assert download_file('https://example.com/f') == b'file content'
+
+    def test_any_private_address_in_set_rejects(self):
+        # A mixed public+private resolution (round-robin / rebinding) is refused.
+        with patch('openbadgeslib.util._resolve_host',
+                   return_value=['93.184.216.34', '127.0.0.1']):
+            with pytest.raises(ValueError):
+                download_file('https://example.com/f')
+
+    def test_allow_private_opt_out(self):
+        with patch('openbadgeslib.util._resolve_host', return_value=['127.0.0.1']), \
+                patch('openbadgeslib.util.request.build_opener', return_value=_mock_opener()):
+            assert download_file('https://localhost/f', allow_private=True) == b'file content'
+
+    def test_redirect_to_private_host_rejected(self):
+        from openbadgeslib.util import _HTTPSOnlyRedirectHandler
+        req = MagicMock()
+        req.get_method.return_value = 'GET'
+        req.get_full_url.return_value = 'https://example.com/original'
+        req.unredirected_hdrs = {}
+        req.headers = {}
+        with patch('openbadgeslib.util._resolve_host', return_value=['169.254.169.254']):
+            with pytest.raises(ValueError):
+                _HTTPSOnlyRedirectHandler(allow_insecure=False).redirect_request(
+                    req, None, 302, 'Found', {}, 'https://evil.example/x')
 
 
 class TestMisc:
