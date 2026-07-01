@@ -48,6 +48,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     its SVG counterpart does, raising ErrorParsingFile instead of letting a
     raw exception escape on a malformed/garbage PNG.
 
+  - fix: Badge.__init__ now raises PrivateKeyReadError/PublicKeyReadError
+    instead of a raw ValueError/binascii.Error when a configured private or
+    public key file is corrupt, truncated, or mismatched with its key type.
+
 
 * v1.1.5 - 2026-06-30
 
