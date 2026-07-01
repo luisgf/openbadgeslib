@@ -20,6 +20,7 @@
         License along with this library.
 """
 
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import jwt
@@ -103,6 +104,19 @@ class OB3Verifier:
         """
         payload = self._decode_payload(token)
         credential = self._build_credential(payload)
+
+        # The JWT 'exp'/'iat' claims (checked above by PyJWT) are attacker-
+        # supplied and can be decoupled from vc.validUntil/validFrom, which is
+        # what downstream consumers actually read. Re-validate the vc-level
+        # dates against wall-clock time independently, mirroring OB2Verifier's
+        # check_expiration().
+        now = datetime.now(timezone.utc)
+        if credential.expiration_date is not None and credential.expiration_date < now:
+            raise OB3VerificationError(
+                "Credential has expired (validUntil %s)" % credential.expiration_date.isoformat())
+        if credential.issuance_date is not None and credential.issuance_date > now:
+            raise OB3VerificationError(
+                "Credential is not yet valid (validFrom %s)" % credential.issuance_date.isoformat())
 
         if expected_recipient is not None:
             expected = normalize_recipient_id(expected_recipient)
