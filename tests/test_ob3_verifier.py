@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from openbadgeslib.ob3 import (
     OB3Verifier, OB3VerificationError, OpenBadgeCredential,
 )
+from openbadgeslib.errors import ErrorParsingFile
 
 
 def _expired_credential(base_credential):
@@ -426,6 +427,34 @@ class TestExtractFromPNG:
         # into memory (SEC-4).
         png = self._bake_compressed_itxt(png_image, b'A' * (5 * 1024 * 1024))
         with pytest.raises(OB3VerificationError, match="limit"):
+            OB3Verifier.extract_token_from_png(png)
+
+    @staticmethod
+    def _bake_raw_itxt(png_image, raw_text_bytes):
+        """Insert an openbadges iTXt chunk with the compression flag unset and
+        arbitrary (possibly non-UTF-8) raw text bytes."""
+        from struct import pack
+        from zlib import crc32
+        from png import Reader, signature as _png_signature
+        itxt_data = b'openbadges' + pack('BBBBB', 0, 0, 0, 0, 0) + raw_text_bytes
+        chunks = list(Reader(bytes=png_image).chunks())
+        chunks.insert(len(chunks) - 1, ('iTXt', itxt_data))
+        out = _png_signature
+        for tag, data in chunks:
+            out += pack('!I', len(data))
+            if isinstance(tag, str):
+                tag = tag.encode('iso8859-1')
+            out += tag + data
+            checksum = crc32(tag)
+            checksum = crc32(data, checksum) & 0xFFFFFFFF
+            out += pack('!I', checksum)
+        return out
+
+    def test_malformed_utf8_itxt_text_raises_clean_error(self, png_image):
+        # Invalid UTF-8 text bytes must not leak a raw UnicodeDecodeError out
+        # of extract_token_from_png().
+        png = self._bake_raw_itxt(png_image, b'\xff\xfe\xfd')
+        with pytest.raises((OB3VerificationError, ErrorParsingFile)):
             OB3Verifier.extract_token_from_png(png)
 
 
