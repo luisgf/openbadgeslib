@@ -6,6 +6,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * Unreleased
 
+  - fix: OB2 check_revocation() now raises AssertionFormatIncorrect instead
+    of a raw AttributeError when the badge/issuer JSON carries a non-string
+    'badge'/'issuer'/'revocationList' URL field.
+
   - SECURITY: _jws.verify_block() now treats an RSA private key supplied
     where a public verify key is expected as a failed signature
     (SignatureError) instead of crashing with a raw AttributeError — closes

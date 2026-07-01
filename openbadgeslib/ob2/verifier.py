@@ -125,6 +125,11 @@ class Verifier():
 
         serial_num = str(badge.serial_num)
         json_url = badge.source.json_url
+        if not isinstance(json_url, str):
+            # json_url comes from the untrusted assertion body's 'badge' field;
+            # a non-string would raise a raw AttributeError inside download_file.
+            raise AssertionFormatIncorrect(
+                "Badge 'badge' URL is not a string: %r" % (json_url,))
 
         badge_json = download_file(json_url)
         if not badge_json:
@@ -137,9 +142,9 @@ class Verifier():
             raise AssertionFormatIncorrect("Badge JSON at %s is not a JSON object" % json_url)
 
         issuer_url = badge_obj.get('issuer')
-        if not issuer_url:
+        if not issuer_url or not isinstance(issuer_url, str):
             raise AssertionFormatIncorrect(
-                "Badge JSON at %s has no 'issuer' URL" % json_url)
+                "Badge JSON at %s has no valid 'issuer' URL" % json_url)
         issuer_json = download_file(issuer_url)
         if not issuer_json:
             raise AssertionFormatIncorrect("Issuer JSON doesn't exist %s" % issuer_url)
@@ -155,6 +160,9 @@ class Verifier():
         revocation_url = issuer.get('revocationList')
         if not revocation_url:
             return None
+        if not isinstance(revocation_url, str):
+            raise AssertionFormatIncorrect(
+                "Issuer JSON at %s has a non-string 'revocationList' URL" % issuer_url)
 
         revocation_json = download_file(revocation_url)
         if not revocation_json:
