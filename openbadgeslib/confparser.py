@@ -31,8 +31,16 @@ logger = logging.getLogger(__name__)
 
 def read_config_or_exit(config_file: str) -> ConfigParser:
     """Read a config file for a CLI tool, exiting with a clear message if it is
-    missing or empty. Shared by all the console-script entrypoints."""
-    conf = ConfParser(config_file).read_conf()
+    missing, empty, or malformed. Shared by all the console-script entrypoints."""
+    try:
+        conf = ConfParser(config_file).read_conf()
+    except ValueError as exc:
+        # read_conf() raises a clean, typed ValueError for a malformed config
+        # (bad INI syntax, an unresolvable ${...} reference, an encoding
+        # mismatch, or a missing/empty [paths] base). Present it as a controlled
+        # CLI error rather than letting it escape as a raw traceback.
+        print('[!] %s' % exc)
+        sys.exit(-1)
     if not conf:
         print('[!] The config file %s does not exist or is empty' % config_file)
         sys.exit(-1)
