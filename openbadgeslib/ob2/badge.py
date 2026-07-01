@@ -30,7 +30,8 @@ from ecdsa import SigningKey, VerifyingKey
 
 from ..keys import KeyType, detect_key_type
 from ..errors import (BadgeImgFormatUnsupported, AssertionFormatIncorrect,
-                      ErrorParsingFile, UnknownKeyType)
+                      ErrorParsingFile, UnknownKeyType, PrivateKeyReadError,
+                      PublicKeyReadError)
 from .._jws import utils as jws_utils
 from ..util import hash_email, download_file
 from .. import baking
@@ -117,14 +118,26 @@ class Badge():
         # Initialize an Key Object
         if self.key_type is KeyType.RSA:
             if self.pubkey_pem:
-                self.pub_key = RSA.import_key(self.pubkey_pem)
+                try:
+                    self.pub_key = RSA.import_key(self.pubkey_pem)
+                except Exception as exc:
+                    raise PublicKeyReadError('Unable to read RSA public key: %s' % exc) from exc
             if self.privkey_pem:
-                self.priv_key = RSA.import_key(self.privkey_pem)
+                try:
+                    self.priv_key = RSA.import_key(self.privkey_pem)
+                except Exception as exc:
+                    raise PrivateKeyReadError('Unable to read RSA private key: %s' % exc) from exc
         elif self.key_type is KeyType.ECC:
             if self.pubkey_pem:
-                self.pub_key = VerifyingKey.from_pem(self.pubkey_pem)
+                try:
+                    self.pub_key = VerifyingKey.from_pem(self.pubkey_pem)
+                except Exception as exc:
+                    raise PublicKeyReadError('Unable to read ECC public key: %s' % exc) from exc
             if self.privkey_pem:
-                self.priv_key = SigningKey.from_pem(self.privkey_pem)
+                try:
+                    self.priv_key = SigningKey.from_pem(self.privkey_pem)
+                except Exception as exc:
+                    raise PrivateKeyReadError('Unable to read ECC private key: %s' % exc) from exc
         elif self.key_type is not None:
             # key_type=None is a valid "no key material yet" state; any other
             # value is an unsupported key type and must fail loudly.

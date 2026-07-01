@@ -8,9 +8,12 @@ from png import Reader, signature as png_signature
 
 from openbadgeslib import baking
 from openbadgeslib.badge import (
-    Assertion, extract_svg_assertion, extract_png_assertion, BadgeSigned,
+    Assertion, extract_svg_assertion, extract_png_assertion, BadgeSigned, Badge,
 )
-from openbadgeslib.errors import BadgeImgFormatUnsupported, AssertionFormatIncorrect
+from openbadgeslib.keys import KeyType
+from openbadgeslib.errors import (
+    BadgeImgFormatUnsupported, AssertionFormatIncorrect, PrivateKeyReadError,
+)
 
 
 def _png_with_inserted_chunk(png_bytes, tag, data, index=1):
@@ -229,3 +232,15 @@ class TestBadgeSignedReadFromFile:
         with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
             with pytest.raises(AssertionFormatIncorrect):
                 BadgeSigned.read_from_file(path)
+
+
+class TestBadgeInitCorruptKey:
+    """A corrupt/mismatched private key must not leak a raw ValueError/binascii.Error."""
+
+    def test_rsa_corrupt_private_key_raises_clean_error(self, rsa_pub_pem):
+        with pytest.raises(PrivateKeyReadError):
+            Badge(key_type=KeyType.RSA, privkey_pem=b'not a real PEM key', pubkey_pem=rsa_pub_pem)
+
+    def test_ecc_corrupt_private_key_raises_clean_error(self, ecc_pub_pem):
+        with pytest.raises(PrivateKeyReadError):
+            Badge(key_type=KeyType.ECC, privkey_pem=b'not a real PEM key', pubkey_pem=ecc_pub_pem)
