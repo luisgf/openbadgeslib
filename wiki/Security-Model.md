@@ -122,16 +122,25 @@ The signature does not, by itself, bind a badge to a particular recipient — yo
 
 ### OB3 cross-checks the JWT claims against the credential
 
-A signed JWT-VC could pair valid registered claims with a mismatched credential body. After verifying the signature, `OB3Verifier._build_credential` cross-checks the JWT's `iss`/`sub` against the embedded VC:
+OB 3.0 here is a **native** VC-JWT (§8.2.4.1): the JWT payload *is* the credential (its members at the top level, with no `vc` claim wrapper). A signed token could still pair the registered claims with a mismatched credential body, so after verifying the signature `OB3Verifier._build_credential` **requires** the mandatory claims and binds them to the credential (`iss` and `nbf` are required — their absence fails, it is not merely a when-present cross-check):
 
 ```python
-if iss is not None and iss != (vc.get("issuer") or {}).get("id"):
+iss = payload.get("iss")
+if iss is None:
+    raise OB3VerificationError("JWT payload is missing the required 'iss' claim")
+if iss != _claim_object_id(vc.get("issuer")):        # issuer as object, IRI, or array
     raise OB3VerificationError("JWT 'iss' does not match the credential issuer")
-if sub is not None and sub != (vc.get("credentialSubject") or {}).get("id"):
+if payload.get("nbf") is None:
+    raise OB3VerificationError("JWT payload is missing the required 'nbf' claim")
+sub = payload.get("sub")
+subject_id = _claim_object_id(vc.get("credentialSubject"))
+if subject_id is not None and sub is None:           # sub required when subject has an id
+    raise OB3VerificationError("JWT payload is missing the required 'sub' claim")
+if sub is not None and sub != subject_id:
     raise OB3VerificationError("JWT 'sub' does not match the credentialSubject id")
 ```
 
-It also requires the `vc` claim to be present and to carry the `OpenBadgeCredential` type, so an OB2 JWS token (which has no `vc` claim) is rejected with a clear message rather than misinterpreted.
+The payload's top-level `type` must include `VerifiableCredential` and either `OpenBadgeCredential` or its alias `AchievementCredential`; a token carrying neither (e.g. an OB2 JWS assertion, which is not a native VC-JWT) is rejected with a clear message rather than misinterpreted.
 
 ### DID-based issuer identity (OB3)
 
