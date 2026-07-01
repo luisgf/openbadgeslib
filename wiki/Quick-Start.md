@@ -5,7 +5,7 @@ This walkthrough takes you from an empty directory to a signed, verified Open Ba
 Create the config directory and a starter `config.ini`:
 
 ```sh
-openbadges-init
+openbadges-init ./config
 ```
 
 The example config ships with two badge sections (`[badge_1]`, `[badge_2]`), an `[issuer]` section, and `[paths]` pointing keys at `${base}/keys`. Edit the issuer details and at least one `[badge_*]` section before continuing. The default key type is RSA (`key_type = RSA`; `ECC` is the alternative).
