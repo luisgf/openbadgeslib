@@ -4,6 +4,14 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.0.1 - 2026-07-02
+
+  - fix(cli): the OpenBadges 1.0 signer (`-V 1`) now writes the signed badge
+    before appending to the audit log, and guards the log write, so a missing
+    or unwritable `base_log` reports a clean error instead of crashing with a
+    raw OSError and losing the already-signed badge (matches the OB2 path).
+
+
 * v3.0.0 - 2026-07-01
 
   - BREAKING: the pre-2.0 wire format previously shipped as `-V 2` is relabelled
