@@ -30,11 +30,12 @@
 """
 
 import argparse
+import json
 import logging
 import sys
 import os
 
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from .errors import LibOpenBadgesException
 from .confparser import read_config_or_exit, resolve_badge_section
@@ -96,11 +97,30 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
                         metavar='VERSION',
                         help='OpenBadges specification version: 2 (default, JWS) or 3 (JWT-VC).')
+    parser.add_argument('--json', action='store_true',
+                        help='Emit a machine-readable JSON result instead of the human '
+                             'output. Exits 0 when valid, non-zero otherwise.')
     parser.add_argument('-d', '--debug', action='store_true',
                         help='Show debug messages at runtime.')
     parser.add_argument('-v', '--version', action='version',
                         version=__version__)
     return parser
+
+
+def _finish(args: argparse.Namespace, result: Dict[str, Any]) -> None:
+    """Emit the verification result and set the process exit status.
+
+    In --json mode a single JSON object is printed and the process exits 0 when
+    valid, non-zero otherwise. Without --json the human lines have already been
+    printed; the historical exit behaviour is preserved via result['_exit']
+    (None means return without exiting, i.e. a normal exit 0)."""
+    if args.json:
+        payload = {k: v for k, v in result.items() if not k.startswith('_')}
+        print(json.dumps(payload))
+        sys.exit(0 if result.get('valid') else 1)
+    code = result.get('_exit')
+    if code is not None:
+        sys.exit(code)
 
 
 def main() -> None:
@@ -116,8 +136,13 @@ def main() -> None:
                  args.filein, args.ob_version, args.receptor)
 
     if not os.path.isfile(args.filein):
-        print('[!] Badge file %s NOT exists.' % args.filein)
-        sys.exit(-1)
+        if not args.json:
+            print('[!] Badge file %s NOT exists.' % args.filein)
+        _finish(args, {'ob_version': args.ob_version, 'recipient': args.receptor,
+                       'valid': False,
+                       'reason': 'Badge file %s does not exist' % args.filein,
+                       '_exit': -1})
+        return
 
     if args.ob_version == '3':
         _verify_ob3(args)
@@ -127,6 +152,7 @@ def main() -> None:
 
 def _verify_ob2(args: argparse.Namespace) -> None:
     """Verify a badge using OpenBadges 2.0 (JWS)."""
+    result: Dict[str, Any] = {'ob_version': '2', 'recipient': args.receptor, '_exit': None}
     try:
         badge = BadgeSigned.read_from_file(args.filein)
 
@@ -140,31 +166,47 @@ def _verify_ob2(args: argparse.Namespace) -> None:
                      trusted, 'operator' if trusted else 'badge-embedded')
 
         v = Verifier(verify_key=local_pubkey, identity=args.receptor)
-        if args.show:
+        if args.show and not args.json:
             v.print_payload(badge)
 
         check = v.get_badge_status(badge)
         logger.debug("OB2 verify result: %s", check.status.name)
+        result['trusted'] = trusted
+        result['status'] = check.status.name
 
         if check.status is BadgeStatus.VALID:
+            result['valid'] = True
             if trusted:
-                print('[+] Signature is correct for the identity %s' % v.get_identity())
+                result['reason'] = None
+                if not args.json:
+                    print('[+] Signature is correct for the identity %s' % v.get_identity())
             else:
-                print('[~] Signature is internally consistent for %s, but it was '
-                      'verified against the key embedded in the badge itself, not a '
-                      'trusted issuer key. This does NOT prove issuer identity. '
-                      'Re-run with --local BADGE or --pubkey FILE to anchor trust.'
-                      % v.get_identity())
+                result['reason'] = ('signature is internally consistent but verified against '
+                                    'the badge-embedded key, not a trusted issuer key')
+                if not args.json:
+                    print('[~] Signature is internally consistent for %s, but it was '
+                          'verified against the key embedded in the badge itself, not a '
+                          'trusted issuer key. This does NOT prove issuer identity. '
+                          'Re-run with --local BADGE or --pubkey FILE to anchor trust.'
+                          % v.get_identity())
         else:
-            print('[-] ', check.msg)
+            result['valid'] = False
+            result['reason'] = check.msg
+            if not args.json:
+                print('[-] ', check.msg)
 
     except LibOpenBadgesException as exc:
         # Present any library exception (unsupported image format, malformed
         # assertion, unreadable key material, …) as a clean CLI error rather
         # than an uncaught traceback. BadgeImgFormatUnsupported and the key-read
         # errors inherit LibOpenBadgesException but not VerifierExceptions.
-        print('[-] %s' % exc)
-        sys.exit(-1)
+        result['valid'] = False
+        result['reason'] = str(exc)
+        result['_exit'] = -1
+        if not args.json:
+            print('[-] %s' % exc)
+
+    _finish(args, result)
 
 
 def _issuer_did_from_token(token: str) -> str:
@@ -196,10 +238,16 @@ def _verify_ob3(args: argparse.Namespace) -> None:
     from .ob3 import OB3Verifier, OB3VerificationError
     from .errors import ErrorParsingFile
 
+    result: Dict[str, Any] = {'ob_version': '3', 'recipient': args.receptor,
+                              'trusted': True, 'valid': False, '_exit': -1}
+
     pub_pem = _resolve_trusted_pubkey(args)
     if pub_pem is None and not args.resolve_did:
-        print('[!] OB3 verification requires --local BADGE, --pubkey FILE, or --resolve-did')
-        sys.exit(-1)
+        result['reason'] = 'OB3 verification requires --local BADGE, --pubkey FILE, or --resolve-did'
+        if not args.json:
+            print('[!] %s' % result['reason'])
+        _finish(args, result)
+        return
 
     with open(args.filein, 'rb') as f:
         file_data = f.read()
@@ -210,11 +258,17 @@ def _verify_ob3(args: argparse.Namespace) -> None:
         elif args.filein.lower().endswith('.png'):
             token = OB3Verifier.extract_token_from_png(file_data)
         else:
-            print('[!] Unsupported file format for OB3 verification (use .svg or .png)')
-            sys.exit(-1)
+            result['reason'] = 'Unsupported file format for OB3 verification (use .svg or .png)'
+            if not args.json:
+                print('[!] %s' % result['reason'])
+            _finish(args, result)
+            return
     except (OB3VerificationError, ErrorParsingFile) as exc:
-        print('[-] Could not extract OB3 token: %s' % exc)
-        sys.exit(-1)
+        result['reason'] = 'Could not extract OB3 token: %s' % exc
+        if not args.json:
+            print('[-] %s' % result['reason'])
+        _finish(args, result)
+        return
 
     # Let the library own recipient binding (it normalises mailto:/DID and
     # compares), instead of re-implementing the comparison here.
@@ -223,15 +277,30 @@ def _verify_ob3(args: argparse.Namespace) -> None:
             verifier = OB3Verifier(pubkey_pem=pub_pem)
         else:
             issuer_did = _issuer_did_from_token(token)
-            print('[*] Resolving issuer DID %s' % issuer_did)
+            result['issuer_did'] = issuer_did
+            if not args.json:
+                print('[*] Resolving issuer DID %s' % issuer_did)
             verifier = OB3Verifier.for_issuer_did(issuer_did)
         credential = verifier.verify(token, expected_recipient=args.receptor,
                                      check_status=args.check_status)
     except OB3VerificationError as exc:
-        print('[-] OB3 verification failed: %s' % exc)
-        sys.exit(-1)
+        result['reason'] = 'OB3 verification failed: %s' % exc
+        if not args.json:
+            print('[-] %s' % result['reason'])
+        _finish(args, result)
+        return
 
-    if args.show:
+    result['valid'] = True
+    result['reason'] = None
+    result['_exit'] = None
+    result['issuer'] = credential.issuer.name
+    result['achievement'] = credential.achievement.name
+    result['issued_on'] = credential.issuance_date.isoformat() if credential.issuance_date else None
+    result['expires'] = (credential.expiration_date.isoformat()
+                         if credential.expiration_date else None)
+    result['evidence'] = credential.evidence_url
+
+    if args.show and not args.json:
         print('[+] Credential issuer  : %s' % credential.issuer.name)
         print('[+] Achievement        : %s' % credential.achievement.name)
         issued = credential.issuance_date.isoformat() if credential.issuance_date else 'n/a'
@@ -241,7 +310,10 @@ def _verify_ob3(args: argparse.Namespace) -> None:
         if credential.evidence_url:
             print('[+] Evidence           : %s' % credential.evidence_url)
 
-    print('[+] OB3 signature is valid for the identity %s' % args.receptor)
+    if not args.json:
+        print('[+] OB3 signature is valid for the identity %s' % args.receptor)
+
+    _finish(args, result)
 
 
 if __name__ == '__main__':
