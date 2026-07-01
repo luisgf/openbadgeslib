@@ -1,93 +1,89 @@
-openbadgeslib supports two generations of the IMS Global Open Badges specification side by side. This page explains what each one is, when to pick which, how they interoperate, and how the `-V` flag and the Python packages select between them.
+openbadgeslib implements three generations of the IMS Global Open Badges specification side by side, selectable with the `-V` flag (`1`, `2`, or `3`). This page explains what each one is, when to pick which, and how they interoperate.
 
-## The two specifications
+> **Naming note.** What earlier releases shipped as `-V 2` was, in wire-format terms, the pre-2.0 model (no `@context`/`type`, a `uid` instead of an IRI `id`, a `verify` object, `hashed` as the string `"true"`, and Unix-timestamp dates). As of v3.0.0 that legacy format is honestly relabelled **OpenBadges 1.0 (`-V 1`)**, and `-V 2` is a **new, strict Open Badges 2.0** implementation. The default is now the newest version, **`-V 3`**.
 
-### OpenBadges 2.0 — JWS-signed assertion
+## The three specifications
 
-OB 2.0 builds a JSON **Assertion** payload (recipient's SHA-256 hashed email plus salt, badge metadata URLs, issuance timestamp) and signs it with the issuer's private key using **JWS compact serialisation** (RS256 for RSA, ES256 for ECC, EdDSA for Ed25519). The resulting token is baked directly into the badge image:
+### OpenBadges 1.0 — legacy JWS assertion (`-V 1`)
 
-* **SVG** — an `<openbadges:assertion verify="…"/>` XML element
-* **PNG** — an `iTXt` chunk with keyword `openbadges`
+The original pre-2.0 model, frozen for backward compatibility. It builds a JSON assertion (SHA-256 hashed recipient email + salt, badge URLs, a Unix `issuedOn`) and signs it with **JWS compact serialisation** (RS256/ES256/EdDSA). It uses `uid`, a `verify: {type, url}` object, and `hashed: "true"` (a string). No `@context`/`type` are emitted.
 
-Recipient identity is *hashed* (SHA-256 + salt), so the email is not stored in clear text. Verification re-hashes the supplied email and compares it. OB 2.0 also supports expiration and revocation-list checking.
+The implementation lives in `openbadgeslib.ob1` (with top-level `badge`, `signer`, `verifier` modules kept as backward-compatible shims for `from openbadgeslib.signer import Signer`). See [[Python API OB1]].
 
-The implementation lives in `openbadgeslib.ob2` (with top-level `badge`, `signer`, `verifier` modules kept as backward-compatible shims). See [[Python API OB2]].
+### OpenBadges 2.0 — strict, conformant JWS/hosted assertion (`-V 2`)
 
-### OpenBadges 3.0 — W3C Verifiable Credential (JWT-VC)
+A ground-up, spec-conformant Open Badges 2.0 implementation. The assertion is a valid JSON-LD Badge Object:
 
-OB 3.0 models the badge as a **W3C Verifiable Credential** using the **VC 2.0 data model** and signs it as a **JWT-VC** (PyJWT, RS256/ES256/EdDSA). The credential is an `OpenBadgeCredential` with structured `Issuer`, `Achievement`, and `credentialSubject` objects.
+* `@context` is `https://w3id.org/openbadges/v2` and `type` is `"Assertion"`
+* the assertion `id` is an IRI — `urn:uuid:…` for a **SignedBadge**, or the resolvable hosting URL for a **HostedBadge** (no `uid`)
+* recipient `hashed` is a real JSON **boolean**; identity is `sha256$<hex>` + salt
+* dates (`issuedOn`, `expires`) are **ISO 8601** strings with a UTC offset
+* verification is a `verification` object: `{"type": "SignedBadge", "creator": <CryptographicKey IRI>}` or `{"type": "HostedBadge"}`
 
-Key data-model details from `openbadgeslib/ob3/credential.py`:
+Two verification models are supported:
 
-* `@context` is `["https://www.w3.org/ns/credentials/v2", "https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json"]`
-* `type` is `["VerifiableCredential", "OpenBadgeCredential"]`
-* Dates use VC 2.0 field names **`validFrom` / `validUntil`** (VC 1.1 `issuanceDate` / `expirationDate` are still accepted on read)
-* The credential `id` auto-generates as `urn:uuid:…` when absent
-* The recipient (`recipient_id` / `credentialSubject.id`) is either `mailto:email@example.com` **or a DID** — it is *not* hashed
-* OB 3.0 native VC-JWT (§8.2): the credential IS the JWT payload (its members at the top level, not under a `vc` claim), with registered claims `iss` (issuer id), `sub` (recipient), `jti`, `nbf` (validFrom), and optional `exp`; `OB3Verifier.verify()` requires `iss`/`nbf` and cross-checks the claims against the credential body. The JOSE header carries the issuer's public key as a `jwk`.
+* **SignedBadge** — the baked JWS is verified. The key is the operator-supplied trusted key, or (untrusted) resolved from `verification.creator` → a published `CryptographicKey` document whose `owner`/`publicKey` back-link to the issuer Profile is checked.
+* **HostedBadge** — the assertion is fetched over HTTPS from its own `id`; that retrieval, scoped to the issuer's origin (default same-origin, or the issuer's `startsWith`/`allowedOrigins`), is the trust anchor. The baked JWS is checked only as non-gating defence-in-depth.
 
-The credential can also be baked into SVG/PNG images using the same carrier format as OB 2.0. The implementation lives in `openbadgeslib.ob3`. See [[Python API OB3]].
+`openbadges-publish -V 2` emits conformant hosted metadata: an issuer `Profile` (with a `publicKey` array), a `BadgeClass` and a `CryptographicKey` (`key.json`) per badge, and a `RevocationList`. The implementation lives in `openbadgeslib.ob2` (`OB2Signer`, `OB2Verifier`, and dataclasses `Assertion`, `BadgeClass`, `Profile`, `CryptographicKey`, `RevocationList`). See [[Python API OB2]].
+
+### OpenBadges 3.0 — W3C Verifiable Credential (JWT-VC) (`-V 3`, default)
+
+OB 3.0 models the badge as a **W3C Verifiable Credential** (VC 2.0 data model) signed as a **JWT-VC** (PyJWT, RS256/ES256/EdDSA). The recipient is a `mailto:` URI or a DID (not hashed). The implementation lives in `openbadgeslib.ob3`. See [[Python API OB3]].
 
 ## Comparison at a glance
 
-| Aspect | OpenBadges 2.0 | OpenBadges 3.0 |
-| --- | --- | --- |
-| `-V` value | `2` (default) | `3` |
-| Token format | JWS compact serialisation | JWT-VC |
-| Data model | OB 2.0 Assertion | W3C Verifiable Credentials 2.0 |
-| Python package | `openbadgeslib.ob2` | `openbadgeslib.ob3` |
-| Core classes | `Badge`, `Signer`, `Verifier` | `OpenBadgeCredential`, `Issuer`, `Achievement`, `OB3Signer`, `OB3Verifier` |
-| Recipient identity | SHA-256 hashed email (+ salt) | `mailto:` URI **or** DID, in clear |
-| Date fields | issuance + expiration in assertion | `validFrom` / `validUntil` |
-| Algorithms | RS256 / ES256 / EdDSA (RSA 2048, ECC P-256, Ed25519) | RS256 / ES256 / EdDSA (RSA 2048, ECC P-256, Ed25519) |
-| Image baking | SVG `<openbadges:assertion>`, PNG `iTXt` `openbadges` | SVG `<openbadges:credential>`, PNG `iTXt` `openbadgecredential` |
-| Revocation list | yes | not modelled |
+| Aspect | OB 1.0 (`-V 1`) | OB 2.0 (`-V 2`) | OB 3.0 (`-V 3`) |
+| --- | --- | --- | --- |
+| Token format | JWS compact | JWS compact | JWT-VC |
+| JSON-LD `@context`/`type` | no | **yes** | yes |
+| Assertion identifier | `uid` (SHA-1) | `id` IRI (`urn:uuid:`/URL) | `id` (`urn:uuid:`) |
+| Verification field | `verify {type,url}` | `verification {type,creator}` | JWT proof |
+| `hashed` | string `"true"` | boolean `true` | n/a (not hashed) |
+| Dates | Unix timestamp | ISO 8601 | ISO 8601 (`validFrom`/`validUntil`) |
+| Recipient identity | SHA-256 email + salt | SHA-256 email + salt | `mailto:` URI **or** DID |
+| Hosted verification | no (relabelled URL only) | **yes (real)** | n/a |
+| CryptographicKey / RevocationList | no | **yes** | credentialStatus |
+| Python package | `openbadgeslib.ob1` | `openbadgeslib.ob2` | `openbadgeslib.ob3` |
+| Core classes | `Badge`, `Signer`, `Verifier` | `OB2Signer`, `OB2Verifier`, `Assertion` | `OB3Signer`, `OB3Verifier`, `OpenBadgeCredential` |
 
 ## How the version is selected
 
-The four versioned CLI tools — `openbadges-keygenerator`, `openbadges-signer`, `openbadges-verifier`, `openbadges-publish` — accept the **`-V {2,3}`** flag to select the specification version. The default is `2`. (`openbadges-init` has no `-V` flag.)
+The four versioned CLI tools — `openbadges-keygenerator`, `openbadges-signer`, `openbadges-verifier`, `openbadges-publish` — accept **`-V {1,2,3}`**. The default is **`3`** (the newest version). (`openbadges-init` has no `-V` flag.)
 
 ```bash
-# Sign as OpenBadges 2.0 (default — -V 2 is implied)
-openbadges-signer -c ./config/config.ini -b 1 -r recipient@example.com -o /tmp/
+# Strict OB 2.0, signed (default verification model)
+openbadges-signer -c ./config/config.ini -b 1 -r recipient@example.com -o /tmp/ -V 2 -E
 
-# Sign as OpenBadges 3.0
-openbadges-signer -c ./config/config.ini -b 1 -r recipient@example.com -o /tmp/ -V 3
+# Strict OB 2.0, hosted (also writes a .assertion.json to publish)
+openbadges-signer -c ./config/config.ini -b 1 -r recipient@example.com -o /tmp/ -V 2 -H -E
 
-# Verify an OB 2.0 badge (recipient re-hashed against the assertion)
-openbadges-verifier -i /tmp/badge_1_recipient@example.com.svg -r recipient@example.com
-
-# Verify an OB 3.0 badge, supplying the PEM public key directly with -k
+# Verify an OB 2.0 badge against a trusted key
 openbadges-verifier -i /tmp/badge_1_recipient@example.com.svg -r recipient@example.com \
-    -V 3 -k ./config/keys/verify_rsa_key_1.pem
+    -V 2 -k ./config/keys/verify_rsa_key_1.pem
+
+# Legacy OB 1.0
+openbadges-signer -c ./config/config.ini -b 1 -r recipient@example.com -o /tmp/ -V 1 -E
 ```
 
-In Python, you choose the version simply by importing from the matching package:
+In Python, choose the version by importing from the matching package:
 
 ```python
-# OpenBadges 2.0
-from openbadgeslib.ob2 import Badge, Signer, Verifier
-
-# OpenBadges 3.0
-from openbadgeslib.ob3 import (
-    Issuer, Achievement, OpenBadgeCredential,
-    OB3Signer, OB3Verifier,
-)
+from openbadgeslib.ob1 import Signer, Verifier, Badge          # OB 1.0 (legacy)
+from openbadgeslib.ob2 import OB2Signer, OB2Verifier, Assertion  # OB 2.0 (strict)
+from openbadgeslib.ob3 import OB3Signer, OB3Verifier, OpenBadgeCredential  # OB 3.0
 ```
-
-For the full signing and verification workflow shared by both versions, see [[Signing and Verification]].
 
 ## When to choose which
 
-**Choose OB 2.0** when you need to interoperate with the large existing ecosystem of Open Badges 2.0 backpacks, displayers and verifiers, or when you want the recipient's email kept as a salted hash rather than in clear text inside the credential.
-
-**Choose OB 3.0** when you want the modern W3C Verifiable Credentials data model — DID-based recipients, structured issuer/achievement metadata, and alignment with the broader VC tooling ecosystem — or when a consumer specifically requires JWT-VC credentials.
+* **OB 2.0 (`-V 2`)** — you need a standards-conformant Open Badges 2.0 document that interoperates with the 2.0 ecosystem (backpacks, displayers, third-party verifiers).
+* **OB 3.0 (`-V 3`)** — you want the modern W3C Verifiable Credentials model (DID recipients, structured issuer/achievement metadata, the broader VC tooling ecosystem).
+* **OB 1.0 (`-V 1`)** — only to keep verifying badges already issued in the old pre-2.0 format; do not choose it for new deployments.
 
 ## Interoperability notes
 
-* **Same crypto, same carrier mechanism.** Both versions use the same key types (RSA 2048, ECC P-256, or Ed25519 keys generated by `openbadges-keygenerator`) and the same SVG/PNG baking mechanism, so the image pipeline is shared. They differ only in the carrier identifiers (`openbadges:assertion` / `openbadges` for OB2 vs `openbadges:credential` / `openbadgecredential` for OB3). A single PEM key pair can serve either version.
-* **The token inside differs.** An OB 2.0 image carries a JWS assertion; an OB 3.0 image carries a JWT-VC. A verifier must use the matching `-V` value (or the matching `OB2`/`OB3` Verifier class) — there is no automatic cross-format detection.
-* **OB 3.0 reads older VC fields.** On verification, OB 3.0 accepts both VC 2.0 (`validFrom`/`validUntil`) and VC 1.1 (`issuanceDate`/`expirationDate`) field names, but always *writes* the VC 2.0 names.
-* **Recipient binding differs.** OB 2.0 compares a SHA-256 hash of the supplied email; OB 3.0 binds to a `mailto:` URI or DID and `OB3Verifier.verify()` accepts an optional `expected_recipient` to assert it.
+* **Same crypto, same carrier.** All three use the same key types (RSA 2048, ECC P-256, Ed25519) and the same SVG/PNG baking module. They differ in the carrier identifiers: OB1/OB2 use `openbadges:assertion` / the `openbadges` iTXt keyword; OB3 uses `openbadges:credential` / `openbadgecredential`.
+* **The token inside differs.** A verifier must use the matching `-V` value — there is no automatic cross-format detection.
+* **Migration.** OB 1.0 and OB 2.0 both hash the recipient email; OB 3.0 binds to a `mailto:`/DID in clear.
 
-See also [[Signing and Verification]] for the end-to-end flows, [[Python API OB2]] and [[Python API OB3]] for the programmatic interfaces.
+See also [[Signing and Verification]] for the end-to-end flows, and [[Python API OB1]], [[Python API OB2]], [[Python API OB3]] for the programmatic interfaces.

@@ -36,14 +36,14 @@ Generates a PEM key pair (private signing key + public verification key) for a b
 ### Synopsis
 
 ```sh
-openbadges-keygenerator -g BADGE [-c FILE] [-V {2,3}] [-d]
+openbadges-keygenerator -g BADGE [-c FILE] [-V {1,2,3}] [-d]
 ```
 
 | Short | Long | Meaning | Default |
 |-------|------|---------|---------|
 | `-c` | `--config` | Config file to use | `config.ini` |
 | `-g` | `--genkey BADGE` | Generate a key pair for section `[badge_<BADGE>]` (the suffix after `badge_`) | none (prints help) |
-| `-V` | `--ob-version {2,3}` | OB spec version; key material is identical for both | `2` |
+| `-V` | `--ob-version {1,2,3}` | OB spec version; key material is identical for all | `3` |
 | `-d` | `--debug` | Show debug messages at runtime | off |
 | `-v` | `--version` | Print version and exit | — |
 
@@ -73,7 +73,7 @@ You **must** choose exactly one of `-e / --evidence` or `-E / --no-evidence`. Su
 ### Synopsis
 
 ```sh
-openbadges-signer -b BADGE -r RECEPTOR (-e URL | -E) [-c FILE] [-o DIR] [-M] [-x DAYS] [-V {2,3}] [-d]
+openbadges-signer -b BADGE -r RECEPTOR (-e URL | -E) [-c FILE] [-o DIR] [-M] [-H] [-x DAYS] [-V {1,2,3}] [-d]
 ```
 
 | Short | Long | Meaning | Default |
@@ -82,11 +82,12 @@ openbadges-signer -b BADGE -r RECEPTOR (-e URL | -E) [-c FILE] [-o DIR] [-M] [-x
 | `-b` | `--badge` | Badge name to sign (**required**) | required |
 | `-r` | `--receptor` | Recipient email of the badge (**required**) | required |
 | `-o` | `--output` | Output directory for the signed badge | current dir |
-| `-M` | `--mail-badge` | Email the signed badge to the recipient | off |
+| `-M` | `--mail-badge` | Email the signed badge to the recipient (OB 1.0 only) | off |
+| `-H` | `--hosted` | OB 2.0 only (`-V 2`): use HostedBadge verification (publish the assertion JSON at its own URL) instead of a SignedBadge JWS; requires `hosted_assertions_base` in the badge section | off |
 | `-e` | `--evidence URL` | URL to the recipient's evidence (mutually exclusive with `-E`) | none |
 | `-E` | `--no-evidence` | Sign without evidence (mutually exclusive with `-e`) | off |
 | `-x` | `--expires DAYS` | Expire the badge after `DAYS` days | none |
-| `-V` | `--ob-version {2,3}` | `2` = JWS, `3` = JWT-VC | `2` |
+| `-V` | `--ob-version {1,2,3}` | `1` = legacy JWS (OB 1.0), `2` = strict OB 2.0 JWS, `3` = JWT-VC | `3` |
 | `-d` | `--debug` | Show debug messages at runtime | off |
 | `-v` | `--version` | Print version and exit | — |
 
@@ -122,7 +123,7 @@ Extracts the embedded assertion/credential from a signed badge image, checks the
 ### Synopsis
 
 ```sh
-openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [--check-status] [--resolve-did] [--json] [-V {2,3}] [-d]
+openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [--check-status] [--resolve-did] [--json] [-V {1,2,3}] [-d]
 ```
 
 | Short | Long | Meaning | Default |
@@ -136,7 +137,7 @@ openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [--c
 | | `--check-status` | OB3 only: fetch the `credentialStatus` list and reject a revoked/suspended credential (requires network) | off |
 | | `--resolve-did` | OB3 only: when no trusted key is given, resolve the issuer DID (did:key/did:web) from the token to obtain the verification key | off |
 | | `--json` | Emit a machine-readable JSON result instead of the human output (exit `0` = valid and issuer-trusted, `2` = valid signature but issuer untrusted, `1` = failure) | off |
-| `-V` | `--ob-version {2,3}` | `2` = JWS, `3` = JWT-VC | `2` |
+| `-V` | `--ob-version {1,2,3}` | `1` = legacy JWS (OB 1.0), `2` = strict OB 2.0 JWS, `3` = JWT-VC | `3` |
 | `-d` | `--debug` | Show debug messages at runtime | off |
 | `-v` | `--version` | Print version and exit | — |
 
@@ -189,14 +190,14 @@ The output directory is created with a `0o077` umask and must not already exist.
 ### Synopsis
 
 ```sh
-openbadges-publish -o DIR [-c FILE] [-V {2,3}]
+openbadges-publish -o DIR [-c FILE] [-V {1,2,3}]
 ```
 
 | Short | Long | Meaning | Default |
 |-------|------|---------|---------|
 | `-c` | `--config` | Config file to use | `config.ini` |
 | `-o` | `--output` | Output directory for the public files (**required**) | required |
-| `-V` | `--ob-version {2,3}` | `2` writes metadata; `3` prints guidance only | `2` |
+| `-V` | `--ob-version {1,2,3}` | `1`/`2` write hosted metadata (OB 2.0 adds `key.json`); `3` prints guidance only | `3` |
 | `-v` | `--version` | Print version and exit | — |
 
 ### Example (OB2)

@@ -58,10 +58,10 @@ def build_parser() -> argparse.ArgumentParser:
                               "[badge_<BADGE>] (the suffix after 'badge_'). "
                               "Key type (RSA/ECC/ED25519) is taken from the "
                               "badge's key_type field; default RSA."))
-    parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
+    parser.add_argument('-V', '--ob-version', choices=['1', '2', '3'], default='3',
                         metavar='VERSION',
-                        help='OpenBadges specification version to use: 2 (default) or 3. '
-                        'Key material is identical for both versions.')
+                        help='OpenBadges specification version to use: 1, 2, or 3 '
+                        '(default). Key material is identical for all versions.')
     parser.add_argument('-d', '--debug', action='store_true',
                         help='Show debug messages at runtime.')
     parser.add_argument('-v', '--version', action='version',

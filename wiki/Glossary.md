@@ -75,7 +75,7 @@ A lightweight HTTP server and reverse proxy. One option for hosting published ba
 ## O
 
 ### OpenBadge / Open Badges
-The IMS Global Open Badges specification: a standard for digital badges carrying verifiable metadata and cryptographic proofs of achievement. Originally created by Mozilla, now maintained by the IMS Global Learning Consortium. This library supports OB2 and OB3 — see [[OB2 vs OB3]].
+The IMS Global Open Badges specification: a standard for digital badges carrying verifiable metadata and cryptographic proofs of achievement. Originally created by Mozilla, now maintained by the IMS Global Learning Consortium. This library supports strict OB 2.0 and OB 3.0, plus a frozen OB 1.0 legacy format — see [[OB2 vs OB3]].
 
 ### OpenBadgeCredential
 The OB3 credential type produced by this library — a [Verifiable Credential](#verifiable-credential) describing an [Achievement](#achievement), signed as [JWT-VC](#jwt-vc).

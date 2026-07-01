@@ -46,9 +46,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Publisher Parameters')
     parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-o', '--output', required=True, help='Specify the output directory to save the public files')
-    parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
+    parser.add_argument('-V', '--ob-version', choices=['1', '2', '3'], default='3',
                         metavar='VERSION',
-                        help='OpenBadges specification version: 2 (default) or 3.')
+                        help='OpenBadges specification version: 1 (legacy hosted), '
+                             '2 (strict OB 2.0), or 3 (default; no publication needed).')
     parser.add_argument('-v', '--version', action='version', version=__version__)
     return parser
 
@@ -64,6 +65,98 @@ def main() -> None:
         print('[i] Recipients verify credentials offline using the issuer\'s public key.')
         return
 
+    if args.ob_version == '2':
+        _publish_ob2(args, parser)
+        return
+
+    _publish_ob1(args, parser)
+
+
+def _publish_ob2(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Publish strict OpenBadges 2.0 hosted metadata.
+
+    Emits conformant JSON-LD Badge Objects: an issuer Profile (with a
+    ``publicKey`` array back-linking every badge's CryptographicKey), a
+    BadgeClass and a CryptographicKey (``key.json``) per badge, plus a
+    RevocationList document.
+    """
+    from .ob2 import Profile, BadgeClass, CryptographicKey, RevocationList
+
+    conf = read_config_or_exit(args.config)
+
+    if not args.output:
+        parser.print_help()
+        return
+
+    if os.path.lexists(args.output):
+        sys.exit('[!] %s already exists' % args.output)
+
+    publish_url = conf['issuer']['publish_url']
+    issuer_id = urljoin(publish_url, 'organization.json')
+    rev_relative = conf['issuer']['revocationList']
+    rev_url = urljoin(publish_url, rev_relative)
+
+    badge_names = [s for s in conf.sections() if s.startswith('badge_')]
+    key_urls = {name: urljoin(publish_url, '%s/key.json' % name) for name in badge_names}
+
+    def _dump(obj: dict) -> str:
+        return json.dumps(obj, sort_keys=True, ensure_ascii=True)
+
+    umask = os.umask(0o077)  # rwx------
+    try:
+        os.mkdir(args.output)
+
+        issuer_image = conf['issuer'].get('image')
+        profile = Profile(
+            id=issuer_id,
+            name=conf['issuer']['name'],
+            url=conf['issuer'].get('url'),
+            email=conf['issuer'].get('email'),
+            image_url=urljoin(publish_url, issuer_image) if issuer_image else None,
+            public_key=[key_urls[name] for name in badge_names],
+            revocation_list=rev_url,
+        )
+        with open(os.path.join(args.output, 'organization.json'), 'w', encoding='ascii') as f:
+            f.write(_dump(profile.to_dict()))
+
+        revocation = RevocationList(id=rev_url, issuer=issuer_id, revoked_assertions=[])
+        with open(os.path.join(args.output, os.path.basename(rev_relative)),
+                  'w', encoding='ascii') as f:
+            f.write(_dump(revocation.to_dict()))
+
+        for name in badge_names:
+            badge_path = os.path.join(args.output, name)
+            os.mkdir(badge_path)
+
+            badge_class = BadgeClass(
+                id=urljoin(publish_url, '%s/badge.json' % name),
+                name=conf[name]['name'],
+                description=conf[name]['description'],
+                image=urljoin(publish_url, conf[name]['image']),
+                criteria=conf[name]['criteria'],
+                issuer=issuer_id,
+            )
+            with open(os.path.join(badge_path, 'badge.json'), 'w', encoding='ascii') as f:
+                f.write(_dump(badge_class.to_dict()))
+
+            with open(conf[name]['public_key'], 'rb') as key:
+                pubkey_pem = key.read().decode('ascii')
+            crypto_key = CryptographicKey(
+                id=key_urls[name], owner=issuer_id, public_key_pem=pubkey_pem)
+            with open(os.path.join(badge_path, 'key.json'), 'w', encoding='ascii') as f:
+                f.write(_dump(crypto_key.to_dict()))
+
+            # Keep the raw PEM alongside for tools that fetch it directly.
+            shutil.copyfile(conf[name]['public_key'], os.path.join(badge_path, 'verify.pem'))
+    finally:
+        os.umask(umask)
+
+    print('Please configure your Web server to publish the folder %s as %s' %
+          (args.output, publish_url))
+
+
+def _publish_ob1(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Publish OpenBadges 1.0 (legacy) hosted issuer/badge/revocation metadata."""
     conf = read_config_or_exit(args.config)
 
     if args.output:

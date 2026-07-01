@@ -179,16 +179,16 @@ def test_ob2_valid_trusted_json(tmp_path, svg_rsa_badge, rsa_pub_pem, capsys):
     pub = tmp_path / 'verify.pem'
     pub.write_bytes(rsa_pub_pem)
     argv = ['openbadges-verifier', '-i', str(badge_file), '-r', 'recipient@example.com',
-            '-V', '2', '-k', str(pub), '--json']
+            '-V', '1', '-k', str(pub), '--json']
     code, result = _run(argv, capsys, extra_patches=(
-        patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem),
-        patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download),
+        patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem),
+        patch('openbadgeslib.ob1.verifier.download_file', side_effect=_fake_revocation_download),
     ))
     assert code == 0
     assert result['valid'] is True
     assert result['trusted'] is True
     assert result['status'] == 'VALID'
-    assert result['ob_version'] == '2'
+    assert result['ob_version'] == '1'
 
 
 def test_ob2_untrusted_is_valid_but_not_trusted_json(tmp_path, svg_rsa_badge, rsa_pub_pem, capsys):
@@ -199,10 +199,10 @@ def test_ob2_untrusted_is_valid_but_not_trusted_json(tmp_path, svg_rsa_badge, rs
     # detail. Exit 0 here would let a self-signed forgery pass a CI gate.
     badge_file = _make_signed_ob2_svg(tmp_path, svg_rsa_badge)
     argv = ['openbadges-verifier', '-i', str(badge_file), '-r', 'recipient@example.com',
-            '-V', '2', '--json']
+            '-V', '1', '--json']
     code, result = _run(argv, capsys, extra_patches=(
-        patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem),
-        patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download),
+        patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem),
+        patch('openbadgeslib.ob1.verifier.download_file', side_effect=_fake_revocation_download),
     ))
     assert code == 2
     assert result['valid'] is True
@@ -214,10 +214,10 @@ def test_ob2_wrong_receptor_json_exits_nonzero(tmp_path, svg_rsa_badge, rsa_pub_
     pub = tmp_path / 'verify.pem'
     pub.write_bytes(rsa_pub_pem)
     argv = ['openbadges-verifier', '-i', str(badge_file), '-r', 'someone-else@example.com',
-            '-V', '2', '-k', str(pub), '--json']
+            '-V', '1', '-k', str(pub), '--json']
     code, result = _run(argv, capsys, extra_patches=(
-        patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem),
-        patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download),
+        patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem),
+        patch('openbadgeslib.ob1.verifier.download_file', side_effect=_fake_revocation_download),
     ))
     assert code != 0
     assert result['valid'] is False
@@ -227,7 +227,7 @@ def test_ob2_wrong_receptor_json_exits_nonzero(tmp_path, svg_rsa_badge, rsa_pub_
 
 def test_missing_file_json(tmp_path, capsys):
     argv = ['openbadges-verifier', '-i', str(tmp_path / 'nope.svg'),
-            '-r', 'recipient@example.com', '-V', '2', '--json']
+            '-r', 'recipient@example.com', '-V', '1', '--json']
     code, result = _run(argv, capsys)
     assert code != 0
     assert result['valid'] is False

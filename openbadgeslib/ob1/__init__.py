@@ -20,22 +20,17 @@
         License along with this library.
 """
 
-# Strict OpenBadges 2.0 (JWS-signed / hosted Assertions with conformant
-# JSON-LD Badge Objects). The legacy pre-2.0 format lives in openbadgeslib.ob1.
-
-from .models import (
-    OB2_CONTEXT,
-    Assertion, IdentityObject, Verification,
-    BadgeClass, Profile, CryptographicKey, RevocationList,
-    hash_identity,
+from .badge import (
+    BadgeStatus, BadgeImgType, BadgeType,
+    Assertion, Badge, BadgeSigned,
+    extract_svg_assertion, extract_png_assertion,
 )
-from .signer import OB2Signer
-from .verifier import OB2Verifier, OB2VerificationError
+from .signer import Signer
+from .verifier import Verifier, VerifyInfo
 
 __all__ = [
-    'OB2_CONTEXT',
-    'Assertion', 'IdentityObject', 'Verification',
-    'BadgeClass', 'Profile', 'CryptographicKey', 'RevocationList',
-    'hash_identity',
-    'OB2Signer', 'OB2Verifier', 'OB2VerificationError',
+    'BadgeStatus', 'BadgeImgType', 'BadgeType',
+    'Assertion', 'Badge', 'BadgeSigned',
+    'extract_svg_assertion', 'extract_png_assertion',
+    'Signer', 'Verifier', 'VerifyInfo',
 ]

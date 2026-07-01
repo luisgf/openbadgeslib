@@ -40,7 +40,7 @@ from typing import Any, Dict, Optional
 from .errors import LibOpenBadgesException
 from .confparser import read_config_or_exit, resolve_badge_section
 from .logs import enable_debug_logging
-from .ob2 import Verifier, BadgeSigned, BadgeStatus
+from .ob1 import Verifier, BadgeSigned, BadgeStatus
 from .util import __version__
 
 logger = logging.getLogger(__name__)
@@ -94,9 +94,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help='OB3 only: when no trusted key is supplied, resolve the '
                              'issuer DID (did:key/did:web) from the token to obtain the '
                              'verification key (did:web requires network access).')
-    parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
+    parser.add_argument('-V', '--ob-version', choices=['1', '2', '3'], default='3',
                         metavar='VERSION',
-                        help='OpenBadges specification version: 2 (default, JWS) or 3 (JWT-VC).')
+                        help='OpenBadges specification version: 1 (legacy JWS), '
+                             '2 (strict OB 2.0 JWS), or 3 (default, JWT-VC).')
     parser.add_argument('--json', action='store_true',
                         help='Emit a machine-readable JSON result instead of the human '
                              'output. Exit status: 0 when the badge is valid AND the '
@@ -155,13 +156,97 @@ def main() -> None:
 
     if args.ob_version == '3':
         _verify_ob3(args)
-    else:
+    elif args.ob_version == '2':
         _verify_ob2(args)
+    else:
+        _verify_ob1(args)
 
 
 def _verify_ob2(args: argparse.Namespace) -> None:
-    """Verify a badge using OpenBadges 2.0 (JWS)."""
-    result: Dict[str, Any] = {'ob_version': '2', 'recipient': args.receptor, '_exit': None}
+    """Verify a badge using strict OpenBadges 2.0 (SignedBadge JWS or HostedBadge)."""
+    from .ob2 import OB2Verifier, OB2VerificationError
+    from .errors import ErrorParsingFile
+
+    result: Dict[str, Any] = {'ob_version': '2', 'recipient': args.receptor,
+                              'trusted': True, 'valid': False, '_exit': None}
+
+    pub_pem = _resolve_trusted_pubkey(args)
+
+    with open(args.filein, 'rb') as f:
+        file_data = f.read()
+
+    try:
+        if args.filein.lower().endswith('.svg'):
+            token = OB2Verifier.extract_token_from_svg(file_data)
+        elif args.filein.lower().endswith('.png'):
+            token = OB2Verifier.extract_token_from_png(file_data)
+        else:
+            result['reason'] = 'Unsupported file format for OB2 verification (use .svg or .png)'
+            result['_exit'] = -1
+            if not args.json:
+                print('[!] %s' % result['reason'])
+            _finish(args, result)
+            return
+    except (OB2VerificationError, ErrorParsingFile) as exc:
+        result['reason'] = 'Could not extract OB2 token: %s' % exc
+        result['_exit'] = -1
+        if not args.json:
+            print('[-] %s' % result['reason'])
+        _finish(args, result)
+        return
+
+    # check_revocation=True mirrors OB1's always-check-revocation pipeline; a
+    # HostedBadge additionally fetches its id and issuer to anchor trust.
+    verifier = OB2Verifier(pubkey_pem=pub_pem)
+    try:
+        assertion = verifier.verify(token, expected_recipient=args.receptor,
+                                    check_revocation=True)
+    except OB2VerificationError as exc:
+        result['reason'] = 'OB2 verification failed: %s' % exc
+        result['status'] = 'INVALID'
+        if not args.json:
+            print('[-] %s' % exc)
+        _finish(args, result)
+        return
+
+    verification_type = assertion.verification.type
+    # A HostedBadge is anchored by the (scope-checked) HTTPS retrieval of its id;
+    # a SignedBadge is only trusted when the operator supplied the key.
+    trusted = True if verification_type == 'HostedBadge' else (pub_pem is not None)
+    result['valid'] = True
+    result['trusted'] = trusted
+    result['status'] = 'VALID'
+    result['verification_type'] = verification_type
+    result['assertion_id'] = assertion.id
+    result['badge'] = assertion.badge
+
+    if args.show and not args.json:
+        print('[+] Assertion:')
+        print(json.dumps(assertion.to_dict(), sort_keys=True, indent=4))
+
+    if trusted:
+        result['reason'] = None
+        if not args.json:
+            if verification_type == 'HostedBadge':
+                print('[+] Hosted assertion verified over HTTPS for the identity %s'
+                      % args.receptor)
+            else:
+                print('[+] Signature is correct for the identity %s' % args.receptor)
+    else:
+        result['reason'] = ('signature is internally consistent but verified against the '
+                            'badge-declared key, not a trusted issuer key')
+        if not args.json:
+            print('[~] Signature is internally consistent for %s, but it was verified '
+                  'against the key the badge itself declares (verification.creator), not a '
+                  'trusted issuer key. This does NOT prove issuer identity. Re-run with '
+                  '--local BADGE or --pubkey FILE to anchor trust.' % args.receptor)
+
+    _finish(args, result)
+
+
+def _verify_ob1(args: argparse.Namespace) -> None:
+    """Verify a badge using OpenBadges 1.0 (legacy JWS)."""
+    result: Dict[str, Any] = {'ob_version': '1', 'recipient': args.receptor, '_exit': None}
     try:
         badge = BadgeSigned.read_from_file(args.filein)
 
@@ -171,7 +256,7 @@ def _verify_ob2(args: argparse.Namespace) -> None:
         trusted_pubkey = _resolve_trusted_pubkey(args)
         trusted = trusted_pubkey is not None
         local_pubkey = trusted_pubkey if trusted else badge.get_signkey_pem()
-        logger.debug("OB2 verify: trusted_key=%s (source=%s)",
+        logger.debug("OB1 verify: trusted_key=%s (source=%s)",
                      trusted, 'operator' if trusted else 'badge-embedded')
 
         v = Verifier(verify_key=local_pubkey, identity=args.receptor)
@@ -179,7 +264,7 @@ def _verify_ob2(args: argparse.Namespace) -> None:
             v.print_payload(badge)
 
         check = v.get_badge_status(badge)
-        logger.debug("OB2 verify result: %s", check.status.name)
+        logger.debug("OB1 verify result: %s", check.status.name)
         result['trusted'] = trusted
         result['status'] = check.status.name
 

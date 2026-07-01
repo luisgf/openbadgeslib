@@ -1,4 +1,4 @@
-This page explains, end to end, how `openbadgeslib` signs an Open Badge and how it later proves that signature is genuine. It covers both badge generations — OB2 (a detached JWS) and OB3 (a JWT-VC) — and the shared "baking" step that hides the signed token inside an SVG or PNG image so a single picture file *is* the verifiable credential.
+This page explains, end to end, how `openbadgeslib` signs an Open Badge and how it later proves that signature is genuine. It covers strict Open Badges 2.0 (a JWS assertion, or a hosted assertion) and OB 3.0 (a JWT-VC) — plus the shared "baking" step that hides the signed token inside an SVG or PNG image so a single picture file *is* the verifiable credential. (The frozen pre-2.0 format uses the same JWS pipeline under `-V 1`; see [[Python API OB1]].)
 
 For the trust assumptions behind all of this (which key is trusted, why downloaded keys are not), see [[Security Model]]. For key types, formats and the exception hierarchy, see [[Keys and Errors]].
 
@@ -24,43 +24,46 @@ The low-level JWS engine in `openbadgeslib/_jws/__init__.py` is backed by PyJWT'
 
 In practice the signers emit the 256-bit variant — `RS256` for RSA, `ES256` for ECC (Ed25519 has the single `EdDSA` variant). The wider RSA/EC family is *accepted* on verification for interoperability, but every verifier pins the allowed set to the key's own type, so an RSA key can never validate an `ES*` token and vice versa. There is deliberately no symmetric (`HS*`) or `alg: none` entry.
 
-## OB2: the JWS path
+## OB2: the strict JWS / hosted path
 
-For OB2 the unit of trust is a **signed assertion** serialized as a JWS. The work happens in `openbadgeslib/ob2/signer.py`.
+For strict Open Badges 2.0 the unit of trust is a conformant **Assertion** — a JSON-LD Badge Object signed as a JWS. The work happens in `openbadgeslib/ob2/`.
 
-`Signer.generate_jws()` assembles two dicts — a JOSE header and a payload:
+`OB2Signer.sign()` serialises an `Assertion` dataclass to its JSON-LD form and signs it:
 
-- The header's `alg` comes from the key type (`alg_for_key_type(...)`).
-- The payload is the OpenBadges assertion: a `uid`, a hashed `recipient` (`sha256$…` of the email plus a salt, `hashed: true`), `image`, `badge`, an `issuedOn` timestamp, and a `verify` block. The `verify` block is `type: signed` pointing at the public-key URL by default, or `type: hosted` pointing at the badge JSON URL when `badge_type` is `BadgeType.HOSTED`. Optional `expires` and `evidence` are added when present.
+- The header's `alg` is bound to the key type (`RS256`/`ES256`/`EdDSA`).
+- The payload is the Assertion document: `@context` (`https://w3id.org/openbadges/v2`), `type` `"Assertion"`, an IRI `id` (`urn:uuid:…` for a SignedBadge, or the hosting URL for a HostedBadge), a hashed `recipient` (`sha256$…` + salt, `hashed: true` as a real **boolean**), `badge`, an **ISO 8601** `issuedOn`, and a `verification` object — `{"type": "SignedBadge", "creator": <CryptographicKey IRI>}` or `{"type": "HostedBadge"}`. Optional `expires` (ISO 8601), `image` and `evidence` are added when present.
 
-`generate_assertion()` then signs header + payload via `_jws.sign(...)` and stores the base64url-encoded header, body and signature on an `Assertion` object. The signature is computed over `base64url(header) . base64url(payload)`.
-
-```python
-from openbadgeslib.ob2.signer import Signer
-
-signer = Signer(identity='recipient@example.org')
-signed = signer.sign_badge(badge_obj)   # raises ErrorSigningFile if already signed
-# signed.signed holds the baked image bytes
-```
-
-A determinism switch exists for reproducible output: `Signer(deterministic=True)` fixes the salt and zeroes `uid`/`issuedOn` so the same inputs produce byte-identical badges (useful for tests).
-
-Verification lives in `openbadgeslib/ob2/verifier.py`. `Verifier.get_badge_status()` runs the full gauntlet in order and returns a `VerifyInfo(status, msg)`:
-
-1. **Signature** — `check_jws_signature()` calls `_jws.verify_block(...)`. It verifies against the operator-supplied trusted key when one was given, and only falls back to the key the badge points to when none was.
-2. **Revocation** — `check_revocation()` walks badge JSON → issuer JSON → optional `revocationList`. A missing list simply means "not revoked".
-3. **Expiration** — `check_expiration()` compares `expires` against *now*.
-4. **Identity** — `check_identity()` re-hashes the supplied email with the badge salt and compares to the assertion's recipient. With no identity supplied it skips this step (signature-only verification).
+The signature is computed over `base64url(header) . base64url(payload)`; `sign_into_svg()` / `sign_into_png()` bake the compact JWS into the image.
 
 ```python
-from openbadgeslib.ob2.verifier import Verifier
+from datetime import datetime, timezone
+from openbadgeslib.ob2 import OB2Signer, Assertion, IdentityObject, Verification
 
-v = Verifier(verify_key=trusted_pub_key, identity='recipient@example.org')
-info = v.get_badge_status(badge)
-print(info.status, info.msg)
+assertion = Assertion(
+    recipient=IdentityObject.create('recipient@example.org', salt='s4lt3d'),
+    badge='https://example.com/badge_1/badge.json',
+    verification=Verification(type='SignedBadge', creator='https://example.com/badge_1/key.json'),
+    issued_on=datetime(2026, 1, 1, tzinfo=timezone.utc),
+)
+svg = OB2Signer(privkey_pem, algorithm='RS256').sign_into_svg(assertion, svg_bytes)
 ```
 
-See [[Python API OB2]] for the full object model and [[CLI Reference]] for the `openbadges-signer` / `openbadges-verifier` commands.
+Verification lives in `openbadgeslib/ob2/verifier.py`. `OB2Verifier.verify()` returns the decoded `Assertion` or raises `OB2VerificationError`, running:
+
+1. **Structure** — validates `@context`/`type` and parses the Assertion, rejecting legacy shapes (a string `hashed`, a Unix `issuedOn`, a `uid` without an `id`).
+2. **Signature / hosted anchor** — a **SignedBadge** JWS is verified against the operator-supplied trusted key, or, when none is given, the key resolved from `verification.creator` (a `CryptographicKey` whose `owner`/`publicKey` back-link to the issuer is checked). A **HostedBadge** is instead fetched from its own `id` over HTTPS and scope-checked against the issuer's origin — that retrieval is the trust anchor, and the baked JWS is only non-gating defence-in-depth.
+3. **Expiration** — compares `expires` against *now*.
+4. **Revocation** (with `check_revocation=True`) — walks badge JSON → issuer JSON → `revocationList`, matching the assertion `id` in `revokedAssertions`.
+5. **Identity** — with `expected_recipient`, re-hashes the email with the badge salt and compares to the recipient.
+
+```python
+from openbadgeslib.ob2 import OB2Verifier
+
+v = OB2Verifier(pubkey_pem=trusted_pub_key)
+assertion = v.verify(token, expected_recipient='recipient@example.org', check_revocation=True)
+```
+
+The legacy pre-2.0 flow (`Signer`/`Verifier`/`get_badge_status`, with `uid`, a `verify` block and Unix timestamps) is unchanged in `openbadgeslib/ob1/` and selected with `-V 1`. See [[Python API OB2]] for the strict object model, [[Python API OB1]] for the legacy one, and [[CLI Reference]] for the commands.
 
 ## OB3: the JWT-VC path
 
@@ -120,6 +123,6 @@ Because extraction runs on **untrusted input before any signature check**, compr
 
 ### Extraction in the verifiers
 
-The OB3 verifier exposes the reverse step directly as `extract_token_from_svg()` and `extract_token_from_png()`, which call the baking helpers and turn a missing token into an `OB3VerificationError` (and a parse failure into `ErrorParsingFile`). The OB2 path reads the assertion back through its badge/`Assertion` objects. Either way the flow is the same: **extract the token from the image, then verify the signature with a trusted key.**
+Both the OB2 and OB3 verifiers expose the reverse step directly as `extract_token_from_svg()` and `extract_token_from_png()`, which call the baking helpers and turn a missing token into an `OB2VerificationError`/`OB3VerificationError` (and a parse failure into `ErrorParsingFile`). The legacy OB 1.0 path reads the assertion back through its `Badge`/`Assertion` objects. Either way the flow is the same: **extract the token from the image, then verify the signature (or, for a HostedBadge, fetch the authoritative copy) against a trusted anchor.**
 
 See [[Security Model]] for the threat model behind the bounded inflate and key-trust rules, and [[Keys and Errors]] for the exceptions raised along the way.

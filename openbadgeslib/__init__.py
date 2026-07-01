@@ -21,12 +21,21 @@
         License along with this library.
 """
 
-# ── OpenBadges 2.0 ─────────────────────────────────────────────────────────────
-from .ob2 import (  # noqa: F401
+# ── OpenBadges 1.0 (legacy) ─────────────────────────────────────────────────────
+# The classes formerly exposed as "OpenBadges 2.0" are the pre-2.0 wire format
+# (no @context/type, uid, verify{}, Unix timestamps). They are re-exported here
+# unchanged for backward compatibility; the strict OB 2.0 implementation lives
+# in openbadgeslib.ob2 (OB2Signer/OB2Verifier).
+from .ob1 import (  # noqa: F401
     Signer, Verifier, VerifyInfo,
     Badge, BadgeSigned, Assertion,
     BadgeStatus, BadgeImgType, BadgeType,
     extract_svg_assertion, extract_png_assertion,
+)
+
+# ── OpenBadges 2.0 (strict) ──────────────────────────────────────────────────
+from .ob2 import (  # noqa: F401
+    OB2Signer, OB2Verifier, OB2VerificationError,
 )
 
 # ── OpenBadges 3.0 ─────────────────────────────────────────────────────────────
