@@ -4,6 +4,52 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v1.3.0 - 2026-07-01
+
+  - SECURITY: download_file() now blocks server-side request forgery. The URLs
+    it fetches are attacker-influenced (an OB2 badge/issuer/revocationList URL,
+    an OB3 did:web host, an OB3 credentialStatus list), so it now resolves the
+    destination host and refuses any private, loopback, link-local, reserved,
+    multicast, unspecified or carrier-grade-NAT (100.64/10) address; the check
+    is re-applied to redirect targets. Previously a crafted badge could steer a
+    verifier into GETting cloud-metadata endpoints or internal hosts. An
+    allow_private=True opt-out is available for private deployments.
+
+  - SECURITY: OB3Verifier.for_issuer_did() now binds the credential to the
+    anchored DID — verify() requires the credential's issuer id to equal the
+    DID whose key was resolved. did:web is not self-certifying, so without this
+    a credential signed by the resolved key could claim a different (trusted)
+    issuer and be accepted. Verifiers built directly from a public key are
+    unchanged (the caller vouches for the key).
+
+  - SECURITY: openbadges-verifier --json exit status now reflects issuer trust,
+    not just signature validity: 0 = valid AND issuer-trusted, 2 = valid
+    signature but untrusted issuer (an OB2 badge-embedded key or a self-asserted
+    did:key), 1 = failure. In 1.2.0 a valid-but-untrusted badge exited 0, so CI
+    gating on the exit code accepted signatures that do not prove issuer
+    identity. NOTE: this changes the exit code for the valid-but-untrusted case
+    from 0 to 2; the JSON body (valid/trusted/reason) is unchanged.
+
+  - SECURITY: OB3 --resolve-did on a self-asserted did:key is now reported
+    trusted:false (with a warning), mirroring OB2's badge-embedded-key case;
+    only an operator-supplied key or a DNS/TLS-anchored did:web is trusted.
+
+  - fix: an OB3 Bitstring Status List with statusSize > 1 (multi-bit entries)
+    now fails closed instead of reading the wrong bit, which could have
+    reported a revoked credential as valid.
+
+  - fix: confparser now resolves a relative [paths] base against the directory
+    containing the config file (not the process CWD). Previously only a bare
+    '.' was handled and its value replaced wholesale, silently dropping the
+    suffix of './data' or '../shared' and misplacing key/log/image trees. A '$'
+    in the config directory path is handled correctly.
+
+  - docs: Ed25519 (EdDSA) support is now documented across README and the wiki
+    (key types, algorithms, keygenerator key_type, config example); the --json
+    exit-status scheme is documented; and stale/inaccurate crypto-library and
+    dependency notes were corrected.
+
+
 * v1.2.0 - 2026-07-01
 
   - feat: openbadges-verifier gained a --json flag for machine-readable output.
