@@ -32,6 +32,7 @@ dependencies = [
     "ecdsa>=0.19",
     "pypng>=0.20220715.0",
     "PyJWT[crypto]>=2.8",
+    "cryptography>=42",
     "defusedxml>=0.7",
 ]
 
