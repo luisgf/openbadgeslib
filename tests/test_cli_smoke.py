@@ -209,6 +209,17 @@ def test_verifier_missing_file_exits(tmp_path):
             openbadges_verifier.main()
 
 
+def test_verifier_local_and_pubkey_are_mutually_exclusive():
+    # wiki/CLI-Reference.md documents -l/-k as mutually exclusive; enforce
+    # that in argparse itself instead of silently letting -l win.
+    import pytest
+    from openbadgeslib import openbadges_verifier
+    parser = openbadges_verifier.build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(['-i', 'badge.svg', '-r', 'r@example.com',
+                           '-l', '1', '-k', 'key.pem'])
+
+
 # ── openbadges-signer → openbadges-verifier (OB3 CLI roundtrip) ─────────────────
 
 def test_signer_ob3_then_verify_roundtrip(tmp_path, capsys):
