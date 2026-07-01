@@ -82,6 +82,86 @@ def test_ob3_no_key_json(tmp_path, rsa_priv_pem, svg_image, capsys):
     assert 'requires' in result['reason']
 
 
+# ── OB3 --resolve-did trust semantics ─────────────────────────────────────────
+
+_B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+
+
+def _b58encode(data: bytes) -> str:
+    n = int.from_bytes(data, 'big')
+    out = ''
+    while n > 0:
+        n, r = divmod(n, 58)
+        out = _B58[r] + out
+    pad = len(data) - len(data.lstrip(b'\x00'))
+    return '1' * pad + out
+
+
+def _did_key_ed25519(pub) -> str:
+    from cryptography.hazmat.primitives import serialization as ser
+    raw = pub.public_bytes(ser.Encoding.Raw, ser.PublicFormat.Raw)
+    return 'did:key:z' + _b58encode(b'\xed\x01' + raw)
+
+
+def _ob3_did_badge(tmp_path, ed25519_priv_pem, svg_image, issuer_did):
+    from openbadgeslib.ob3 import OB3Signer, Issuer, Achievement, OpenBadgeCredential
+    signer = OB3Signer(privkey_pem=ed25519_priv_pem, algorithm='EdDSA')
+    cred = OpenBadgeCredential(
+        issuer=Issuer(id=issuer_did, name='Self Issuer'),
+        recipient_id='mailto:recipient@example.com',
+        achievement=Achievement(id='https://example.com/a', name='A',
+                                description='d', criteria_narrative='c'),
+    )
+    badge_file = tmp_path / 'badge.svg'
+    badge_file.write_bytes(signer.sign_into_svg(cred, svg_image))
+    return badge_file
+
+
+def test_ob3_resolve_did_key_is_untrusted_json(
+    tmp_path, ed25519_priv_pem, ed25519_pub_pem, svg_image, capsys
+):
+    # --resolve-did on a did:key reads the verification key from the token
+    # itself: the signature is valid but self-asserted (the presenter chose the
+    # key), so it must report trusted:false and exit 2 — never an exit-0
+    # "verified", mirroring the OB2 badge-embedded-key case.
+    from cryptography.hazmat.primitives import serialization as ser
+    did = _did_key_ed25519(ser.load_pem_public_key(ed25519_pub_pem))
+    badge = _ob3_did_badge(tmp_path, ed25519_priv_pem, svg_image, did)
+    argv = ['openbadges-verifier', '-i', str(badge), '-r', 'recipient@example.com',
+            '-V', '3', '--resolve-did', '--json']
+    code, result = _run(argv, capsys)
+    assert code == 2
+    assert result['valid'] is True
+    assert result['trusted'] is False
+    assert result['issuer_did'] == did
+
+
+def test_ob3_resolve_did_web_is_trusted_json(
+    tmp_path, ed25519_priv_pem, ed25519_pub_pem, svg_image, capsys
+):
+    # A did:web issuer is anchored on DNS + TLS, so a resolved-and-verified
+    # credential is trusted:true and exits 0.
+    import base64
+    from cryptography.hazmat.primitives import serialization as ser
+    pub = ser.load_pem_public_key(ed25519_pub_pem)
+    raw = pub.public_bytes(ser.Encoding.Raw, ser.PublicFormat.Raw)
+    x = base64.urlsafe_b64encode(raw).decode('ascii').rstrip('=')
+    did = 'did:web:issuer.example'
+    doc = {"id": did, "verificationMethod": [
+        {"id": did + "#k", "type": "JsonWebKey2020", "controller": did,
+         "publicKeyJwk": {"kty": "OKP", "crv": "Ed25519", "x": x}}]}
+    badge = _ob3_did_badge(tmp_path, ed25519_priv_pem, svg_image, did)
+    argv = ['openbadges-verifier', '-i', str(badge), '-r', 'recipient@example.com',
+            '-V', '3', '--resolve-did', '--json']
+    code, result = _run(argv, capsys, extra_patches=(
+        patch('openbadgeslib.ob3.did.download_file',
+              return_value=json.dumps(doc).encode('utf-8')),
+    ))
+    assert code == 0
+    assert result['valid'] is True
+    assert result['trusted'] is True
+
+
 # ── OB2 ──────────────────────────────────────────────────────────────────────
 
 def _make_signed_ob2_svg(tmp_path, badge, identity='recipient@example.com'):

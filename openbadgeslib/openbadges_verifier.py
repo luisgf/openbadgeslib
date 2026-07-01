@@ -287,6 +287,12 @@ def _verify_ob3(args: argparse.Namespace) -> None:
         else:
             issuer_did = _issuer_did_from_token(token)
             result['issuer_did'] = issuer_did
+            # The DID is read from the untrusted token itself. A did:key IS the
+            # presenter's chosen key, so resolving it proves only internal
+            # consistency, not issuer identity — mark it untrusted, mirroring
+            # OB2's badge-embedded-key case. did:web is anchored on the issuer's
+            # DNS + TLS, so it stays trusted.
+            result['trusted'] = issuer_did.startswith('did:web:')
             if not args.json:
                 print('[*] Resolving issuer DID %s' % issuer_did)
             verifier = OB3Verifier.for_issuer_did(issuer_did)
@@ -300,7 +306,6 @@ def _verify_ob3(args: argparse.Namespace) -> None:
         return
 
     result['valid'] = True
-    result['reason'] = None
     result['_exit'] = None
     result['issuer'] = credential.issuer.name
     result['achievement'] = credential.achievement.name
@@ -319,8 +324,20 @@ def _verify_ob3(args: argparse.Namespace) -> None:
         if credential.evidence_url:
             print('[+] Evidence           : %s' % credential.evidence_url)
 
-    if not args.json:
-        print('[+] OB3 signature is valid for the identity %s' % args.receptor)
+    if result['trusted']:
+        result['reason'] = None
+        if not args.json:
+            print('[+] OB3 signature is valid for the identity %s' % args.receptor)
+    else:
+        result['reason'] = ('signature is valid but verified against a key resolved '
+                            'from the credential\'s own did:key (self-asserted), not a '
+                            'trusted issuer key')
+        if not args.json:
+            print('[~] OB3 signature is internally consistent for %s, but it was '
+                  'verified against a key resolved from the credential\'s own '
+                  'did:key. This does NOT prove issuer identity. Supply --pubkey '
+                  'FILE / --local BADGE, or anchor a did:web issuer, to establish '
+                  'trust.' % args.receptor)
 
     _finish(args, result)
 
