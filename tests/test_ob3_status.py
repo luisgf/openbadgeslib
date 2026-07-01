@@ -170,17 +170,16 @@ class TestBitOrdering:
 
 class TestCredentialStatusParsing:
     def _payload(self, status):
+        # OB3 native VC-JWT: the payload IS the credential (no 'vc' wrapper).
         return {
-            "vc": {
-                "id": "urn:uuid:1",
-                "type": ["VerifiableCredential", "OpenBadgeCredential"],
-                "issuer": {"id": "https://i.example", "name": "I"},
-                "credentialStatus": status,
-                "credentialSubject": {
-                    "id": "mailto:r@example.com",
-                    "achievement": {"id": "https://i.example/a", "name": "A"},
-                },
-            }
+            "id": "urn:uuid:1",
+            "type": ["VerifiableCredential", "OpenBadgeCredential"],
+            "issuer": {"id": "https://i.example", "name": "I"},
+            "credentialStatus": status,
+            "credentialSubject": {
+                "id": "mailto:r@example.com",
+                "achievement": {"id": "https://i.example/a", "name": "A"},
+            },
         }
 
     def test_single_object_normalised_to_list(self):
@@ -194,7 +193,7 @@ class TestCredentialStatusParsing:
 
     def test_absent_is_empty(self):
         payload = self._payload(None)
-        del payload['vc']['credentialStatus']
+        del payload['credentialStatus']
         cred = OpenBadgeCredential.from_jwt_payload(payload)
         assert cred.credential_status == []
 

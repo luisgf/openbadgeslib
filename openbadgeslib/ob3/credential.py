@@ -140,16 +140,23 @@ class OpenBadgeCredential:
         return vc
 
     def to_jwt_payload(self) -> dict:
-        """Return the JWT payload for a JWT-VC signed credential."""
+        """Return the JWT payload for a JWT-VC signed credential.
+
+        OB 3.0 §8.2.4.1 (native VC-JWT): the JWT payload **is** the
+        OpenBadgeCredential — its members sit at the top level of the payload,
+        not nested under a ``vc`` claim — with the registered claims alongside:
+        ``iss`` (issuer id), ``sub`` (credentialSubject id), ``jti`` (credential
+        id) and ``nbf`` (validFrom). ``exp`` mirrors validUntil when present.
+        There is deliberately no ``iat`` claim (the spec maps issuance to nbf).
+        """
         # __post_init__ guarantees issuance_date is set.
         assert self.issuance_date is not None
-        payload: dict = {
-            "iss": self.issuer.id,
-            "sub": self.recipient_id,
-            "jti": self.id,
-            "iat": int(self.issuance_date.timestamp()),
-            "vc":  self.to_vc(),
-        }
+        payload: dict = dict(self.to_vc())   # credential at the payload top level
+        payload["iss"] = self.issuer.id
+        if self.recipient_id is not None:
+            payload["sub"] = self.recipient_id
+        payload["jti"] = self.id
+        payload["nbf"] = int(self.issuance_date.timestamp())
         if self.expiration_date:
             payload["exp"] = int(self.expiration_date.timestamp())
         return payload
@@ -160,12 +167,15 @@ class OpenBadgeCredential:
     def from_jwt_payload(cls, payload: dict) -> "OpenBadgeCredential":
         """Reconstruct an OpenBadgeCredential from a decoded JWT payload.
 
-        The ``vc`` claim is untrusted input, so its structure is validated
-        explicitly: every required object/field is checked and a clear
-        ``ValueError`` is raised on anything missing or malformed (the OB3
-        verifier wraps these as ``OB3VerificationError``).
+        OB 3.0 native VC-JWT: the payload IS the credential (its members at the
+        top level), so ``payload`` is read directly as the credential body. It
+        is untrusted input, so its structure is validated explicitly: every
+        required object/field is checked and a clear ``ValueError`` is raised on
+        anything missing or malformed (the OB3 verifier wraps these as
+        ``OB3VerificationError``). The registered claims (iss/sub/jti/nbf/exp)
+        coexist at the top level and are simply ignored by the field reads here.
         """
-        vc = _as_dict(payload.get("vc"), "vc")
+        vc = _as_dict(payload, "credential")
 
         issuer_data = _as_dict(vc.get("issuer"), "vc.issuer")
         issuer = Issuer(

@@ -73,14 +73,26 @@ class TestOB3SignerSign:
         header = jwt.get_unverified_header(token)
         assert header['alg'] == 'RS256'
 
-    def test_jwt_payload_contains_vc_claim(self, ob3_rsa_signer, ob3_credential):
+    def test_jwt_payload_is_native_credential(self, ob3_rsa_signer, ob3_credential):
         import jwt
         token = ob3_rsa_signer.sign(ob3_credential)
-        # Decode without verification to inspect payload
+        # Decode without verification to inspect payload. OB3 native VC-JWT:
+        # the credential is at the payload top level, not under a 'vc' claim.
         payload = jwt.decode(token, options={"verify_signature": False})
-        assert 'vc' in payload
+        assert 'vc' not in payload
+        assert payload['type'] == ['VerifiableCredential', 'OpenBadgeCredential']
         assert payload['iss'] == ob3_credential.issuer.id
         assert payload['sub'] == ob3_credential.recipient_id
+        assert 'nbf' in payload and 'iat' not in payload
+
+    def test_jose_header_carries_public_jwk(self, ob3_rsa_signer, ob3_credential):
+        import jwt
+        token = ob3_rsa_signer.sign(ob3_credential)
+        header = jwt.get_unverified_header(token)
+        # OB3 §8.2.3: the header conveys the key via jwk; only public params.
+        assert 'jwk' in header
+        assert header['jwk'].get('kty') == 'RSA'
+        assert 'd' not in header['jwk']
 
     def test_sign_rsa_key_with_ecc_algorithm_raises_clean_error(self, rsa_priv_pem, ob3_credential):
         # A supported-but-mismatched algorithm/key-type pair must not leak a

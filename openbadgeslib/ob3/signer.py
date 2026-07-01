@@ -20,6 +20,8 @@
         License along with this library.
 """
 
+import json
+
 from typing import Any
 
 import jwt
@@ -55,13 +57,43 @@ class OB3Signer:
     # ── core signing ───────────────────────────────────────────────────────────
 
     def sign(self, credential: OpenBadgeCredential) -> str:
-        """Sign a credential and return a compact JWT-VC string."""
+        """Sign a credential and return a compact JWT-VC string.
+
+        OB 3.0 §8.2.3 requires the JOSE header to convey the verification key
+        via ``kid`` or ``jwk``; this embeds the issuer's public key as a ``jwk``
+        (public parameters only — never the private ``d``).
+        """
         payload = credential.to_jwt_payload()
+        headers = {"jwk": self._public_jwk()}
         try:
-            return jwt.encode(payload, self.privkey_pem, algorithm=self.algorithm)
+            return jwt.encode(payload, self.privkey_pem, algorithm=self.algorithm,
+                              headers=headers)
         except jwt.exceptions.PyJWTError as exc:
             raise ErrorSigningFile(
                 "Could not sign credential with algorithm %s: %s" % (self.algorithm, exc)) from exc
+
+    def _public_jwk(self) -> dict:
+        """Return the public JWK for the JOSE header, derived from the signing
+        key. Loaded via ``cryptography`` (which reads the RSA/EC/Ed25519 PEMs
+        this library produces) and serialised with PyJWT's algorithm; only
+        public parameters are included."""
+        from cryptography.hazmat.primitives import serialization as _ser
+        from jwt.algorithms import RSAAlgorithm, ECAlgorithm, OKPAlgorithm
+        pem = self.privkey_pem.encode('utf-8') if isinstance(self.privkey_pem, str) \
+            else self.privkey_pem
+        try:
+            # public_key() is a broad union; we dispatch on self.algorithm, so
+            # the concrete type matches the chosen to_jwk. Treat as Any for mypy.
+            pub: Any = _ser.load_pem_private_key(pem, password=None).public_key()
+            if self.algorithm.startswith('RS'):
+                jwk_json = RSAAlgorithm.to_jwk(pub)
+            elif self.algorithm.startswith('ES'):
+                jwk_json = ECAlgorithm.to_jwk(pub)
+            else:   # EdDSA / Ed25519
+                jwk_json = OKPAlgorithm.to_jwk(pub)
+        except Exception as exc:
+            raise ErrorSigningFile("Could not derive the public JWK: %s" % exc) from exc
+        return json.loads(jwk_json)
 
     # ── image baking ───────────────────────────────────────────────────────────
 
