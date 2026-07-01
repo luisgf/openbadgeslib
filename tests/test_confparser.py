@@ -68,6 +68,19 @@ class TestReadConfBaseValidation:
         conf = ConfParser(path).read_conf()
         assert conf['paths']['base'] == abs_base
 
+    def test_config_dir_with_dollar_sign_round_trips(self, tmp_path):
+        # A config directory whose path contains a literal '$' must not raise
+        # (ExtendedInterpolation escaping) and must resolve back to the original
+        # path, including through a ${base} reference.
+        import os
+        d = tmp_path / 'a$b'
+        d.mkdir()
+        p = d / 'config.ini'
+        p.write_text('[paths]\nbase = data\nbase_key = ${base}/keys\n')
+        conf = ConfParser(str(p)).read_conf()
+        assert conf['paths']['base'] == os.path.join(str(d), 'data')
+        assert conf['paths']['base_key'] == os.path.join(str(d), 'data', 'keys')
+
     def test_nonexistent_file_returns_none(self, tmp_path):
         assert ConfParser(str(tmp_path / 'missing.ini')).read_conf() is None
 

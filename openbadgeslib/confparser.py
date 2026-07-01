@@ -96,7 +96,13 @@ class ConfParser():
         # keys and logs to the wrong tree with no error.
         if not os.path.isabs(base):
             base_dir = os.path.dirname(self.config_file)
-            self.parser['paths']['base'] = os.path.abspath(os.path.join(base_dir, base))
+            resolved = os.path.abspath(os.path.join(base_dir, base))
+            # Writing back through the parser runs the value through
+            # ExtendedInterpolation, which treats '$' specially: a config
+            # directory whose absolute path contains a literal '$' would raise a
+            # raw configparser error (or silently collapse '$$' to '$'). Escape
+            # '$' -> '$$' so the path round-trips to its original form on read.
+            self.parser['paths']['base'] = resolved.replace('$', '$$')
 
         # ExtendedInterpolation resolves ${...} references lazily, only when a
         # value is actually read — a bad reference anywhere in the file would
