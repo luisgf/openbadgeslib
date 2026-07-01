@@ -61,6 +61,12 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     for a malformed reference instead of letting a raw configparser
     exception escape lazily, deep inside a CLI tool.
 
+  - SECURITY: OB3Verifier.verify() now independently re-validates
+    vc.validUntil/validFrom against wall-clock time, instead of relying only
+    on the JWT 'exp' claim, which can be decoupled from the vc-level dates
+    that downstream consumers actually read. An expired or not-yet-valid
+    credential is now rejected regardless of the JWT claim.
+
 
 * v1.1.5 - 2026-06-30
 

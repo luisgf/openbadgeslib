@@ -95,6 +95,28 @@ class TestOB3VerifierVerify:
         with pytest.raises(OB3VerificationError, match="expired"):
             ob3_rsa_verifier.verify(token)
 
+    def test_expired_vc_validuntil_rejected_independent_of_exp_claim(
+        self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential
+    ):
+        # The base credential has no expiration_date, so to_jwt_payload()
+        # never sets the top-level 'exp' claim: PyJWT's own expiry check
+        # cannot fire. vc.validUntil is the untrusted claim downstream
+        # consumers actually read, and it must be re-checked independently.
+        token = self._signed_with_vc(
+            rsa_priv_pem, ob3_credential,
+            lambda p: p['vc'].__setitem__('validUntil', '2000-01-01T00:00:00Z'))
+        with pytest.raises(OB3VerificationError, match="expired"):
+            ob3_rsa_verifier.verify(token)
+
+    def test_future_vc_validfrom_rejected_as_not_yet_valid(
+        self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential
+    ):
+        token = self._signed_with_vc(
+            rsa_priv_pem, ob3_credential,
+            lambda p: p['vc'].__setitem__('validFrom', '2099-01-01T00:00:00Z'))
+        with pytest.raises(OB3VerificationError, match="not yet valid"):
+            ob3_rsa_verifier.verify(token)
+
     def test_not_a_jwt_vc_raises(self, ob3_rsa_verifier, signed_svg_rsa):
         # OB 2.0 assertion embedded in SVG — extract the raw JWS string and
         # pass it to the OB 3.0 verifier, which should reject it.
