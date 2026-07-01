@@ -106,15 +106,29 @@ def _check_entry(entry: dict, download: Callable[[str], bytes]) -> None:
         if not isinstance(encoded, str) or not encoded:
             raise OB3VerificationError("status list credential has no encodedList")
         bitstring = _decode_encoded_list(encoded)
+        list_purposes = set(_as_list(subject.get("statusPurpose")))
     except OB3VerificationError:
         raise
     except Exception as exc:
         raise OB3VerificationError(
             "malformed status list %s: %s" % (list_url, exc)) from exc
 
-    if _bit_set(bitstring, index):
+    # The entry's statusPurpose MUST be one the fetched status list declares,
+    # otherwise the entry points at the wrong list (fail closed).
+    if purpose not in list_purposes:
         raise OB3VerificationError(
-            "Credential status is set (%s) at index %d in %s"
+            "credentialStatus statusPurpose %r is not declared by the status list "
+            "%s (declares %r)" % (purpose, list_url, subject.get("statusPurpose")))
+
+    if not _bit_set(bitstring, index):
+        return
+
+    # A set bit only invalidates the credential for revocation/suspension.
+    # Any other purpose (e.g. 'message') is informational and MUST NOT fail
+    # verification — statusPurpose decides the meaning of the bit.
+    if purpose in ("revocation", "suspension"):
+        raise OB3VerificationError(
+            "Credential status '%s' is set at index %d in %s"
             % (purpose, index, list_url))
 
 

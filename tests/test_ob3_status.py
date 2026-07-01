@@ -88,6 +88,21 @@ class TestCheckCredentialStatus:
         with pytest.raises(OB3VerificationError, match='suspension'):
             check_credential_status(cred, download=_downloader(doc))
 
+    def test_other_purpose_set_bit_does_not_fail(self):
+        # A non-revocation/suspension purpose (e.g. 'message') is informational:
+        # a set bit there MUST NOT fail verification.
+        cred = _credential([_status_entry(3, purpose='message')])
+        doc = _status_list_doc(set_indices=[3], purpose='message')
+        check_credential_status(cred, download=_downloader(doc))   # no raise
+
+    def test_entry_purpose_must_match_list_purpose(self):
+        # The entry says 'revocation' but the fetched list declares 'suspension':
+        # a mismatch means the entry points at the wrong list — fail closed.
+        cred = _credential([_status_entry(3, purpose='revocation')])
+        doc = _status_list_doc(set_indices=[7], purpose='suspension')
+        with pytest.raises(OB3VerificationError, match='statusPurpose'):
+            check_credential_status(cred, download=_downloader(doc))
+
     def test_legacy_statuslist2021_type_accepted(self):
         cred = _credential([_status_entry(94, type_='StatusList2021Entry')])
         with pytest.raises(OB3VerificationError):
