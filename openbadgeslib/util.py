@@ -108,7 +108,9 @@ def _resolve_host(host: str, port: int) -> List[str]:
     the SSRF host check uses so tests can patch resolution without the network.
     """
     infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
-    return [info[4][0] for info in infos]
+    # sockaddr[0] is the address; getaddrinfo's sockaddr is typed as a tuple
+    # union (str | int), so coerce to str for the annotated return type.
+    return [str(info[4][0]) for info in infos]
 
 
 def _ip_is_blocked(ip_str: str) -> bool:
