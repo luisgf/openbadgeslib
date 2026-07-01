@@ -21,7 +21,7 @@
         License along with this library.
 """
 
-from configparser import ConfigParser, ExtendedInterpolation
+from configparser import ConfigParser, ExtendedInterpolation, Error as ConfigParserError
 from typing import Optional
 import os
 import sys
@@ -77,6 +77,19 @@ class ConfParser():
             abs_path = os.path.dirname(self.config_file)
             full_path = os.path.abspath(abs_path)
             self.parser['paths']['base'] = full_path
+
+        # ExtendedInterpolation resolves ${...} references lazily, only when a
+        # value is actually read — a bad reference anywhere in the file would
+        # otherwise surface as a raw configparser exception deep inside a CLI
+        # tool the first time it happens to touch that key. Resolve every
+        # value now so a malformed config fails cleanly, here, at load time.
+        try:
+            for section in self.parser.sections():
+                dict(self.parser.items(section))
+        except ConfigParserError as exc:
+            raise ValueError(
+                "Configuration file %s has an invalid value: %s" % (self.config_file, exc)) from exc
+
         return self.parser
 
 
