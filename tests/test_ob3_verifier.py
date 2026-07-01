@@ -202,9 +202,10 @@ class TestOB3VerifierVerify:
         with pytest.raises(OB3VerificationError, match="achievement.name"):
             ob3_rsa_verifier.verify(token)
 
-    def test_issuer_not_an_object_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+    def test_issuer_neither_object_nor_string_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        # issuer must be a Profile object or a string IRI; a number is neither.
         token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
-                                     lambda p: p.__setitem__('issuer', 'https://e/issuer'))
+                                     lambda p: p.__setitem__('issuer', 12345))
         with pytest.raises(OB3VerificationError, match="must be a JSON object"):
             ob3_rsa_verifier.verify(token)
 
@@ -247,6 +248,46 @@ class TestOB3VerifierVerify:
         token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
                                      lambda p: p.__setitem__('type', bad_type))
         with pytest.raises(OB3VerificationError, match="OpenBadgeCredential"):
+            ob3_rsa_verifier.verify(token)
+
+    # ── accept spec-valid shapes the verifier used to reject (#113) ────────────
+    def test_achievementcredential_alias_accepted(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        token = self._signed_with_vc(
+            rsa_priv_pem, ob3_credential,
+            lambda p: p.__setitem__('type', ['VerifiableCredential', 'AchievementCredential']))
+        assert ob3_rsa_verifier.verify(token) is not None
+
+    def test_missing_verifiablecredential_type_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        token = self._signed_with_vc(
+            rsa_priv_pem, ob3_credential,
+            lambda p: p.__setitem__('type', ['OpenBadgeCredential']))
+        with pytest.raises(OB3VerificationError, match="VerifiableCredential"):
+            ob3_rsa_verifier.verify(token)
+
+    def test_string_iri_issuer_accepted(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        # issuer as a bare IRI string (not a Profile object) is schema-valid.
+        token = self._signed_with_vc(
+            rsa_priv_pem, ob3_credential, lambda p: p.__setitem__('issuer', p['iss']))
+        restored = ob3_rsa_verifier.verify(token)
+        assert restored.issuer.id == ob3_credential.issuer.id
+
+    def test_subject_id_absent_with_identifier_accepted(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        def mutate(p):
+            p['credentialSubject'].pop('id')
+            p['credentialSubject']['identifier'] = [
+                {'type': 'IdentityObject', 'hashed': True,
+                 'identityHash': 'sha256$abc', 'identityType': 'emailAddress'}]
+            p.pop('sub', None)   # sub mirrors credentialSubject.id
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential, mutate)
+        restored = ob3_rsa_verifier.verify(token)
+        assert restored.recipient_id is None
+
+    def test_subject_without_id_or_identifier_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        def mutate(p):
+            p['credentialSubject'].pop('id')
+            p.pop('sub', None)
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential, mutate)
+        with pytest.raises(OB3VerificationError, match="identifier"):
             ob3_rsa_verifier.verify(token)
 
     # ── a non-string id/name field (consumed downstream as a string, e.g.

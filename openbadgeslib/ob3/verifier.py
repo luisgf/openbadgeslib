@@ -51,6 +51,8 @@ def _claim_object_id(value: Any) -> Any:
     fail the comparison rather than raising a raw AttributeError on, e.g.,
     ``[ {…} ].get("id")``.
     """
+    if isinstance(value, str):
+        return value                     # issuer/subject given as a bare IRI
     if isinstance(value, list):
         value = value[0] if value else None
     if isinstance(value, dict):
@@ -238,10 +240,18 @@ class OB3Verifier:
             vc_types = [vc_types]
         elif not isinstance(vc_types, list):
             vc_types = []
-        if "OpenBadgeCredential" not in vc_types:
+        # OpenBadgeCredential and AchievementCredential are aliases in the OB v3
+        # context; accept either. VerifiableCredential must also be present.
+        if not ({"OpenBadgeCredential", "AchievementCredential"} & set(vc_types)):
             raise OB3VerificationError(
-                "JWT payload is not an OpenBadgeCredential (type=%r) — this may "
-                "be an OB 2.0 JWS token, not an OB 3.0 JWT-VC" % (vc_types,)
+                "JWT payload is not an OpenBadgeCredential/AchievementCredential "
+                "(type=%r) — this may be an OB 2.0 JWS token, not an OB 3.0 JWT-VC"
+                % (vc_types,)
+            )
+        if "VerifiableCredential" not in vc_types:
+            raise OB3VerificationError(
+                "JWT payload type must include 'VerifiableCredential' (type=%r)"
+                % (vc_types,)
             )
 
         try:
