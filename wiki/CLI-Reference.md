@@ -99,8 +99,8 @@ openbadges-signer -b BADGE -r RECEPTOR (-e URL | -E) [-c FILE] [-o DIR] [-M] [-H
 $ openbadges-signer -c ./config/config.ini -b 1 \
     -r recipient@example.com \
     -e https://example.com/proof \
-    -o /tmp/
-2026-04-22T10:00:00 badge_1 SIGNED for recipient@example.com UID 73f8981f...c0bddcbb8e24f4 at: /tmp/badge_1_recipient@example.com.svg
+    -o /tmp/ -V 2
+2026-04-22T10:00:00 badge_1 OB2 SIGNED for recipient@example.com at: /tmp/badge_1_recipient@example.com.svg
 ```
 
 ### Example (OB3, JWT-VC)
