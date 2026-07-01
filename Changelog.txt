@@ -52,6 +52,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     instead of a raw ValueError/binascii.Error when a configured private or
     public key file is corrupt, truncated, or mismatched with its key type.
 
+  - fix: BadgeMail.send() now catches the ValueError smtplib raises as its
+    CRLF header-injection guard for a malformed from/recipient address,
+    reporting a clean mail-failure message instead of crashing.
+
 
 * v1.1.5 - 2026-06-30
 

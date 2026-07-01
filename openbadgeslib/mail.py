@@ -89,10 +89,12 @@ class BadgeMail():
 
             smtp.sendmail(self.mail_from, badge.get_identity(), msg.as_string())
             smtp.quit()
-        except (SMTPException, OSError) as err:
+        except (SMTPException, OSError, ValueError) as err:
             # Connection refused, DNS failure, TLS mismatch, SMTP protocol
-            # errors — the badge is already signed and saved, so report the
-            # mail failure instead of crashing with a traceback.
+            # errors, or a CR/LF in mail_from/recipient (smtplib itself
+            # raises a bare ValueError as its header-injection guard) — the
+            # badge is already signed and saved, so report the mail failure
+            # instead of crashing with a traceback.
             print('[!] Error sending mail to: %s. %s' % (badge.get_identity(), err))
 
     def get_mail_content(self, file: str) -> Tuple[Optional[str], Optional[str]]:
