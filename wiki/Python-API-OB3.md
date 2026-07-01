@@ -1,4 +1,4 @@
-Programmatic guide to the OpenBadges 3.0 layer of `openbadgeslib`: building [W3C Verifiable Credentials](https://www.w3.org/TR/vc-data-model-2.0/), signing them as JWT-VCs, baking them into images, and verifying them. Everything here lives in the `openbadgeslib.ob3` package. For the legacy 2.0 JWS format see [[Python API OB2]].
+Programmatic guide to the OpenBadges 3.0 layer of `openbadgeslib`: building [W3C Verifiable Credentials](https://www.w3.org/TR/vc-data-model-2.0/), signing them as JWT-VCs, baking them into images, and verifying them. Everything here lives in the `openbadgeslib.ob3` package. For strict Open Badges 2.0 (JWS) see [[Python API OB2]], and for the legacy pre-2.0 format see [[Python API OB1]].
 
 > The full, always-up-to-date class/function reference is generated from the docstrings: **[API Reference](https://luisgf.github.io/openbadgeslib/)**.
 
@@ -178,6 +178,7 @@ For PNGs, swap `sign_into_png` / `extract_token_from_png` and pass PNG bytes. EC
 
 ## See also
 
-- [[Python API OB2]] — the 2.0 JWS-in-image API.
+- [[Python API OB2]] — the strict 2.0 JWS/hosted API.
+- [[Python API OB1]] — the legacy pre-2.0 JWS API.
 - [[Keys and Errors]] — key generation, key objects, and the exception hierarchy.
 - [[Security Model]] — algorithm pinning, recipient binding, and the threat model.

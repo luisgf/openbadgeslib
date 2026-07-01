@@ -1,153 +1,106 @@
-Programmatic guide to the Open Badges 2.0 API exposed by `openbadgeslib.ob2`. Everything here mirrors the JWS-signed-assertion model where the assertion is baked into an SVG or PNG image. For the W3C Verifiable Credentials / JWT-VC path see [[Python API OB3]]; for the differences between the two see [[OB2 vs OB3]].
+Programmatic guide to the **strict Open Badges 2.0** API exposed by `openbadgeslib.ob2`. This layer produces conformant JSON-LD Badge Objects (every object carries `@context` and `type`, the assertion uses an IRI `id`, a `verification` object, a boolean `hashed`, and ISO 8601 dates) and signs the assertion as a JWS baked into an SVG/PNG image. For the legacy pre-2.0 format see [[Python API OB1]]; for the JWT-VC path see [[Python API OB3]]; for how the generations differ see [[OB2 vs OB3]].
 
 > The full, always-up-to-date class/function reference is generated from the docstrings: **[API Reference](https://luisgf.github.io/openbadgeslib/)**.
 
-All public OB2 names are re-exported from `openbadgeslib.ob2`, so you can import them from one place:
+All public OB2 names are re-exported from `openbadgeslib.ob2`:
 
 ```python
 from openbadgeslib.ob2 import (
-    BadgeStatus, BadgeImgType, BadgeType,
-    Assertion, Badge, BadgeSigned,
-    extract_svg_assertion, extract_png_assertion,
-    Signer, Verifier, VerifyInfo,
+    OB2Signer, OB2Verifier, OB2VerificationError,
+    Assertion, IdentityObject, Verification,
+    BadgeClass, Profile, CryptographicKey, RevocationList,
+    hash_identity, OB2_CONTEXT,
 )
 ```
 
-## Public classes and enums
+## The data model (dataclasses)
 
-### Enums
+Each Badge Object is a `@dataclass` with a `to_dict()` that emits conformant JSON-LD; the ones read back from untrusted input also provide a validating `from_dict()`.
 
-- `BadgeImgType` — image container of a badge: `SVG` or `PNG`.
-- `BadgeType` — assertion verification model: `SIGNED` (JWS, default) or `HOSTED`.
-- `BadgeStatus` — result of a verification: `VALID`, `SIGNATURE_ERROR`, `EXPIRED`, `REVOKED`, `IDENTITY_ERROR`, and `NONE` (an unset sentinel used as the `VerifyInfo` default; never returned by a real check).
-
-### `Badge`
-
-The unsigned source badge: its metadata, the raw image bytes, the issuer URLs and the key material. Constructed directly or via `Badge.create_from_conf(conf, badge_name)` which reads a section from a parsed `config.ini` (see [[Configuration]]).
-
-Key constructor arguments: `ini_name`, `name`, `description`, `image_type` (a `BadgeImgType`), `image` (raw bytes of the image file), `image_url`, `criteria_url`, `json_url`, `verify_key_url`, `key_type` (a `KeyType` from `openbadgeslib.keys`), `privkey_pem` and `pubkey_pem` (PEM bytes). When `key_type` and the matching PEM are supplied, `Badge` eagerly imports them into `priv_key` / `pub_key` objects. An unsupported `key_type` raises `UnknownKeyType` (see [[Keys and Errors]]).
-
-`badge.urls_has_problems()` downloads each configured URL and reports any that are unreachable.
-
-### `Signer`
-
-Builds and signs an assertion, then bakes it into the image.
+- **`IdentityObject`** — the recipient. `IdentityObject.create(email, salt)` builds the hashed form (`identity="sha256$<hex>"`, `hashed=True`). `from_dict` rejects the legacy string `"true"`.
+- **`Verification`** — `Verification(type="SignedBadge", creator=<CryptographicKey IRI>)` or `Verification(type="HostedBadge")`. `from_dict` canonicalises the `signed`/`hosted` aliases.
+- **`Assertion`** — the signed/hosted claim. `id` auto-generates as `urn:uuid:…` when omitted (pass the hosting URL explicitly for a HostedBadge); `issued_on` defaults to now (UTC).
+- **`BadgeClass`**, **`Profile`**, **`CryptographicKey`**, **`RevocationList`** — the hosted metadata objects emitted by `openbadges-publish -V 2`.
 
 ```python
-Signer(identity=None, evidence=None, expiration=None,
-       deterministic=False, badge_type=None)
+from datetime import datetime, timezone
+from openbadgeslib.ob2 import Assertion, IdentityObject, Verification
+
+assertion = Assertion(
+    recipient=IdentityObject.create('recipient@example.com', salt='s4lt3d'),
+    badge='https://example.com/badge_1/badge.json',
+    verification=Verification(type='SignedBadge',
+                              creator='https://example.com/badge_1/key.json'),
+    issued_on=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    image='https://example.com/badge_1/badge.svg',
+)
 ```
 
-- `identity` — the recipient email (stored hashed+salted in the assertion).
-- `evidence`, `expiration` — optional assertion fields (`expiration` is a Unix timestamp).
-- `badge_type` — pass `BadgeType.SIGNED` for a JWS assertion, or `BadgeType.HOSTED` for a hosted-verification badge. Anything other than `HOSTED` defaults to signed.
-- `deterministic` — when `True`, uses a fixed salt (`s4lt3d`), `uid=0` and `issuedOn=0` so repeated signings produce an identical payload. Useful for tests; leave `False` in production.
-
-`signer.sign_badge(badge)` returns a `BadgeSigned`, raising `ErrorSigningFile` if the image already contains an assertion. `signer.has_assertion(badge)` checks that condition without signing. `signer.generate_uid()` returns a fresh 40-char serial number.
-
-### `BadgeSigned`
-
-The signed result. The baked image bytes are in `.signed`; the JWS lives in `.assertion`. Useful accessors:
-
-- `save_to_file(path)` — write `.signed` to disk.
-- `get_assertion()` — the full `header.body.signature` JWS as a `str` (or `None` if unsigned).
-- `get_identity()` / `get_identity_hashed()` / `get_salt()` / `get_serial_num()` — string accessors.
-- `get_signkey_pem()` — the public key PEM used to sign.
-- `BadgeSigned.read_from_file(path)` — load a baked `.svg`/`.png` back into a `BadgeSigned`, downloading the issuer's verify key referenced by the assertion (raises `ErrorParsingFile` if that key URL cannot be fetched).
-
-### `Assertion`
-
-The decoded JWS triple (`header`, `body`, `signature`, all Base64URL). `Assertion.decode(data)` parses `header.body.signature` bytes; `decode_header()` / `decode_body()` return the JSON objects; `get_assertion()` re-joins the three parts.
-
-### `Verifier` and `VerifyInfo`
+## `OB2Signer`
 
 ```python
-Verifier(verify_key=None, identity=None)
+OB2Signer(privkey_pem, algorithm='RS256')
 ```
 
-- `verify_key` — a **trusted** public key PEM. When supplied it is used for signature checks; only when it is omitted does the verifier fall back to the key the badge points to. Always pass a trusted key in production — see [[Security Model]].
-- `identity` — the expected recipient email; omit it to do signature-only verification (the recipient check is then skipped).
+Signs an `Assertion` as a JWS whose payload is the full Assertion JSON-LD document. `algorithm` is bound to the key type (RS256 for RSA, ES256 for ECC P-256, EdDSA for Ed25519).
 
-Methods all return a `VerifyInfo(status, msg)` where `status` is a `BadgeStatus`:
+- `sign(assertion)` → the compact JWS string (`header.payload.signature`).
+- `sign_into_svg(assertion, svg_bytes)` / `sign_into_png(assertion, png_bytes)` → the baked image bytes (OB 2.0 carrier: `<openbadges:assertion>` / the `openbadges` iTXt keyword).
 
-- `check_jws_signature(badge)` — cryptographic signature only.
-- `get_badge_status(badge)` — the full pipeline: signature, then revocation, then expiration, then identity. Returns `VALID`/`OK` only if every check passes.
-- `print_payload(badge)` — pretty-print the decoded assertion body.
-
-### `extract_svg_assertion` / `extract_png_assertion`
-
-Standalone helpers that pull the baked JWS out of raw image bytes and return an `Assertion`. They raise `ErrorParsingFile` / `AssertionFormatIncorrect` if no assertion is present.
-
-## Complete in-memory example
-
-This sign-then-verify round trip mirrors the test fixtures in `tests/conftest.py`, so it runs end to end with no files written and no network access. Point the PEM paths at your own keys (generate them with [[Keys and Errors]] / `openbadges-keygenerator`).
+## `OB2Verifier` and `OB2VerificationError`
 
 ```python
+OB2Verifier(pubkey_pem=None)
+```
+
+- `pubkey_pem` — an optional **trusted** public key. When supplied it verifies SignedBadge assertions directly (trusted). When omitted, a SignedBadge is verified against the key resolved from `verification.creator`, whose CryptographicKey `owner`/`publicKey` back-link to the issuer is checked — internally consistent, but not proof of issuer identity.
+
+`verify(token, expected_recipient=None, check_revocation=False)` returns the decoded `Assertion` or raises `OB2VerificationError`. It:
+
+- verifies the signature (SignedBadge) or fetches the assertion from its `id` and enforces the issuer scope (HostedBadge);
+- validates `@context`/`type` and rejects legacy shapes (string `hashed`, Unix dates, `uid`-only);
+- checks expiry, and (with `check_revocation=True`, network) the issuer's `RevocationList`;
+- with `expected_recipient`, re-hashes the email + salt and binds it to the recipient.
+
+Token extraction: `OB2Verifier.extract_token_from_svg(bytes)` / `extract_token_from_png(bytes)`.
+
+## Complete in-memory example (SignedBadge)
+
+```python
+from datetime import datetime, timezone
 from openbadgeslib.ob2 import (
-    Badge, Signer, Verifier,
-    BadgeImgType, BadgeType, BadgeStatus,
-    extract_svg_assertion,
-)
-from openbadgeslib.keys import KeyType
-
-# --- key material and image bytes (load your own) ---------------------------
-priv_pem = open('test_sign_rsa.pem', 'rb').read()
-pub_pem = open('test_verify_rsa.pem', 'rb').read()
-svg_bytes = open('sample1.svg', 'rb').read()
-
-identity = 'recipient@example.com'
-
-# --- build the unsigned source Badge ----------------------------------------
-badge = Badge(
-    ini_name='demo_rsa_svg',
-    name='Demo SVG RSA Badge',
-    description='Awarded for reading the OB2 API guide',
-    image_type=BadgeImgType.SVG,
-    image=svg_bytes,
-    image_url='https://example.com/badge.svg',
-    criteria_url='https://example.com/criteria.html',
-    json_url='https://example.com/badge.json',
-    verify_key_url='https://example.com/verify_key.pem',
-    key_type=KeyType.RSA,
-    privkey_pem=priv_pem,
-    pubkey_pem=pub_pem,
+    OB2Signer, OB2Verifier, Assertion, IdentityObject, Verification,
 )
 
-# --- sign: produce a BadgeSigned with the JWS baked into the SVG -------------
-signer = Signer(identity=identity, badge_type=BadgeType.SIGNED)
-signed = signer.sign_badge(badge)
+priv = open('test_sign_rsa.pem', 'rb').read()
+pub = open('test_verify_rsa.pem', 'rb').read()
+svg = open('sample1.svg', 'rb').read()
 
-print('Serial:', signed.get_serial_num())
-print('Assertion JWS:', signed.get_assertion())
-# signed.signed holds the baked SVG bytes; persist with signed.save_to_file(...)
+assertion = Assertion(
+    recipient=IdentityObject.create('recipient@example.com', salt='s4lt3d'),
+    badge='https://example.com/badge_1/badge.json',
+    verification=Verification(type='SignedBadge',
+                              creator='https://example.com/badge_1/key.json'),
+    issued_on=datetime(2026, 1, 1, tzinfo=timezone.utc),
+)
 
-# --- verify the signature only ----------------------------------------------
-verifier = Verifier(verify_key=pub_pem, identity=identity)
-sig = verifier.check_jws_signature(signed)
-assert sig.status is BadgeStatus.VALID, sig.msg
+baked = OB2Signer(privkey_pem=priv, algorithm='RS256').sign_into_svg(assertion, svg)
 
-# --- round-trip: pull the assertion back out of the baked image -------------
-extracted = extract_svg_assertion(signed.signed)
-assert extracted.get_assertion() == signed.assertion.get_assertion()
-print('Decoded body:', extracted.decode_body())
+token = OB2Verifier.extract_token_from_svg(baked)
+result = OB2Verifier(pubkey_pem=pub).verify(token, expected_recipient='recipient@example.com')
+print('verified:', result.id)
 ```
 
-`get_badge_status()` additionally checks revocation and expiration, which both require fetching the issuer's published JSON over the network:
+`check_revocation=True` (and HostedBadge verification) additionally fetch the issuer's hosted JSON over the network — see [[Security Model]] for the trust model.
 
-```python
-info = verifier.get_badge_status(signed)
-if info.status is BadgeStatus.VALID:
-    print('Badge is valid')
-else:
-    print('Verification failed:', info.status.name, '-', info.msg)
-```
+## Hosted badges
 
-For PNG badges the flow is identical — use `BadgeImgType.PNG`, load PNG bytes, and call `extract_png_assertion(signed.signed)`.
+For a HostedBadge, pass the hosting URL as the assertion `id`, sign with `Verification(type='HostedBadge')`, and publish `assertion.to_dict()` at that URL. On verification the (scope-checked) HTTPS retrieval of the `id` is the trust anchor. From the CLI this is `openbadges-signer -V 2 -H` (see [[CLI Reference]]), which also writes the `.assertion.json` to publish.
 
 ## See also
 
-- [[Signing and Verification]] — the end-to-end concepts behind these calls.
-- [[Keys and Errors]] — `KeyType`, key generation, and the exception types raised here.
-- [[Security Model]] — why you must pass a trusted `verify_key`.
-- [[Python API OB3]] — the equivalent guide for Open Badges 3.0.
-- [[CLI Reference]] — the same operations from the command line.
+- [[Signing and Verification]] — the end-to-end concepts.
+- [[Keys and Errors]] — `KeyType`, key generation, and exception types.
+- [[Security Model]] — trusted keys, hosted trust, and scope enforcement.
+- [[Python API OB1]] / [[Python API OB3]] — the other two generations.
+- [[CLI Reference]] — the same operations from the command line (`-V 2`).

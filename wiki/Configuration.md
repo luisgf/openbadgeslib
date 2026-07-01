@@ -95,7 +95,7 @@ publish_url    = https://openbadges.issuer.badge/issuer/
 revocationList = revoked.json
 ```
 
-For OB3 the issuer `id` is taken from `publish_url`, falling back to `url` if `publish_url` is absent. For OB2, `openbadges-publish` writes an `organization.json` and joins `image` and `revocationList` onto `publish_url`.
+For OB3 the issuer `id` is taken from `publish_url`, falling back to `url` if `publish_url` is absent. For OB1/OB2, `openbadges-publish` writes an `organization.json` and joins `image` and `revocationList` onto `publish_url`; `-V 2` additionally writes a `CryptographicKey` `key.json` per badge and a conformant `RevocationList`.
 
 ### `[badge_<name>]`
 
@@ -110,6 +110,8 @@ Define one section per badge. The part after `badge_` is the badge id you pass t
 | `criteria` | `https://.../criteria.html` | URL of the badge criteria. |
 | `verify_key` | `https://.../verify_rsa_key.pem` | Public URL where the verify (public) key is hosted (OB2). |
 | `badge` | `https://.../badge.json` | Public URL of the badge JSON / OB3 achievement id. |
+| `crypto_key` | `https://.../key.json` | OB 2.0 (`-V 2`): URL of the badge's `CryptographicKey` document (`verification.creator`); published by `openbadges-publish -V 2`. |
+| `hosted_assertions_base` | `https://.../assertions/` | OB 2.0 hosted mode (`-V 2 -H`): base URL where per-recipient assertion JSON files are published. |
 | `private_key` | `${paths:base_key}/sign_rsa_key_1.pem` | Path to the signing (private) key. |
 | `public_key` | `${paths:base_key}/verify_rsa_key_1.pem` | Path to the verify (public) key. |
 | `key_type` | `RSA` | Algorithm for `openbadges-keygenerator`: `RSA` (default), `ECC`, or `ED25519`. |

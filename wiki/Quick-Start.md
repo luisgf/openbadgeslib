@@ -1,4 +1,4 @@
-This walkthrough takes you from an empty directory to a signed, verified Open Badge in both OB2 (JWS) and OB3 (JWT-VC) formats. For the full flag list see [[CLI Reference]], and for the config keys referenced here see [[Configuration]].
+This walkthrough takes you from an empty directory to a signed, verified Open Badge in both strict OB 2.0 (JWS) and OB 3.0 (JWT-VC) formats. Select the version with `-V {1,2,3}` — the default is `-V 3`. For the full flag list see [[CLI Reference]], and for the config keys referenced here see [[Configuration]].
 
 ## 1. Scaffold the configuration
 
@@ -19,47 +19,49 @@ openbadges-keygenerator -c ./config/config.ini -g 1
 ```
 
 ```
-INFO - Generating OpenBadges 2 RSA key pair for issuer 'OpenBadge issuer'
+INFO - Generating OpenBadges 3 RSA key pair for issuer 'OpenBadge issuer'
 INFO - Private key saved at: ./config/keys/sign_rsa_key_1.pem
 INFO - Public key saved at:  ./config/keys/verify_rsa_key_1.pem
 ```
 
 The same key material works for both OB2 and OB3, so you only generate once. Back up `sign_rsa_key_1.pem`: if the private key is lost you cannot sign new badges, and if the public key is lost existing badges can no longer be verified.
 
-## 3. OB2 flow (JWS, the default)
+## 3. OB 2.0 flow (strict JWS)
 
 ### Sign
 
-`openbadges-signer` bakes a JWS assertion into the badge image. You **must** choose explicitly whether the badge carries evidence: pass either `-e / --evidence URL` **or** `-E / --no-evidence`. Supplying neither (or both) exits with `Please, choose '-e' OR '-E'`. OB2 is the default, so `-V 2` is optional.
+`openbadges-signer` bakes a JWS assertion into the badge image. Pass `-V 2` for strict Open Badges 2.0 (the default is `-V 3`). You **must** choose explicitly whether the badge carries evidence: pass either `-e / --evidence URL` **or** `-E / --no-evidence`. Supplying neither (or both) exits with `Please, choose '-e' OR '-E'`. Strict signed mode reads `crypto_key` from the badge section (the scaffolded config includes it).
 
 ```sh
 openbadges-signer -c ./config/config.ini -b 1 \
     -r recipient@example.com \
     -e https://example.com/proof \
-    -o /tmp/
+    -o /tmp/ -V 2
 ```
 
 ```
-2026-04-22T10:00:00 badge_1 SIGNED for recipient@example.com UID 73f8981f...4f4 at: /tmp/badge_1_recipient@example.com.svg
+2026-04-22T10:00:00 badge_1 OB2 SIGNED for recipient@example.com at: /tmp/badge_1_recipient@example.com.svg
 ```
 
-The output filename is `<badge>_<recipient>.svg` (or `.png`, depending on the badge image type) inside `-o`. Signing a second time over an existing file is refused. To sign with no evidence, swap `-e URL` for `-E`. Add `-x DAYS` for an expiration, or `-M` to email the badge (requires the `[smtp]` section and a `mail` entry in the badge section).
+The output filename is `<badge>_<recipient>.svg` (or `.png`, depending on the badge image type) inside `-o`. Signing a second time over an existing file is refused. To sign with no evidence, swap `-e URL` for `-E`. Add `-x DAYS` for an expiration, or `-H` to produce a HostedBadge (which also writes a `.assertion.json` to publish alongside the image). Emailing via `-M` is available in the legacy `-V 1` flow.
 
 ### Verify
 
 ```sh
 openbadges-verifier -c ./config/config.ini \
     -i /tmp/badge_1_recipient@example.com.svg \
-    -r recipient@example.com -l 1
+    -r recipient@example.com -V 2 -l 1
 ```
 
 ```
 [+] Signature is correct for the identity recipient@example.com
 ```
 
+(Verification of a strict OB 2.0 badge fetches the issuer's hosted `badge.json`/`organization.json` to check revocation, so those must be reachable — publish them with `openbadges-publish -V 2`.)
+
 The `-l BADGE` flag pins the trusted public key from `config.ini`; `-k / --pubkey FILE` does the same from an explicit PEM path. If you supply neither, the verifier falls back to the key the badge points to and prints a `[~]` warning instead of `[+]` — the signature is only internally consistent, not anchored to a trusted issuer. Add `-s / --show` to print the decoded assertion first.
 
-## 4. OB3 flow (JWT-VC)
+## 4. OB 3.0 flow (JWT-VC, the default)
 
 ### Sign
 

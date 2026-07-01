@@ -2,15 +2,15 @@ Task-oriented how-tos for the most common openbadgeslib workflows. Each section 
 
 All recipes assume you have already run `openbadges-init`, generated a key pair with `openbadges-keygenerator`, and have a `config.ini` with at least one `[badge_N]` section. See [[Quick Start]] if you have not.
 
-## Issue an OB2 badge (JWS)
+## Issue an Open Badges 2.0 badge (JWS)
 
-OB2 bakes a JWS assertion into the badge image (an `<openbadges:assertion>` element for SVG, an `iTXt` chunk for PNG). You must declare whether the badge carries evidence: pass either `-e URL` or `-E` (no evidence). Supplying neither, or both, is an error.
+Strict OB 2.0 bakes a JWS assertion into the badge image (an `<openbadges:assertion>` element for SVG, an `iTXt` chunk for PNG). Pass `-V 2` (the default is `-V 3`); signed mode reads `crypto_key` from the badge section. You must declare whether the badge carries evidence: pass either `-e URL` or `-E` (no evidence). Supplying neither, or both, is an error.
 
 ```sh
 openbadges-signer -c ./config/config.ini -b 1 \
     -r recipient@example.com \
     -e https://example.com/proof \
-    -o /tmp/
+    -o /tmp/ -V 2
 ```
 
 To issue a badge with no evidence, swap `-e URL` for `-E`:
@@ -19,14 +19,15 @@ To issue a badge with no evidence, swap `-e URL` for `-E`:
 openbadges-signer -c ./config/config.ini -b 1 \
     -r recipient@example.com \
     -E \
-    -o /tmp/
+    -o /tmp/ -V 2
 ```
 
 The signer writes `badge_1_recipient@example.com.svg` (or `.png`) into the output directory. The badge image type comes from the badge section's `local_image`. If a file already exists for that badge/recipient pair, the signer refuses to overwrite it and exits.
 
 Optional flags:
 - `-x DAYS` sets an expiration that many days in the future.
-- `-M` emails the badge after signing (see the email recipe below).
+- `-H` produces a **HostedBadge** (requires `hosted_assertions_base`): the assertion is also written as a `.assertion.json` to publish at its own URL, which becomes the trust anchor on verification.
+- `-M` (email after signing) is available in the legacy `-V 1` flow (see the email recipe below).
 
 ## Issue an OB3 credential (JWT-VC)
 
@@ -58,7 +59,7 @@ OB2, trusting a key from config:
 ```sh
 openbadges-verifier -c ./config/config.ini \
     -i /tmp/badge_1_recipient@example.com.svg \
-    -r recipient@example.com -l 1
+    -r recipient@example.com -V 2 -l 1
 ```
 
 OB3, trusting a PEM file directly:
@@ -74,16 +75,18 @@ Add `-s` to print the decoded assertion (OB2) or the issuer, achievement, dates 
 
 ## Publish badges to a web server
 
-For OB2, `openbadges-publish` generates the static metadata files that hosted OB2 badges point to. The output directory must not already exist; it is created with restrictive permissions:
+For OB 1.0/2.0, `openbadges-publish` generates the static metadata files that hosted badges point to. Pass `-V 2` for strict Open Badges 2.0 (the default `-V 3` only prints a notice). The output directory must not already exist; it is created with restrictive permissions:
 
 ```sh
-openbadges-publish -c ./config/config.ini -o ./public
+openbadges-publish -c ./config/config.ini -o ./public -V 2
 ```
 
 This produces, under the output directory:
-- `organization.json` — the issuer object (name, url, email, image, revocation list), built from the `[issuer]` section.
-- `revoked.json` — the revocation list (currently emitted as an empty object).
-- One folder per `[badge_N]` section, each containing `badge.json` (image, criteria, name, description, issuer link) and a copy of that badge's public key as `verify.pem`.
+- `organization.json` — the issuer `Profile` (`@context`, `type`, `id`, name, url, email, image, a `publicKey` array, `revocationList`), built from the `[issuer]` section.
+- `revocation.json` — a conformant `RevocationList` document (an empty `revokedAssertions` array until a badge is revoked).
+- One folder per `[badge_N]` section, each containing `badge.json` (a conformant `BadgeClass`), `key.json` (the `CryptographicKey` that `verification.creator` points at), and a copy of that badge's public key as `verify.pem`.
+
+(Legacy `-V 1` writes the same tree in the pre-2.0 shape: no `@context`/`type`, an empty `revoked.json` object, and no `key.json`.)
 
 URLs in the metadata are resolved against `publish_url` from `[issuer]`, so set that to where the folder will live. After running, configure your web server to serve the output folder at exactly that `publish_url`.
 
@@ -91,13 +94,13 @@ OB3 needs no publication step. Credentials are self-contained JWT-VC tokens veri
 
 ## Email a signed badge
 
-Pass `-M` to `openbadges-signer` to email the badge to the recipient immediately after signing (OB2 path):
+Pass `-M` to `openbadges-signer` to email the badge to the recipient immediately after signing (legacy `-V 1` path):
 
 ```sh
 openbadges-signer -c ./config/config.ini -b 1 \
     -r recipient@example.com \
     -e https://example.com/proof \
-    -o /tmp/ -M
+    -o /tmp/ -V 1 -M
 ```
 
 Two pieces of configuration are required:

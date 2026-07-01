@@ -4,6 +4,45 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.0.0 - 2026-07-01
+
+  - BREAKING: the pre-2.0 wire format previously shipped as `-V 2` is relabelled
+    OpenBadges 1.0 (`-V 1`) and frozen in the new `openbadgeslib.ob1` package (no
+    @context/type, a `uid`, a `verify` object, string `hashed`, Unix-timestamp
+    dates). `from openbadgeslib.ob2 import Signer/Verifier/Badge` no longer
+    resolves — import from `openbadgeslib.ob1` (the top-level
+    `openbadgeslib.signer` / `verifier` / `badge` shims still work).
+
+  - BREAKING: the default `-V` is now `3` (was `2`) for openbadges-signer,
+    -verifier, -publish and -keygenerator. Pass `-V 2` / `-V 1` explicitly for
+    the older generations.
+
+  - feat(ob2): new strict, spec-conformant Open Badges 2.0 implementation
+    (`openbadgeslib.ob2`). Assertions are valid JSON-LD Badge Objects with
+    `@context`, `type`, an IRI `id` (`urn:uuid:` for signed, the hosting URL for
+    hosted), a boolean `hashed`, ISO 8601 dates, and a `verification` object.
+    New `OB2Signer`, `OB2Verifier`, and dataclasses `Assertion`, `BadgeClass`,
+    `Profile`, `CryptographicKey`, `RevocationList`.
+
+  - feat(ob2): real HostedBadge verification — the assertion is fetched from its
+    own `id` over HTTPS and scope-checked against the issuer origin (default
+    same-origin, or the issuer's `startsWith` / `allowedOrigins`); the baked JWS
+    is non-gating defence-in-depth. Select it with `openbadges-signer -V 2 -H`.
+
+  - feat(ob2): SignedBadge verification resolves `verification.creator` to a
+    published `CryptographicKey` and checks its `owner` / `publicKey` back-link
+    to the issuer Profile.
+
+  - feat(publish): `openbadges-publish -V 2` emits conformant hosted metadata —
+    an issuer Profile with a `publicKey` array, a `BadgeClass` and a
+    `CryptographicKey` (`key.json`) per badge, and a `RevocationList`.
+
+  - feat(config): new optional badge keys `crypto_key` and
+    `hosted_assertions_base` for the OB 2.0 signed / hosted flows.
+
+  - OpenBadges 3.0 is unchanged.
+
+
 * v2.0.0 - 2026-07-01
 
   - BREAKING (OB3): OpenBadges 3.0 credentials are now secured with the native

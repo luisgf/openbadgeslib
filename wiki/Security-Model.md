@@ -82,11 +82,11 @@ The iTXt structure is parsed properly (keyword, compression flag/method, languag
 
 ## Validity beyond the signature
 
-A cryptographically valid signature is necessary but not sufficient. For OB2, `Verifier.get_badge_status` only returns `VALID` after the following checks also pass.
+A cryptographically valid signature is necessary but not sufficient. For strict OB 2.0 `OB2Verifier.verify` (and, equivalently, the legacy `Verifier.get_badge_status`) only accepts a badge after the following checks also pass.
 
 ### Expiration vs now
 
-A badge is expired when its expiration timestamp is in the past relative to the **current time**, not relative to its own issue date. From `ob2/verifier.py`:
+A badge is expired when its expiration timestamp is in the past relative to the **current time**, not relative to its own issue date. Strict OB 2.0 (`ob2/verifier.py`) compares ISO 8601 datetimes; the legacy `-V 1` path (`ob1/verifier.py`) compares Unix timestamps:
 
 ```python
 if badge.expiration < time():
@@ -97,7 +97,7 @@ An expired badge is reported with status `EXPIRED`. (Badges with no expiration a
 
 ### Revocation via the hosted revocationList
 
-OB2 revocation is checked by downloading the badge JSON, following its `issuer` URL to the issuer profile, and reading the optional `revocationList`. If the issuer publishes one and the badge's serial number appears in it, verification returns `REVOKED` with the published reason:
+Revocation is checked by downloading the badge JSON, following its `issuer` URL to the issuer profile, and reading the optional `revocationList`. If the issuer publishes one and the badge appears in it — the assertion `id` inside the strict OB 2.0 `revokedAssertions` array, or the serial number in the legacy `-V 1` flat map — verification fails as revoked:
 
 ```python
 revocation_url = issuer.get('revocationList')   # optional in OB 2.0
