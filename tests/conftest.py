@@ -39,6 +39,24 @@ def ecc_pub_pem():
     return (TESTS_DIR / 'test_verify_ecc.pem').read_bytes()
 
 
+@pytest.fixture(scope='session')
+def ed25519_keypair():
+    # Generated in-session (not a committed key file) so the suite ships no
+    # private key material on disk.
+    from openbadgeslib.keys import KeyEd25519
+    return KeyEd25519().generate_keypair()  # (priv_pem, pub_pem)
+
+
+@pytest.fixture(scope='session')
+def ed25519_priv_pem(ed25519_keypair):
+    return ed25519_keypair[0]
+
+
+@pytest.fixture(scope='session')
+def ed25519_pub_pem(ed25519_keypair):
+    return ed25519_keypair[1]
+
+
 # ── raw image bytes ────────────────────────────────────────────────────────────
 
 @pytest.fixture(scope='session')
@@ -214,3 +232,15 @@ def ob3_rsa_verifier(rsa_pub_pem):
 def ob3_ecc_verifier(ecc_pub_pem):
     from openbadgeslib.ob3 import OB3Verifier
     return OB3Verifier(pubkey_pem=ecc_pub_pem)
+
+
+@pytest.fixture(scope='session')
+def ob3_ed25519_signer(ed25519_priv_pem):
+    from openbadgeslib.ob3 import OB3Signer
+    return OB3Signer(privkey_pem=ed25519_priv_pem, algorithm='EdDSA')
+
+
+@pytest.fixture(scope='session')
+def ob3_ed25519_verifier(ed25519_pub_pem):
+    from openbadgeslib.ob3 import OB3Verifier
+    return OB3Verifier(pubkey_pem=ed25519_pub_pem)

@@ -4,6 +4,17 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* Unreleased
+
+  - feat: Ed25519 (EdDSA) keys are now supported end to end — key generation
+    (set key_type = ED25519 in the badge profile), plus OB2 JWS and OB3 JWT-VC
+    signing and verification. detect_key_type classifies an Ed25519 PEM
+    explicitly (the ecdsa library would otherwise misread it as an ECC/NIST
+    key), and the algorithm-pinning allowlists bind EdDSA to Ed25519 keys, so
+    cross-type tokens are still rejected. cryptography is now an explicit
+    dependency (it was already pulled in transitively by PyJWT[crypto]).
+
+
 * v1.1.6 - 2026-07-01
 
   - fix: OB2 Verifier(verify_key=...) again accepts a live pycryptodome/ecdsa

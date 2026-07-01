@@ -36,10 +36,11 @@ class OB3Signer:
 
     Args:
         privkey_pem: PEM-encoded private key (bytes, str, or a pycryptodome /
-                     ecdsa key object).  RSA keys produce RS256 tokens;
-                     EC keys produce ES256 tokens.
+                     ecdsa / cryptography key object).  RSA keys produce RS256
+                     tokens; EC keys produce ES256; Ed25519 keys produce EdDSA
+                     (pass ``algorithm='EdDSA'``).
         algorithm:   JWS algorithm identifier.  Defaults to 'RS256'.
-                     Supported: RS256/384/512, ES256/384/512.
+                     Supported: RS256/384/512, ES256/384/512, EdDSA.
     """
 
     def __init__(self, privkey_pem: Any, algorithm: str = 'RS256') -> None:

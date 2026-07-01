@@ -30,7 +30,7 @@ OB3_CONTEXT = [
     "https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json",
 ]
 
-_SUPPORTED_ALGORITHMS = {'RS256', 'RS384', 'RS512', 'ES256', 'ES384', 'ES512'}
+_SUPPORTED_ALGORITHMS = {'RS256', 'RS384', 'RS512', 'ES256', 'ES384', 'ES512', 'EdDSA'}
 
 
 def _iso(dt: datetime) -> str:

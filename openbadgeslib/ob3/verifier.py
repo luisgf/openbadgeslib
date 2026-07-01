@@ -39,6 +39,7 @@ from .. import baking
 _ALGORITHMS_BY_KEY_TYPE = {
     KeyType.RSA: ['RS256', 'RS384', 'RS512'],
     KeyType.ECC: ['ES256', 'ES384', 'ES512'],
+    KeyType.ED25519: ['EdDSA'],
 }
 
 

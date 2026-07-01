@@ -5,12 +5,14 @@ from typing import Any, Dict, Optional, Set, Union
 from . import utils
 from .exceptions import SignatureError, MissingKey, MissingSigner, MissingVerifier, RouteMissingError
 
-from jwt.algorithms import RSAAlgorithm, ECAlgorithm
+from jwt.algorithms import RSAAlgorithm, ECAlgorithm, OKPAlgorithm
 from jwt.exceptions import InvalidKeyError
 
 from ..keys import KeyType, detect_key_type, key_to_pem
 from ..errors import UnknownKeyType
 
+# Each entry is (algorithm class, hash id). EdDSA's OKPAlgorithm takes no hash
+# argument — its hash id is None and _algo_for constructs it with no args.
 _ALGORITHMS = {
     'RS256': (RSAAlgorithm, RSAAlgorithm.SHA256),
     'RS384': (RSAAlgorithm, RSAAlgorithm.SHA384),
@@ -18,6 +20,7 @@ _ALGORITHMS = {
     'ES256': (ECAlgorithm,  ECAlgorithm.SHA256),
     'ES384': (ECAlgorithm,  ECAlgorithm.SHA384),
     'ES512': (ECAlgorithm,  ECAlgorithm.SHA512),
+    'EdDSA': (OKPAlgorithm,  None),
 }
 
 
@@ -26,6 +29,8 @@ def _algo_for(alg_name: str) -> Any:
     if entry is None:
         raise RouteMissingError(f"Algorithm {alg_name!r} is not supported")
     cls, hash_id = entry
+    if hash_id is None:
+        return cls()
     return cls(hash_id)
 
 
@@ -44,6 +49,8 @@ def _allowed_algs_for_key(key: Any) -> Set[str]:
         return {'RS256', 'RS384', 'RS512'}
     if key_type is KeyType.ECC:
         return {'ES256', 'ES384', 'ES512'}
+    if key_type is KeyType.ED25519:
+        return {'EdDSA'}
     return set()
 
 

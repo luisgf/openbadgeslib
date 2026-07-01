@@ -56,8 +56,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('-g', '--genkey', metavar='BADGE',
                         help=("Generate a new key pair for the badge section "
                               "[badge_<BADGE>] (the suffix after 'badge_'). "
-                              "Key type (RSA/ECC) is taken from the badge's "
-                              "key_type field; default RSA."))
+                              "Key type (RSA/ECC/ED25519) is taken from the "
+                              "badge's key_type field; default RSA."))
     parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
                         metavar='VERSION',
                         help='OpenBadges specification version to use: 2 (default) or 3. '
@@ -89,8 +89,10 @@ def main() -> None:
         key_type = KeyType.ECC
     elif key_type_name == 'RSA':
         key_type = KeyType.RSA
+    elif key_type_name in ('ED25519', 'EDDSA'):
+        key_type = KeyType.ED25519
     else:
-        sys.exit("Unknown key_type %r for badge '%s' (use RSA or ECC)"
+        sys.exit("Unknown key_type %r for badge '%s' (use RSA, ECC, or ED25519)"
                  % (key_type_name, args.genkey))
 
     for i in (private_key, public_key):
