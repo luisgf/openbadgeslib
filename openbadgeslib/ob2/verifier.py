@@ -29,7 +29,7 @@ from ..keys import KeyType, detect_key_type
 from .._jws.exceptions import JWSException
 from .._jws import verify_block as jws_verify_block
 from .._jws import utils as jws_utils
-from ..errors import AssertionFormatIncorrect, NotIdentityInAssertion
+from ..errors import AssertionFormatIncorrect, NotIdentityInAssertion, UnknownKeyType, VerifierExceptions
 import json
 from urllib.error import HTTPError, URLError
 import logging
@@ -51,7 +51,10 @@ class Verifier():
         self.key_type = None
 
         if self.verify_key:
-            self.key_type = detect_key_type(self.verify_key)
+            try:
+                self.key_type = detect_key_type(self.verify_key)
+            except UnknownKeyType as exc:
+                raise VerifierExceptions(str(exc)) from exc
 
     def get_identity(self) -> Optional[str]:
         return self.identity.decode('utf-8') if self.identity is not None else None

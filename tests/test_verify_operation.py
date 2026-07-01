@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from openbadgeslib.verifier import Verifier
 from openbadgeslib.badge import BadgeStatus, BadgeSigned
+from openbadgeslib.errors import VerifierExceptions
 
 
 class TestCheckJWSSignature:
@@ -314,6 +315,16 @@ class TestCheckRevocation:
         with patch('openbadgeslib.ob2.verifier.download_file', side_effect=fake_download):
             with pytest.raises(AssertionFormatIncorrect):
                 v.check_revocation(badge)
+
+
+class TestVerifierConstructorKeyTypeValidation:
+    def test_garbage_verify_key_raises_verifier_exception(self):
+        # detect_key_type() raises the sibling KeyGenExceptions.UnknownKeyType,
+        # not a VerifierExceptions — the constructor must translate it so the
+        # CLI's `except VerifierExceptions` clause can catch it cleanly.
+        with pytest.raises(VerifierExceptions):
+            Verifier(verify_key=b'this is not a pem key at all, just garbage text',
+                     identity='foo@example.com')
 
 
 class TestEmbeddedKeyFallback:
