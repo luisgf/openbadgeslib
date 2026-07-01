@@ -42,7 +42,7 @@ def main() -> None:
     directory = sys.argv[1]
 
     if os.path.lexists(directory):
-        raise FileExistsError(directory)
+        sys.exit('[!] %s already exists' % directory)
 
     umask = os.umask(0o077)  # rwx------
     try:
