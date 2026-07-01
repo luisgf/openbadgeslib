@@ -4,6 +4,36 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v2.0.0 - 2026-07-01
+
+  - BREAKING (OB3): OpenBadges 3.0 credentials are now secured with the native
+    OB 3.0 VC-JWT (spec §8.2): the JWT payload IS the credential (its members at
+    the top level, no 'vc' claim wrapper), validFrom maps to 'nbf' (there is no
+    'iat'), and the JOSE header carries the issuer's public key as a 'jwk'.
+    Tokens issued by 1.x (the VCDM-1.1-style 'vc'-wrapper) are NOT compatible.
+
+  - BREAKING (OB3): baked images use the OB 3.0 document-format identifiers —
+    the PNG iTXt keyword 'openbadgecredential' and the SVG element
+    <openbadges:credential> (namespace https://purl.imsglobal.org/ob/v3p0). OB3
+    images baked by 1.x (OB2 identifiers) are not read by this verifier.
+
+  - OB3 verifier now accepts credentials that are valid per the spec schema but
+    were previously rejected: the AchievementCredential type alias, an issuer
+    given as a string IRI (not only a Profile object), and a credentialSubject
+    without an 'id' (identity conveyed via 'identifier').
+
+  - OB3 verifier now enforces required structure it previously ignored: the
+    @context (VC 2.0 + OB v3p0 pair) is validated, and the registered claims
+    'iss' and 'nbf' are required (with 'sub' required when the subject has an id).
+
+  - OB3 credentialStatus now honors statusPurpose: 'suspension' is reported
+    distinctly from 'revocation', a non-revocation/suspension purpose (e.g.
+    'message') no longer fails verification, and the entry's purpose is
+    cross-checked against the fetched status list's declared purpose.
+
+  - OpenBadges 2.0 is unchanged; only the OB3 path is affected.
+
+
 * v1.3.0 - 2026-07-01
 
   - SECURITY: download_file() now blocks server-side request forgery. The URLs
