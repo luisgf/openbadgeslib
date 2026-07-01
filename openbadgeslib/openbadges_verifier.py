@@ -99,7 +99,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help='OpenBadges specification version: 2 (default, JWS) or 3 (JWT-VC).')
     parser.add_argument('--json', action='store_true',
                         help='Emit a machine-readable JSON result instead of the human '
-                             'output. Exits 0 when valid, non-zero otherwise.')
+                             'output. Exit status: 0 when the badge is valid AND the '
+                             'issuer is trusted; 2 when the signature is valid but the '
+                             'issuer is not anchored (untrusted); 1 on any failure.')
     parser.add_argument('-d', '--debug', action='store_true',
                         help='Show debug messages at runtime.')
     parser.add_argument('-v', '--version', action='version',
@@ -110,14 +112,21 @@ def build_parser() -> argparse.ArgumentParser:
 def _finish(args: argparse.Namespace, result: Dict[str, Any]) -> None:
     """Emit the verification result and set the process exit status.
 
-    In --json mode a single JSON object is printed and the process exits 0 when
-    valid, non-zero otherwise. Without --json the human lines have already been
+    In --json mode a single JSON object is printed and the process exit status
+    reflects issuer trust, not merely signature validity: 0 when the badge is
+    valid AND trusted, 2 when the signature is valid but the issuer is not
+    anchored (an OB2 badge-embedded key or a self-asserted did:key), and 1 on
+    any failure. Collapsing 'valid but untrusted' into an exit-0 success would
+    let automation gate on a signature that only proves internal consistency,
+    not who issued the badge. Without --json the human lines have already been
     printed; the historical exit behaviour is preserved via result['_exit']
     (None means return without exiting, i.e. a normal exit 0)."""
     if args.json:
         payload = {k: v for k, v in result.items() if not k.startswith('_')}
         print(json.dumps(payload))
-        sys.exit(0 if result.get('valid') else 1)
+        if not result.get('valid'):
+            sys.exit(1)
+        sys.exit(0 if result.get('trusted') else 2)
     code = result.get('_exit')
     if code is not None:
         sys.exit(code)

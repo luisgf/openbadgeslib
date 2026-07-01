@@ -112,6 +112,11 @@ def test_ob2_valid_trusted_json(tmp_path, svg_rsa_badge, rsa_pub_pem, capsys):
 
 
 def test_ob2_untrusted_is_valid_but_not_trusted_json(tmp_path, svg_rsa_badge, rsa_pub_pem, capsys):
+    # Verified against the badge-embedded key (no --local/--pubkey): the
+    # signature is internally consistent but the issuer is not anchored, so the
+    # process must NOT exit 0 (which automation reads as "verified"). Exit 2
+    # signals "valid signature, untrusted issuer"; the JSON still reports the
+    # detail. Exit 0 here would let a self-signed forgery pass a CI gate.
     badge_file = _make_signed_ob2_svg(tmp_path, svg_rsa_badge)
     argv = ['openbadges-verifier', '-i', str(badge_file), '-r', 'recipient@example.com',
             '-V', '2', '--json']
@@ -119,7 +124,7 @@ def test_ob2_untrusted_is_valid_but_not_trusted_json(tmp_path, svg_rsa_badge, rs
         patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem),
         patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_revocation_download),
     ))
-    assert code == 0
+    assert code == 2
     assert result['valid'] is True
     assert result['trusted'] is False
 
