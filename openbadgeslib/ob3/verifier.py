@@ -285,11 +285,11 @@ class OB3Verifier:
     def extract_token_from_svg(svg_bytes: bytes) -> str:
         """Extract the JWT-VC token embedded in a baked SVG badge."""
         try:
-            token = baking.extract_svg(svg_bytes)
+            token = baking.extract_svg(svg_bytes, element=baking.SVG_ELEMENT_OB3)
         except Exception as exc:
             raise ErrorParsingFile(f"Could not parse SVG: {exc}") from exc
         if token is None:
-            raise OB3VerificationError("No openbadges:assertion element found in SVG")
+            raise OB3VerificationError("No openbadges:credential element found in SVG")
         return token
 
     @staticmethod
@@ -302,11 +302,11 @@ class OB3Verifier:
         a non-empty language tag or compressed text — are also recovered.
         """
         try:
-            token = baking.extract_png(png_bytes)
+            token = baking.extract_png(png_bytes, keyword=baking.ITXT_KEYWORD_OB3)
         except baking.DecompressionLimitExceeded as exc:
             raise OB3VerificationError(str(exc)) from exc
         except Exception as exc:
             raise ErrorParsingFile(f"Could not parse PNG: {exc}") from exc
         if token is None:
-            raise OB3VerificationError("No openbadges iTXt chunk found in PNG")
+            raise OB3VerificationError("No openbadgecredential iTXt chunk found in PNG")
         return token

@@ -122,22 +122,29 @@ class TestSignIntoSVG:
     def test_assertion_element_embedded(self, ob3_rsa_signer, ob3_credential, svg_image):
         result = ob3_rsa_signer.sign_into_svg(ob3_credential, svg_image)
         doc = parseString(result)
-        nodes = doc.getElementsByTagName('openbadges:assertion')
+        nodes = doc.getElementsByTagName('openbadges:credential')
         assert nodes.length == 1
         doc.unlink()
 
     def test_assertion_verify_attribute_is_jwt(self, ob3_rsa_signer, ob3_credential, svg_image):
         result = ob3_rsa_signer.sign_into_svg(ob3_credential, svg_image)
         doc = parseString(result)
-        token = doc.getElementsByTagName('openbadges:assertion')[0].attributes['verify'].nodeValue
+        token = doc.getElementsByTagName('openbadges:credential')[0].attributes['verify'].nodeValue
         doc.unlink()
         assert len(token.split('.')) == 3
 
     def test_ecc_sign_into_svg(self, ob3_ecc_signer, ob3_credential, svg_image):
         result = ob3_ecc_signer.sign_into_svg(ob3_credential, svg_image)
         doc = parseString(result)
-        assert doc.getElementsByTagName('openbadges:assertion').length == 1
+        assert doc.getElementsByTagName('openbadges:credential').length == 1
         doc.unlink()
+
+    def test_ob3_svg_uses_ob3_element_and_namespace(self, ob3_rsa_signer, ob3_credential, svg_image):
+        # OB 3.0 baking identifiers, not the OB 2.0 ones.
+        result = ob3_rsa_signer.sign_into_svg(ob3_credential, svg_image)
+        assert b'openbadges:credential' in result
+        assert b'https://purl.imsglobal.org/ob/v3p0' in result
+        assert b'openbadges:assertion' not in result
 
     def test_malformed_svg_raises_error_signing_file(self, ob3_rsa_signer, ob3_credential):
         from openbadgeslib.errors import ErrorSigningFile
@@ -162,7 +169,7 @@ class TestSignIntoPNG:
         result = ob3_rsa_signer.sign_into_png(ob3_credential, png_image)
         found = any(
             (tag.decode('ascii') if isinstance(tag, bytes) else tag) == 'iTXt'
-            and data.startswith(b'openbadges')
+            and data.startswith(b'openbadgecredential')
             for tag, data in Reader(bytes=result).chunks()
         )
         assert found
@@ -172,7 +179,7 @@ class TestSignIntoPNG:
         result = ob3_ecc_signer.sign_into_png(ob3_credential, png_image)
         found = any(
             (tag.decode('ascii') if isinstance(tag, bytes) else tag) == 'iTXt'
-            and data.startswith(b'openbadges')
+            and data.startswith(b'openbadgecredential')
             for tag, data in Reader(bytes=result).chunks()
         )
         assert found
