@@ -35,6 +35,7 @@ import json
 import os
 import os.path
 import shutil
+import sys
 
 from urllib.parse import urljoin
 from .confparser import read_config_or_exit
@@ -67,7 +68,7 @@ def main() -> None:
 
     if args.output:
         if os.path.lexists(args.output):
-            raise FileExistsError(args.output)
+            sys.exit('[!] %s already exists' % args.output)
 
         umask = os.umask(0o077)  # rwx------
         try:

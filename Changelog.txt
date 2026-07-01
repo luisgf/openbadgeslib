@@ -6,6 +6,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * Unreleased
 
+  - fix: openbadges-init and openbadges-publish now exit cleanly with a
+    '[!] <path> already exists' message instead of a raw FileExistsError
+    traceback when the target directory/output path already exists.
+
   - fix: OB3 credential parsing now rejects a non-string required id/name
     field (vc.id, issuer.id, credentialSubject.id, achievement.id/name) with
     a clean OB3VerificationError, instead of leaking a raw AttributeError out

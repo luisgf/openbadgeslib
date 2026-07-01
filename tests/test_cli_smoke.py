@@ -16,6 +16,18 @@ def test_init_creates_directory_layout(tmp_path):
         assert (target / sub).is_dir()
 
 
+def test_init_existing_directory_exits_cleanly(tmp_path):
+    # Re-running openbadges-init against an existing path must exit cleanly
+    # (SystemExit) with an operator-facing message, not a raw FileExistsError.
+    import pytest
+    from openbadgeslib import openbadges_init
+    target = tmp_path / 'config'
+    target.mkdir()
+    with patch.object(sys, 'argv', ['openbadges-init', str(target)]):
+        with pytest.raises(SystemExit):
+            openbadges_init.main()
+
+
 def test_init_creates_directories_with_restrictive_permissions(tmp_path):
     # The keys/ subdirectory will hold private key material; openbadges_init
     # applies a 0o077 umask around the mkdir calls so every created directory
@@ -300,6 +312,19 @@ def test_publish_ob2_creates_full_tree(tmp_path):
     for name in ('badge_test_1', 'badge_test_2', 'badge_test_3', 'badge_test_4'):
         assert (out / name / 'badge.json').is_file()
         assert (out / name / 'verify.pem').is_file()
+
+
+def test_publish_existing_output_exits_cleanly(tmp_path):
+    # -o pointing at an existing path must exit cleanly (SystemExit) with an
+    # operator-facing message, not a raw FileExistsError.
+    import pytest
+    from openbadgeslib import openbadges_publish
+    out = tmp_path / 'published'
+    out.mkdir()
+    argv = ['openbadges-publish', '-c', './config1.ini', '-o', str(out)]
+    with patch.object(sys, 'argv', argv):
+        with pytest.raises(SystemExit):
+            openbadges_publish.main()
 
 
 def test_publish_restores_umask_when_a_badge_mkdir_fails(tmp_path):
