@@ -269,6 +269,12 @@ class BadgeSigned():
             raise BadgeImgFormatUnsupported('The image format for %s is not supported' % file_name)
 
         body = assertion.decode_body()
+        if not isinstance(body, dict):
+            # The body can decode to any JSON value; a non-object would raise a
+            # raw TypeError/AttributeError on the field accesses below, before
+            # the guarded construction block further down.
+            raise AssertionFormatIncorrect(
+                'OpenBadge assertion body is not a JSON object')
 
         try:
             evidence = body['evidence']

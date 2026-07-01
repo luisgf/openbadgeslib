@@ -6,6 +6,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * Unreleased
 
+  - fix: BadgeSigned.read_from_file() now raises AssertionFormatIncorrect
+    instead of a raw TypeError/AttributeError when the JWS body decodes to a
+    valid-JSON non-object (array, string, number, or null).
+
   - fix: openbadges-init and openbadges-publish now exit cleanly with a
     '[!] <path> already exists' message instead of a raw FileExistsError
     traceback when the target directory/output path already exists.
