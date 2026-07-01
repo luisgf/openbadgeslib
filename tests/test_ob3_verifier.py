@@ -221,6 +221,16 @@ class TestOB3VerifierVerify:
         with pytest.raises(OB3VerificationError, match="ISO 8601"):
             ob3_rsa_verifier.verify(token)
 
+    @pytest.mark.parametrize('field', ['validFrom', 'validUntil'])
+    def test_timezone_naive_date_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential, field):
+        # A syntactically-valid ISO 8601 string with no UTC/offset suffix
+        # parses to a naive datetime, which must not leak a raw TypeError out
+        # of verify() when compared against the tz-aware "now".
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
+                                     lambda p: p['vc'].__setitem__(field, '2026-01-01T00:00:00'))
+        with pytest.raises(OB3VerificationError, match="ISO 8601"):
+            ob3_rsa_verifier.verify(token)
+
     # ── a non-object 'vc' claim, or a non-str/non-list 'vc.type', must not leak
     #    a raw AttributeError/TypeError out of verify() ────────────────────────
     @pytest.mark.parametrize('bad_vc', ['just-a-string', 12345, None, [], True])
