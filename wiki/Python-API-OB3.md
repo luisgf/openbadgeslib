@@ -87,7 +87,7 @@ On construction the verifier detects the key type and **pins** the accepted JWS 
 verify(token, expected_recipient=None) -> OpenBadgeCredential
 ```
 
-`verify()` checks the signature, expiry and structure, validates that the `vc` is an `OpenBadgeCredential`, and cross-checks the registered `iss`/`sub` claims against the credential's issuer/subject. On success it returns a fully reconstructed `OpenBadgeCredential`; any failure raises `OB3VerificationError`.
+`verify()` checks the signature, expiry and structure, validates that the payload's top-level `type` is an `OpenBadgeCredential` (a `VerifiableCredential` plus `OpenBadgeCredential`/`AchievementCredential` — the native VC-JWT payload has no `vc` wrapper), and cross-checks the registered `iss`/`sub` claims against the credential's issuer/subject. On success it returns a fully reconstructed `OpenBadgeCredential`; any failure raises `OB3VerificationError`.
 
 **Recipient binding is opt-in.** By default `verify()` does *not* tie the credential to a recipient. Pass `expected_recipient` (a bare email, a `mailto:` URI, or a DID) to additionally require that `credentialSubject.id` matches; otherwise the caller must compare `credential.recipient_id` itself. See [[Security Model]] for why this matters.
 
