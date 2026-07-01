@@ -44,7 +44,7 @@ general = general.log
 signer  = signer.log
 ```
 
-Both files live under `${paths:base_log}`. On each OB2 sign the signer appends a line of the form `<timestamp> <badge> SIGNED for <identity> UID <serial>` to the `signer` log.
+Both files live under `${paths:base_log}`. On each OB2 sign the signer appends a line of the form `<timestamp> <badge> OB2 SIGNED for <recipient>` to the `signer` log (the legacy OB1 path writes `<timestamp> <badge> SIGNED for <identity> UID <serial>`).
 
 ### `[smtp]`
 
