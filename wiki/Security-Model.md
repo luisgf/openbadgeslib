@@ -56,7 +56,7 @@ if u.scheme != 'https':
         raise ValueError('Refusing to download ... HTTPS is required ...')
 ```
 
-TLS certificate validation is on (urllib's default context), downloads time out after 30 seconds, and plain HTTP is only ever used if a caller explicitly passes `allow_insecure=True`.
+TLS certificate validation is on (urllib's default context), downloads time out after 30 seconds, and plain HTTP is only ever used if a caller explicitly passes `allow_insecure=True`. A redirect to a non-HTTPS target is also rejected — an HTTPS URL can't be silently downgraded via a 302 — and the response body is capped at 5 MiB to bound memory use against an oversized or attacker-influenced response.
 
 ### defusedxml for SVG (billion-laughs)
 
