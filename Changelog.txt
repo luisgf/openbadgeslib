@@ -6,6 +6,11 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * Unreleased
 
+  - SECURITY: _jws.verify_block() now treats an RSA private key supplied
+    where a public verify key is expected as a failed signature
+    (SignatureError) instead of crashing with a raw AttributeError — closes
+    a remotely-triggerable crash on the badge-embedded-key OB2 fallback path.
+
   - fix: openbadges-signer's -M/--mail-badge now reports a clean error
     instead of crashing when config.ini sets an SMTP username without
     use_ssl=True; the already-signed badge is still saved.

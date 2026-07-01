@@ -78,6 +78,20 @@ class TestRSARoundTrip:
         with pytest.raises((SignatureError, Exception)):
             verify_block(jws, key=pub)
 
+    def test_rsa_private_key_as_verify_key_raises_signature_error(self, rsa_priv_pem):
+        # A malicious verify.url can serve an RSA *private* key PEM. It parses
+        # as an RSA key, but PyJWT's RSAAlgorithm.verify() then calls .verify()
+        # on an RSAPrivateKey (which lacks it), raising AttributeError. That
+        # must surface as a SignatureError, never a raw crash.
+        from openbadgeslib.keys import KeyRSA
+        k = KeyRSA()
+        k.read_private_key(rsa_priv_pem)
+        priv = k.get_priv_key()
+        raw_sig = sign({'alg': 'RS256'}, PAYLOAD, key=priv)
+        jws = _build_jws({'alg': 'RS256'}, PAYLOAD, raw_sig)
+        with pytest.raises(SignatureError):
+            verify_block(jws, key=priv)
+
 
 class TestECCRoundTrip:
     def test_sign_returns_bytes(self, ecc_priv_pem, ecc_pub_pem):
