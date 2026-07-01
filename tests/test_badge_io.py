@@ -115,6 +115,14 @@ class TestExtractPNGAssertion:
         with pytest.raises(AssertionFormatIncorrect):
             extract_png_assertion(png_with_comment)
 
+    def test_garbage_bytes_raise_clean_error(self):
+        # Not PNG at all: baking.extract_png's underlying chunk reader raises
+        # its own exception; that must not leak out raw (mirrors the SVG
+        # counterpart's try/except around baking.extract_svg).
+        from openbadgeslib.errors import ErrorParsingFile
+        with pytest.raises(ErrorParsingFile):
+            extract_png_assertion(b'this is not a png file at all')
+
 
 class TestBakingPNGAssertionDetection:
     def test_has_png_detects_baked_assertion(self, png_image):

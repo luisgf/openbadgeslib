@@ -335,7 +335,10 @@ def extract_svg_assertion(file_data: bytes) -> Assertion:
 
 
 def extract_png_assertion(file_data: bytes) -> Assertion:
-    token = baking.extract_png(file_data)
+    try:
+        token = baking.extract_png(file_data)
+    except Exception as err:
+        raise ErrorParsingFile('Error parsing PNG file: %s' % err) from err
     if token is None:
         raise AssertionFormatIncorrect('No OpenBadges assertion found in PNG file')
     return Assertion.decode(token.encode('utf-8'))
