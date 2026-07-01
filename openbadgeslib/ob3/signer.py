@@ -27,6 +27,7 @@ import jwt
 from .credential import OpenBadgeCredential, _SUPPORTED_ALGORITHMS
 from ..util import __version__
 from ..keys import key_to_pem
+from ..errors import ErrorSigningFile
 from .. import baking
 
 
@@ -67,9 +68,12 @@ class OB3Signer:
         viewers can extract the token regardless of version.
         """
         token = self.sign(credential)
-        return baking.bake_svg(
-            svg_bytes, token,
-            comment=' Signed with OpenBadgesLib %s (OB 3.0 JWT-VC) ' % __version__)
+        try:
+            return baking.bake_svg(
+                svg_bytes, token,
+                comment=' Signed with OpenBadgesLib %s (OB 3.0 JWT-VC) ' % __version__)
+        except Exception as exc:
+            raise ErrorSigningFile('Unable to bake SVG assertion: %s' % exc) from exc
 
     def sign_into_png(self, credential: OpenBadgeCredential, png_bytes: bytes) -> bytes:
         """Embed a signed credential into a PNG badge image.
@@ -78,4 +82,7 @@ class OB3Signer:
         matching the OB 2.0 baking format.
         """
         token = self.sign(credential)
-        return baking.bake_png(png_bytes, token)
+        try:
+            return baking.bake_png(png_bytes, token)
+        except Exception as exc:
+            raise ErrorSigningFile('Unable to bake PNG assertion: %s' % exc) from exc

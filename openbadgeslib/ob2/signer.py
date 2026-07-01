@@ -142,20 +142,32 @@ class Signer():
         """ Append the assertion to a SVG File """
         assertion = badge.get_assertion()
         assert assertion is not None  # set by generate_assertion before baking
-        badge.signed = baking.bake_svg(
-            badge.source.image, assertion,
-            comment=' Signed with OpenBadgesLib %s ' % __version__)
+        try:
+            badge.signed = baking.bake_svg(
+                badge.source.image, assertion,
+                comment=' Signed with OpenBadgesLib %s ' % __version__)
+        except Exception as exc:
+            raise ErrorSigningFile('Unable to bake SVG assertion: %s' % exc) from exc
 
     def append_png_assertion(self, badge: BadgeSigned) -> None:
         """ Append the assertion to a PNG file """
         assertion = badge.get_assertion()
         assert assertion is not None  # set by generate_assertion before baking
-        badge.signed = baking.bake_png(
-            badge.source.image, assertion,
-            text_comment='Comment Signed with OpenBadgesLib %s' % __version__)
+        try:
+            badge.signed = baking.bake_png(
+                badge.source.image, assertion,
+                text_comment='Comment Signed with OpenBadgesLib %s' % __version__)
+        except Exception as exc:
+            raise ErrorSigningFile('Unable to bake PNG assertion: %s' % exc) from exc
 
     def has_svg_assertion(self, badge: Any) -> bool:
-        return baking.has_svg(badge.image)
+        try:
+            return baking.has_svg(badge.image)
+        except Exception as exc:
+            raise ErrorSigningFile('Unable to parse SVG image: %s' % exc) from exc
 
     def has_png_assertion(self, badge: Any) -> bool:
-        return baking.has_png(badge.image)
+        try:
+            return baking.has_png(badge.image)
+        except Exception as exc:
+            raise ErrorSigningFile('Unable to parse PNG image: %s' % exc) from exc
