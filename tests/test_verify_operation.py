@@ -316,6 +316,44 @@ class TestCheckRevocation:
             with pytest.raises(AssertionFormatIncorrect):
                 v.check_revocation(badge)
 
+    def test_non_string_issuer_url_raises_clean_error(self, badge_for_verify_rsa):
+        # A non-string 'issuer' URL must not reach download_file()/urlparse()
+        # and leak a raw AttributeError.
+        import json as _json
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        with patch('openbadgeslib.ob2.verifier.download_file',
+                   return_value=_json.dumps({'issuer': 12345}).encode()):
+            with pytest.raises(AssertionFormatIncorrect):
+                v.check_revocation(badge)
+
+    def test_non_string_revocation_url_raises_clean_error(self, badge_for_verify_rsa):
+        import json as _json
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        badge_json = {'issuer': 'https://example.com/issuer.json'}
+
+        def fake_download(url, *a, **k):
+            if url == badge.source.json_url:
+                return _json.dumps(badge_json).encode()
+            return _json.dumps({'revocationList': 12345}).encode()
+
+        with patch('openbadgeslib.ob2.verifier.download_file', side_effect=fake_download):
+            with pytest.raises(AssertionFormatIncorrect):
+                v.check_revocation(badge)
+
+    def test_non_string_json_url_raises_clean_error(self, badge_for_verify_rsa):
+        # badge.source.json_url comes from the untrusted assertion 'badge'
+        # field; a non-string must not leak a raw AttributeError.
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        with patch.object(badge.source, 'json_url', 12345):
+            with pytest.raises(AssertionFormatIncorrect):
+                v.check_revocation(badge)
+
 
 class TestVerifierConstructorKeyTypeValidation:
     def test_garbage_verify_key_raises_verifier_exception(self):
