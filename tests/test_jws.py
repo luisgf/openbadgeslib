@@ -146,6 +146,15 @@ class TestVerifyBlockEdgeCases:
         with pytest.raises(SignatureError):
             verify_block(jws, key=k.get_pub_key())
 
+    def test_malformed_signature_segment_raises_signature_error(self, rsa_pub_pem):
+        """An invalid-length base64url signature segment must not leak binascii.Error."""
+        from openbadgeslib.keys import KeyRSA
+        k = KeyRSA()
+        k.read_public_key(rsa_pub_pem)
+        jws = utils.encode({'alg': 'RS256'}) + b'.' + utils.encode(PAYLOAD) + b'.A'
+        with pytest.raises(SignatureError):
+            verify_block(jws, key=k.get_pub_key())
+
 
 class TestExceptionHierarchy:
     def test_all_jws_exceptions_are_libopenbadgesexception(self):
