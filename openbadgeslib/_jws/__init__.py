@@ -85,8 +85,11 @@ def verify_block(msg: Union[str, bytes], key: Optional[Any] = None) -> bool:
         raise SignatureError("Malformed JWS header")
 
     alg_name = header.get('alg')
-    if not alg_name:
-        raise MissingVerifier("JWS header is missing 'alg'")
+    if not isinstance(alg_name, str) or not alg_name:
+        # A non-string 'alg' (JSON array/object) is truthy but unhashable, so
+        # it would raise a raw TypeError at the `not in allowed` membership
+        # test below. Reject any non-string/empty alg here as a clean JWSException.
+        raise MissingVerifier("JWS header 'alg' is missing or not a string")
 
     allowed = _allowed_algs_for_key(key)
     if allowed and alg_name not in allowed:

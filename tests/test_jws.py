@@ -169,6 +169,17 @@ class TestVerifyBlockEdgeCases:
         with pytest.raises(SignatureError):
             verify_block(jws, key=k.get_pub_key())
 
+    @pytest.mark.parametrize('bad_alg', [['ES256'], {'a': 1}, 123, True])
+    def test_non_string_alg_header_raises_jws_exception(self, rsa_pub_pem, bad_alg):
+        """A non-string 'alg' (esp. an unhashable list/dict) must be rejected as
+        a clean JWSException, not leak a raw TypeError from the membership test."""
+        from openbadgeslib.keys import KeyRSA
+        k = KeyRSA()
+        k.read_public_key(rsa_pub_pem)
+        jws = utils.encode({'alg': bad_alg}) + b'.' + utils.encode(PAYLOAD) + b'.' + utils.to_base64(b'sig')
+        with pytest.raises(MissingVerifier):
+            verify_block(jws, key=k.get_pub_key())
+
 
 class TestExceptionHierarchy:
     def test_all_jws_exceptions_are_libopenbadgesexception(self):

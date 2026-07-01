@@ -11,6 +11,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     revocation-list reason was "", null, false, or 0 was reported VALID
     instead of REVOKED (the revocation control failed open for those entries).
 
+  - fix: _jws.verify_block() now rejects a non-string JWS header 'alg' (e.g. a
+    JSON array/object) with a clean JWSException instead of leaking a raw
+    TypeError from the algorithm-allowlist membership test.
+
   - fix: BadgeSigned.read_from_file() now raises AssertionFormatIncorrect
     instead of a raw TypeError/AttributeError when the JWS body decodes to a
     valid-JSON non-object (array, string, number, or null).
