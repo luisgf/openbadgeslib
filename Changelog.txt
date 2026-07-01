@@ -76,6 +76,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     a completely missing verification key resolves to a clean
     SIGNATURE_ERROR instead of an uncaught exception.
 
+  - fix: BadgeSigned.read_from_file() now raises ErrorParsingFile instead of
+    a raw KeyError/TypeError when the untrusted JWS body is missing 'verify'
+    or has a non-object 'verify' field.
+
 
 * v1.1.5 - 2026-06-30
 

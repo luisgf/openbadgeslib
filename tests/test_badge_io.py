@@ -12,7 +12,7 @@ from openbadgeslib.badge import (
 )
 from openbadgeslib.keys import KeyType
 from openbadgeslib.errors import (
-    BadgeImgFormatUnsupported, AssertionFormatIncorrect, PrivateKeyReadError,
+    BadgeImgFormatUnsupported, AssertionFormatIncorrect, PrivateKeyReadError, ErrorParsingFile,
 )
 
 
@@ -231,6 +231,23 @@ class TestBadgeSignedReadFromFile:
             tmp_path, signed_svg_rsa, svg_image, lambda body: body.pop('uid'))
         with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
             with pytest.raises(AssertionFormatIncorrect):
+                BadgeSigned.read_from_file(path)
+
+    def test_missing_verify_field_raises_clean_error(self, tmp_path, signed_svg_rsa, svg_image, rsa_pub_pem):
+        # The except clause used to re-reference body['verify']['url'] while
+        # formatting its own error message, raising a fresh unwrapped
+        # KeyError instead of ErrorParsingFile.
+        path = self._badge_with_tampered_body(
+            tmp_path, signed_svg_rsa, svg_image, lambda body: body.pop('verify'))
+        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
+            with pytest.raises(ErrorParsingFile):
+                BadgeSigned.read_from_file(path)
+
+    def test_non_dict_verify_field_raises_clean_error(self, tmp_path, signed_svg_rsa, svg_image, rsa_pub_pem):
+        path = self._badge_with_tampered_body(
+            tmp_path, signed_svg_rsa, svg_image, lambda body: body.__setitem__('verify', 'not-a-dict'))
+        with patch('openbadgeslib.ob2.badge.download_file', return_value=rsa_pub_pem):
+            with pytest.raises(ErrorParsingFile):
                 BadgeSigned.read_from_file(path)
 
 
