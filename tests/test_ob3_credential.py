@@ -157,7 +157,7 @@ class TestOpenBadgeCredential:
         # Backward compat: a VC 1.1 credential (issuanceDate/expirationDate)
         # must still be readable.
         payload = _make_credential().to_jwt_payload()
-        payload['vc']['issuanceDate'] = payload['vc'].pop('validFrom')
+        payload['issuanceDate'] = payload.pop('validFrom')
         restored = OpenBadgeCredential.from_jwt_payload(payload)
         assert restored.issuance_date == datetime(2026, 1, 1, tzinfo=timezone.utc)
 
@@ -165,8 +165,8 @@ class TestOpenBadgeCredential:
         # credentialSubject may be a single object or a non-empty array; an
         # array must be accepted and its first element used.
         payload = _make_credential().to_jwt_payload()
-        subject = payload['vc']['credentialSubject']
-        payload['vc']['credentialSubject'] = [subject]
+        subject = payload['credentialSubject']
+        payload['credentialSubject'] = [subject]
         restored = OpenBadgeCredential.from_jwt_payload(payload)
         assert restored.recipient_id == 'mailto:user@example.com'
         assert restored.achievement.name == 'Badge'
@@ -187,12 +187,18 @@ class TestOpenBadgeCredential:
         assert p['iss'] == 'https://issuer.example.com'
         assert p['sub'] == 'mailto:user@example.com'
         assert p['jti'] == 'urn:uuid:test'
-        assert p['iat'] == int(datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp())
+        # OB3 native VC-JWT: validFrom maps to nbf (there is no iat claim).
+        assert p['nbf'] == int(datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp())
+        assert 'iat' not in p
 
-    def test_to_jwt_payload_contains_vc(self):
+    def test_to_jwt_payload_is_native_credential(self):
+        # OB3 native VC-JWT: the payload IS the credential (top-level members),
+        # NOT nested under a 'vc' claim.
         p = _make_credential().to_jwt_payload()
-        assert 'vc' in p
-        assert p['vc']['type'] == ['VerifiableCredential', 'OpenBadgeCredential']
+        assert 'vc' not in p
+        assert p['type'] == ['VerifiableCredential', 'OpenBadgeCredential']
+        assert p['@context'][0] == 'https://www.w3.org/ns/credentials/v2'
+        assert 'credentialSubject' in p and 'issuer' in p and 'validFrom' in p
 
     def test_to_jwt_payload_exp_present_when_expiration_set(self):
         exp = datetime(2030, 1, 1, tzinfo=timezone.utc)

@@ -222,18 +222,16 @@ class OB3Verifier:
 
     @staticmethod
     def _build_credential(payload: dict) -> OpenBadgeCredential:
-        """Validate the vc structure and registered claims, returning the
-        reconstructed credential."""
-        if "vc" not in payload:
-            raise OB3VerificationError(
-                "JWT payload does not contain a 'vc' claim — "
-                "this may be an OB 2.0 JWS token, not an OB 3.0 JWT-VC"
-            )
+        """Validate the credential structure and registered claims, returning
+        the reconstructed credential.
 
-        vc = payload["vc"]
-        if not isinstance(vc, dict):
+        OB 3.0 native VC-JWT (§8.2.4.1): the JWT payload IS the credential, so
+        it is read directly — there is no ``vc`` claim wrapper.
+        """
+        if not isinstance(payload, dict):
             raise OB3VerificationError(
-                "JWT 'vc' claim must be an object, got %s" % type(vc).__name__)
+                "JWT payload must be a JSON object, got %s" % type(payload).__name__)
+        vc = payload   # native: the payload is the credential body
 
         vc_types = vc.get("type", [])
         if isinstance(vc_types, str):
@@ -242,7 +240,8 @@ class OB3Verifier:
             vc_types = []
         if "OpenBadgeCredential" not in vc_types:
             raise OB3VerificationError(
-                "JWT 'vc' claim is not an OpenBadgeCredential (type=%r)" % (vc_types,)
+                "JWT payload is not an OpenBadgeCredential (type=%r) — this may "
+                "be an OB 2.0 JWS token, not an OB 3.0 JWT-VC" % (vc_types,)
             )
 
         try:
@@ -250,9 +249,9 @@ class OB3Verifier:
         except (KeyError, ValueError, TypeError) as exc:
             raise OB3VerificationError(f"Malformed credential payload: {exc}") from exc
 
-        # Cross-check the JWT registered claims against the vc body (when the
-        # token carries them) so a verified signature cannot pair an iss/sub
-        # with a mismatched credential issuer/subject.
+        # Cross-check the registered claims against the credential body so a
+        # verified signature cannot pair an iss/sub with a mismatched
+        # credential issuer/subject.
         iss = payload.get("iss")
         if iss is not None and iss != _claim_object_id(vc.get("issuer")):
             raise OB3VerificationError(

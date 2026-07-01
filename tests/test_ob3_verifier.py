@@ -105,7 +105,7 @@ class TestOB3VerifierVerify:
         # consumers actually read, and it must be re-checked independently.
         token = self._signed_with_vc(
             rsa_priv_pem, ob3_credential,
-            lambda p: p['vc'].__setitem__('validUntil', '2000-01-01T00:00:00Z'))
+            lambda p: p.__setitem__('validUntil', '2000-01-01T00:00:00Z'))
         with pytest.raises(OB3VerificationError, match="expired"):
             ob3_rsa_verifier.verify(token)
 
@@ -114,7 +114,7 @@ class TestOB3VerifierVerify:
     ):
         token = self._signed_with_vc(
             rsa_priv_pem, ob3_credential,
-            lambda p: p['vc'].__setitem__('validFrom', '2099-01-01T00:00:00Z'))
+            lambda p: p.__setitem__('validFrom', '2099-01-01T00:00:00Z'))
         with pytest.raises(OB3VerificationError, match="not yet valid"):
             ob3_rsa_verifier.verify(token)
 
@@ -191,26 +191,26 @@ class TestOB3VerifierVerify:
 
     def test_missing_issuer_id_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
         token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
-                                     lambda p: p['vc']['issuer'].pop('id'))
+                                     lambda p: p['issuer'].pop('id'))
         with pytest.raises(OB3VerificationError, match="vc.issuer.id"):
             ob3_rsa_verifier.verify(token)
 
     def test_missing_achievement_name_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
         def mutate(p):
-            p['vc']['credentialSubject']['achievement'].pop('name')
+            p['credentialSubject']['achievement'].pop('name')
         token = self._signed_with_vc(rsa_priv_pem, ob3_credential, mutate)
         with pytest.raises(OB3VerificationError, match="achievement.name"):
             ob3_rsa_verifier.verify(token)
 
     def test_issuer_not_an_object_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
         token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
-                                     lambda p: p['vc'].__setitem__('issuer', 'https://e/issuer'))
+                                     lambda p: p.__setitem__('issuer', 'https://e/issuer'))
         with pytest.raises(OB3VerificationError, match="must be a JSON object"):
             ob3_rsa_verifier.verify(token)
 
     def test_malformed_date_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
         token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
-                                     lambda p: p['vc'].__setitem__('validFrom', 'not-a-date'))
+                                     lambda p: p.__setitem__('validFrom', 'not-a-date'))
         with pytest.raises(OB3VerificationError, match="ISO 8601"):
             ob3_rsa_verifier.verify(token)
 
@@ -218,7 +218,7 @@ class TestOB3VerifierVerify:
         # A non-string validFrom must not leak a raw AttributeError out of
         # verify() (_parse_iso calls str.replace() on it directly).
         token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
-                                     lambda p: p['vc'].__setitem__('validFrom', 12345))
+                                     lambda p: p.__setitem__('validFrom', 12345))
         with pytest.raises(OB3VerificationError, match="ISO 8601"):
             ob3_rsa_verifier.verify(token)
 
@@ -228,23 +228,24 @@ class TestOB3VerifierVerify:
         # parses to a naive datetime, which must not leak a raw TypeError out
         # of verify() when compared against the tz-aware "now".
         token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
-                                     lambda p: p['vc'].__setitem__(field, '2026-01-01T00:00:00'))
+                                     lambda p: p.__setitem__(field, '2026-01-01T00:00:00'))
         with pytest.raises(OB3VerificationError, match="ISO 8601"):
             ob3_rsa_verifier.verify(token)
 
-    # ── a non-object 'vc' claim, or a non-str/non-list 'vc.type', must not leak
+    # ── a payload with no OB3 type, or a non-str/non-list type, must not leak
     #    a raw AttributeError/TypeError out of verify() ────────────────────────
-    @pytest.mark.parametrize('bad_vc', ['just-a-string', 12345, None, [], True])
-    def test_non_object_vc_claim_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential, bad_vc):
+    def test_missing_type_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        # OB3 native: the payload IS the credential; one carrying no
+        # OpenBadgeCredential type token must be rejected cleanly.
         token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
-                                     lambda p: p.__setitem__('vc', bad_vc))
-        with pytest.raises(OB3VerificationError, match="object"):
+                                     lambda p: p.pop('type'))
+        with pytest.raises(OB3VerificationError, match="OpenBadgeCredential"):
             ob3_rsa_verifier.verify(token)
 
     @pytest.mark.parametrize('bad_type', [None, 12345, {'not': 'a list'}])
     def test_non_list_vc_type_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential, bad_type):
         token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
-                                     lambda p: p['vc'].__setitem__('type', bad_type))
+                                     lambda p: p.__setitem__('type', bad_type))
         with pytest.raises(OB3VerificationError, match="OpenBadgeCredential"):
             ob3_rsa_verifier.verify(token)
 
@@ -256,7 +257,7 @@ class TestOB3VerifierVerify:
     ):
         token = self._signed_with_vc(
             rsa_priv_pem, ob3_credential,
-            lambda p: p['vc']['credentialSubject'].__setitem__('id', bad_id))
+            lambda p: p['credentialSubject'].__setitem__('id', bad_id))
         # Rejected even without expected_recipient (at credential-build time).
         with pytest.raises(OB3VerificationError, match="must be a string"):
             ob3_rsa_verifier.verify(token)
@@ -268,14 +269,14 @@ class TestOB3VerifierVerify:
         # clean OB3VerificationError, not a raw AttributeError from .lower().
         token = self._signed_with_vc(
             rsa_priv_pem, ob3_credential,
-            lambda p: p['vc']['credentialSubject'].__setitem__('id', 12345))
+            lambda p: p['credentialSubject'].__setitem__('id', 12345))
         with pytest.raises(OB3VerificationError):
             ob3_rsa_verifier.verify(token, expected_recipient='someone@example.com')
 
     def test_non_string_issuer_id_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
         token = self._signed_with_vc(
             rsa_priv_pem, ob3_credential,
-            lambda p: p['vc']['issuer'].__setitem__('id', 12345))
+            lambda p: p['issuer'].__setitem__('id', 12345))
         with pytest.raises(OB3VerificationError, match="must be a string"):
             ob3_rsa_verifier.verify(token)
 
@@ -287,7 +288,7 @@ class TestOB3VerifierVerify:
     ):
         def mutate(p):
             # credentialSubject as a non-empty array; 'sub' still matches its id.
-            p['vc']['credentialSubject'] = [p['vc']['credentialSubject']]
+            p['credentialSubject'] = [p['credentialSubject']]
         token = self._signed_with_vc(rsa_priv_pem, ob3_credential, mutate)
         restored = ob3_rsa_verifier.verify(token)
         assert isinstance(restored, OpenBadgeCredential)
@@ -297,7 +298,7 @@ class TestOB3VerifierVerify:
         self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential
     ):
         def mutate(p):
-            p['vc']['credentialSubject'] = [p['vc']['credentialSubject']]
+            p['credentialSubject'] = [p['credentialSubject']]
             p['sub'] = 'mailto:attacker@evil.com'
         token = self._signed_with_vc(rsa_priv_pem, ob3_credential, mutate)
         # Must be a clean OB3VerificationError, not a raw AttributeError.
@@ -356,7 +357,7 @@ class TestOB3VerifierRecipientBinding:
     def test_non_openbadge_credential_type_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
         import jwt as _jwt
         payload = ob3_credential.to_jwt_payload()
-        payload['vc']['type'] = ['VerifiableCredential']  # drop OpenBadgeCredential
+        payload['type'] = ['VerifiableCredential']  # drop OpenBadgeCredential
         token = _jwt.encode(payload, rsa_priv_pem, algorithm='RS256')
         with pytest.raises(OB3VerificationError, match="OpenBadgeCredential"):
             ob3_rsa_verifier.verify(token)
