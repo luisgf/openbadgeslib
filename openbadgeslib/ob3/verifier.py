@@ -89,7 +89,8 @@ class OB3Verifier:
     # ── verification ───────────────────────────────────────────────────────────
 
     def verify(self, token: str,
-               expected_recipient: Optional[str] = None) -> OpenBadgeCredential:
+               expected_recipient: Optional[str] = None,
+               check_status: bool = False) -> OpenBadgeCredential:
         """Verify a JWT-VC token.
 
         Returns the decoded :class:`OpenBadgeCredential` on success.
@@ -102,6 +103,12 @@ class OB3Verifier:
         ``mailto:`` URI, or a DID) to additionally require that
         ``credentialSubject.id`` matches; otherwise the caller MUST compare
         ``credential.recipient_id`` itself.
+
+        Pass ``check_status=True`` to also check the credential's
+        ``credentialStatus`` (revocation) — this performs an HTTPS fetch of the
+        referenced status list and fails closed if the credential is revoked or
+        its status cannot be determined. It is off by default because
+        verification is otherwise offline.
         """
         payload = self._decode_payload(token)
         credential = self._build_credential(payload)
@@ -119,6 +126,9 @@ class OB3Verifier:
             raise OB3VerificationError(
                 "Credential is not yet valid (validFrom %s)" % credential.issuance_date.isoformat())
 
+        if check_status:
+            self.check_status(credential)
+
         if expected_recipient is not None:
             expected = normalize_recipient_id(expected_recipient)
             if not recipient_ids_match(credential.recipient_id, expected):
@@ -128,6 +138,18 @@ class OB3Verifier:
                 )
 
         return credential
+
+    def check_status(self, credential: OpenBadgeCredential) -> None:
+        """Check the credential's ``credentialStatus`` (revocation) over the
+        network, raising :class:`OB3VerificationError` if it is revoked/
+        suspended or if the status cannot be determined (fail-closed). A
+        credential carrying no credentialStatus is a no-op.
+
+        Imported lazily so the (network-touching) status module is only pulled
+        in when a caller actually opts into status checking.
+        """
+        from .status import check_credential_status
+        check_credential_status(credential)
 
     def _decode_payload(self, token: str) -> dict:
         """Verify the signature (algorithm pinned to the key type) and return

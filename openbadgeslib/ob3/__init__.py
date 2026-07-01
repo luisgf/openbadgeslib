@@ -23,6 +23,7 @@
 from .credential import Achievement, Issuer, OpenBadgeCredential
 from .signer import OB3Signer
 from .verifier import OB3VerificationError, OB3Verifier
+from .status import check_credential_status
 
 __all__ = [
     'Achievement',
@@ -31,4 +32,5 @@ __all__ = [
     'OB3Signer',
     'OB3Verifier',
     'OB3VerificationError',
+    'check_credential_status',
 ]

@@ -97,6 +97,10 @@ class OpenBadgeCredential:
     issuance_date: Optional[datetime] = None   # defaults to now (UTC)
     expiration_date: Optional[datetime] = None
     evidence_url: Optional[str] = None
+    # Raw credentialStatus entries (Bitstring Status List / StatusList2021),
+    # normalised to a list of objects. Consumed by ob3.status to check
+    # revocation; empty when the credential carries no status.
+    credential_status: List[dict] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.id is None:
@@ -129,6 +133,10 @@ class OpenBadgeCredential:
             vc["validUntil"] = _iso(self.expiration_date)
         if self.evidence_url:
             vc["evidence"] = [{"id": self.evidence_url, "type": ["Evidence"]}]
+        if self.credential_status:
+            vc["credentialStatus"] = (
+                self.credential_status[0] if len(self.credential_status) == 1
+                else self.credential_status)
         return vc
 
     def to_jwt_payload(self) -> dict:
@@ -201,6 +209,16 @@ class OpenBadgeCredential:
         if isinstance(evidence, list) and evidence and isinstance(evidence[0], dict):
             evidence_url = evidence[0].get("id")
 
+        # credentialStatus may be a single object or an array; keep only object
+        # entries so the status checker can rely on .get() without crashing.
+        status_raw = vc.get("credentialStatus")
+        if isinstance(status_raw, dict):
+            credential_status = [status_raw]
+        elif isinstance(status_raw, list):
+            credential_status = [s for s in status_raw if isinstance(s, dict)]
+        else:
+            credential_status = []
+
         return cls(
             id=_require(vc, "id", "vc"),
             issuer=issuer,
@@ -210,6 +228,7 @@ class OpenBadgeCredential:
             issuance_date=issuance_date,
             expiration_date=expiration_date,
             evidence_url=evidence_url,
+            credential_status=credential_status,
         )
 
 
