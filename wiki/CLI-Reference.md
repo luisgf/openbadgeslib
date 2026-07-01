@@ -135,7 +135,7 @@ openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [--c
 | `-s` | `--show` | Print the assertion/credential before the result | off |
 | | `--check-status` | OB3 only: fetch the `credentialStatus` list and reject a revoked/suspended credential (requires network) | off |
 | | `--resolve-did` | OB3 only: when no trusted key is given, resolve the issuer DID (did:key/did:web) from the token to obtain the verification key | off |
-| | `--json` | Emit a machine-readable JSON result instead of the human output (exit 0 valid, non-zero otherwise) | off |
+| | `--json` | Emit a machine-readable JSON result instead of the human output (exit `0` = valid and issuer-trusted, `2` = valid signature but issuer untrusted, `1` = failure) | off |
 | `-V` | `--ob-version {2,3}` | `2` = JWS, `3` = JWT-VC | `2` |
 | `-d` | `--debug` | Show debug messages at runtime | off |
 | `-v` | `--version` | Print version and exit | — |
@@ -173,7 +173,7 @@ With `--resolve-did` and no explicit key, the issuer DID is read from the (still
 
 ### JSON output
 
-With `--json`, the verifier prints a single JSON object instead of the human `[+]/[-]/[~]` lines, and exits `0` when the badge is valid and non-zero otherwise — convenient for CI gates and services. Common fields: `valid` (bool), `ob_version` (`"2"`/`"3"`), `recipient`, and `reason` (`null` on success, a message on failure). OB2 adds `trusted` (operator key vs badge-embedded) and `status` (`VALID`/`EXPIRED`/`REVOKED`/…); OB3 adds `issuer`, `achievement`, `issued_on`, `expires`, `evidence`, and `issuer_did` when the key came from `--resolve-did`.
+With `--json`, the verifier prints a single JSON object instead of the human `[+]/[-]/[~]` lines. Its exit status reflects issuer trust, not merely signature validity: `0` when the badge is valid **and** the issuer is trusted, `2` when the signature is valid but the issuer is not anchored (an OB2 badge-embedded key or a self-asserted `did:key`), and `1` on any failure — so a CI gate keying on exit `0` never accepts a signature that does not prove issuer identity. Common fields: `valid` (bool), `ob_version` (`"2"`/`"3"`), `recipient`, `trusted` (bool), and `reason` (`null` on success, a message otherwise). OB2 adds `status` (`VALID`/`EXPIRED`/`REVOKED`/…); OB3 adds `issuer`, `achievement`, `issued_on`, `expires`, `evidence`, and `issuer_did` when the key came from `--resolve-did`.
 
 ```sh
 $ openbadges-verifier -i badge.svg -r recipient@example.com -V 3 -k verify.pem --json
