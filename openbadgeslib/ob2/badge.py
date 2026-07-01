@@ -148,11 +148,19 @@ class Badge():
         """ Create a Badge Object reading params from config.ini """
 
         """ Keys """
-        with open(conf[badge]['private_key'], 'rb') as key:
-            privkey_pem = key.read()
+        try:
+            with open(conf[badge]['private_key'], 'rb') as key:
+                privkey_pem = key.read()
+        except OSError as exc:
+            raise PrivateKeyReadError(
+                'Unable to read private key file %s: %s' % (conf[badge]['private_key'], exc)) from exc
 
-        with open(conf[badge]['public_key'], 'rb') as key:
-            pubkey_pem = key.read()
+        try:
+            with open(conf[badge]['public_key'], 'rb') as key:
+                pubkey_pem = key.read()
+        except OSError as exc:
+            raise PublicKeyReadError(
+                'Unable to read public key file %s: %s' % (conf[badge]['public_key'], exc)) from exc
 
         key_type = detect_key_type(pubkey_pem)
 

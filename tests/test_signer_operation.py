@@ -10,7 +10,7 @@ from openbadgeslib.openbadges_signer import _safe_filename_component
 from openbadgeslib.badge import (Badge, BadgeType, BadgeImgType, Assertion,
                                  BadgeSigned, extract_svg_assertion,
                                  extract_png_assertion)
-from openbadgeslib.errors import ErrorSigningFile
+from openbadgeslib.errors import ErrorSigningFile, PrivateKeyReadError, PublicKeyReadError
 
 
 class check_badge(unittest.TestCase):
@@ -217,6 +217,26 @@ class check_signer(unittest.TestCase):
 
 
 # ── pytest-style tests using session fixtures from conftest.py ─────────────────
+
+
+class TestCreateFromConfMissingKeyFile:
+    """create_from_conf() must not leak a raw FileNotFoundError/OSError when a
+    configured key path is missing — it must raise the same LibOpenBadgesException
+    subclass Badge.__init__ already raises for corrupt-but-present key material."""
+
+    def test_missing_private_key_file_raises_clean_error(self):
+        cf = ConfParser('./config1.ini')
+        conf = cf.read_conf()
+        conf['badge_test_1']['private_key'] = '/nonexistent/priv.pem'
+        with pytest.raises(PrivateKeyReadError):
+            Badge.create_from_conf(conf, 'badge_test_1')
+
+    def test_missing_public_key_file_raises_clean_error(self):
+        cf = ConfParser('./config1.ini')
+        conf = cf.read_conf()
+        conf['badge_test_1']['public_key'] = '/nonexistent/pub.pem'
+        with pytest.raises(PublicKeyReadError):
+            Badge.create_from_conf(conf, 'badge_test_1')
 
 
 class TestSignBadgeRoundTrip:
