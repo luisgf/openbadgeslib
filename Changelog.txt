@@ -104,6 +104,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     raw configparser exception for malformed INI syntax (duplicate
     section/option, a value line with no section header).
 
+  - fix: openbadges-verifier now enforces -l/--local and -k/--pubkey as
+    mutually exclusive (as documented in the CLI reference) instead of
+    silently letting -l win when both are given.
+
 
 * v1.1.5 - 2026-06-30
 

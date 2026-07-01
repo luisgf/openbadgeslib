@@ -72,11 +72,14 @@ def build_parser() -> argparse.ArgumentParser:
                         help='Specify the input file to verify the signature')
     parser.add_argument('-r', '--receptor', required=True,
                         help='Specify the email of the receptor of the badge')
-    parser.add_argument('-l', '--local', metavar='BADGE',
-                        help='Do the verification using the local configuration')
-    parser.add_argument('-k', '--pubkey', metavar='FILE',
-                        help='Path to the trusted PEM public key file used for '
-                             'verification (OB2 and OB3)')
+    trusted_key_group = parser.add_mutually_exclusive_group()
+    trusted_key_group.add_argument(
+        '-l', '--local', metavar='BADGE',
+        help='Do the verification using the local configuration')
+    trusted_key_group.add_argument(
+        '-k', '--pubkey', metavar='FILE',
+        help='Path to the trusted PEM public key file used for '
+             'verification (OB2 and OB3)')
     parser.add_argument('-s', '--show', action='store_true',
                         help='Show the assertion/credential of the OpenBadge being verified.')
     parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
