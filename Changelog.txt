@@ -44,6 +44,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     instead of a raw TypeError when the untrusted 'expires' claim is not a
     numeric timestamp.
 
+  - fix: extract_png_assertion() now wraps baking.extract_png() the same way
+    its SVG counterpart does, raising ErrorParsingFile instead of letting a
+    raw exception escape on a malformed/garbage PNG.
+
 
 * v1.1.5 - 2026-06-30
 
