@@ -27,7 +27,7 @@ $ ls myissuer
 config.ini  images  keys  log
 ```
 
-If the directory already exists the script raises `FileExistsError`. Edit the generated `config.ini` before running any other command — see [[Configuration]].
+If the target path already exists the script prints `[!] <path> already exists` and exits with a non-zero status. Edit the generated `config.ini` before running any other command — see [[Configuration]].
 
 ## openbadges-keygenerator
 
@@ -200,4 +200,4 @@ $ openbadges-publish -o ./public -V 3
 [i] Recipients verify credentials offline using the issuer's public key.
 ```
 
-If the output directory already exists, the OB2 path raises `FileExistsError`.
+If the output directory already exists, the OB2 path prints `[!] <path> already exists` and exits with a non-zero status.
