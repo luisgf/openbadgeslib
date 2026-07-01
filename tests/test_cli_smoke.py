@@ -303,6 +303,37 @@ def test_signer_ob3_then_verify_roundtrip(tmp_path, capsys):
     assert 'valid' in capsys.readouterr().out.lower()
 
 
+def test_signer_ob1_missing_log_dir_still_saves_badge(tmp_path, svg_rsa_badge, capsys):
+    """A missing/unwritable base_log must not crash OB1 signing or lose the
+    already-signed badge: the badge is saved and a clean [!] message is printed
+    instead of a raw OSError traceback (mirrors the OB2 signer's handling)."""
+    import argparse
+    from pathlib import Path
+    from openbadgeslib import openbadges_signer
+
+    # base_log points at a directory that does not exist (its parent too).
+    conf = {
+        'paths': {'base_log': str(tmp_path / 'nonexistent' / 'log')},
+        'logs': {'signer': 'signer.log'},
+    }
+    badge_file_out = str(tmp_path / 'badge_out.svg')
+    args = argparse.Namespace(receptor='user@example.com', expires=None,
+                              mail_badge=False)
+
+    # Bypass the network reachability precheck (the badge's URLs are unreachable
+    # in tests); the path under test is the save/log ordering after it.
+    with patch.object(openbadges_signer.Badge, 'urls_has_problems',
+                      return_value=False):
+        openbadges_signer._sign_ob1(args, conf, 'badge_test_1', svg_rsa_badge,
+                                    badge_file_out, evidence=None)
+
+    out = capsys.readouterr().out
+    # The signed badge is written despite the log failure ...
+    assert Path(badge_file_out).is_file()
+    # ... and the failure is reported cleanly rather than as a traceback.
+    assert 'Could not write sign log' in out
+
+
 # ── openbadges-publish ──────────────────────────────────────────────────────────
 
 def test_publish_ob3_prints_info(tmp_path, capsys):

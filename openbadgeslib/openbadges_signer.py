@@ -233,15 +233,21 @@ def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
     badge_signed = sf.sign_badge(badge_obj)
 
     if badge_signed:
+        # Persist the signed badge first, then append to the audit log. Writing
+        # the log first and unguarded meant a missing/unwritable base_log raised
+        # a raw OSError out of the CLI and lost the already-signed badge; mirror
+        # the OB2 path — save, then log inside try/except.
+        badge_signed.save_to_file(badge_file_out)
+
         sign_log = os.path.join(conf['paths']['base_log'], conf['logs']['signer'])
-        msg = '%s %s SIGNED for %s UID %s\n' \
+        msg = '%s %s SIGNED for %s UID %s' \
             % (datetime.today().isoformat(), badge,
                badge_signed.get_identity(), badge_signed.get_serial_num())
-
-        with open(sign_log, 'a') as file:
-            file.write(msg)
-
-        badge_signed.save_to_file(badge_file_out)
+        try:
+            with open(sign_log, 'a') as file:
+                file.write(msg + '\n')
+        except OSError as err:
+            print('[!] Could not write sign log: %s' % err)
 
         if bool(args.mail_badge):
             server = conf['smtp']['smtp_server']
@@ -266,7 +272,7 @@ def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
                 # crashing with a traceback.
                 print('[!] Could not send mail: %s' % err)
 
-        print('%s at: %s' % (msg.strip('\n'), badge_file_out))
+        print('%s at: %s' % (msg, badge_file_out))
 
 
 def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
