@@ -63,7 +63,7 @@ The `-l BADGE` flag pins the trusted public key from `config.ini`; `-k / --pubke
 
 ### Sign
 
-Pass `-V 3`. The signer reuses the same badge section and auto-detects the algorithm from the private key (RS256 for RSA, ES256 for ECC). The `-e` / `-E` evidence choice still applies:
+Pass `-V 3`. The signer reuses the same badge section and auto-detects the algorithm from the private key (RS256 for RSA, ES256 for ECC, EdDSA for Ed25519). The `-e` / `-E` evidence choice still applies:
 
 ```sh
 openbadges-signer -c ./config/config.ini -b 1 \

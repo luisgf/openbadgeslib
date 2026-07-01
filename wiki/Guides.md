@@ -39,7 +39,7 @@ openbadges-signer -c ./config/config.ini -b 1 \
     -o /tmp/ -V 3
 ```
 
-The signer auto-detects the signing algorithm from the private key (`RS256` for RSA keys, `ES256` for ECC keys). The issuer block is built from the `[issuer]` section (using `publish_url`, falling back to `url`), and the achievement from the badge section (`badge`, `name`, `description`, `criteria_narrative` or `criteria`, `image`). The recipient email is normalized to a `mailto:` identifier inside the credential.
+The signer auto-detects the signing algorithm from the private key (`RS256` for RSA keys, `ES256` for ECC keys, `EdDSA` for Ed25519 keys). The issuer block is built from the `[issuer]` section (using `publish_url`, falling back to `url`), and the achievement from the badge section (`badge`, `name`, `description`, `criteria_narrative` or `criteria`, `image`). The recipient email is normalized to a `mailto:` identifier inside the credential.
 
 For the differences between the two formats, see [[OB2 vs OB3]].
 

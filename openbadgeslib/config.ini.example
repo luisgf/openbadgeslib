@@ -44,7 +44,7 @@ verify_key  = https://www.issuer.badge/issuer/badge_1/verify_rsa_key.pem
 badge       = https://www.issuer.badge/issuer/badge_1/badge.json
 private_key = ${paths:base_key}/sign_rsa_key_1.pem
 public_key  = ${paths:base_key}/verify_rsa_key_1.pem
-; key_type selects the algorithm for openbadges-keygenerator: RSA (default) or ECC
+; key_type selects the algorithm for openbadges-keygenerator: RSA (default), ECC, or ED25519
 key_type    = RSA
 ;alignement  =
 ;tags        =
