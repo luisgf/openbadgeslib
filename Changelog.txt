@@ -15,6 +15,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     JSON array/object) with a clean JWSException instead of leaking a raw
     TypeError from the algorithm-allowlist membership test.
 
+  - fix: openbadges-verifier's OB2 path now reports a clean error instead of an
+    uncaught traceback for an unsupported file extension (and any other library
+    exception), by catching LibOpenBadgesException at the CLI boundary.
+
   - fix: BadgeSigned.read_from_file() now raises AssertionFormatIncorrect
     instead of a raw TypeError/AttributeError when the JWS body decodes to a
     valid-JSON non-object (array, string, number, or null).
