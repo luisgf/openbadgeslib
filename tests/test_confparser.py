@@ -31,6 +31,43 @@ class TestReadConfBaseValidation:
         conf = ConfParser(path).read_conf()
         assert conf['paths']['base'] == str(tmp_path)
 
+    def test_relative_base_with_suffix_keeps_suffix(self, tmp_path):
+        # './data' must resolve to <config_dir>/data, not be truncated to
+        # <config_dir> (which would silently misplace keys/logs/images).
+        import os
+        path = _write(tmp_path, '[paths]\nbase = ./data\n')
+        conf = ConfParser(path).read_conf()
+        assert conf['paths']['base'] == os.path.join(str(tmp_path), 'data')
+
+    def test_parent_relative_base_is_resolved(self, tmp_path):
+        import os
+        path = _write(tmp_path, '[paths]\nbase = ../shared\n')
+        conf = ConfParser(path).read_conf()
+        assert conf['paths']['base'] == os.path.abspath(
+            os.path.join(str(tmp_path), '..', 'shared'))
+
+    def test_plain_relative_base_anchored_to_config_dir(self, tmp_path):
+        # A relative base with no leading dot is anchored to the config-file
+        # directory, not left relative to the process CWD.
+        import os
+        path = _write(tmp_path, '[paths]\nbase = badgedata\n')
+        conf = ConfParser(path).read_conf()
+        assert conf['paths']['base'] == os.path.join(str(tmp_path), 'badgedata')
+
+    def test_hidden_dir_base_is_not_truncated(self, tmp_path):
+        # A directory literally named '.hidden' must be kept, not dropped by the
+        # old base[0] == '.' shortcut.
+        import os
+        path = _write(tmp_path, '[paths]\nbase = .hidden\n')
+        conf = ConfParser(path).read_conf()
+        assert conf['paths']['base'] == os.path.join(str(tmp_path), '.hidden')
+
+    def test_absolute_base_is_left_unchanged(self, tmp_path):
+        abs_base = str(tmp_path / 'keys')
+        path = _write(tmp_path, '[paths]\nbase = %s\n' % abs_base)
+        conf = ConfParser(path).read_conf()
+        assert conf['paths']['base'] == abs_base
+
     def test_nonexistent_file_returns_none(self, tmp_path):
         assert ConfParser(str(tmp_path / 'missing.ini')).read_conf() is None
 

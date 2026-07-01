@@ -87,10 +87,16 @@ class ConfParser():
             raise ValueError(
                 "Configuration file %s has an empty [paths] 'base' value" % self.config_file)
 
-        if base[0] == '.':
-            abs_path = os.path.dirname(self.config_file)
-            full_path = os.path.abspath(abs_path)
-            self.parser['paths']['base'] = full_path
+        # A relative base is resolved against the directory that contains the
+        # config file (not the process CWD), so ${base}/... paths land where the
+        # operator expects no matter where the tool is launched from. The old
+        # check only matched a bare '.' and replaced the *whole* value with the
+        # config dir — silently dropping the suffix of './data' or '../shared'
+        # (and mis-handling a real '.hidden' dir), which could redirect private
+        # keys and logs to the wrong tree with no error.
+        if not os.path.isabs(base):
+            base_dir = os.path.dirname(self.config_file)
+            self.parser['paths']['base'] = os.path.abspath(os.path.join(base_dir, base))
 
         # ExtendedInterpolation resolves ${...} references lazily, only when a
         # value is actually read — a bad reference anywhere in the file would
