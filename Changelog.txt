@@ -6,6 +6,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * Unreleased
 
+  - fix: OB2 Verifier.__init__ now raises VerifierExceptions instead of a raw
+    UnknownKeyType when a supplied verify_key is not a recognizable PEM key,
+    matching the guard OB3Verifier already has.
+
   - fix: Badge.create_from_conf() now raises PrivateKeyReadError/
     PublicKeyReadError instead of a raw FileNotFoundError/OSError when a
     configured private_key/public_key path does not exist.

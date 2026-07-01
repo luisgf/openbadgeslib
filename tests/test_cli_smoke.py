@@ -226,6 +226,23 @@ def test_verifier_local_missing_pubkey_file_exits_cleanly(tmp_path):
         openbadges_verifier._resolve_trusted_pubkey(args)
 
 
+def test_verifier_garbage_pubkey_file_exits_cleanly(tmp_path, svg_rsa_badge, capsys):
+    # A non-PEM --pubkey file must be reported via the CLI's '[-] ...' error
+    # path (VerifierExceptions), not a raw traceback from detect_key_type().
+    import pytest
+    from openbadgeslib import openbadges_verifier
+    badge_file = _make_signed_ob2_svg(tmp_path, svg_rsa_badge)
+    garbage = tmp_path / 'garbage.pem'
+    garbage.write_bytes(b'this is not a pem key at all, just garbage text')
+
+    argv = ['openbadges-verifier', '-i', str(badge_file),
+            '-r', 'recipient@example.com', '-V', '2', '-k', str(garbage)]
+    with patch.object(sys, 'argv', argv):
+        with pytest.raises(SystemExit):
+            openbadges_verifier.main()
+    assert '[-]' in capsys.readouterr().out
+
+
 def test_verifier_local_and_pubkey_are_mutually_exclusive():
     # wiki/CLI-Reference.md documents -l/-k as mutually exclusive; enforce
     # that in argparse itself instead of silently letting -l win.
