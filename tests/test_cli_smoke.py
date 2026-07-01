@@ -16,6 +16,21 @@ def test_init_creates_directory_layout(tmp_path):
         assert (target / sub).is_dir()
 
 
+def test_init_creates_directories_with_restrictive_permissions(tmp_path):
+    # The keys/ subdirectory will hold private key material; openbadges_init
+    # applies a 0o077 umask around the mkdir calls so every created directory
+    # (not just keys/) ends up owner-only (0700), not world/group readable.
+    import os
+    import stat
+    from openbadgeslib import openbadges_init
+    target = tmp_path / 'config'
+    with patch.object(sys, 'argv', ['openbadges-init', str(target)]):
+        openbadges_init.main()
+    for path in (target, target / 'keys', target / 'images', target / 'log'):
+        mode = stat.S_IMODE(os.stat(path).st_mode)
+        assert mode == 0o700, '%s has mode %o, expected 0700' % (path, mode)
+
+
 # ── openbadges-keygenerator honours key_type from the badge profile ─────────────
 
 def _write_keygen_config(tmp_path, key_type):
