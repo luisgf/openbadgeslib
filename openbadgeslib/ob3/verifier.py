@@ -29,7 +29,7 @@ import jwt.exceptions
 from .credential import OpenBadgeCredential
 from ..errors import ErrorParsingFile, UnknownKeyType, LibOpenBadgesException
 from ..keys import KeyType, detect_key_type, key_to_pem
-from ..util import normalize_recipient_id
+from ..util import normalize_recipient_id, recipient_ids_match
 from .. import baking
 
 # Signature algorithms accepted per key family. The signer only ever emits the
@@ -120,7 +120,7 @@ class OB3Verifier:
 
         if expected_recipient is not None:
             expected = normalize_recipient_id(expected_recipient)
-            if credential.recipient_id != expected:
+            if not recipient_ids_match(credential.recipient_id, expected):
                 raise OB3VerificationError(
                     "Recipient mismatch: credential is for %s, expected %s"
                     % (credential.recipient_id, expected)

@@ -289,6 +289,28 @@ class TestOB3VerifierRecipientBinding:
         restored = ob3_rsa_verifier.verify(token, expected_recipient=did)
         assert restored.recipient_id == did
 
+    def test_mixed_case_mailto_recipient_still_matches(
+        self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential
+    ):
+        # The email was baked in with one casing at sign time; verifying with
+        # a differently-cased spelling of the same address must still match.
+        from dataclasses import replace
+        cred = replace(ob3_credential, recipient_id='mailto:John@Example.com')
+        token = ob3_rsa_signer.sign(cred)
+        restored = ob3_rsa_verifier.verify(token, expected_recipient='john@example.com')
+        assert restored.recipient_id == 'mailto:John@Example.com'
+
+    def test_case_sensitive_did_mismatch_still_raises(
+        self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential
+    ):
+        # Unlike mailto: URIs, DIDs are compared exactly — a differently-cased
+        # DID must still be rejected as a mismatch.
+        from dataclasses import replace
+        cred = replace(ob3_credential, recipient_id='did:example:ABC123')
+        token = ob3_rsa_signer.sign(cred)
+        with pytest.raises(OB3VerificationError, match="mismatch"):
+            ob3_rsa_verifier.verify(token, expected_recipient='did:example:abc123')
+
     def test_non_openbadge_credential_type_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
         import jwt as _jwt
         payload = ob3_credential.to_jwt_payload()

@@ -69,9 +69,26 @@ def normalize_recipient_id(value: Optional[str]) -> Optional[str]:
     """
     if value is None:
         return None
-    if not value.startswith('mailto:') and '@' in value:
+    if not value.lower().startswith('mailto:') and '@' in value:
         return 'mailto:' + value
     return value
+
+
+def recipient_ids_match(a: Optional[str], b: Optional[str]) -> bool:
+    """Compare two credentialSubject.id values for recipient binding.
+
+    A ``mailto:`` URI is compared case-insensitively (RFC 6068 treats the
+    scheme as case-insensitive, and email addresses are conventionally
+    treated the same way), so a recipient who signed with one casing and
+    verifies with another is not wrongly rejected. Anything else (in
+    particular a DID) is compared exactly, since DID method-specific
+    identifiers can be case-sensitive.
+    """
+    if a is None or b is None:
+        return a == b
+    if a.lower().startswith('mailto:') and b.lower().startswith('mailto:'):
+        return a.lower() == b.lower()
+    return a == b
 
 
 def hash_email(email: StrOrBytes, salt: StrOrBytes) -> bytes:
