@@ -45,7 +45,7 @@ from .keys import detect_key_type, alg_for_key_type
 from .errors import BadgeImgFormatUnsupported
 from .confparser import read_config_or_exit, resolve_badge_section
 from .logs import enable_debug_logging
-from .ob2 import Signer, Badge, BadgeImgType, BadgeType
+from .ob1 import Signer, Badge, BadgeImgType, BadgeType
 from .mail import BadgeMail
 from .util import __version__, normalize_recipient_id
 
@@ -70,12 +70,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('-o', '--output', default=os.path.curdir,
                         help='Specify the output directory to save the badge.')
     parser.add_argument('-M', '--mail-badge', action='store_true', help='Send Badge to user mail')
+    parser.add_argument('-H', '--hosted', action='store_true',
+                        help="OB2 only (-V 2): use HostedBadge verification (publish the "
+                             "assertion JSON at its own URL) instead of a SignedBadge JWS. "
+                             "Requires 'hosted_assertions_base' in the badge config section.")
     parser.add_argument('-e', '--evidence', help='Set an URL to the user evidence')
     parser.add_argument('-E', '--no-evidence', action='store_true', help='Do not use evidence')
     parser.add_argument('-x', '--expires', type=int, help='Set badge expiration after x days.')
-    parser.add_argument('-V', '--ob-version', choices=['2', '3'], default='2',
+    parser.add_argument('-V', '--ob-version', choices=['1', '2', '3'], default='3',
                         metavar='VERSION',
-                        help='OpenBadges specification version: 2 (default, JWS) or 3 (JWT-VC).')
+                        help='OpenBadges specification version: 1 (legacy JWS), '
+                             '2 (strict OB 2.0 JWS), or 3 (default, JWT-VC).')
     parser.add_argument('-d', '--debug', action='store_true', help='Show debug messages in runtime.')
     parser.add_argument('-v', '--version', action='version', version=__version__)
     return parser
@@ -120,19 +125,103 @@ def main() -> None:
 
         if args.ob_version == '3':
             _sign_ob3(args, conf, badge, badge_obj, badge_file_out, evidence)
-        else:
+        elif args.ob_version == '2':
             _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence)
+        else:
+            _sign_ob1(args, conf, badge, badge_obj, badge_file_out, evidence)
 
 
 def _sign_ob2(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
               badge_obj: Badge, badge_file_out: str, evidence: Optional[str]) -> None:
-    """Sign a badge using OpenBadges 2.0 (JWS)."""
+    """Sign a badge using strict OpenBadges 2.0 (SignedBadge JWS or HostedBadge)."""
+    import json
+    import uuid
+    from urllib.parse import urljoin
+    from .ob2 import OB2Signer, Assertion, IdentityObject, Verification
+
+    badge_section = conf[badge]
+
+    # create_from_conf always populates these for a valid badge section.
+    assert (badge_obj.json_url is not None and badge_obj.key_type is not None
+            and badge_obj.image is not None and badge_obj.privkey_pem is not None)
+
+    # Recipient: hashed email + a fresh random salt.
+    salt = os.urandom(16).hex()
+    recipient = IdentityObject.create(args.receptor, salt=salt)
+
+    if args.hosted:
+        hosted_base = badge_section.get('hosted_assertions_base')
+        if not hosted_base:
+            sys.exit("[!] -V 2 -H (hosted) requires 'hosted_assertions_base' in the "
+                     "badge's config section.")
+        base = hosted_base if hosted_base.endswith('/') else hosted_base + '/'
+        assertion_id: Optional[str] = urljoin(base, '%s.json' % uuid.uuid4().hex)
+        verification = Verification(type='HostedBadge')
+    else:
+        creator = badge_section.get('crypto_key')
+        if not creator:
+            sys.exit("[!] -V 2 (signed) requires 'crypto_key' (the CryptographicKey URL) "
+                     "in the badge's config section.")
+        assertion_id = None   # auto-generated as urn:uuid:…
+        verification = Verification(type='SignedBadge', creator=creator)
+
+    issued_on = datetime.now(tz=timezone.utc)
+    expires = issued_on + timedelta(days=args.expires) if args.expires else None
+
+    assertion = Assertion(
+        recipient=recipient,
+        badge=badge_obj.json_url,
+        verification=verification,
+        id=assertion_id,
+        issued_on=issued_on,
+        expires=expires,
+        image=badge_obj.image_url,
+        evidence=evidence,
+    )
+
+    algorithm = alg_for_key_type(badge_obj.key_type)
+    logger.debug("OB2 sign: key_type=%s algorithm=%s hosted=%s image_type=%s",
+                 badge_obj.key_type, algorithm, args.hosted, badge_obj.image_type)
+
+    signer = OB2Signer(privkey_pem=badge_obj.privkey_pem, algorithm=algorithm)
+    if badge_obj.image_type is BadgeImgType.SVG:
+        signed_bytes = signer.sign_into_svg(assertion, badge_obj.image)
+    else:
+        signed_bytes = signer.sign_into_png(assertion, badge_obj.image)
+
+    with open(badge_file_out, 'wb') as f:
+        f.write(signed_bytes)
+
+    msg = '%s %s OB2 SIGNED for %s' % (datetime.today().isoformat(), badge, args.receptor)
+    sign_log = os.path.join(conf['paths']['base_log'], conf['logs']['signer'])
+    try:
+        with open(sign_log, 'a') as file:
+            file.write(msg + '\n')
+    except OSError as err:
+        print('[!] Could not write sign log: %s' % err)
+    print('%s at: %s' % (msg, badge_file_out))
+
+    if args.hosted:
+        hosted_out = os.path.splitext(badge_file_out)[0] + '.assertion.json'
+        with open(hosted_out, 'w', encoding='ascii') as f:
+            f.write(json.dumps(assertion.to_dict(), sort_keys=True, ensure_ascii=True))
+        print('[i] Publish the hosted assertion JSON %s on your web server so it is '
+              'retrievable at: %s' % (hosted_out, assertion.id))
+
+    if args.mail_badge:
+        print('[i] --mail-badge is not supported for -V 2 yet; the badge was saved '
+              'but not emailed.')
+
+
+def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
+              badge_obj: Badge, badge_file_out: str, evidence: Optional[str]) -> None:
+    """Sign a badge using OpenBadges 1.0 (legacy JWS)."""
     if args.expires:
         expiration = int(time.time()) + args.expires * 86400
     else:
         expiration = None
 
-    logger.debug("OB2 sign: key_type=%s image_type=%s expires=%s evidence=%s",
+    logger.debug("OB1 sign: key_type=%s image_type=%s expires=%s evidence=%s",
                  badge_obj.key_type, badge_obj.image_type, expiration, evidence)
 
     # Checking url reachability..

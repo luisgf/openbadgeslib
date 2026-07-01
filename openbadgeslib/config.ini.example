@@ -42,6 +42,12 @@ image       = https://www.issuer.badge/issuer/badge_1/badge1.svg
 criteria    = https://www.issuer.badge/issuer/badge_1/criteria.html
 verify_key  = https://www.issuer.badge/issuer/badge_1/verify_rsa_key.pem
 badge       = https://www.issuer.badge/issuer/badge_1/badge.json
+; OpenBadges 2.0 (-V 2): URL of this badge's CryptographicKey JSON-LD document
+; (published by openbadges-publish as <badge>/key.json). Used as verification.creator.
+crypto_key  = https://www.issuer.badge/issuer/badge_1/key.json
+; OpenBadges 2.0 hosted mode (openbadges-signer -V 2 -H): base URL under which
+; per-recipient hosted assertion JSON files are published for verification.
+hosted_assertions_base = https://www.issuer.badge/issuer/badge_1/assertions/
 private_key = ${paths:base_key}/sign_rsa_key_1.pem
 public_key  = ${paths:base_key}/verify_rsa_key_1.pem
 ; key_type selects the algorithm for openbadges-keygenerator: RSA (default), ECC, or ED25519
@@ -58,6 +64,8 @@ image       = https://www.issuer.badge/issuer/badge_2/badge2.svg
 criteria    = https://www.issuer.badge/issuer/badge_2/criteria.html
 verify_key  = https://www.issuer.badge/issuer/badge_2/verify_rsa_key.pem
 badge       = https://www.issuer.badge/issuer/badge_2/badge.json
+crypto_key  = https://www.issuer.badge/issuer/badge_2/key.json
+hosted_assertions_base = https://www.issuer.badge/issuer/badge_2/assertions/
 private_key = ${paths:base_key}/sign_rsa_key_2.pem
 public_key  = ${paths:base_key}/verify_rsa_key_2.pem
 key_type    = RSA
