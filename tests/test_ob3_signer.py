@@ -3,6 +3,7 @@ import pytest
 from xml.dom.minidom import parseString
 
 from openbadgeslib.ob3 import OB3Signer
+from openbadgeslib.errors import ErrorSigningFile
 
 
 # ── OB3Signer construction ─────────────────────────────────────────────────────
@@ -80,6 +81,18 @@ class TestOB3SignerSign:
         assert 'vc' in payload
         assert payload['iss'] == ob3_credential.issuer.id
         assert payload['sub'] == ob3_credential.recipient_id
+
+    def test_sign_rsa_key_with_ecc_algorithm_raises_clean_error(self, rsa_priv_pem, ob3_credential):
+        # A supported-but-mismatched algorithm/key-type pair must not leak a
+        # raw jwt.exceptions.InvalidKeyError out of sign().
+        signer = OB3Signer(privkey_pem=rsa_priv_pem, algorithm='ES256')
+        with pytest.raises(ErrorSigningFile):
+            signer.sign(ob3_credential)
+
+    def test_sign_ecc_key_with_rsa_algorithm_raises_clean_error(self, ecc_priv_pem, ob3_credential):
+        signer = OB3Signer(privkey_pem=ecc_priv_pem, algorithm='RS256')
+        with pytest.raises(ErrorSigningFile):
+            signer.sign(ob3_credential)
 
 
 # ── sign_into_svg() ────────────────────────────────────────────────────────────
