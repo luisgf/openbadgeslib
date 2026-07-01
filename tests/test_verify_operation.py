@@ -393,6 +393,33 @@ class TestVerifierConstructorKeyTypeValidation:
             Verifier(verify_key=b'this is not a pem key at all, just garbage text',
                      identity='foo@example.com')
 
+    def test_rsa_key_object_is_accepted(self, rsa_pub_pem):
+        # A live RSA key object (not PEM bytes) must be accepted at
+        # construction — the verification path goes through key_to_pem(), so
+        # the constructor guard must too.
+        from openbadgeslib.keys import KeyRSA
+        k = KeyRSA()
+        k.read_public_key(rsa_pub_pem)
+        v = Verifier(verify_key=k.get_pub_key(), identity='foo@example.com')
+        assert v.verify_key is not None
+
+    def test_ecc_key_object_is_accepted(self, ecc_pub_pem):
+        from openbadgeslib.keys import KeyECC
+        k = KeyECC()
+        k.read_public_key(ecc_pub_pem)
+        v = Verifier(verify_key=k.get_pub_key(), identity='foo@example.com')
+        assert v.verify_key is not None
+
+    def test_key_object_verifies_badge(self, badge_for_verify_rsa, rsa_pub_pem):
+        # End-to-end: a key object accepted at construction must actually work
+        # for verification.
+        from openbadgeslib.keys import KeyRSA
+        badge, identity = badge_for_verify_rsa
+        k = KeyRSA()
+        k.read_public_key(rsa_pub_pem)
+        v = Verifier(verify_key=k.get_pub_key(), identity=identity)
+        assert v.check_jws_signature(badge).status is BadgeStatus.VALID
+
 
 class TestEmbeddedKeyFallback:
     """The verify_key=None path trusts the key embedded in the badge itself —

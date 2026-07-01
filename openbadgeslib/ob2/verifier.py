@@ -25,7 +25,7 @@ from typing import Any, Optional
 
 from .badge import BadgeStatus
 from ..util import hash_email, download_file, show_ecc_disclaimer
-from ..keys import KeyType, detect_key_type
+from ..keys import KeyType, detect_key_type, key_to_pem
 from .._jws.exceptions import JWSException
 from .._jws import verify_block as jws_verify_block
 from .._jws import utils as jws_utils
@@ -54,8 +54,11 @@ class Verifier():
             # (_allowed_algs_for_key) re-derives the key type itself from the
             # key it verifies against. This call exists only to reject an
             # unrecognizable verify_key early, with a clean exception.
+            # Wrap in key_to_pem() so a live RSA/ecdsa key object — which the
+            # verification path already accepts — is not rejected here, mirroring
+            # OB3Verifier.__init__.
             try:
-                detect_key_type(self.verify_key)
+                detect_key_type(key_to_pem(self.verify_key))
             except UnknownKeyType as exc:
                 raise VerifierExceptions(str(exc)) from exc
 
