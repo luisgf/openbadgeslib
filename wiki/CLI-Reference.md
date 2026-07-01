@@ -31,7 +31,7 @@ If the target path already exists the script prints `[!] <path> already exists` 
 
 ## openbadges-keygenerator
 
-Generates a PEM key pair (private signing key + public verification key) for a badge section. The key algorithm is read from the badge's `key_type` field (`RSA` or `ECC`; default `RSA`), not from a command-line flag. With no `-g`, it prints help and exits.
+Generates a PEM key pair (private signing key + public verification key) for a badge section. The key algorithm is read from the badge's `key_type` field (`RSA`, `ECC`, or `ED25519`; default `RSA`), not from a command-line flag. With no `-g`, it prints help and exits.
 
 ### Synopsis
 
@@ -111,7 +111,7 @@ $ openbadges-signer -c ./config/config.ini -b 1 \
 2026-04-22T10:00:00 badge_1 OB3 SIGNED for recipient@example.com at: /tmp/badge_1_recipient@example.com.svg
 ```
 
-For OB3 the signer auto-detects the algorithm from the private key (RS256 for RSA, ES256 for ECC).
+For OB3 the signer auto-detects the algorithm from the private key (RS256 for RSA, ES256 for ECC, EdDSA for Ed25519).
 
 ## openbadges-verifier
 

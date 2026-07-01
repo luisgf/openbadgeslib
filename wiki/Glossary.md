@@ -35,6 +35,9 @@ Elliptic Curve Cryptography. This library uses the NIST P-256 curve with ECDSA a
 ### ecdsa
 A pure-Python implementation of ECDSA cryptography. Used by this library for ECC key generation, loading, and PEM serialisation.
 
+### Ed25519
+An Edwards-curve digital signature scheme (EdDSA over Curve25519). This library supports it via the `cryptography` package (JWS algorithm identifier `EdDSA`). See [[Security Model]].
+
 ## I
 
 ### IIS
@@ -92,7 +95,7 @@ Portable Network Graphics, a raster image format with lossless compression. One 
 A self-contained Python package of low-level cryptographic primitives (a maintained fork of `pycrypto`). Used for RSA and ECC key generation and PEM serialisation.
 
 ### PyJWT
-A Python library for encoding/decoding JSON Web Tokens. openbadgeslib uses `jwt.algorithms.RSAAlgorithm` and `jwt.algorithms.ECAlgorithm` for JWS signing and verification; requires the `cryptography` package (installed via `PyJWT[crypto]`). See [[Installation]].
+A Python library for encoding/decoding JSON Web Tokens. openbadgeslib uses `jwt.algorithms.RSAAlgorithm`, `jwt.algorithms.ECAlgorithm`, and `jwt.algorithms.OKPAlgorithm` (Ed25519/EdDSA) for JWS signing and verification; requires the `cryptography` package (installed via `PyJWT[crypto]`). See [[Installation]].
 
 ### pypng
 A pure-Python library for reading and writing PNG image files.

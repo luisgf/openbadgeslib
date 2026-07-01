@@ -10,18 +10,19 @@ Both versions follow the same three-stage pipeline:
 2. **Bake it into an image** — the token is written into the badge image as an SVG element or a PNG chunk, using the shared `openbadgeslib.baking` module. OB2 and OB3 use the *exact same* on-disk carrier format, so any conformant viewer can pull the token out regardless of which version produced it.
 3. **Reverse it on verify** — extract the token from the image, then cryptographically check the signature with a trusted public key and report a status.
 
-The signing algorithm is bound to the key type, in both directions: an RSA key produces and verifies `RS256`, an EC key produces and verifies `ES256`. The verifier never lets the token header choose the algorithm — see [[Security Model]] for why that matters.
+The signing algorithm is bound to the key type, in both directions: an RSA key produces and verifies `RS256`, an EC key produces and verifies `ES256`, and an Ed25519 key produces and verifies `EdDSA`. The verifier never lets the token header choose the algorithm — see [[Security Model]] for why that matters.
 
 ## Supported algorithms
 
-The low-level JWS engine in `openbadgeslib/_jws/__init__.py` is backed by PyJWT's algorithm implementations and registers six algorithms:
+The low-level JWS engine in `openbadgeslib/_jws/__init__.py` is backed by PyJWT's algorithm implementations and registers seven algorithms:
 
 | Key family | Algorithms |
 |------------|-----------|
 | RSA        | `RS256`, `RS384`, `RS512` |
 | ECC        | `ES256`, `ES384`, `ES512` |
+| Ed25519    | `EdDSA` |
 
-In practice the signers emit the 256-bit variant — `RS256` for RSA, `ES256` for ECC. The wider family is *accepted* on verification for interoperability, but every verifier pins the allowed set to the key's own type, so an RSA key can never validate an `ES*` token and vice versa. There is deliberately no symmetric (`HS*`) or `alg: none` entry.
+In practice the signers emit the 256-bit variant — `RS256` for RSA, `ES256` for ECC (Ed25519 has the single `EdDSA` variant). The wider RSA/EC family is *accepted* on verification for interoperability, but every verifier pins the allowed set to the key's own type, so an RSA key can never validate an `ES*` token and vice versa. There is deliberately no symmetric (`HS*`) or `alg: none` entry.
 
 ## OB2: the JWS path
 
@@ -77,7 +78,7 @@ svg = signer.sign_into_svg(credential, svg_bytes)     # or sign_into_png(...)
 
 Verification is in `openbadgeslib/ob3/verifier.py`. `OB3Verifier.verify()`:
 
-1. **Reads the header** and rejects the token unless its `alg` is in the set allowed for this key's type (`RS*` for RSA, `ES*` for ECC) — the token cannot pick its own algorithm.
+1. **Reads the header** and rejects the token unless its `alg` is in the set allowed for this key's type (`RS*` for RSA, `ES*` for ECC, `EdDSA` for Ed25519) — the token cannot pick its own algorithm.
 2. **Decodes** with `jwt.decode(...)`, which checks the signature and expiry (`ExpiredSignatureError` → `OB3VerificationError("Credential has expired")`).
 3. **Validates structure** — the payload must carry a `vc` claim whose `type` includes `OpenBadgeCredential` (a token missing `vc` is flagged as a possible OB2 JWS), and the JWT `iss`/`sub` registered claims must match the credential's issuer id and `credentialSubject.id` when present.
 4. **Optionally binds the recipient** — pass `expected_recipient` (an email, a `mailto:` URI, or a DID) and verification additionally requires `credentialSubject.id` to match; without it, only the signature, expiry and structure are checked.

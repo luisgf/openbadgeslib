@@ -65,7 +65,7 @@ Useful serialisation methods:
 OB3Signer(privkey_pem, algorithm='RS256')
 ```
 
-`privkey_pem` may be PEM bytes, a PEM string, or a key object. `algorithm` must be one of `RS256`, `RS384`, `RS512`, `ES256`, `ES384`, `ES512` — anything else raises `ValueError` at construction. Use an `RS*` algorithm with an RSA key and an `ES*` algorithm with an EC key.
+`privkey_pem` may be PEM bytes, a PEM string, or a key object. `algorithm` must be one of `RS256`, `RS384`, `RS512`, `ES256`, `ES384`, `ES512`, `EdDSA` — anything else raises `ValueError` at construction. Use an `RS*` algorithm with an RSA key, an `ES*` algorithm with an EC key, and `EdDSA` with an Ed25519 key.
 
 | Method | Returns | Purpose |
 | --- | --- | --- |
@@ -81,7 +81,7 @@ The baking format matches OB 2.0, so existing badge viewers can extract the toke
 OB3Verifier(pubkey_pem)
 ```
 
-On construction the verifier detects the key type and **pins** the accepted JWS algorithms to that key family (`RS*` for RSA, `ES*` for EC). The token header can never dictate the algorithm, so `alg:none`, an HMAC downgrade, or RSA/EC cross-type confusion are all rejected up front. An unsupported key type raises `OB3VerificationError`.
+On construction the verifier detects the key type and **pins** the accepted JWS algorithms to that key family (`RS*` for RSA, `ES*` for EC, `EdDSA` for Ed25519). The token header can never dictate the algorithm, so `alg:none`, an HMAC downgrade, or cross-type confusion are all rejected up front. An unsupported key type raises `OB3VerificationError`.
 
 ```python
 verify(token, expected_recipient=None) -> OpenBadgeCredential

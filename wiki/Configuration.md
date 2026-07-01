@@ -112,7 +112,7 @@ Define one section per badge. The part after `badge_` is the badge id you pass t
 | `badge` | `https://.../badge.json` | Public URL of the badge JSON / OB3 achievement id. |
 | `private_key` | `${paths:base_key}/sign_rsa_key_1.pem` | Path to the signing (private) key. |
 | `public_key` | `${paths:base_key}/verify_rsa_key_1.pem` | Path to the verify (public) key. |
-| `key_type` | `RSA` | Algorithm for `openbadges-keygenerator`: `RSA` (default) or `ECC`. |
+| `key_type` | `RSA` | Algorithm for `openbadges-keygenerator`: `RSA` (default), `ECC`, or `ED25519`. |
 | `mail` | `${paths:base}/badge_1_mail.txt` | Path to the mail template used by `openbadges-signer -M`. |
 
 ```ini
@@ -132,7 +132,7 @@ key_type    = RSA
 
 Notes on behaviour:
 
-- `key_type` is read only by `openbadges-keygenerator`; it is case-insensitive and accepts `RSA` or `ECC` (anything else aborts). At sign/verify time the actual algorithm is detected from the key material itself.
+- `key_type` is read only by `openbadges-keygenerator`; it is case-insensitive and accepts `RSA`, `ECC`, or `ED25519` (the alias `EDDSA` is also accepted; anything else aborts). At sign/verify time the actual algorithm is detected from the key material itself.
 - The image format is decided by `local_image`'s extension (`.svg` or `.png`); any other extension is rejected.
 - `mail` is only required when signing with `-M`. Uncomment it and point it at a template file to enable email delivery.
 - `private_key` / `public_key` must already exist before signing; generate them with `openbadges-keygenerator -g <name>` (see [[Keys and Errors]]).

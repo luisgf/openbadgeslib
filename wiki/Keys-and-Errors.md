@@ -1,28 +1,30 @@
-This page documents the key abstractions in `openbadgeslib.keys` and the full exception hierarchy you can catch. Keys describe *how* badges are signed (RSA or ECC); errors tell you *why* an operation failed. For where these types are used see [[Python API OB2]] and [[Python API OB3]].
+This page documents the key abstractions in `openbadgeslib.keys` and the full exception hierarchy you can catch. Keys describe *how* badges are signed (RSA, ECC, or Ed25519); errors tell you *why* an operation failed. For where these types are used see [[Python API OB2]] and [[Python API OB3]].
 
 ## Keys
 
-Everything lives in `openbadgeslib.keys`. The library supports two key types, each backed by a different crypto library: RSA (via `pycryptodome`) and ECC on the NIST256p curve (via `ecdsa`).
+Everything lives in `openbadgeslib.keys`. The library supports three key types, each backed by a different crypto library: RSA (via `pycryptodome`), ECC on the NIST256p curve (via `ecdsa`), and Ed25519 (via `cryptography`).
 
 ### KeyType and the JWS algorithm
 
-`KeyType` is an `enum.Enum` with two members:
+`KeyType` is an `enum.Enum` with three members:
 
 ```python
 from openbadgeslib.keys import KeyType, alg_for_key_type
 
 KeyType.RSA          # value: 'RSA 2048'
 KeyType.ECC          # value: 'ECC NIST256p'
+KeyType.ED25519      # value: 'Ed25519'
 
-alg_for_key_type(KeyType.RSA)   # -> 'RS256'
-alg_for_key_type(KeyType.ECC)   # -> 'ES256'
+alg_for_key_type(KeyType.RSA)       # -> 'RS256'
+alg_for_key_type(KeyType.ECC)       # -> 'ES256'
+alg_for_key_type(KeyType.ED25519)   # -> 'EdDSA'
 ```
 
 `alg_for_key_type(key_type)` returns the JWS algorithm the library signs with for a given key type. An unknown type raises `UnknownKeyType`.
 
 ### KeyFactory and the key classes
 
-`KeyFactory(key_type=KeyType.RSA)` returns a fresh key object for the requested type. It returns a `KeyECC` for `KeyType.ECC`, a `KeyRSA` for `KeyType.RSA`, and raises `UnknownKeyType` for anything else.
+`KeyFactory(key_type=KeyType.RSA)` returns a fresh key object for the requested type. It returns a `KeyECC` for `KeyType.ECC`, a `KeyRSA` for `KeyType.RSA`, a `KeyEd25519` for `KeyType.ED25519`, and raises `UnknownKeyType` for anything else.
 
 ```python
 from openbadgeslib.keys import KeyFactory, KeyType
@@ -31,7 +33,7 @@ key = KeyFactory(KeyType.ECC)        # -> KeyECC instance
 priv_pem, pub_pem = key.generate_keypair()
 ```
 
-Both `KeyRSA` and `KeyECC` derive from `KeyBase` and share the same interface:
+`KeyRSA`, `KeyECC`, and `KeyEd25519` derive from `KeyBase` and share the same interface:
 
 | Method | Purpose |
 | --- | --- |
@@ -43,7 +45,7 @@ Both `KeyRSA` and `KeyECC` derive from `KeyBase` and share the same interface:
 | `get_priv_key()` | Return the underlying crypto object |
 | `get_pub_key()` | Return the underlying crypto object |
 
-`KeyRSA(key_size=2048)` defaults to a 2048-bit modulus; `KeyECC(key_curve=NIST256p)` defaults to the NIST256p curve.
+`KeyRSA(key_size=2048)` defaults to a 2048-bit modulus; `KeyECC(key_curve=NIST256p)` defaults to the NIST256p curve; `KeyEd25519()` takes no parameters (the curve is fixed).
 
 ```python
 from openbadgeslib.keys import KeyFactory, KeyType
@@ -61,20 +63,20 @@ assert key2.get_priv_key_pem() == priv_pem
 
 ### Helper functions
 
-`detect_key_type(pem_data)` guesses the `KeyType` from PEM bytes/str by trying to import it as RSA, then as an ECC verifying key, then as an ECC signing key. It raises `UnknownKeyType('Unable to guess Key type')` if none match.
+`detect_key_type(pem_data)` guesses the `KeyType` from PEM bytes/str by probing Ed25519 first (the `ecdsa` library would otherwise misread an Ed25519 PEM as ECC), then trying to import it as RSA, then as an ECC verifying key, then as an ECC signing key. It raises `UnknownKeyType('Unable to guess Key type')` if none match.
 
 ```python
 from openbadgeslib.keys import detect_key_type, KeyType
 
-detect_key_type(priv_pem)   # -> KeyType.RSA or KeyType.ECC
+detect_key_type(priv_pem)   # -> KeyType.RSA, KeyType.ECC, or KeyType.ED25519
 ```
 
-`key_to_pem(key)` normalises any supported key into PEM. It exports `pycryptodome` RSA objects and `ecdsa` `SigningKey`/`VerifyingKey` objects, passes `bytes`/`str` through unchanged, and raises `UnknownKeyType` for anything else. It is the single shared implementation used by the OB2 JWS layer and both OB3 signer/verifier.
+`key_to_pem(key)` normalises any supported key into PEM. It exports `pycryptodome` RSA objects, `ecdsa` `SigningKey`/`VerifyingKey` objects, and `cryptography` `Ed25519PrivateKey`/`Ed25519PublicKey` objects, passes `bytes`/`str` through unchanged, and raises `UnknownKeyType` for anything else. It is the single shared implementation used by the OB2 JWS layer and both OB3 signer/verifier.
 
 ```python
 from openbadgeslib.keys import key_to_pem
 
-pem = key_to_pem(key.get_priv_key())   # works for RSA, ECC, or raw PEM
+pem = key_to_pem(key.get_priv_key())   # works for RSA, ECC, Ed25519, or raw PEM
 ```
 
 ## Errors

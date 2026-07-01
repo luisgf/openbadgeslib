@@ -37,10 +37,11 @@ The accepted algorithm is **derived from the key type**, not read from the token
 _ALGORITHMS_BY_KEY_TYPE = {
     KeyType.RSA: ['RS256', 'RS384', 'RS512'],
     KeyType.ECC: ['ES256', 'ES384', 'ES512'],
+    KeyType.ED25519: ['EdDSA'],
 }
 ```
 
-`OB3Verifier` detects the key type, restricts `jwt.decode` to that family, and additionally rejects any header `alg` outside the allowed set *before* decoding. An RSA key can never validate an `ES*` token and vice-versa; `none` and HMAC are never in the allowed list. The OB2 `_jws.verify_block` enforces the same pinning. This blocks `none`/HMAC downgrades and cross-type confusion in one step.
+`OB3Verifier` detects the key type, restricts `jwt.decode` to that family, and additionally rejects any header `alg` outside the allowed set *before* decoding. An RSA key can never validate an `ES*` token and vice-versa, and an Ed25519 key accepts only `EdDSA`; `none` and HMAC are never in the allowed list. The OB2 `_jws.verify_block` enforces the same pinning. This blocks `none`/HMAC downgrades and cross-type confusion in one step.
 
 ## Safe handling of untrusted input
 

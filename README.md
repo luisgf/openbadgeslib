@@ -15,7 +15,7 @@ serialisation) and **OpenBadges 3.0** (W3C Verifiable Credentials / JWT-VC).
 - Sign badge images (SVG and PNG) with a JWS assertion (OB 2.0)
 - Issue and verify OpenBadges 3.0 JWT-VC credentials
 - Bake OB 3.0 JWT tokens into SVG and PNG badge images
-- RSA 2048-bit (RS256) and ECC NIST P-256 (ES256) key support
+- RSA 2048-bit (RS256), ECC NIST P-256 (ES256), and Ed25519 (EdDSA) key support
 - SHA-256 hashed recipient identity with salt (OB 2.0)
 - Expiration and revocation checking
 - Five command-line tools included
