@@ -80,6 +80,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     a raw KeyError/TypeError when the untrusted JWS body is missing 'verify'
     or has a non-object 'verify' field.
 
+  - fix: Verifier.check_revocation() now raises AssertionFormatIncorrect
+    instead of a raw AttributeError/TypeError when the fetched badge,
+    issuer, or revocation-list JSON is valid JSON but not an object.
+
 
 * v1.1.5 - 2026-06-30
 
