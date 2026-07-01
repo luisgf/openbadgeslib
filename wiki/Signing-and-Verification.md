@@ -6,7 +6,7 @@ For the trust assumptions behind all of this (which key is trusted, why download
 
 Both versions follow the same three-stage pipeline:
 
-1. **Build a token** — a signed string. OB2 builds a compact JWS over a badge assertion; OB3 builds a JWT-VC whose payload carries a W3C Verifiable Credential under a `vc` claim.
+1. **Build a token** — a signed string. OB2 builds a compact JWS over a badge assertion; OB3 builds a native VC-JWT whose payload IS a W3C Verifiable Credential (§8.2).
 2. **Bake it into an image** — the token is written into the badge image as an SVG element or a PNG chunk, using the shared `openbadgeslib.baking` module. OB2 and OB3 use the *exact same* on-disk carrier format, so any conformant viewer can pull the token out regardless of which version produced it.
 3. **Reverse it on verify** — extract the token from the image, then cryptographically check the signature with a trusted public key and report a status.
 
@@ -64,9 +64,9 @@ See [[Python API OB2]] for the full object model and [[CLI Reference]] for the `
 
 ## OB3: the JWT-VC path
 
-For OB3 the unit of trust is a **JWT-VC** — a JWT whose payload nests a W3C Verifiable Credential under the `vc` claim. Signing is in `openbadgeslib/ob3/signer.py`.
+For OB3 the unit of trust is a **JWT-VC** — an OB 3.0 native VC-JWT (§8.2) whose payload **is** the W3C Verifiable Credential (its members at the top level, not nested under a `vc` claim). Signing is in `openbadgeslib/ob3/signer.py`.
 
-`OB3Signer.sign()` calls `credential.to_jwt_payload()` and hands it to PyJWT's `jwt.encode(...)` with the chosen algorithm (default `RS256`; RSA keys must use `RS*`, EC keys `ES*`). The result is a compact `header.payload.signature` JWT string.
+`OB3Signer.sign()` calls `credential.to_jwt_payload()` and hands it to PyJWT's `jwt.encode(...)` with the chosen algorithm (default `RS256`; RSA keys must use `RS*`, EC keys `ES*`, Ed25519 `EdDSA`). `validFrom` is encoded as the `nbf` claim, and the JOSE header carries the issuer's public key as a `jwk` (§8.2.3). The result is a compact `header.payload.signature` JWT string.
 
 ```python
 from openbadgeslib.ob3.signer import OB3Signer
@@ -80,7 +80,7 @@ Verification is in `openbadgeslib/ob3/verifier.py`. `OB3Verifier.verify()`:
 
 1. **Reads the header** and rejects the token unless its `alg` is in the set allowed for this key's type (`RS*` for RSA, `ES*` for ECC, `EdDSA` for Ed25519) — the token cannot pick its own algorithm.
 2. **Decodes** with `jwt.decode(...)`, which checks the signature and expiry (`ExpiredSignatureError` → `OB3VerificationError("Credential has expired")`).
-3. **Validates structure** — the payload must carry a `vc` claim whose `type` includes `OpenBadgeCredential` (a token missing `vc` is flagged as a possible OB2 JWS), and the JWT `iss`/`sub` registered claims must match the credential's issuer id and `credentialSubject.id` when present.
+3. **Validates structure** — the payload's `type` must include `VerifiableCredential` and either `OpenBadgeCredential` or its alias `AchievementCredential` (a token with neither is flagged as a possible OB2 JWS); `@context` must be the VC 2.0 + OB v3p0 pair; and the registered claims `iss`/`nbf` must be present, with `iss` equal to the issuer id and `sub` equal to `credentialSubject.id` when the subject carries one.
 4. **Optionally binds the recipient** — pass `expected_recipient` (an email, a `mailto:` URI, or a DID) and verification additionally requires `credentialSubject.id` to match; without it, only the signature, expiry and structure are checked.
 
 ```python
@@ -94,24 +94,24 @@ Every failure raises `OB3VerificationError` (a subclass of `LibOpenBadgesExcepti
 
 ## Baking: hiding the token in an image
 
-Both versions share `openbadgeslib/baking.py`. Keeping one implementation stops the OB2 and OB3 paths from drifting into two slightly different readers. The carrier format is identical for both versions.
+Both versions share `openbadgeslib/baking.py`. Keeping one implementation stops the OB2 and OB3 paths from drifting into two slightly different readers. The carrier **mechanism** is the same; only the element/keyword identifiers differ, because OB 2.0 and OB 3.0 specify different ones (selected via keyword-only args). OB2 uses `<openbadges:assertion>` / the `openbadges` iTXt keyword; OB3 uses `<openbadges:credential>` (namespace `https://purl.imsglobal.org/ob/v3p0`) / the `openbadgecredential` keyword.
 
-### SVG — an `<openbadges:assertion>` element
+### SVG — an `<openbadges:assertion>` (OB2) or `<openbadges:credential>` (OB3) element
 
-`bake_svg()` parses the SVG, appends an `<openbadges:assertion>` element to the root `<svg>`, and stores the token in its `verify` attribute (plus a namespace declaration and an optional XML comment):
+`bake_svg()` parses the SVG, appends the version's element to the root `<svg>`, and stores the token in its `verify` attribute (plus a namespace declaration and an optional XML comment):
 
 ```xml
-<openbadges:assertion xmlns:openbadges="http://openbadges.org" verify="eyJhbGciOi…"/>
+<openbadges:credential xmlns:openbadges="https://purl.imsglobal.org/ob/v3p0" verify="eyJhbGciOi…"/>
 ```
 
-`extract_svg()` reverses it: it finds the `openbadges:assertion` node and returns the `verify` attribute value, or `None` if the element is absent. `has_svg()` reports whether an assertion is already present (so re-signing is refused). XML is parsed with `defusedxml` to neutralize entity-expansion attacks.
+`extract_svg()` reverses it: it finds the version's node and returns the `verify` attribute value, or `None` if the element is absent. `has_svg()` reports whether one is already present (so re-signing is refused). XML is parsed with `defusedxml` to neutralize entity-expansion attacks.
 
-### PNG — an `openbadges` iTXt chunk
+### PNG — an `openbadges` (OB2) or `openbadgecredential` (OB3) iTXt chunk
 
-`bake_png()` inserts an `iTXt` chunk (keyword `openbadges`) just before the trailing `IEND` chunk, with an optional `tEXt` comment chunk, and re-serializes the PNG with correct per-chunk CRCs:
+`bake_png()` inserts an `iTXt` chunk (keyword `openbadges` for OB2, `openbadgecredential` for OB3) just before the trailing `IEND` chunk, with an optional `tEXt` comment chunk, and re-serializes the PNG with correct per-chunk CRCs:
 
 ```text
-iTXt: "openbadges" \0 <comp_flag> <comp_method> <lang> \0 <translated> \0 <token>
+iTXt: "openbadgecredential" \0 <comp_flag> <comp_method> <lang> \0 <translated> \0 <token>
 ```
 
 `extract_png()` does not trust a fixed byte offset — it parses the real iTXt structure (keyword, compression flag/method, language tag, translated keyword, then text), so tokens baked by any conformant tool, including compressed ones, are recovered. `has_png()` reports presence of the chunk.
