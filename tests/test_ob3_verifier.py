@@ -496,7 +496,7 @@ class TestExtractFromPNG:
         assert extracted_token == original_token
 
     def test_unsigned_png_raises(self, png_image):
-        with pytest.raises(OB3VerificationError, match="No openbadges"):
+        with pytest.raises(OB3VerificationError, match="No openbadgecredential"):
             OB3Verifier.extract_token_from_png(png_image)
 
     @staticmethod
@@ -508,7 +508,7 @@ class TestExtractFromPNG:
         from zlib import crc32
         from png import Reader, signature as _png_signature
         # keyword \0 comp_flag=1 comp_method=0 lang \0 trans \0 <compressed text>
-        itxt_data = b'openbadges' + pack('BBBBB', 0, 1, 0, 0, 0) + zlib.compress(text_bytes)
+        itxt_data = b'openbadgecredential' + pack('BBBBB', 0, 1, 0, 0, 0) + zlib.compress(text_bytes)
         chunks = list(Reader(bytes=png_image).chunks())
         chunks.insert(len(chunks) - 1, ('iTXt', itxt_data))
         out = _png_signature
@@ -541,7 +541,7 @@ class TestExtractFromPNG:
         from struct import pack
         from zlib import crc32
         from png import Reader, signature as _png_signature
-        itxt_data = b'openbadges' + pack('BBBBB', 0, 0, 0, 0, 0) + raw_text_bytes
+        itxt_data = b'openbadgecredential' + pack('BBBBB', 0, 0, 0, 0, 0) + raw_text_bytes
         chunks = list(Reader(bytes=png_image).chunks())
         chunks.insert(len(chunks) - 1, ('iTXt', itxt_data))
         out = _png_signature

@@ -34,8 +34,16 @@ from typing import List, Optional, Tuple, Union
 from defusedxml.minidom import parseString
 from png import Reader, signature as _png_signature
 
+# OB 2.0 document-format identifiers.
 ITXT_KEYWORD = b'openbadges'
 SVG_ELEMENT = 'openbadges:assertion'
+SVG_NS = 'http://openbadges.org'
+
+# OB 3.0 document-format identifiers (differ from OB 2.0). Selected via the
+# keyword-only args below so OB2 and OB3 bake/extract their own carriers.
+ITXT_KEYWORD_OB3 = b'openbadgecredential'
+SVG_ELEMENT_OB3 = 'openbadges:credential'
+SVG_NS_OB3 = 'https://purl.imsglobal.org/ob/v3p0'
 
 # Maximum bytes a compressed iTXt token is allowed to inflate to. A JWS/JWT-VC
 # is a few KB; this cap stops a crafted zlib bomb from exhausting memory during
@@ -47,9 +55,9 @@ class DecompressionLimitExceeded(Exception):
     """Raised when a compressed iTXt token inflates beyond the allowed size."""
 
 
-def _split_openbadges_itxt(data: bytes) -> Optional[bytes]:
-    keyword, sep, rest = data.partition(b'\x00')
-    if sep != b'\x00' or keyword != ITXT_KEYWORD or len(rest) < 2:
+def _split_openbadges_itxt(data: bytes, keyword: bytes = ITXT_KEYWORD) -> Optional[bytes]:
+    chunk_keyword, sep, rest = data.partition(b'\x00')
+    if sep != b'\x00' or chunk_keyword != keyword or len(rest) < 2:
         return None
     return rest
 
@@ -66,14 +74,16 @@ def _bounded_inflate(data: bytes, limit: int = MAX_ITXT_DECOMPRESSED) -> bytes:
 
 # ── SVG ─────────────────────────────────────────────────────────────────────
 
-def bake_svg(image_bytes: bytes, token: str, comment: Optional[str] = None) -> bytes:
-    """Return *image_bytes* with an ``<openbadges:assertion verify=token>``
-    element (and an optional XML comment) appended to the root ``<svg>``."""
+def bake_svg(image_bytes: bytes, token: str, comment: Optional[str] = None, *,
+             element: str = SVG_ELEMENT, namespace: str = SVG_NS) -> bytes:
+    """Return *image_bytes* with an ``<element verify=token>`` node (and an
+    optional XML comment) appended to the root ``<svg>``. *element*/*namespace*
+    default to the OB 2.0 identifiers; OB 3.0 passes its own."""
     svg_doc = parseString(image_bytes)
     try:
         svg_tag = svg_doc.getElementsByTagName('svg').item(0)
-        node = svg_doc.createElement(SVG_ELEMENT)
-        node.attributes['xmlns:openbadges'] = 'http://openbadges.org'
+        node = svg_doc.createElement(element)
+        node.attributes['xmlns:openbadges'] = namespace
         node.attributes['verify'] = token
         svg_tag.appendChild(node)
         if comment:
@@ -83,24 +93,24 @@ def bake_svg(image_bytes: bytes, token: str, comment: Optional[str] = None) -> b
         svg_doc.unlink()
 
 
-def has_svg(image_bytes: bytes) -> bool:
-    """Return True if *image_bytes* already carries an OpenBadges assertion."""
+def has_svg(image_bytes: bytes, *, element: str = SVG_ELEMENT) -> bool:
+    """Return True if *image_bytes* already carries an *element* node."""
     svg_doc = parseString(image_bytes)
     try:
-        return bool(svg_doc.getElementsByTagName(SVG_ELEMENT))
+        return bool(svg_doc.getElementsByTagName(element))
     finally:
         svg_doc.unlink()
 
 
-def extract_svg(image_bytes: bytes) -> Optional[str]:
-    """Return the embedded token string, or None if there is no assertion node.
+def extract_svg(image_bytes: bytes, *, element: str = SVG_ELEMENT) -> Optional[str]:
+    """Return the embedded token string, or None if there is no *element* node.
 
     Raises on malformed XML (left to the caller to map to its own error type).
     """
     svg_doc = None
     try:
         svg_doc = parseString(image_bytes)
-        nodes = svg_doc.getElementsByTagName(SVG_ELEMENT)
+        nodes = svg_doc.getElementsByTagName(element)
         if not nodes:
             return None
         return nodes[0].attributes['verify'].nodeValue
@@ -124,28 +134,31 @@ def _serialize_png(chunks: List[Tuple[Union[str, bytes], bytes]]) -> bytes:
     return out
 
 
-def bake_png(image_bytes: bytes, token: str, text_comment: Optional[str] = None) -> bytes:
-    """Return *image_bytes* with the token stored in an ``openbadges`` iTXt
-    chunk (and an optional ``tEXt`` comment chunk) inserted before IEND."""
+def bake_png(image_bytes: bytes, token: str, text_comment: Optional[str] = None, *,
+             keyword: bytes = ITXT_KEYWORD) -> bytes:
+    """Return *image_bytes* with the token stored in a *keyword* iTXt chunk (and
+    an optional ``tEXt`` comment chunk) inserted before IEND. *keyword* defaults
+    to the OB 2.0 identifier; OB 3.0 passes ``openbadgecredential``."""
     chunks = list(Reader(bytes=image_bytes).chunks())
-    itxt_data = ITXT_KEYWORD + pack('BBBBB', 0, 0, 0, 0, 0) + token.encode('utf-8')
+    itxt_data = keyword + pack('BBBBB', 0, 0, 0, 0, 0) + token.encode('utf-8')
     chunks.insert(len(chunks) - 1, ('iTXt', itxt_data))
     if text_comment:
         chunks.insert(len(chunks) - 1, ('tEXt', text_comment.encode('utf-8')))
     return _serialize_png(chunks)
 
 
-def has_png(image_bytes: bytes) -> bool:
-    """Return True if *image_bytes* already carries an OpenBadges iTXt chunk."""
+def has_png(image_bytes: bytes, *, keyword: bytes = ITXT_KEYWORD) -> bool:
+    """Return True if *image_bytes* already carries a *keyword* iTXt chunk."""
     for tag, data in Reader(bytes=image_bytes).chunks():
         tag_str = tag.decode('ascii') if isinstance(tag, bytes) else tag
-        if tag_str == 'iTXt' and _split_openbadges_itxt(data) is not None:
+        if tag_str == 'iTXt' and _split_openbadges_itxt(data, keyword) is not None:
             return True
     return False
 
 
-def extract_png(image_bytes: bytes, max_decompressed: int = MAX_ITXT_DECOMPRESSED) -> Optional[str]:
-    """Return the embedded token string, or None if there is no openbadges
+def extract_png(image_bytes: bytes, max_decompressed: int = MAX_ITXT_DECOMPRESSED, *,
+                keyword: bytes = ITXT_KEYWORD) -> Optional[str]:
+    """Return the embedded token string, or None if there is no *keyword*
     iTXt chunk.
 
     Parses the iTXt structure (keyword, compression flag/method, language tag,
@@ -159,7 +172,7 @@ def extract_png(image_bytes: bytes, max_decompressed: int = MAX_ITXT_DECOMPRESSE
         if tag_str != 'iTXt':
             continue
 
-        rest = _split_openbadges_itxt(data)
+        rest = _split_openbadges_itxt(data, keyword)
         if rest is None:
             continue
         compression_flag = rest[0]

@@ -100,26 +100,26 @@ class OB3Signer:
     def sign_into_svg(self, credential: OpenBadgeCredential, svg_bytes: bytes) -> bytes:
         """Embed a signed credential into an SVG badge image.
 
-        The JWT-VC is stored in an ``<openbadges:assertion verify="…"/>``
-        element, matching the OB 2.0 baking format so that existing badge
-        viewers can extract the token regardless of version.
+        The JWT-VC is stored in the OB 3.0 ``<openbadges:credential verify="…"/>``
+        element (namespace ``https://purl.imsglobal.org/ob/v3p0``).
         """
         token = self.sign(credential)
         try:
             return baking.bake_svg(
                 svg_bytes, token,
-                comment=' Signed with OpenBadgesLib %s (OB 3.0 JWT-VC) ' % __version__)
+                comment=' Signed with OpenBadgesLib %s (OB 3.0 JWT-VC) ' % __version__,
+                element=baking.SVG_ELEMENT_OB3, namespace=baking.SVG_NS_OB3)
         except Exception as exc:
-            raise ErrorSigningFile('Unable to bake SVG assertion: %s' % exc) from exc
+            raise ErrorSigningFile('Unable to bake SVG credential: %s' % exc) from exc
 
     def sign_into_png(self, credential: OpenBadgeCredential, png_bytes: bytes) -> bytes:
         """Embed a signed credential into a PNG badge image.
 
-        The JWT-VC is stored in an ``iTXt`` chunk with keyword ``openbadges``,
-        matching the OB 2.0 baking format.
+        The JWT-VC is stored in an ``iTXt`` chunk with the OB 3.0 keyword
+        ``openbadgecredential``.
         """
         token = self.sign(credential)
         try:
-            return baking.bake_png(png_bytes, token)
+            return baking.bake_png(png_bytes, token, keyword=baking.ITXT_KEYWORD_OB3)
         except Exception as exc:
-            raise ErrorSigningFile('Unable to bake PNG assertion: %s' % exc) from exc
+            raise ErrorSigningFile('Unable to bake PNG credential: %s' % exc) from exc
