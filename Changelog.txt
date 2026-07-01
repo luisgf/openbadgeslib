@@ -89,6 +89,11 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     ExpatError/AttributeError/png.FormatError escape when the carrier image
     is malformed.
 
+  - fix: openbadges-init and openbadges-publish now restore the process
+    umask in a try/finally, so a failure partway through directory/file
+    creation can no longer leave the umask permanently changed for the rest
+    of the process.
+
 
 * v1.1.5 - 2026-06-30
 

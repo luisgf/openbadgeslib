@@ -45,10 +45,12 @@ def main() -> None:
         raise FileExistsError(directory)
 
     umask = os.umask(0o077)  # rwx------
-    os.mkdir(directory)
-    for subdir in ['keys', 'images', 'log']:
-        os.mkdir(os.path.join(directory, subdir))
-    os.umask(umask)
+    try:
+        os.mkdir(directory)
+        for subdir in ['keys', 'images', 'log']:
+            os.mkdir(os.path.join(directory, subdir))
+    finally:
+        os.umask(umask)
 
     source = os.path.join(os.path.dirname(__file__), 'config.ini.example')
     destination = os.path.join(directory, 'config.ini')

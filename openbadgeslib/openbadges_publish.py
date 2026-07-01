@@ -70,35 +70,36 @@ def main() -> None:
             raise FileExistsError(args.output)
 
         umask = os.umask(0o077)  # rwx------
-        os.mkdir(args.output)
+        try:
+            os.mkdir(args.output)
 
-        issuer = create_issuer_json(conf)
-        issuer_file = os.path.join(args.output, 'organization.json')
-        with open(issuer_file, "w", encoding='ascii') as f:
-            f.write(issuer)
+            issuer = create_issuer_json(conf)
+            issuer_file = os.path.join(args.output, 'organization.json')
+            with open(issuer_file, "w", encoding='ascii') as f:
+                f.write(issuer)
 
-        revocation = create_revocation_json(conf)
-        revocation_file = os.path.join(args.output, 'revoked.json')
-        with open(revocation_file, "w", encoding='ascii') as f:
-            f.write(revocation)
+            revocation = create_revocation_json(conf)
+            revocation_file = os.path.join(args.output, 'revoked.json')
+            with open(revocation_file, "w", encoding='ascii') as f:
+                f.write(revocation)
 
-        for badge_name in conf.sections():
-            if not badge_name.startswith('badge_'):
-                continue
+            for badge_name in conf.sections():
+                if not badge_name.startswith('badge_'):
+                    continue
 
-            badge_path = os.path.join(args.output, badge_name)
-            badge_file = os.path.join(badge_path, 'badge.json')
+                badge_path = os.path.join(args.output, badge_name)
+                badge_file = os.path.join(badge_path, 'badge.json')
 
-            os.mkdir(badge_path)
-            with open(badge_file, "w", encoding='ascii') as f:
-                f.write(create_badge_json(conf, badge_name))
+                os.mkdir(badge_path)
+                with open(badge_file, "w", encoding='ascii') as f:
+                    f.write(create_badge_json(conf, badge_name))
 
-            """ Copy the verify key for this badge """
-            source = conf[badge_name]['public_key']
-            destination = os.path.join(badge_path, 'verify.pem')
-            shutil.copyfile(source, destination)
-
-        os.umask(umask)
+                """ Copy the verify key for this badge """
+                source = conf[badge_name]['public_key']
+                destination = os.path.join(badge_path, 'verify.pem')
+                shutil.copyfile(source, destination)
+        finally:
+            os.umask(umask)
 
         print('Please configure your Web server to publish the folder %s as %s' %
               (args.output, conf['issuer']['publish_url']))
