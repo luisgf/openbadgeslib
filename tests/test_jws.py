@@ -154,6 +154,31 @@ class TestExceptionHierarchy:
             assert issubclass(exc_cls, LibOpenBadgesException)
 
 
+class TestAlgorithmConfusion:
+    """wiki/Security-Model.md claims OB2's _jws.verify_block pins alg to the
+    key type, blocking none/HMAC downgrades and cross-type confusion. The
+    control already works (verified live); this locks it with a regression
+    test mirroring test_ob3_verifier.py's alg-confusion coverage, so a future
+    refactor of _allowed_algs_for_key/verify_block can't silently reintroduce
+    the vulnerability without a test failing."""
+
+    def test_alg_none_rejected_by_key_pinning(self, rsa_pub_pem):
+        from openbadgeslib.keys import KeyRSA
+        k = KeyRSA()
+        k.read_public_key(rsa_pub_pem)
+        jws = _build_jws({'alg': 'none'}, PAYLOAD, b'')
+        with pytest.raises(SignatureError):
+            verify_block(jws, key=k.get_pub_key())
+
+    def test_hs256_confusion_rejected_by_key_pinning(self, rsa_pub_pem):
+        from openbadgeslib.keys import KeyRSA
+        k = KeyRSA()
+        k.read_public_key(rsa_pub_pem)
+        jws = _build_jws({'alg': 'HS256'}, PAYLOAD, b'forged-hmac-signature')
+        with pytest.raises(SignatureError):
+            verify_block(jws, key=k.get_pub_key())
+
+
 # ── utils ──────────────────────────────────────────────────────────────────────
 
 class TestUtils:
