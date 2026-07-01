@@ -164,7 +164,13 @@ class Verifier():
 
         # A badge is expired when its expiration timestamp is in the past
         # relative to *now* — not relative to its own issue date.
-        if badge.expiration < time():
+        try:
+            expired = badge.expiration < time()
+        except TypeError as exc:
+            raise AssertionFormatIncorrect(
+                "Badge 'expires' field is not a valid timestamp: %r" % (badge.expiration,)) from exc
+
+        if expired:
             return "%s" % strftime("%a, %d %b %Y %H:%M:%S +0000",
                                    gmtime(badge.expiration))
         else:
