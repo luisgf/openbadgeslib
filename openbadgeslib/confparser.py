@@ -63,6 +63,12 @@ class ConfParser():
             # We should raise an UnicodeDecodeError, but the error message is too cryptic.#
             raise ValueError("The encoding of the configuration file and the default encoding of "
                              "the operating system mismatch") from None
+        except ConfigParserError as exc:
+            # Malformed INI syntax (duplicate section/option, a value line
+            # with no section header before it, ...) raises directly from
+            # read(), before any interpolation is even attempted.
+            raise ValueError(
+                "Configuration file %s has invalid INI syntax: %s" % (self.config_file, exc)) from exc
         try:
             base = self.parser['paths']['base']
         except KeyError:

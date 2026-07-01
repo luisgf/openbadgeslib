@@ -100,6 +100,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     case-insensitively (DIDs remain compared exactly), so a legitimate
     recipient is no longer wrongly rejected for a casing difference.
 
+  - fix: ConfParser.read_conf() now raises a clean ValueError instead of a
+    raw configparser exception for malformed INI syntax (duplicate
+    section/option, a value line with no section header).
+
 
 * v1.1.5 - 2026-06-30
 
