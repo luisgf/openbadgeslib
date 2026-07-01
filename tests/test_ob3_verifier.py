@@ -248,6 +248,37 @@ class TestOB3VerifierVerify:
         with pytest.raises(OB3VerificationError, match="OpenBadgeCredential"):
             ob3_rsa_verifier.verify(token)
 
+    # ── a non-string id/name field (consumed downstream as a string, e.g.
+    #    recipient binding calls .lower()) must not leak a raw AttributeError ───
+    @pytest.mark.parametrize('bad_id', [12345, True, ['a'], {'x': 1}])
+    def test_non_string_credential_subject_id_rejected(
+        self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential, bad_id
+    ):
+        token = self._signed_with_vc(
+            rsa_priv_pem, ob3_credential,
+            lambda p: p['vc']['credentialSubject'].__setitem__('id', bad_id))
+        # Rejected even without expected_recipient (at credential-build time).
+        with pytest.raises(OB3VerificationError, match="must be a string"):
+            ob3_rsa_verifier.verify(token)
+
+    def test_non_string_credential_subject_id_with_expected_recipient_rejected(
+        self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential
+    ):
+        # The documented recipient-binding path (-r/--receptor) must surface a
+        # clean OB3VerificationError, not a raw AttributeError from .lower().
+        token = self._signed_with_vc(
+            rsa_priv_pem, ob3_credential,
+            lambda p: p['vc']['credentialSubject'].__setitem__('id', 12345))
+        with pytest.raises(OB3VerificationError):
+            ob3_rsa_verifier.verify(token, expected_recipient='someone@example.com')
+
+    def test_non_string_issuer_id_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        token = self._signed_with_vc(
+            rsa_priv_pem, ob3_credential,
+            lambda p: p['vc']['issuer'].__setitem__('id', 12345))
+        with pytest.raises(OB3VerificationError, match="must be a string"):
+            ob3_rsa_verifier.verify(token)
+
     # ── array credentialSubject: the sub cross-check must normalise the list to
     #    its first element, not call .get() on the list (which raised a raw
     #    AttributeError that escaped verify()) ─────────────────────────────────
