@@ -36,7 +36,7 @@ import os
 
 from typing import Optional
 
-from .errors import VerifierExceptions
+from .errors import LibOpenBadgesException
 from .confparser import read_config_or_exit, resolve_badge_section
 from .logs import enable_debug_logging
 from .ob2 import Verifier, BadgeSigned, BadgeStatus
@@ -151,7 +151,11 @@ def _verify_ob2(args: argparse.Namespace) -> None:
         else:
             print('[-] ', check.msg)
 
-    except VerifierExceptions as exc:
+    except LibOpenBadgesException as exc:
+        # Present any library exception (unsupported image format, malformed
+        # assertion, unreadable key material, …) as a clean CLI error rather
+        # than an uncaught traceback. BadgeImgFormatUnsupported and the key-read
+        # errors inherit LibOpenBadgesException but not VerifierExceptions.
         print('[-] %s' % exc)
         sys.exit(-1)
 

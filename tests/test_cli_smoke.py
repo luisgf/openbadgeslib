@@ -221,6 +221,22 @@ def test_verifier_missing_file_exits(tmp_path):
             openbadges_verifier.main()
 
 
+def test_verifier_ob2_unsupported_extension_exits_cleanly(tmp_path, capsys):
+    # An OB2 badge file whose extension is neither .svg nor .png makes
+    # read_from_file raise BadgeImgFormatUnsupported (a LibOpenBadgesException,
+    # not a VerifierExceptions). The CLI must report it cleanly, not crash.
+    import pytest
+    from openbadgeslib import openbadges_verifier
+    badge_file = tmp_path / 'badge.jpg'
+    badge_file.write_bytes(b'not really an image')
+    argv = ['openbadges-verifier', '-i', str(badge_file),
+            '-r', 'recipient@example.com', '-V', '2']
+    with patch.object(sys, 'argv', argv):
+        with pytest.raises(SystemExit):
+            openbadges_verifier.main()
+    assert '[-]' in capsys.readouterr().out
+
+
 def test_verifier_local_missing_pubkey_file_exits_cleanly(tmp_path):
     # The --local branch of _resolve_trusted_pubkey must guard a missing
     # public_key path the same way the --pubkey branch already does, instead
