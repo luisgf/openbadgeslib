@@ -6,6 +6,11 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * Unreleased
 
+  - fix: OB3 credential parsing now rejects a non-string required id/name
+    field (vc.id, issuer.id, credentialSubject.id, achievement.id/name) with
+    a clean OB3VerificationError, instead of leaking a raw AttributeError out
+    of verify() when recipient binding lower-cases the id.
+
   - fix: OB2 check_revocation() now raises AssertionFormatIncorrect instead
     of a raw AttributeError when the badge/issuer JSON carries a non-string
     'badge'/'issuer'/'revocationList' URL field.

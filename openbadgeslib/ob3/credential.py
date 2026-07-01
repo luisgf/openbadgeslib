@@ -225,11 +225,16 @@ def _as_dict_or_empty(value: Any) -> dict:
     return value if isinstance(value, dict) else {}
 
 
-def _require(data: dict, key: str, where: str) -> Any:
-    """Return data[key], raising a clear ValueError if missing or empty."""
+def _require(data: dict, key: str, where: str) -> str:
+    """Return data[key] as a string, raising a clear ValueError if missing,
+    empty, or not a string. All fields validated here (id/name) are identifiers
+    consumed as strings downstream (e.g. recipient binding calls .lower()), so a
+    non-string value must be rejected rather than crash later."""
     value = data.get(key)
     if value is None or value == "":
         raise ValueError("missing required field %s.%s" % (where, key))
+    if not isinstance(value, str):
+        raise ValueError("field %s.%s must be a string" % (where, key))
     return value
 
 

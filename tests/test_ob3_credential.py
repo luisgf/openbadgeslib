@@ -5,6 +5,7 @@ import pytest
 
 from openbadgeslib.ob3.credential import (
     Achievement, Issuer, OpenBadgeCredential, OB3_CONTEXT, _iso, _parse_iso, _parse_date,
+    _require,
 )
 
 
@@ -260,3 +261,10 @@ class TestHelpers:
         # surface downstream.
         with pytest.raises(ValueError):
             _parse_iso('2026-01-01T00:00:00')
+
+    @pytest.mark.parametrize('bad_value', [12345, True, ['a'], {'x': 1}])
+    def test_require_non_string_raises_value_error(self, bad_value):
+        # id/name fields are consumed as strings downstream (recipient binding
+        # calls .lower()); a non-string must be rejected here.
+        with pytest.raises(ValueError, match="must be a string"):
+            _require({'id': bad_value}, 'id', 'vc.credentialSubject')
