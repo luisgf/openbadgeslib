@@ -542,6 +542,26 @@ def test_signer_ob2_mail_badge_sends(tmp_path):
     smtp.sendmail.assert_called_once()
 
 
+def test_signer_ob2_mail_badge_auth_without_ssl_reports_clean_error(tmp_path, capsys):
+    # BadgeMail.__init__ raises a bare ValueError when username is set but
+    # use_ssl is not True. The CLI must report it cleanly (the badge is
+    # already signed and saved) instead of crashing with a raw traceback.
+    from openbadgeslib import openbadges_signer
+    cfg = _write_ob2_sign_config(tmp_path)
+    cfg.write_text(cfg.read_text().replace(
+        'mail_from = no-reply@example.com\n',
+        'mail_from = no-reply@example.com\nusername = user\npassword = pass\n'))
+    argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
+            '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '2', '-E', '-M']
+    with patch('openbadgeslib.ob2.badge.download_file', return_value=b'data'), \
+            patch.object(sys, 'argv', argv):
+        openbadges_signer.main()   # must not raise
+    out = capsys.readouterr().out
+    assert '[!] Could not send mail' in out
+    signed = list(tmp_path.glob('badge_1_recipient@example.com.*'))
+    assert signed, "badge must still be saved even though mailing failed"
+
+
 def test_signer_requires_evidence_choice(tmp_path):
     import pytest
     from openbadgeslib import openbadges_signer

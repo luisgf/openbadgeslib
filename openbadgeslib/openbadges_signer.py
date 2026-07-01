@@ -163,11 +163,17 @@ def _sign_ob2(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
             username = conf['smtp'].get('username')
             password = conf['smtp'].get('password')
 
-            mail = BadgeMail(server, port, use_ssl, mail_from, username, password)
-            subject, body = mail.get_mail_content(conf[badge]['mail'])
-            mail.set_subject(subject)
-            mail.set_body(body)
-            mail.send(badge_signed)
+            try:
+                mail = BadgeMail(server, port, use_ssl, mail_from, username, password)
+                subject, body = mail.get_mail_content(conf[badge]['mail'])
+                mail.set_subject(subject)
+                mail.set_body(body)
+                mail.send(badge_signed)
+            except ValueError as err:
+                # e.g. a username set without use_ssl=True — the badge is
+                # already signed and saved, so report the config error
+                # instead of crashing with a traceback.
+                print('[!] Could not send mail: %s' % err)
 
         print('%s at: %s' % (msg.strip('\n'), badge_file_out))
 
