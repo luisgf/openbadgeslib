@@ -134,7 +134,17 @@ Catch the most specific class you can act on; fall back to `LibOpenBadgesExcepti
 
 ### Low-level JWS exceptions
 
-The bundled JWS implementation in `openbadgeslib._jws` has its own small set of exceptions in `openbadgeslib._jws.exceptions`. These are **plain `Exception` subclasses** — they do *not* inherit from `LibOpenBadgesException`, so a `except LibOpenBadgesException` will not catch them.
+The bundled JWS implementation in `openbadgeslib._jws` has its own small set of exceptions in `openbadgeslib._jws.exceptions`, all under a `JWSException` base, which **does** inherit from `LibOpenBadgesException`. A single `except LibOpenBadgesException` catches these too, alongside the OB2/OB3 errors above.
+
+```text
+LibOpenBadgesException
+└── JWSException
+    ├── MissingKey
+    ├── MissingSigner
+    ├── MissingVerifier
+    ├── SignatureError
+    └── RouteMissingError
+```
 
 | Exception | Meaning |
 | --- | --- |
@@ -144,7 +154,7 @@ The bundled JWS implementation in `openbadgeslib._jws` has its own small set of 
 | `SignatureError` | The JWS signature is invalid |
 | `RouteMissingError` | No route registered for the operation |
 
-These are internal plumbing; most code should catch the higher-level errors above. If you call into `_jws` directly, catch them explicitly:
+These are internal plumbing; most code should catch the higher-level errors above. If you call into `_jws` directly, catch them explicitly (or catch the `JWSException` base for all of them at once):
 
 ```python
 from openbadgeslib._jws.exceptions import SignatureError, MissingKey
