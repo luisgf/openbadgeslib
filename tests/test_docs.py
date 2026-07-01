@@ -82,6 +82,15 @@ def test_version_is_single_sourced():
     assert not re.search(r'(?m)^version\s*=\s*"', pyproject)
 
 
+def test_cli_reference_does_not_claim_fileexistserror():
+    """openbadges-init/publish exit cleanly with a '[!] ... already exists'
+    message on a pre-existing target; the wiki must not still claim they raise
+    a raw FileExistsError."""
+    doc = (WIKI / 'CLI-Reference.md').read_text(encoding='utf-8')
+    assert 'FileExistsError' not in doc, \
+        "CLI-Reference.md still claims a FileExistsError; init/publish exit cleanly instead"
+
+
 @pytest.mark.parametrize('name', CLI_TOOLS)
 def test_build_parser_is_exposed(name):
     """Each CLI tool exposes build_parser() so the parser is testable/documentable."""
