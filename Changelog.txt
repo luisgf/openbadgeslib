@@ -6,6 +6,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * Unreleased
 
+  - fix: OB3Signer.sign() now raises ErrorSigningFile instead of leaking a
+    raw jwt.exceptions.InvalidKeyError when the requested algorithm doesn't
+    match the given key's type.
+
   - fix: OB3Verifier.extract_token_from_png() now raises ErrorParsingFile
     instead of leaking a raw UnicodeDecodeError when a PNG's "openbadges"
     iTXt chunk contains malformed UTF-8 text.

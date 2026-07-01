@@ -56,7 +56,11 @@ class OB3Signer:
     def sign(self, credential: OpenBadgeCredential) -> str:
         """Sign a credential and return a compact JWT-VC string."""
         payload = credential.to_jwt_payload()
-        return jwt.encode(payload, self.privkey_pem, algorithm=self.algorithm)
+        try:
+            return jwt.encode(payload, self.privkey_pem, algorithm=self.algorithm)
+        except jwt.exceptions.PyJWTError as exc:
+            raise ErrorSigningFile(
+                "Could not sign credential with algorithm %s: %s" % (self.algorithm, exc)) from exc
 
     # ── image baking ───────────────────────────────────────────────────────────
 
