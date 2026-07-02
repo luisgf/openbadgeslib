@@ -169,6 +169,6 @@ This lets you change `base` once and have every dependent path update automatica
 | --- | --- |
 | `openbadges-keygenerator` | `[paths]`, `[logs]`, `[issuer]`, `[badge_<name>]` (`private_key`, `public_key`, `key_type`) |
 | `openbadges-signer` | `[paths]`, `[logs]`, `[smtp]` (with `-M`), `[issuer]` (OB3), `[badge_<name>]` |
-| `openbadges-publish` | `[issuer]`, `[badge_<name>]` (OB2 only; OB3 needs no publication) |
+| `openbadges-publish` | `[paths]` (`base_status`, OB3), `[issuer]` (incl. `did`), `[badge_<name>]` (OB2: `crypto_key`/`hosted_assertions_base`; OB3: `status_lists`/`status_size_bits`/`status_base`) |
 
 For the full flag list of each command see [[CLI Reference]]. For end-to-end recipes (issuing, mailing, publishing) see [[Guides]].
