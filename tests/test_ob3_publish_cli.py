@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from openbadgeslib import openbadges_signer
+from openbadgeslib import openbadges_publish, openbadges_signer
 
 TESTS_DIR = Path(__file__).parent
 RECIPIENT = 'recipient@example.com'
@@ -167,3 +167,164 @@ class TestIssuerDid:
         with pytest.raises(SystemExit):
             _sign(tmp_path, cfg)
         assert "[issuer] did" in capsys.readouterr().out
+
+
+# ── openbadges-publish -V 3 ──────────────────────────────────────────────────
+
+def _publish(tmp_path, cfg, extra=()):
+    out = tmp_path / 'pub'
+    argv = ['openbadges-publish', '-c', str(cfg), '-o', str(out),
+            '-V', '3'] + list(extra)
+    with patch.object(sys, 'argv', argv):
+        openbadges_publish.main()
+    return out
+
+
+def _served_from(pub_dir):
+    """A download callable mapping the badge's status list URLs onto the
+    files publish generated (the tests' stand-in for the web server)."""
+    def download(url):
+        assert url.startswith('https://example.com/issuer/badge_1/')
+        name = url.rsplit('/', 1)[1]
+        return (pub_dir / 'badge_1' / name).read_bytes()
+    return download
+
+
+def _check_status(badge_file, pub_pem, pub_dir):
+    from openbadgeslib.ob3 import OB3Verifier, check_credential_status
+    token = OB3Verifier.extract_token_from_svg(badge_file.read_bytes())
+    credential = OB3Verifier(pubkey_pem=pub_pem).verify(
+        token, expected_recipient=RECIPIENT)
+    check_credential_status(credential, download=_served_from(pub_dir))
+
+
+class TestPublishGeneration:
+    def test_generates_lists_did_and_pem(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path, status_lists='revocation, suspension')
+        _sign(tmp_path, cfg)
+        pub = _publish(tmp_path, cfg)
+
+        assert (pub / 'badge_1' / 'revocation.jwt').is_file()
+        assert (pub / 'badge_1' / 'suspension.jwt').is_file()
+        assert (pub / 'badge_1' / 'verify.pem').read_bytes() == \
+            (TESTS_DIR / 'test_verify_rsa.pem').read_bytes()
+        doc = json.loads((pub / 'did.json').read_text())
+        assert doc['id'] == 'did:web:example.com:issuer'
+        assert doc['verificationMethod'][0]['id'] == \
+            'did:web:example.com:issuer#badge_1'
+        assert 'did:web:example.com:issuer' in capsys.readouterr().out
+
+    def test_fresh_credential_passes_check_status(self, tmp_path, rsa_pub_pem):
+        cfg = _write_config(tmp_path, status_lists='revocation, suspension')
+        badge_file = _sign(tmp_path, cfg)
+        pub = _publish(tmp_path, cfg)
+        _check_status(badge_file, rsa_pub_pem, pub)   # must not raise
+
+    def test_no_status_lists_still_publishes_did(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path)
+        pub = _publish(tmp_path, cfg)
+        assert (pub / 'did.json').is_file()
+        assert not (pub / 'badge_1').exists()
+        assert 'no status_lists' in capsys.readouterr().out
+
+    def test_republish_over_existing_directory(self, tmp_path):
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        _sign(tmp_path, cfg)
+        pub = _publish(tmp_path, cfg)
+        _publish(tmp_path, cfg)   # unlike -V 1/2 this must not exit
+        assert (pub / 'badge_1' / 'revocation.jwt').is_file()
+
+    @pytest.mark.parametrize('key,alg', [('rsa', 'RS256'), ('ecc', 'ES256')])
+    def test_lists_are_signed_with_the_badge_key(self, tmp_path, key, alg):
+        import jwt as pyjwt
+        cfg = _write_config(tmp_path, key=key, status_lists='revocation')
+        _sign(tmp_path, cfg)
+        pub = _publish(tmp_path, cfg)
+        token = (pub / 'badge_1' / 'revocation.jwt').read_text()
+        pub_pem = (TESTS_DIR / ('test_verify_%s.pem' % key)).read_bytes()
+        payload = pyjwt.decode(token, pub_pem, algorithms=[alg])
+        assert payload['iss'] == 'https://example.com/issuer/'
+        assert payload['credentialSubject']['statusPurpose'] == 'revocation'
+
+
+class TestPublishManagement:
+    def _issued(self, tmp_path, rsa_pub_pem, **kw):
+        cfg = _write_config(tmp_path,
+                            status_lists=kw.pop('status_lists',
+                                                'revocation, suspension'))
+        badge_file = _sign(tmp_path, cfg)
+        credential = _credential_from(badge_file, rsa_pub_pem)
+        return cfg, badge_file, credential
+
+    def test_revoke_by_jti_then_verification_fails(self, tmp_path, rsa_pub_pem,
+                                                   capsys):
+        from openbadgeslib.ob3 import OB3VerificationError
+        cfg, badge_file, credential = self._issued(tmp_path, rsa_pub_pem)
+        pub = _publish(tmp_path, cfg, ['--revoke', credential.id,
+                                       '--reason', 'cheating'])
+        out = capsys.readouterr().out
+        assert 'REVOKED' in out and credential.id in out
+        assert 'Re-upload' in out
+        with pytest.raises(OB3VerificationError, match='revocation'):
+            _check_status(badge_file, rsa_pub_pem, pub)
+
+    def test_revoke_by_email(self, tmp_path, rsa_pub_pem):
+        from openbadgeslib.ob3 import OB3VerificationError
+        cfg, badge_file, _credential = self._issued(tmp_path, rsa_pub_pem)
+        pub = _publish(tmp_path, cfg, ['--revoke', RECIPIENT])
+        with pytest.raises(OB3VerificationError, match='revocation'):
+            _check_status(badge_file, rsa_pub_pem, pub)
+
+    def test_revoke_scoped_to_badge(self, tmp_path, rsa_pub_pem):
+        cfg, badge_file, _credential = self._issued(tmp_path, rsa_pub_pem)
+        _publish(tmp_path, cfg, ['--revoke', RECIPIENT, '-b', '1'])
+
+    def test_suspend_then_unsuspend(self, tmp_path, rsa_pub_pem):
+        from openbadgeslib.ob3 import OB3VerificationError
+        cfg, badge_file, credential = self._issued(tmp_path, rsa_pub_pem)
+        pub = _publish(tmp_path, cfg, ['--suspend', credential.id])
+        with pytest.raises(OB3VerificationError, match='suspension'):
+            _check_status(badge_file, rsa_pub_pem, pub)
+        pub = _publish(tmp_path, cfg, ['--unsuspend', credential.id])
+        _check_status(badge_file, rsa_pub_pem, pub)   # suspension lifted
+
+    def test_revoke_twice_fails(self, tmp_path, rsa_pub_pem, capsys):
+        cfg, _badge_file, credential = self._issued(tmp_path, rsa_pub_pem)
+        _publish(tmp_path, cfg, ['--revoke', credential.id])
+        with pytest.raises(SystemExit):
+            _publish(tmp_path, cfg, ['--revoke', credential.id])
+        assert 'already revoked' in capsys.readouterr().out
+
+    def test_unknown_credential_fails(self, tmp_path, rsa_pub_pem, capsys):
+        cfg, _badge_file, _credential = self._issued(tmp_path, rsa_pub_pem)
+        with pytest.raises(SystemExit):
+            _publish(tmp_path, cfg, ['--revoke', 'urn:uuid:nope'])
+        assert 'No credential' in capsys.readouterr().out
+
+    def test_ambiguous_email_lists_jtis(self, tmp_path, rsa_pub_pem, capsys):
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        first = _sign(tmp_path, cfg)
+        first.unlink()          # allow a second issuance to the same file
+        _sign(tmp_path, cfg)
+        capsys.readouterr()     # drop the signer output (it also prints JTIs)
+        with pytest.raises(SystemExit):
+            _publish(tmp_path, cfg, ['--revoke', RECIPIENT])
+        out = capsys.readouterr().out
+        assert 'several credentials' in out
+        assert out.count('urn:uuid:') == 2
+
+    def test_management_flags_require_v3(self, tmp_path):
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        argv = ['openbadges-publish', '-c', str(cfg), '-o',
+                str(tmp_path / 'pub2'), '-V', '2', '--revoke', 'x']
+        with patch.object(sys, 'argv', argv):
+            with pytest.raises(SystemExit, match='-V 3'):
+                openbadges_publish.main()
+
+    def test_reason_requires_operation(self, tmp_path):
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        argv = ['openbadges-publish', '-c', str(cfg), '-o',
+                str(tmp_path / 'pub'), '-V', '3', '--reason', 'x']
+        with patch.object(sys, 'argv', argv):
+            with pytest.raises(SystemExit, match='--reason'):
+                openbadges_publish.main()
