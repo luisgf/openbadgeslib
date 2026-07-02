@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v3.1.0 - unreleased
+* v3.1.0 - 2026-07-02
 
   - feat(ob3): issuer-side credential status lifecycle. Badges that opt in
     with `status_lists = revocation, suspension` in their config section get
