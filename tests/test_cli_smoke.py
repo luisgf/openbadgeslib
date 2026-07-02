@@ -534,8 +534,10 @@ def test_badgemail_send_uses_ssl_and_png_mime(png_rsa_badge):
     smtp.sendmail.assert_called_once()
 
 
-def test_badgemail_auth_error_exits(svg_rsa_badge):
-    import pytest
+def test_badgemail_auth_error_is_reported_not_fatal(svg_rsa_badge, capsys):
+    # A failed SMTP AUTH must be reported like every other mail failure, not
+    # kill the caller's process: send() is library code and must never raise
+    # SystemExit (a batch mailer would otherwise die on the first bad login).
     from unittest.mock import MagicMock
     from smtplib import SMTPAuthenticationError
     from openbadgeslib.mail import BadgeMail
@@ -547,8 +549,9 @@ def test_badgemail_auth_error_exits(svg_rsa_badge):
     smtp = MagicMock()
     smtp.login.side_effect = SMTPAuthenticationError(535, b'bad creds')
     with patch('openbadgeslib.mail.SMTP_SSL', return_value=smtp):
-        with pytest.raises(SystemExit):
-            mail.send(signed)
+        mail.send(signed)   # must return, not exit
+    assert 'Error sending mail' in capsys.readouterr().out
+    smtp.sendmail.assert_not_called()
 
 
 def test_get_mail_content_empty_file_returns_none(tmp_path):

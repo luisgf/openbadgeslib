@@ -21,9 +21,8 @@
         License along with this library.
 """
 
-import sys
 from typing import Any, Optional, Tuple
-from smtplib import SMTP_SSL, SMTP, SMTPAuthenticationError, SMTPException
+from smtplib import SMTP_SSL, SMTP, SMTPException
 from os.path import basename
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
@@ -81,20 +80,18 @@ class BadgeMail():
                 smtp = SMTP(self.smtp_server, self.smtp_port)
 
             if self.username:
-                try:
-                    smtp.login(self.username, self.password)
-                except SMTPAuthenticationError as err:
-                    print('[!] SMTP Auth Error: %s' % err)
-                    sys.exit(-1)
+                smtp.login(self.username, self.password)
 
             smtp.sendmail(self.mail_from, badge.get_identity(), msg.as_string())
             smtp.quit()
         except (SMTPException, OSError, ValueError) as err:
             # Connection refused, DNS failure, TLS mismatch, SMTP protocol
-            # errors, or a CR/LF in mail_from/recipient (smtplib itself
-            # raises a bare ValueError as its header-injection guard) — the
-            # badge is already signed and saved, so report the mail failure
-            # instead of crashing with a traceback.
+            # errors, a failed AUTH (SMTPAuthenticationError is an
+            # SMTPException), or a CR/LF in mail_from/recipient (smtplib
+            # itself raises a bare ValueError as its header-injection guard) —
+            # the badge is already signed and saved, so report the mail
+            # failure instead of killing the caller's process. This method is
+            # library code: it must never call sys.exit / raise SystemExit.
             print('[!] Error sending mail to: %s. %s' % (badge.get_identity(), err))
 
     def get_mail_content(self, file: str) -> Tuple[Optional[str], Optional[str]]:
