@@ -66,7 +66,7 @@ After installation, five command-line tools are available in the active environm
 
 | Command | What it does |
 | --- | --- |
-| `openbadges-init` | First command to run. Creates a sample `config.ini` and the directory structure (`keys/`, `images/`, `log/`). |
+| `openbadges-init` | First command to run. Creates a sample `config.ini` and the directory structure (`keys/`, `images/`, `log/`, `status/`). |
 | `openbadges-keygenerator` | Generates an RSA, ECC, or Ed25519 key pair for a badge section defined in `config.ini`. |
 | `openbadges-signer` | Signs a badge image (SVG or PNG) for a given recipient email address. |
 | `openbadges-verifier` | Extracts and verifies the assertion embedded in a signed badge. |

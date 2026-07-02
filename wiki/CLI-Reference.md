@@ -4,7 +4,7 @@ All scripts except `openbadges-init` accept `-v / --version` (prints the library
 
 ## openbadges-init
 
-Bootstraps a working directory: creates the directory plus `keys/`, `images/` and `log/` subdirectories (with a restrictive `0o077` umask) and copies the bundled `config.ini.example` to `<DIRECTORY>/config.ini`.
+Bootstraps a working directory: creates the directory plus `keys/`, `images/`, `log/` and `status/` subdirectories (with a restrictive `0o077` umask) and copies the bundled `config.ini.example` to `<DIRECTORY>/config.ini`.
 
 This script does **not** use argparse. It takes a single positional argument and only recognises `-h` (which prints the usage line). It fails if the target path already exists.
 
@@ -24,7 +24,7 @@ openbadges-init DIRECTORY
 ```sh
 $ openbadges-init ./myissuer
 $ ls myissuer
-config.ini  images  keys  log
+config.ini  images  keys  log  status
 ```
 
 If the target path already exists the script prints `[!] <path> already exists` and exits with a non-zero status. Edit the generated `config.ini` before running any other command — see [[Configuration]].
