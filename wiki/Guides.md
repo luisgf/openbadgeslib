@@ -75,7 +75,7 @@ Add `-s` to print the decoded assertion (OB2) or the issuer, achievement, dates 
 
 ## Publish badges to a web server
 
-For OB 1.0/2.0, `openbadges-publish` generates the static metadata files that hosted badges point to. Pass `-V 2` for strict Open Badges 2.0 (the default `-V 3` only prints a notice). The output directory must not already exist; it is created with restrictive permissions:
+For OB 1.0/2.0, `openbadges-publish` generates the static metadata files that hosted badges point to. Pass `-V 2` for strict Open Badges 2.0. (The default `-V 3` also publishes — the issuer's did:web document and Bitstring Status Lists — see [Publish OB3 trust artefacts and manage revocation](#publish-ob3-trust-artefacts-and-manage-revocation) below.) The OB1/OB2 output directory must not already exist; it is created with restrictive permissions:
 
 ```sh
 openbadges-publish -c ./config/config.ini -o ./public -V 2
