@@ -14,10 +14,24 @@ from openbadgeslib.errors import (
     StatusListFull,
     UnknownCredential,
 )
-from openbadgeslib.ob3.status_registry import StatusRegistry
+from openbadgeslib.ob3.status_registry import StatusRegistry, _iso_z
 
 NOW = datetime(2026, 7, 2, 10, 0, 0, tzinfo=timezone.utc)
 JTI = 'urn:uuid:00000000-0000-0000-0000-0000000000cc'
+
+
+class TestIsoZ:
+    def test_utc_aware(self):
+        assert _iso_z(NOW) == '2026-07-02T10:00:00Z'
+
+    def test_naive_assumed_utc(self):
+        assert _iso_z(datetime(2026, 7, 2, 10, 0, 0)) == '2026-07-02T10:00:00Z'
+
+    def test_non_utc_offset_normalized(self):
+        from datetime import timedelta
+        tz2 = timezone(timedelta(hours=2))
+        assert _iso_z(datetime(2026, 7, 2, 12, 0, 0, tzinfo=tz2)) == \
+            '2026-07-02T10:00:00Z'
 
 
 def _registry(tmp_path, size_bits=131072):

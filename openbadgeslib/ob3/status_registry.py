@@ -38,7 +38,7 @@ import secrets
 import tempfile
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set
 
 from ..errors import (
@@ -293,4 +293,14 @@ def _event_from(raw: Optional[dict]) -> Optional[StatusEvent]:
 
 
 def _iso_z(dt: datetime) -> str:
-    return dt.isoformat(timespec='seconds').replace('+00:00', 'Z')
+    """Render *dt* as a UTC ``Z``-suffixed ISO 8601 timestamp.
+
+    Normalises to UTC first (mirroring ob3.credential._iso), so a naive or
+    non-UTC datetime still yields the ``...Z`` form the registry and W3C
+    status lists expect rather than an offset-less or ``+02:00`` string. A
+    naive datetime is assumed to be UTC.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat(timespec='seconds').replace(
+        '+00:00', 'Z')
