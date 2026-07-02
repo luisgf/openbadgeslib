@@ -68,12 +68,19 @@ def normalize_recipient_id(value: Optional[str]) -> Optional[str]:
     already carry a scheme are returned unchanged. Shared by the OB3 signer and
     verifier so both agree (an unconditional ``mailto:`` prefix would corrupt a
     DID into ``mailto:did:...``).
+
+    "Already carries a scheme" is detected as a ``:`` before the first ``@``,
+    so scheme-qualified values such as ``mailto:``/``acct:user@host`` or an
+    ``https://user@host`` URL are left untouched — only a bare ``user@host``
+    email is prefixed.
     """
     if value is None:
         return None
-    if not value.lower().startswith('mailto:') and '@' in value:
-        return 'mailto:' + value
-    return value
+    if '@' not in value:
+        return value
+    if ':' in value[:value.index('@')]:
+        return value
+    return 'mailto:' + value
 
 
 def recipient_ids_match(a: Optional[str], b: Optional[str]) -> bool:

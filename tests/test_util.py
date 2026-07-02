@@ -309,6 +309,13 @@ class TestNormalizeRecipientId:
         # 'mailto:' prepended.
         assert normalize_recipient_id('MAILTO:a@b.com') == 'MAILTO:a@b.com'
 
+    def test_other_scheme_with_at_not_prefixed(self):
+        # Any value already carrying a scheme (a ':' before the first '@') is
+        # left untouched — only a bare email is prefixed. A spurious mailto:
+        # would corrupt e.g. acct: identifiers or userinfo-bearing URLs.
+        assert normalize_recipient_id('acct:user@host') == 'acct:user@host'
+        assert normalize_recipient_id('https://user@host/x') == 'https://user@host/x'
+
 
 class TestRecipientIdsMatch:
     def test_mailto_case_insensitive_match(self):
