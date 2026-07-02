@@ -76,6 +76,14 @@ class TestExtractSVGAssertion:
         with pytest.raises(Exception):
             extract_svg_assertion(b'this is not svg xml')
 
+    def test_element_without_verify_attribute_returns_none(self):
+        # A well-formed SVG whose openbadges element lacks a verify attribute
+        # is not a signed badge; extract_svg returns None rather than raising
+        # a raw KeyError.
+        svg = (b'<svg xmlns:openbadges="http://openbadges.org">'
+               b'<openbadges:assertion/></svg>')
+        assert baking.extract_svg(svg) is None
+
 
 class TestExtractPNGAssertion:
     def test_extract_from_signed_png(self, signed_png_rsa):

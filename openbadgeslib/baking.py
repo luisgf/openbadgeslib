@@ -103,9 +103,11 @@ def has_svg(image_bytes: bytes, *, element: str = SVG_ELEMENT) -> bool:
 
 
 def extract_svg(image_bytes: bytes, *, element: str = SVG_ELEMENT) -> Optional[str]:
-    """Return the embedded token string, or None if there is no *element* node.
+    """Return the embedded token string, or None if the badge carries no token.
 
-    Raises on malformed XML (left to the caller to map to its own error type).
+    None covers both a missing *element* node and a present element with no
+    ``verify`` attribute (a well-formed SVG that simply isn't a signed badge).
+    Malformed XML still raises (left to the caller to map to its own error type).
     """
     svg_doc = None
     try:
@@ -113,7 +115,8 @@ def extract_svg(image_bytes: bytes, *, element: str = SVG_ELEMENT) -> Optional[s
         nodes = svg_doc.getElementsByTagName(element)
         if not nodes:
             return None
-        return nodes[0].attributes['verify'].nodeValue
+        attrs = nodes[0].attributes
+        return attrs['verify'].nodeValue if 'verify' in attrs else None
     finally:
         if svg_doc is not None:
             svg_doc.unlink()
