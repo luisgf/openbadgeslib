@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional, Union
 from urllib.parse import urlparse
 
-from .models import Assertion, CryptographicKey, hash_identity
+from .models import Assertion, CryptographicKey, hash_identity, _parse_iso
 from ..errors import ErrorParsingFile, UnknownKeyType, LibOpenBadgesException
 from ..keys import detect_key_type, key_to_pem
 from ..util import download_file
@@ -178,11 +178,25 @@ class OB2Verifier:
 
         # The fetched copy must match the local (baked) claims, so a tampered
         # local file cannot claim an id that legitimately hosts something else.
-        for field_name in ("id", "recipient", "badge", "issuedOn"):
-            if fetched.get(field_name) != assertion.to_dict().get(field_name):
+        local = assertion.to_dict()
+        for field_name in ("id", "recipient", "badge"):
+            if fetched.get(field_name) != local.get(field_name):
                 raise OB2VerificationError(
                     "Hosted assertion at %s does not match the badge's local "
                     "claims (field %r differs)" % (assertion.id, field_name))
+
+        # issuedOn is compared as a timestamp, not a raw string, so a
+        # conformant host serving the semantically-identical form (a +00:00
+        # offset instead of Z, or microseconds) is not falsely rejected.
+        try:
+            same_issued = (_parse_iso(fetched.get("issuedOn"), "hosted issuedOn")
+                           == _parse_iso(local.get("issuedOn"), "assertion.issuedOn"))
+        except ValueError:
+            same_issued = False
+        if not same_issued:
+            raise OB2VerificationError(
+                "Hosted assertion at %s does not match the badge's local "
+                "claims (field 'issuedOn' differs)" % (assertion.id,))
 
         issuer = self._fetch_issuer(assertion)
         self._check_hosted_scope(assertion.id, issuer)

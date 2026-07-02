@@ -177,6 +177,26 @@ class TestHosted:
             with pytest.raises(OB2VerificationError):
                 OB2Verifier().verify(token)
 
+    def test_equivalent_issuedon_form_accepted(self, rsa_priv_pem):
+        # A conformant host may serve the same instant as +00:00 instead of Z;
+        # that must not false-reject the badge (compared as a timestamp).
+        token, a = _hosted(rsa_priv_pem)
+        hosted = a.to_dict()
+        hosted['issuedOn'] = hosted['issuedOn'].replace('Z', '+00:00')
+        url_map = {a.id: hosted, BADGE: {'issuer': ISSUER}, ISSUER: {'id': ISSUER}}
+        with patch(PATCH_TARGET, side_effect=_dl(url_map)):
+            result = OB2Verifier().verify(token, expected_recipient=RECIPIENT)
+        assert result.verification.type == 'HostedBadge'
+
+    def test_different_issuedon_rejected(self, rsa_priv_pem):
+        token, a = _hosted(rsa_priv_pem)
+        hosted = a.to_dict()
+        hosted['issuedOn'] = '2000-01-01T00:00:00+00:00'   # a different instant
+        url_map = {a.id: hosted, BADGE: {'issuer': ISSUER}, ISSUER: {'id': ISSUER}}
+        with patch(PATCH_TARGET, side_effect=_dl(url_map)):
+            with pytest.raises(OB2VerificationError):
+                OB2Verifier().verify(token)
+
 
 # ── revocation ──────────────────────────────────────────────────────────────────
 
