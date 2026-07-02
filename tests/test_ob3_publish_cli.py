@@ -227,6 +227,21 @@ class TestPublishGeneration:
         assert not (pub / 'badge_1').exists()
         assert 'no status_lists' in capsys.readouterr().out
 
+    def test_badge_without_keys_is_skipped_in_did_json(self, tmp_path, capsys):
+        # The scaffolded config ships badge sections whose keys may not have
+        # been generated yet; they must not block publishing the others.
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        with cfg.open('a') as f:
+            f.write('\n[badge_2]\nname = B2\ndescription = d\n'
+                    'public_key = %s\nprivate_key = %s\n'
+                    % (tmp_path / 'missing_pub.pem', tmp_path / 'missing.pem'))
+        _sign(tmp_path, cfg)
+        pub = _publish(tmp_path, cfg)
+        doc = json.loads((pub / 'did.json').read_text())
+        assert [m['id'].rsplit('#')[1] for m in doc['verificationMethod']] == \
+            ['badge_1']
+        assert 'Skipping [badge_2]' in capsys.readouterr().out
+
     def test_republish_over_existing_directory(self, tmp_path):
         cfg = _write_config(tmp_path, status_lists='revocation')
         _sign(tmp_path, cfg)

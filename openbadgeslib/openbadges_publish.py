@@ -122,7 +122,7 @@ def _publish_ob3(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
     """
     from datetime import datetime, timezone
     from .confparser import ob3_issuer_id, ob3_status_config
-    from .errors import StatusError
+    from .errors import LibOpenBadgesException, StatusError
     from .keys import alg_for_key_type, detect_key_type, public_jwk_from_pem
     from .ob3.did import build_did_document, did_web_from_url
     from .ob3.status_list import (build_status_list_credential,
@@ -222,13 +222,19 @@ def _publish_ob3(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
 
         methods = []
         for name in status_confs:
+            # A badge whose keys were never generated must not block the
+            # publication of the others' — skip it in did.json with a notice.
+            # (Its own status lists, if configured, still fail hard below:
+            # they cannot be signed without the private key.)
             try:
                 with open(conf[name]['public_key'], 'rb') as key:
                     methods.append((name, public_jwk_from_pem(key.read())))
-            except (OSError, KeyError, StatusError) as exc:
-                print('[!] Could not read the public key of [%s]: %s'
-                      % (name, exc))
-                sys.exit(-1)
+            except (OSError, KeyError, LibOpenBadgesException) as exc:
+                print('[!] Skipping [%s] in did.json — could not read its '
+                      'public key: %s' % (name, exc))
+        if not methods:
+            sys.exit('[!] No badge public key could be read; generate key '
+                     'pairs with openbadges-keygenerator first')
         _write_atomic(os.path.join(args.output, 'did.json'),
                       _dump(build_did_document(did, methods)))
 
