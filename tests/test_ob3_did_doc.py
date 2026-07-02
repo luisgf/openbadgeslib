@@ -36,6 +36,16 @@ class TestDidWebFromUrl:
         with pytest.raises(ValueError):
             did_web_from_url(url)
 
+    @pytest.mark.parametrize('url', [
+        'https://user:secret@example.com/',
+        'https://user@example.com/badges/',
+    ])
+    def test_rejects_userinfo(self, url):
+        # A user:pass@ credential must never be embedded into the DID (which
+        # is carried by every issued credential); reject rather than leak it.
+        with pytest.raises(ValueError):
+            did_web_from_url(url)
+
     @pytest.mark.parametrize('url,doc_url', [
         ('https://example.com', 'https://example.com/.well-known/did.json'),
         ('https://example.com/badges/', 'https://example.com/badges/did.json'),

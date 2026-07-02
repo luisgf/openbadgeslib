@@ -151,15 +151,23 @@ def did_web_from_url(url: str) -> str:
     percent-encoded, path segments join with ':', and a bare host resolves
     at ``/.well-known/did.json`` while a path resolves at ``<path>/did.json``.
     Raises ValueError for a non-HTTPS or hostless URL — did:web trusts TLS,
-    so there is nothing an http:// identifier could safely mean.
+    so there is nothing an http:// identifier could safely mean — and for a
+    URL carrying userinfo, which a did:web authority must not contain (and
+    which would otherwise leak a ``user:password@`` credential into the DID
+    embedded in every issued credential).
     """
     from urllib.parse import quote, urlsplit
     parts = urlsplit(url)
     if parts.scheme != 'https':
         raise ValueError('did:web requires an https URL, got %r' % (url,))
-    if not parts.netloc:
+    if parts.username or parts.password:
+        raise ValueError('did:web URL must not contain userinfo (user:pass@)')
+    if not parts.hostname:
         raise ValueError('URL %r has no host' % (url,))
-    pieces = [quote(parts.netloc, safe='')]
+    authority = parts.hostname
+    if parts.port is not None:
+        authority += ':%d' % parts.port
+    pieces = [quote(authority, safe='')]
     pieces += [quote(seg, safe='') for seg in parts.path.split('/') if seg]
     return 'did:web:' + ':'.join(pieces)
 
