@@ -157,6 +157,18 @@ class TestGetBadgeStatus:
             result = v.get_badge_status(badge)
         assert result.status is BadgeStatus.REVOKED
 
+    def test_malformed_remote_json_returns_signature_error(self, badge_for_verify_rsa):
+        # check_revocation raises AssertionFormatIncorrect (a VerifierExceptions,
+        # not a ValueError) on malformed/non-object remote badge/issuer JSON.
+        # get_badge_status must map it to a status verdict, not let it escape.
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        with patch.object(v, 'check_revocation',
+                          side_effect=AssertionFormatIncorrect('bad JSON')):
+            result = v.get_badge_status(badge)
+        assert result.status is BadgeStatus.SIGNATURE_ERROR
+
     def test_identity_mismatch_returns_identity_error(self, badge_for_verify_rsa):
         badge, identity = badge_for_verify_rsa
         v = Verifier(identity='wrong@example.com')

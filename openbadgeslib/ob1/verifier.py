@@ -104,6 +104,14 @@ class Verifier():
             # raises ValueError for a non-HTTPS URL; treat it the same as the
             # network-error cases above instead of letting it escape uncaught.
             return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, str(e))
+        except VerifierExceptions as e:
+            # check_revocation raises AssertionFormatIncorrect on malformed or
+            # non-object remote badge/issuer/revocation JSON (again from
+            # attacker-influenced URLs), and check_identity raises
+            # NotIdentityInAssertion; map both to a status verdict so this
+            # method honours its contract of returning a VerifyInfo rather
+            # than letting a library exception escape.
+            return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, str(e))
 
         # OK, all is correct.
         return VerifyInfo(BadgeStatus.VALID, 'OK')
