@@ -198,6 +198,29 @@ def _check_status(badge_file, pub_pem, pub_dir):
     check_credential_status(credential, download=_served_from(pub_dir))
 
 
+class TestPublishConfigErrors:
+    def test_missing_publish_url_exits_cleanly(self, tmp_path, capsys):
+        # [issuer] with url but no publish_url must fail with a clean [!]
+        # message, not a raw KeyError('publish_url') traceback: ob3_issuer_id
+        # falls back to url, so the omission slips past the pre-flight and
+        # would otherwise surface deep in _publish_ob3 / ob3_status_config.
+        cfg = tmp_path / 'cfg.ini'
+        cfg.write_text('\n'.join([
+            '[paths]', 'base = %s' % tmp_path,
+            '[issuer]', 'name = I', 'url = https://example.com/issuer/',
+            '[badge_1]', 'name = B', 'description = d',
+            'public_key = %s' % (TESTS_DIR / 'test_verify_rsa.pem'),
+            'private_key = %s' % (TESTS_DIR / 'test_sign_rsa.pem'),
+            'status_lists = revocation',
+        ]) + '\n')
+        argv = ['openbadges-publish', '-c', str(cfg), '-o',
+                str(tmp_path / 'pub'), '-V', '3']
+        with patch.object(sys, 'argv', argv):
+            with pytest.raises(SystemExit):
+                openbadges_publish.main()
+        assert 'publish_url' in capsys.readouterr().out
+
+
 class TestPublishGeneration:
     def test_generates_lists_did_and_pem(self, tmp_path, capsys):
         cfg = _write_config(tmp_path, status_lists='revocation, suspension')

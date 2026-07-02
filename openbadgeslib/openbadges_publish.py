@@ -135,6 +135,15 @@ def _publish_ob3(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
         sys.exit('[!] --reason needs --revoke or --suspend')
 
     try:
+        # publish_url is required for OB3 publication (it anchors the did:web
+        # id, the status-list URLs and the served-folder instruction). Check
+        # it here so a config carrying only [issuer] url — which ob3_issuer_id
+        # tolerantly falls back to — fails cleanly instead of dying later with
+        # a raw KeyError('publish_url') at conf['issuer']['publish_url'].
+        if 'issuer' not in conf:
+            raise ValueError('config is missing the [issuer] section')
+        if not conf['issuer'].get('publish_url'):
+            raise ValueError("[issuer] is missing the 'publish_url' key")
         issuer_id = ob3_issuer_id(conf)
         status_confs = {
             name: ob3_status_config(conf, name)
