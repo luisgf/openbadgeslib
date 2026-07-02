@@ -19,6 +19,9 @@ The end artifact: an image (SVG or PNG) with a signed assertion embedded in it (
 ### BadgeClass
 The OB2 definition of a badge type: its name, description, criteria, image, and issuer. Each [Assertion](#assertion) references the BadgeClass it instantiates.
 
+### Bitstring Status List
+The W3C mechanism OB3 uses for revocation and suspension: a GZIP-compressed bitstring, published as a signed Verifiable Credential, where each issued credential owns one bit per purpose (`statusListIndex` in its `credentialStatus` entry). The verifier reads the bit with `--check-status`; the issuer writes the lists with `openbadges-publish -V 3` and flips them with `--revoke` / `--suspend` / `--unsuspend`. See [[Guides]] and [[Security Model]].
+
 ### BSD 2-Clause
 The BSD 2-Clause License, under which the openbadgeslib command-line wrapper tools are released. See [[Authors License and FAQ]].
 

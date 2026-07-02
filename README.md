@@ -19,6 +19,9 @@ frozen **OpenBadges 1.0** legacy format — selected with `-V {1,2,3}` (default 
 - RSA 2048-bit (RS256), ECC NIST P-256 (ES256), and Ed25519 (EdDSA) key support
 - SHA-256 hashed recipient identity with salt (OB 2.0)
 - Expiration and revocation checking
+- Issuer-side OB 3.0 revocation and suspension: W3C Bitstring Status List
+  publication and `--revoke` / `--suspend` / `--unsuspend` management
+- did:web issuer identity: `did.json` generation and DID resolution
 - Five command-line tools included
 
 ## Requirements
@@ -66,6 +69,13 @@ openbadges-verifier -i /tmp/badge_1_recipient@example.com.svg \
 # 4b. Verify — strict OpenBadges 2.0 (pin a trusted key with -l/--local or -k/--pubkey)
 openbadges-verifier -i /tmp/badge_1_recipient@example.com.svg \
     -r recipient@example.com -V 2 -l 1
+
+# 5. OpenBadges 3.0 revocation (opt-in: set 'status_lists = revocation, suspension'
+#    in the badge section before signing). Publish the issuer's did.json and the
+#    signed Bitstring Status Lists, then revoke and re-publish.
+openbadges-publish -c ./config/config.ini -o ./public -V 3
+openbadges-publish -c ./config/config.ini -o ./public -V 3 \
+    --revoke recipient@example.com --reason "issued in error"
 ```
 
 See the [Quick Start](https://github.com/luisgf/openbadgeslib/wiki/Quick-Start)

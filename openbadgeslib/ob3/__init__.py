@@ -24,7 +24,10 @@ from .credential import Achievement, Issuer, OpenBadgeCredential
 from .signer import OB3Signer
 from .verifier import OB3VerificationError, OB3Verifier
 from .status import check_credential_status
-from .did import resolve_did
+from .status_list import (build_status_list_credential, encode_bitstring,
+                          sign_status_list_credential, status_entry)
+from .status_registry import StatusRegistry
+from .did import build_did_document, did_web_from_url, resolve_did
 
 __all__ = [
     'Achievement',
@@ -33,6 +36,13 @@ __all__ = [
     'OB3Signer',
     'OB3Verifier',
     'OB3VerificationError',
+    'StatusRegistry',
+    'build_did_document',
+    'build_status_list_credential',
     'check_credential_status',
+    'did_web_from_url',
+    'encode_bitstring',
     'resolve_did',
+    'sign_status_list_credential',
+    'status_entry',
 ]
