@@ -99,3 +99,39 @@ class ErrorParsingFile(VerifierExceptions):
 
 class BadgeImgFormatUnsupported(LibOpenBadgesException):
     pass
+
+
+""" OB3 Credential Status Exceptions """
+
+
+class StatusError(LibOpenBadgesException):
+    """Base class for issuer-side credential status (revocation) errors."""
+    pass
+
+
+class StatusListFull(StatusError):
+    pass
+
+
+class UnknownCredential(StatusError):
+    pass
+
+
+class AmbiguousCredential(StatusError):
+    pass
+
+
+class AlreadyRevoked(StatusError):
+    pass
+
+
+class AlreadySuspended(StatusError):
+    pass
+
+
+class NotSuspended(StatusError):
+    pass
+
+
+class RegistryCorrupt(StatusError):
+    pass

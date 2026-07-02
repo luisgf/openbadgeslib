@@ -22,7 +22,8 @@
 """
 
 from configparser import ConfigParser, ExtendedInterpolation, Error as ConfigParserError
-from typing import Optional
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 import os
 import sys
 import logging
@@ -53,6 +54,85 @@ def resolve_badge_section(conf: ConfigParser, name: str) -> str:
     if section not in conf:
         sys.exit('There is no "%s" badge in the configuration' % name)
     return section
+
+
+def ob3_issuer_id(conf: ConfigParser) -> str:
+    """Return the issuer identifier OB3 credentials are issued under.
+
+    Without an [issuer] ``did`` key this is ``publish_url`` (falling back to
+    ``url``), the historical behaviour. ``did = auto`` derives the did:web
+    identifier from ``publish_url`` — the DID whose document
+    ``openbadges-publish -V 3`` generates — and an explicit ``did:...`` value
+    is used verbatim. Raises ValueError for anything else.
+    """
+    issuer_section = conf['issuer']
+    base = issuer_section.get('publish_url', issuer_section.get('url', ''))
+    did = (issuer_section.get('did') or '').strip()
+    if not did:
+        return base
+    if did == 'auto':
+        from .ob3.did import did_web_from_url
+        return did_web_from_url(base)
+    if did.startswith('did:'):
+        return did
+    raise ValueError(
+        "[issuer] did must be 'auto' or a did:... identifier, got %r" % did)
+
+
+@dataclass
+class OB3StatusConfig:
+    """Resolved per-badge OB3 credential status configuration."""
+    purposes: List[str]           # ordered subset of ('revocation', 'suspension')
+    size_bits: int
+    registry_path: str            # private index registry JSON
+    list_urls: Dict[str, str]     # purpose -> public status list URL
+
+
+def ob3_status_config(conf: ConfigParser,
+                      badge_section: str) -> Optional[OB3StatusConfig]:
+    """Parse a badge section's opt-in ``status_lists`` configuration.
+
+    Returns None when the badge does not opt in (no ``status_lists`` key),
+    which callers must treat as "issue without credentialStatus" — the
+    pre-3.1 behaviour. Raises ValueError for an invalid purpose or size.
+    """
+    from urllib.parse import urljoin
+    from .ob3.status_list import DEFAULT_SIZE_BITS, STATUS_PURPOSES
+
+    raw = conf[badge_section].get('status_lists', '')
+    purposes = []
+    for piece in raw.split(','):
+        purpose = piece.strip()
+        if not purpose:
+            continue
+        if purpose not in STATUS_PURPOSES:
+            raise ValueError(
+                "[%s] status_lists: unknown purpose %r (choose from %s)"
+                % (badge_section, purpose, ', '.join(STATUS_PURPOSES)))
+        if purpose not in purposes:
+            purposes.append(purpose)
+    if not purposes:
+        return None
+
+    try:
+        size_bits = int(conf[badge_section].get('status_size_bits',
+                                                str(DEFAULT_SIZE_BITS)))
+    except ValueError:
+        raise ValueError("[%s] status_size_bits must be an integer"
+                         % badge_section) from None
+
+    base_status = conf['paths'].get('base_status') or \
+        os.path.join(conf['paths']['base'], 'status')
+    registry_path = os.path.join(base_status, badge_section + '.json')
+
+    status_base = conf[badge_section].get('status_base') or \
+        urljoin(conf['issuer']['publish_url'], badge_section + '/')
+    if not status_base.endswith('/'):
+        status_base += '/'
+    list_urls = {p: urljoin(status_base, p + '.jwt') for p in purposes}
+
+    return OB3StatusConfig(purposes=purposes, size_bits=size_bits,
+                           registry_path=registry_path, list_urls=list_urls)
 
 
 class ConfParser():

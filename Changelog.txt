@@ -4,6 +4,40 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.1.0 - unreleased
+
+  - feat(ob3): issuer-side credential status lifecycle. Badges that opt in
+    with `status_lists = revocation, suspension` in their config section get
+    W3C Bitstring Status List entries attached to every newly signed
+    credential (`openbadges-signer -V 3`), with the index recorded in a
+    private per-badge registry (`${base}/status/badge_N.json`, random
+    allocation, atomic writes).
+
+  - feat(publish): `openbadges-publish -V 3` is no longer a no-op. It
+    generates the issuer's did:web document (`did.json`) and, per opted-in
+    badge, the signed status list credentials (`revocation.jwt`,
+    `suspension.jwt`, signed with the badge key) plus `verify.pem`. New
+    flags `--revoke ID`, `--suspend ID`, `--unsuspend ID` (ID = jti or
+    recipient email; `-b` scopes, `--reason` annotates) update the registry
+    and regenerate the lists; revocation is permanent. The `-V 3` output
+    directory may already exist and its files are replaced atomically.
+
+  - feat(config): new opt-in keys — `[paths] base_status`, `[issuer] did`
+    (`auto` derives a did:web issuer id from `publish_url`), and per-badge
+    `status_lists` / `status_size_bits` / `status_base`. Configs without
+    them behave exactly as before. `openbadges-init` now also creates
+    `status/`.
+
+  - feat(api): new public API — `openbadgeslib.ob3.status_list`
+    (`encode_bitstring`, `build_status_list_credential`,
+    `sign_status_list_credential`, `status_entry`),
+    `openbadgeslib.ob3.StatusRegistry`, `openbadgeslib.ob3.did`
+    (`did_web_from_url`, `build_did_document`),
+    `openbadgeslib.keys.public_jwk_from_pem` and
+    `OB3Signer.sign_payload`. The OB3 signer path now also appends to the
+    signer log, including the credential jti and status index.
+
+
 * v3.0.1 - 2026-07-02
 
   - fix(cli): the OpenBadges 1.0 signer (`-V 1`) now writes the signed badge

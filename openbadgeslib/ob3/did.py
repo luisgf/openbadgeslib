@@ -36,7 +36,7 @@
 
 import json
 
-from typing import Any
+from typing import Any, Sequence, Tuple
 
 from cryptography.hazmat.primitives import serialization as _serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -142,6 +142,56 @@ def _resolve_did_web(did: str, fetch: Any) -> bytes:
         raise OB3VerificationError(
             "malformed DID document at %s: %s" % (url, exc)) from exc
     return _pem_from_did_document(doc)
+
+
+def did_web_from_url(url: str) -> str:
+    """Derive the did:web identifier whose DID document lives under *url*.
+
+    Exact inverse of the resolution above: the host keeps any port
+    percent-encoded, path segments join with ':', and a bare host resolves
+    at ``/.well-known/did.json`` while a path resolves at ``<path>/did.json``.
+    Raises ValueError for a non-HTTPS or hostless URL — did:web trusts TLS,
+    so there is nothing an http:// identifier could safely mean.
+    """
+    from urllib.parse import quote, urlsplit
+    parts = urlsplit(url)
+    if parts.scheme != 'https':
+        raise ValueError('did:web requires an https URL, got %r' % (url,))
+    if not parts.netloc:
+        raise ValueError('URL %r has no host' % (url,))
+    pieces = [quote(parts.netloc, safe='')]
+    pieces += [quote(seg, safe='') for seg in parts.path.split('/') if seg]
+    return 'did:web:' + ':'.join(pieces)
+
+
+def build_did_document(did: str,
+                       verification_methods: Sequence[Tuple[str, dict]]
+                       ) -> dict:
+    """Build a DID document publishing *verification_methods*, given as
+    ``(fragment, public JWK)`` pairs (see keys.public_jwk_from_pem).
+
+    Order matters: this resolver — like several others — only reads
+    ``verificationMethod[0]``, so the key most verifications need should
+    come first.
+    """
+    if not verification_methods:
+        raise ValueError('a DID document needs at least one verification '
+                         'method')
+    methods = []
+    for fragment, jwk in verification_methods:
+        methods.append({
+            'id': '%s#%s' % (did, fragment),
+            'type': 'JsonWebKey2020',
+            'controller': did,
+            'publicKeyJwk': jwk,
+        })
+    return {
+        '@context': ['https://www.w3.org/ns/did/v1',
+                     'https://w3id.org/security/suites/jws-2020/v1'],
+        'id': did,
+        'verificationMethod': methods,
+        'assertionMethod': [m['id'] for m in methods],
+    }
 
 
 def _pem_from_did_document(doc: Any) -> bytes:

@@ -90,7 +90,35 @@ This produces, under the output directory:
 
 URLs in the metadata are resolved against `publish_url` from `[issuer]`, so set that to where the folder will live. After running, configure your web server to serve the output folder at exactly that `publish_url`.
 
-OB3 needs no publication step. Credentials are self-contained JWT-VC tokens verified offline, so running `openbadges-publish -V 3` only prints a notice telling you to distribute the signed images directly.
+## Publish OB3 trust artefacts and manage revocation
+
+OB3 credentials are self-contained JWT-VC tokens verified offline, but two issuer-side artefacts still need hosting: the did:web document and the status lists.
+
+Opt a badge into credential status by adding to its section (before signing):
+
+```ini
+[badge_1]
+status_lists = revocation, suspension
+```
+
+From then on `openbadges-signer -V 3` embeds `credentialStatus` entries in every new credential and records the assigned index in a private registry (`${base}/status/badge_1.json` — keep it safe; a lost registry makes outstanding credentials unrevocable). Then:
+
+```sh
+openbadges-publish -c ./config/config.ini -o ./public -V 3
+```
+
+produces, under the output directory:
+- `did.json` — the issuer's did:web document (one `verificationMethod` per badge, built from each badge's public key). Served automatically at `<publish_url>/did.json`; for a bare-host DID serve it at `/.well-known/did.json`.
+- Per opted-in badge: `badge_N/revocation.jwt` and/or `badge_N/suspension.jwt` (the signed Bitstring Status List credentials) and a copy of the public key as `verify.pem`.
+
+To revoke, suspend or unsuspend, pass the credential's jti (printed and logged by the signer) or the recipient email, then re-upload the folder:
+
+```sh
+openbadges-publish -c ./config/config.ini -o ./public -V 3 \
+    --revoke urn:uuid:7586fd5d-... --reason "issued in error"
+```
+
+Revocation is permanent; suspension is lifted with `--unsuspend`. A verifier running with `--check-status` rejects the credential as soon as the re-uploaded list is live. See [[CLI Reference]] for every flag.
 
 ## Email a signed badge
 

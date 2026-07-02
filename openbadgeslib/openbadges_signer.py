@@ -279,9 +279,15 @@ def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
               badge_obj: Badge, badge_file_out: str, evidence: Optional[str]) -> None:
     """Sign a badge using OpenBadges 3.0 (JWT-VC)."""
     from .ob3 import OB3Signer, Issuer, Achievement, OpenBadgeCredential
+    from .confparser import ob3_issuer_id, ob3_status_config
 
     issuer_section = conf['issuer']
-    issuer_id = issuer_section.get('publish_url', issuer_section.get('url', ''))
+    try:
+        issuer_id = ob3_issuer_id(conf)
+        status_conf = ob3_status_config(conf, badge)
+    except ValueError as exc:
+        print('[!] %s' % exc)
+        sys.exit(-1)
 
     issuer = Issuer(
         id=issuer_id,
@@ -315,6 +321,30 @@ def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
         expiration_date=expiration_date,
     )
 
+    status_index = None
+    if status_conf is not None:
+        from .errors import StatusError
+        from .ob3.status_list import status_entry
+        from .ob3.status_registry import StatusRegistry
+
+        # The registry is persisted BEFORE the badge is signed and written:
+        # a signing failure leaves a harmless orphan index, while a delivered
+        # badge missing from the registry could never be revoked.
+        try:
+            registry = StatusRegistry.load(status_conf.registry_path,
+                                           status_conf.size_bits)
+            assert credential.id is not None \
+                and credential.issuance_date is not None
+            status_index = registry.allocate(credential.id, recipient_id,
+                                             credential.issuance_date)
+            registry.save()
+        except (StatusError, OSError) as exc:
+            print('[!] Could not allocate a status list index: %s' % exc)
+            sys.exit(-1)
+        credential.credential_status = [
+            status_entry(status_conf.list_urls[p], p, status_index)
+            for p in status_conf.purposes]
+
     # create_from_conf always populates these from the badge config section.
     assert badge_obj.privkey_pem is not None and badge_obj.image is not None
 
@@ -333,7 +363,16 @@ def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
     with open(badge_file_out, 'wb') as f:
         f.write(signed_bytes)
 
-    msg = '%s %s OB3 SIGNED for %s' % (datetime.today().isoformat(), badge, args.receptor)
+    msg = '%s %s OB3 SIGNED for %s JTI %s' % (
+        datetime.today().isoformat(), badge, args.receptor, credential.id)
+    if status_index is not None:
+        msg += ' STATUS %d' % status_index
+    sign_log = os.path.join(conf['paths']['base_log'], conf['logs']['signer'])
+    try:
+        with open(sign_log, 'a') as file:
+            file.write(msg + '\n')
+    except OSError as err:
+        print('[!] Could not write sign log: %s' % err)
     print('%s at: %s' % (msg, badge_file_out))
 
 

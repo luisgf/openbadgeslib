@@ -12,7 +12,7 @@ def test_init_creates_directory_layout(tmp_path):
     with patch.object(sys, 'argv', ['openbadges-init', str(target)]):
         openbadges_init.main()
     assert (target / 'config.ini').is_file()
-    for sub in ('keys', 'images', 'log'):
+    for sub in ('keys', 'images', 'log', 'status'):
         assert (target / sub).is_dir()
 
 
@@ -38,7 +38,8 @@ def test_init_creates_directories_with_restrictive_permissions(tmp_path):
     target = tmp_path / 'config'
     with patch.object(sys, 'argv', ['openbadges-init', str(target)]):
         openbadges_init.main()
-    for path in (target, target / 'keys', target / 'images', target / 'log'):
+    for path in (target, target / 'keys', target / 'images', target / 'log',
+                 target / 'status'):
         mode = stat.S_IMODE(os.stat(path).st_mode)
         assert mode == 0o700, '%s has mode %o, expected 0700' % (path, mode)
 
@@ -336,13 +337,30 @@ def test_signer_ob1_missing_log_dir_still_saves_badge(tmp_path, svg_rsa_badge, c
 
 # ── openbadges-publish ──────────────────────────────────────────────────────────
 
-def test_publish_ob3_prints_info(tmp_path, capsys):
+def test_publish_ob3_generates_did_document(tmp_path, capsys):
+    # -V 3 stopped being a no-op in 3.1: it publishes the issuer's did:web
+    # document (and, for badges that opt in via status_lists, their status
+    # lists — covered in test_ob3_publish_cli.py).
+    import json
+    from pathlib import Path
     from openbadgeslib import openbadges_publish
-    argv = ['openbadges-publish', '-o', str(tmp_path / 'out'), '-V', '3']
+    tests_dir = Path(__file__).parent
+    cfg = tmp_path / 'cfg.ini'
+    cfg.write_text('\n'.join([
+        '[paths]', 'base = %s' % tmp_path,
+        '[issuer]', 'name = I', 'url = https://example.com',
+        'publish_url = https://example.com/issuer/',
+        '[badge_1]', 'name = B', 'description = d',
+        'public_key = %s' % (tests_dir / 'test_verify_rsa.pem'),
+        'private_key = %s' % (tests_dir / 'test_sign_rsa.pem'),
+    ]) + '\n')
+    out = tmp_path / 'out'
+    argv = ['openbadges-publish', '-c', str(cfg), '-o', str(out), '-V', '3']
     with patch.object(sys, 'argv', argv):
         openbadges_publish.main()
-    out = capsys.readouterr().out
-    assert 'JWT-VC' in out or 'self-contained' in out
+    doc = json.loads((out / 'did.json').read_text())
+    assert doc['id'] == 'did:web:example.com:issuer'
+    assert 'did:web:example.com:issuer' in capsys.readouterr().out
 
 
 def test_publish_ob2_creates_full_tree(tmp_path):

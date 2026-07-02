@@ -75,8 +75,10 @@ openbadges-signer -c ./config/config.ini -b 1 \
 ```
 
 ```
-2026-04-22T10:00:00 badge_1 OB3 SIGNED for recipient@example.com at: /tmp/badge_1_recipient@example.com.svg
+2026-04-22T10:00:00 badge_1 OB3 SIGNED for recipient@example.com JTI urn:uuid:7586fd5d-... at: /tmp/badge_1_recipient@example.com.svg
 ```
+
+(Keep the `JTI` — it is the credential's identifier for `openbadges-publish --revoke`. With `status_lists` configured in the badge section the line also shows the assigned `STATUS` index; see [[Guides]].)
 
 ### Verify
 
@@ -102,6 +104,17 @@ openbadges-verifier -c ./config/config.ini \
 ```
 
 Omitting `-k`, `-l`, and `--resolve-did` prints `[!] OB3 verification requires --local BADGE, --pubkey FILE, or --resolve-did` and exits. `--resolve-did` is a third trust source: it resolves the issuer DID (did:key/did:web) from the token to obtain the verification key (a resolved did:key is reported as untrusted, since the key is self-asserted). With `-s / --show`, the verifier also prints the issuer name, achievement name, issuance date, expiration (if set), and evidence URL.
+
+### Publish and revoke (optional)
+
+To make OB3 credentials revocable, opt the badge in **before** signing (`status_lists = revocation, suspension` in `[badge_1]`), then publish the issuer artefacts — the did:web `did.json` and the signed Bitstring Status Lists — and re-publish after every status change:
+
+```sh
+openbadges-publish -c ./config/config.ini -o ./public -V 3
+openbadges-publish -c ./config/config.ini -o ./public -V 3 --revoke recipient@example.com
+```
+
+Verifiers opt in with `--check-status`. The full lifecycle is described in [[Guides]].
 
 ## Next steps
 

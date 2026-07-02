@@ -110,6 +110,49 @@ did:example:abc123           -> did:example:abc123             (unchanged)
 
 So `expected_recipient='recipient@example.com'` and `expected_recipient='mailto:recipient@example.com'` both match a credential issued to `mailto:recipient@example.com`, and a DID is never mangled into `mailto:did:...`.
 
+## Issuer-side status lists
+
+`openbadgeslib.ob3.status_list` writes what `check_credential_status` reads, and `StatusRegistry` tracks which credential owns which index:
+
+```python
+from datetime import datetime, timezone
+from openbadgeslib.ob3 import (
+    StatusRegistry, build_status_list_credential,
+    sign_status_list_credential, status_entry,
+)
+
+LIST_URL = 'https://example.com/issuer/badge_1/revocation.jwt'
+
+# At issue time: allocate an index and attach the credentialStatus entry.
+registry = StatusRegistry.load('status/badge_1.json')
+index = registry.allocate(credential.id, credential.recipient_id,
+                          credential.issuance_date)
+registry.save()                      # persist BEFORE signing
+credential.credential_status = [status_entry(LIST_URL, 'revocation', index)]
+
+# At publish time: rebuild and sign the list from the registry.
+registry.revoke(credential.id, datetime.now(tz=timezone.utc), reason='oops')
+registry.save()
+vc = build_status_list_credential('https://example.com/issuer/', LIST_URL,
+                                  'revocation', registry.revoked_indices(),
+                                  registry.size_bits)
+token = sign_status_list_credential(vc, priv_pem, 'RS256')   # host at LIST_URL
+```
+
+`StatusRegistry` also offers `suspend`/`unsuspend`, `find` (by jti or recipient email) and `suspended_indices`. Transitions raise the typed exceptions in `openbadgeslib.errors` (`AlreadyRevoked`, `NotSuspended`, `StatusListFull`, ...); revocation is permanent by design. `encode_bitstring` is exposed for tooling that only needs the raw `encodedList`.
+
+## did:web documents
+
+```python
+from openbadgeslib.keys import public_jwk_from_pem
+from openbadgeslib.ob3 import build_did_document, did_web_from_url
+
+did = did_web_from_url('https://example.com/issuer/')   # did:web:example.com:issuer
+doc = build_did_document(did, [('badge_1', public_jwk_from_pem(pub_pem))])
+```
+
+The document round-trips through `resolve_did`. Order the methods deliberately: resolvers (this library's included) typically read only `verificationMethod[0]`.
+
 ## Errors
 
 `OB3VerificationError` is the single exception for every verification failure (invalid signature, expired token, disallowed algorithm, recipient mismatch, wrong credential type, malformed payload, missing embedded token). It subclasses `LibOpenBadgesException`, so one `except` can catch both OB2 and OB3 failures. Token extraction may additionally raise `ErrorParsingFile` for unreadable images. See [[Keys and Errors]] for the full exception hierarchy.

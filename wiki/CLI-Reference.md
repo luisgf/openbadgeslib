@@ -183,38 +183,52 @@ $ openbadges-verifier -i badge.svg -r recipient@example.com -V 3 -k verify.pem -
 
 ## openbadges-publish
 
-Generates the static metadata files an OB2 issuer must host: `organization.json`, an empty `revoked.json`, and per-badge `badge.json` + `verify.pem` (the public key copied from each `[badge_*]` section). For OB3 there is nothing to publish — credentials are self-contained — and the command just prints guidance and exits.
+Generates the static files an issuer must host, and (for OB3) manages credential status.
 
-The output directory is created with a `0o077` umask and must not already exist.
+- **OB1/OB2**: `organization.json`, an empty `revoked.json`, and per-badge `badge.json` + `verify.pem` (OB 2.0 adds `key.json`). The output directory must not already exist.
+- **OB3** (default): the issuer's did:web document (`did.json`) and, for every badge with `status_lists` configured, its signed [[Bitstring Status List|Glossary]] credentials (`badge_N/revocation.jwt`, `badge_N/suspension.jwt`) plus `verify.pem`. Everything is regenerated from the per-badge status registries on each run, so the output directory **may** already exist and managed files are replaced atomically. Re-run and re-upload after every status change.
+
+The output directory is created with a `0o077` umask.
 
 ### Synopsis
 
 ```sh
 openbadges-publish -o DIR [-c FILE] [-V {1,2,3}]
+openbadges-publish -o DIR -V 3 [--revoke ID | --suspend ID | --unsuspend ID] [--reason TEXT] [-b BADGE]
 ```
 
 | Short | Long | Meaning | Default |
 |-------|------|---------|---------|
 | `-c` | `--config` | Config file to use | `config.ini` |
 | `-o` | `--output` | Output directory for the public files (**required**) | required |
-| `-V` | `--ob-version {1,2,3}` | `1`/`2` write hosted metadata (OB 2.0 adds `key.json`); `3` prints guidance only | `3` |
+| `-V` | `--ob-version {1,2,3}` | `1`/`2` write hosted metadata (OB 2.0 adds `key.json`); `3` writes `did.json` + status lists | `3` |
+| — | `--revoke ID` | OB3 only: permanently revoke a credential. `ID` is its jti (`urn:uuid:...`, printed and logged by the signer) or the recipient email | — |
+| — | `--suspend ID` | OB3 only: suspend a credential (reversible) | — |
+| — | `--unsuspend ID` | OB3 only: lift a suspension | — |
+| — | `--reason TEXT` | Free-text reason recorded with `--revoke`/`--suspend` | — |
+| `-b` | `--badge NAME` | Scope the `ID` lookup to one badge's registry | all badges |
 | `-v` | `--version` | Print version and exit | — |
+
+`--revoke`, `--suspend` and `--unsuspend` are mutually exclusive and update the badge's status registry **before** regenerating the lists. A recipient email that matches several issued credentials is rejected with the candidate jtis — re-run with the jti. Revocation is permanent (there is no `--unrevoke`); suspension of a revoked credential is likewise rejected.
 
 ### Example (OB2)
 
 ```sh
-$ openbadges-publish -c ./config/config.ini -o ./public
+$ openbadges-publish -c ./config/config.ini -o ./public -V 2
 Please configure your Web server to publish the folder ./public as https://example.com/issuer/
 ```
+
+If the output directory already exists, the OB1/OB2 path prints `[!] <path> already exists` and exits with a non-zero status.
 
 ### Example (OB3)
 
 ```sh
-$ openbadges-publish -o ./public -V 3
-[i] OpenBadges 3.0 credentials are self-contained JWT-VC tokens.
-[i] No centralised metadata publication is required.
-[i] Distribute the signed badge images (.svg / .png) directly to recipients.
-[i] Recipients verify credentials offline using the issuer's public key.
-```
+$ openbadges-publish -c ./config/config.ini -o ./public
+Please configure your Web server to publish the folder ./public as https://example.com/issuer/
+[i] Issuer DID: did:web:example.com:issuer
 
-If the output directory already exists, the OB2 path prints `[!] <path> already exists` and exits with a non-zero status.
+$ openbadges-publish -c ./config/config.ini -o ./public --revoke urn:uuid:7586fd5d-... --reason cheating
+[+] REVOKED badge_1 urn:uuid:7586fd5d-... (index 40712)
+...
+[!] Re-upload ./public so the change takes effect
+```

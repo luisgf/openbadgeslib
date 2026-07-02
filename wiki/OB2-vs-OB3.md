@@ -43,7 +43,8 @@ OB 3.0 models the badge as a **W3C Verifiable Credential** (VC 2.0 data model) s
 | Dates | Unix timestamp | ISO 8601 | ISO 8601 (`validFrom`/`validUntil`) |
 | Recipient identity | SHA-256 email + salt | SHA-256 email + salt | `mailto:` URI **or** DID |
 | Hosted verification | no (relabelled URL only) | **yes (real)** | n/a |
-| CryptographicKey / RevocationList | no | **yes** | credentialStatus |
+| CryptographicKey / RevocationList | no | **yes** | did.json + Bitstring Status Lists |
+| Issuer-side revocation | edit `revoked.json` by hand | edit `revocationList` by hand | **`openbadges-publish --revoke/--suspend/--unsuspend`** |
 | Python package | `openbadgeslib.ob1` | `openbadgeslib.ob2` | `openbadgeslib.ob3` |
 | Core classes | `Badge`, `Signer`, `Verifier` | `OB2Signer`, `OB2Verifier`, `Assertion` | `OB3Signer`, `OB3Verifier`, `OpenBadgeCredential` |
 
