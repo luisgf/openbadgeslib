@@ -22,7 +22,7 @@
 """
 
 from typing import Any, Optional, Tuple, Union
-from .errors import UnknownKeyType
+from .errors import PublicKeyReadError, UnknownKeyType
 from ecdsa import SigningKey, VerifyingKey, NIST256p
 from Crypto.PublicKey import RSA
 from cryptography.hazmat.primitives import serialization as _crypto_serialization
@@ -222,6 +222,35 @@ def key_to_pem(key: Any) -> Union[str, bytes]:
     if isinstance(key, (bytes, str)):
         return key
     raise UnknownKeyType('Unsupported key object type: %r' % type(key))
+
+
+def public_jwk_from_pem(pubkey_pem: Union[str, bytes]) -> dict:
+    """Serialise a public key PEM as a public JWK dict.
+
+    Counterpart of the OB3 signer's private-key-based JWK derivation, for
+    when only the public half is at hand — e.g. publishing the badges'
+    verification keys in a did:web DID document.
+    """
+    import json
+    from cryptography.hazmat.primitives.asymmetric import ec, rsa
+    from jwt.algorithms import ECAlgorithm, OKPAlgorithm, RSAAlgorithm
+    try:
+        pub = _crypto_serialization.load_pem_public_key(_pem_bytes(pubkey_pem))
+        if isinstance(pub, rsa.RSAPublicKey):
+            jwk_json = RSAAlgorithm.to_jwk(pub)
+        elif isinstance(pub, ec.EllipticCurvePublicKey):
+            jwk_json = ECAlgorithm.to_jwk(pub)
+        elif isinstance(pub, Ed25519PublicKey):
+            jwk_json = OKPAlgorithm.to_jwk(pub)
+        else:
+            raise PublicKeyReadError(
+                'unsupported public key type: %r' % type(pub))
+    except PublicKeyReadError:
+        raise
+    except Exception as exc:
+        raise PublicKeyReadError(
+            'could not read public key PEM: %s' % exc) from exc
+    return json.loads(jwk_json)
 
 
 def _is_ed25519_pem(pem_data: Union[str, bytes]) -> bool:
