@@ -388,7 +388,12 @@ def _publish_ob1(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
                 f.write(issuer)
 
             revocation = create_revocation_json(conf)
-            revocation_file = os.path.join(args.output, 'revoked.json')
+            # Derive the on-disk name from the configured revocationList (as
+            # _publish_ob2 does), so it matches the URL create_issuer_json
+            # publishes in organization.json. A hardcoded 'revoked.json' left a
+            # dangling reference whenever the operator set another name.
+            rev_name = os.path.basename(conf['issuer']['revocationList'])
+            revocation_file = os.path.join(args.output, rev_name)
             with open(revocation_file, "w", encoding='ascii') as f:
                 f.write(revocation)
 

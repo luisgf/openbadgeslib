@@ -373,7 +373,11 @@ def test_publish_ob2_creates_full_tree(tmp_path):
         openbadges_publish.main()
 
     assert (out / 'organization.json').is_file()
-    assert (out / 'revoked.json').is_file()
+    # The revocation file uses the configured revocationList name
+    # (revocation.json in config1.ini), matching the URL organization.json
+    # links to — not a hardcoded revoked.json.
+    assert (out / 'revocation.json').is_file()
+    assert not (out / 'revoked.json').exists()
     for name in ('badge_test_1', 'badge_test_2', 'badge_test_3', 'badge_test_4'):
         assert (out / name / 'badge.json').is_file()
         assert (out / name / 'verify.pem').is_file()
