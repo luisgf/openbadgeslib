@@ -53,9 +53,12 @@ def encode_bitstring(set_indices: Iterable[int],
     unpadded) encoding of a GZIP-compressed, MSB-first bitstring of
     *size_bits* bits with *set_indices* flipped on.
 
-    Exact inverse of the decoding performed by ob3.status. Raises ValueError
-    for an index outside [0, size_bits) or a size that is not a positive
-    multiple of 8.
+    The bit layout inverts the decoding in ob3.status. Note the reader caps
+    the *decompressed* bitstring at ``MAX_STATUS_LIST_BYTES`` (5 MiB), so keep
+    ``size_bits`` at or below ~41.9M bits — a larger list encodes fine here
+    but the library's own reader would refuse it. Raises ValueError for an
+    index outside [0, size_bits) or a size that is not a positive multiple
+    of 8.
     """
     if size_bits <= 0 or size_bits % 8:
         raise ValueError("size_bits must be a positive multiple of 8, got %r"
