@@ -63,7 +63,12 @@ class OB3Signer:
         via ``kid`` or ``jwk``; this embeds the issuer's public key as a ``jwk``
         (public parameters only — never the private ``d``).
         """
-        payload = credential.to_jwt_payload()
+        return self.sign_payload(credential.to_jwt_payload())
+
+    def sign_payload(self, payload: dict) -> str:
+        """Sign an arbitrary JWT payload with the same JOSE header (embedded
+        public ``jwk``) used for credentials. Lets the issuer sign auxiliary
+        VCs — e.g. a BitstringStatusListCredential — with one key setup."""
         headers = {"jwk": self._public_jwk()}
         try:
             return jwt.encode(payload, self.privkey_pem, algorithm=self.algorithm,
