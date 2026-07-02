@@ -47,7 +47,7 @@ def main() -> None:
     umask = os.umask(0o077)  # rwx------
     try:
         os.mkdir(directory)
-        for subdir in ['keys', 'images', 'log']:
+        for subdir in ['keys', 'images', 'log', 'status']:
             os.mkdir(os.path.join(directory, subdir))
     finally:
         os.umask(umask)

@@ -12,7 +12,7 @@ def test_init_creates_directory_layout(tmp_path):
     with patch.object(sys, 'argv', ['openbadges-init', str(target)]):
         openbadges_init.main()
     assert (target / 'config.ini').is_file()
-    for sub in ('keys', 'images', 'log'):
+    for sub in ('keys', 'images', 'log', 'status'):
         assert (target / sub).is_dir()
 
 
@@ -38,7 +38,8 @@ def test_init_creates_directories_with_restrictive_permissions(tmp_path):
     target = tmp_path / 'config'
     with patch.object(sys, 'argv', ['openbadges-init', str(target)]):
         openbadges_init.main()
-    for path in (target, target / 'keys', target / 'images', target / 'log'):
+    for path in (target, target / 'keys', target / 'images', target / 'log',
+                 target / 'status'):
         mode = stat.S_IMODE(os.stat(path).st_mode)
         assert mode == 0o700, '%s has mode %o, expected 0700' % (path, mode)
 
