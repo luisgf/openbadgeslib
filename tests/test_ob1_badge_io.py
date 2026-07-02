@@ -292,3 +292,11 @@ class TestBadgeInitCorruptKey:
     def test_ecc_corrupt_private_key_raises_clean_error(self, ecc_pub_pem):
         with pytest.raises(PrivateKeyReadError):
             Badge(key_type=KeyType.ECC, privkey_pem=b'not a real PEM key', pubkey_pem=ecc_pub_pem)
+
+    def test_badge_without_pems_exposes_none_keys(self):
+        # A Badge built with a key_type but no PEMs must expose priv_key/pub_key
+        # as None, not leave them undefined (a later access would otherwise be a
+        # raw AttributeError instead of a clean "no key material" case).
+        badge = Badge(key_type=KeyType.RSA)
+        assert badge.priv_key is None
+        assert badge.pub_key is None

@@ -115,6 +115,13 @@ class Badge():
         self.privkey_pem = privkey_pem
         self.pubkey_pem = pubkey_pem
 
+        # Default to no key material so a Badge built without PEMs exposes
+        # priv_key/pub_key as None rather than leaving the attributes undefined
+        # (which turns a later read in the signer/verifier into a confusing raw
+        # AttributeError instead of a clean "no key material" case).
+        self.priv_key: Any = None
+        self.pub_key: Any = None
+
         # Initialize an Key Object
         if self.key_type is KeyType.RSA:
             if self.pubkey_pem:
