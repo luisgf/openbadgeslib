@@ -145,3 +145,28 @@ class TestReadConfigOrExit:
         with pytest.raises(SystemExit):
             read_config_or_exit(str(tmp_path / 'missing.ini'))
         assert 'does not exist or is empty' in capsys.readouterr().out
+
+
+class TestOb3ProofFormat:
+    def _conf(self, value=None):
+        from configparser import ConfigParser
+        conf = ConfigParser()
+        conf['badge_1'] = {} if value is None else {'proof_format': value}
+        return conf
+
+    def test_defaults_to_vc_jwt(self):
+        from openbadgeslib.confparser import ob3_proof_format
+        assert ob3_proof_format(self._conf(), 'badge_1') == 'vc-jwt'
+
+    def test_ldp_accepted(self):
+        from openbadgeslib.confparser import ob3_proof_format
+        assert ob3_proof_format(self._conf('ldp'), 'badge_1') == 'ldp'
+
+    def test_whitespace_stripped(self):
+        from openbadgeslib.confparser import ob3_proof_format
+        assert ob3_proof_format(self._conf(' vc-jwt '), 'badge_1') == 'vc-jwt'
+
+    def test_unknown_value_rejected(self):
+        from openbadgeslib.confparser import ob3_proof_format
+        with pytest.raises(ValueError, match=r'\[badge_1\] proof_format'):
+            ob3_proof_format(self._conf('jwt'), 'badge_1')

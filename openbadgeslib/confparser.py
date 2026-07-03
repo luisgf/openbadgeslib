@@ -79,6 +79,25 @@ def ob3_issuer_id(conf: ConfigParser) -> str:
         "[issuer] did must be 'auto' or a did:... identifier, got %r" % did)
 
 
+#: Proof formats an OB3 credential can be issued with — the same vocabulary
+#: openbadges-verifier reports in its JSON output.
+OB3_PROOF_FORMATS = ('vc-jwt', 'ldp')
+
+
+def ob3_proof_format(conf: ConfigParser, badge_section: str) -> str:
+    """Return the proof format OB3 credentials of *badge_section* use:
+    ``vc-jwt`` (compact JWT-VC, the default) or ``ldp`` (embedded Data
+    Integrity proof, cryptosuite eddsa-rdfc-2022 — needs an Ed25519 key and
+    the [ldp] extra). Raises ValueError for anything else.
+    """
+    value = (conf[badge_section].get('proof_format') or 'vc-jwt').strip()
+    if value in OB3_PROOF_FORMATS:
+        return value
+    raise ValueError(
+        "[%s] proof_format must be one of %s, got %r"
+        % (badge_section, ', '.join(OB3_PROOF_FORMATS), value))
+
+
 @dataclass
 class OB3StatusConfig:
     """Resolved per-badge OB3 credential status configuration."""

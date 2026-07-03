@@ -58,6 +58,10 @@ private_key = ${paths:base_key}/sign_rsa_key_1.pem
 public_key  = ${paths:base_key}/verify_rsa_key_1.pem
 ; key_type selects the algorithm for openbadges-keygenerator: RSA (default), ECC, or ED25519
 key_type    = RSA
+; OpenBadges 3.0 proof format: vc-jwt (compact JWT-VC, the default) or ldp
+; (embedded W3C Data Integrity proof, cryptosuite eddsa-rdfc-2022). ldp needs
+; key_type = ED25519 and the [ldp] extra (pip install openbadgeslib[ldp]).
+;proof_format = vc-jwt
 ; OpenBadges 3.0 credential status (opt-in). When set, openbadges-signer -V 3
 ; attaches credentialStatus entries for these purposes (comma-separated subset
 ; of: revocation, suspension) and openbadges-publish -V 3 generates the signed
