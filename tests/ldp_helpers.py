@@ -1,8 +1,10 @@
 """Test-only helpers to produce eddsa-rdfc-2022 signed credentials.
 
-The library is deliberately verify-only for Data Integrity; tests need a
-signer to build fixtures, so a ~30-line one lives here (mirroring the W3C
-vc-di-eddsa signing algorithm) and is shared by the library and CLI suites.
+A ~30-line signer mirroring the W3C vc-di-eddsa algorithm, shared by the
+library and CLI suites. It predates the production signer
+(ob3.ldp.add_data_integrity_proof) and deliberately stays: it shares no
+code with it beyond _canonize, so it doubles as an independent oracle —
+see test_ob3_ldp_sign.py::test_matches_test_helper_oracle.
 """
 import copy
 import hashlib

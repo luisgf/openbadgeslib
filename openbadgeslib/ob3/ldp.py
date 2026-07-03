@@ -20,16 +20,17 @@
         License along with this library.
 """
 
-# Verification of OpenBadges 3.0 credentials secured with a W3C Data
-# Integrity proof (the OB 3.0 "Linked Data Proof" format) — the counterpart
-# of the JWT-VC verifier for the other proof format the spec allows.
+# OpenBadges 3.0 credentials secured with a W3C Data Integrity proof (the
+# OB 3.0 "Linked Data Proof" format) — issuance and verification, the
+# counterpart of the JWT-VC signer/verifier for the other proof format the
+# spec allows. Supported cryptosuite: eddsa-rdfc-2022 (W3C Recommendation
+# vc-di-eddsa).
 #
-# Verify-only by design: openbadgeslib issues VC-JWT. Supported cryptosuite:
-# eddsa-rdfc-2022 (W3C Recommendation vc-di-eddsa). The verification
-# algorithm: RDFC-1.0-canonicalize the document without its proof and the
-# proof options without proofValue (with the document's @context); hashData =
-# SHA-256(proof config) || SHA-256(document); Ed25519-verify the 64-byte
-# multibase proofValue signature over hashData.
+# The algorithm, shared by both directions: RDFC-1.0-canonicalize the
+# document without its proof and the proof options without proofValue (with
+# the document's @context injected); hashData = SHA-256(proof config) ||
+# SHA-256(document); the 64-byte Ed25519 signature over hashData travels as
+# a multibase base58btc proofValue.
 #
 # JSON-LD canonicalization needs a JSON-LD processor, so this module depends
 # on the optional [ldp] extra (pyld) — imported lazily with an actionable
@@ -44,10 +45,11 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Mapping, Optional, Union
 
+from ..errors import ErrorSigningFile
 from ..keys import KeyType, detect_key_type, key_to_pem
 from .contexts import UnknownContextError, document_loader
-from .credential import OpenBadgeCredential, _parse_iso
-from .did import _b58btc_decode, resolve_verification_method
+from .credential import OpenBadgeCredential, _iso, _parse_iso
+from .did import _b58btc_decode, _b58btc_encode, resolve_verification_method
 from .verifier import (OB3VerificationError, _check_recipient,
                        _check_validity_window, _check_vc_types)
 
@@ -64,7 +66,7 @@ def _require_jsonld() -> Any:
         from pyld import jsonld
     except ImportError as exc:
         raise OB3VerificationError(
-            "Data Integrity (Linked Data Proof) verification requires the "
+            "Data Integrity (Linked Data Proof) support requires the "
             "optional 'pyld' dependency; install it with: "
             "pip install openbadgeslib[ldp]") from exc
     return jsonld
@@ -253,6 +255,80 @@ def verify_data_integrity_proof(
     pem = key_to_pem(pubkey_pem)
     pem_bytes = pem.encode('utf-8') if isinstance(pem, str) else pem
     _CRYPTOSUITES[proof['cryptosuite']](document, proof, pem_bytes, loader)
+
+
+def add_data_integrity_proof(
+        document: dict, privkey_pem: Any, verification_method: str, *,
+        proof_purpose: str = 'assertionMethod',
+        created: Optional[datetime] = None,
+        extra_contexts: Optional[Mapping[str, dict]] = None) -> dict:
+    """Return a deep copy of *document* secured with an eddsa-rdfc-2022
+    DataIntegrityProof — the signing counterpart of
+    :func:`verify_data_integrity_proof`, and like it schema-agnostic: it
+    imposes no OB3 shape, which lets it reproduce the official W3C
+    vc-di-eddsa test vectors. Most callers want :class:`OB3LdpSigner`
+    instead, which signs an :class:`OpenBadgeCredential` and bakes images.
+
+    *verification_method* is embedded verbatim in the proof (a did:key or
+    did:web URL the verifier can resolve). *created* defaults to now (UTC);
+    it is injectable so tests can produce deterministic proofs. The input
+    document is never mutated. *extra_contexts* extends the bundled
+    @context allowlist for this call only (contexts are never fetched from
+    the network).
+
+    Fails closed with :class:`ErrorSigningFile` on a non-Ed25519 key, a
+    document that already carries a proof (never produce a proof set the
+    verifier would reject as ambiguous), or a missing [ldp] extra.
+    """
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
+    if not isinstance(document, dict):
+        raise ErrorSigningFile('credential document must be a JSON object')
+    if 'proof' in document:
+        raise ErrorSigningFile('document already carries a proof; refusing '
+                               'to add a second one')
+    if not isinstance(verification_method, str) or not verification_method:
+        raise ErrorSigningFile('a proof needs a verificationMethod URL')
+
+    pem = key_to_pem(privkey_pem)
+    pem_bytes = pem.encode('utf-8') if isinstance(pem, str) else pem
+    try:
+        key_type = detect_key_type(pem_bytes)
+    except Exception as exc:
+        raise ErrorSigningFile('unusable signing key: %s' % exc) from exc
+    if key_type is not KeyType.ED25519:
+        raise ErrorSigningFile(
+            'eddsa-rdfc-2022 requires an Ed25519 signing key, got %s'
+            % key_type.value)
+
+    proof: Dict[str, Any] = {
+        'type': 'DataIntegrityProof',
+        'cryptosuite': 'eddsa-rdfc-2022',
+        'created': _iso(created if created is not None
+                        else datetime.now(timezone.utc)),
+        'verificationMethod': verification_method,
+        'proofPurpose': proof_purpose,
+    }
+    # vc-di-eddsa: the proof options are canonicalized in the context of the
+    # secured document; the @context is injected for hashing only and the
+    # embedded proof carries none.
+    proof_config = dict(proof)
+    proof_config['@context'] = document.get('@context')
+
+    loader = document_loader(extra_contexts)
+    try:
+        data = _hash_data(document, proof_config, loader)
+    except OB3VerificationError as exc:
+        # Signing-path callers expect signer-family errors; the message
+        # (e.g. the [ldp] extra install hint) is preserved.
+        raise ErrorSigningFile(str(exc)) from exc
+
+    priv = load_pem_private_key(pem_bytes, password=None)
+    signature = priv.sign(data)                # type: ignore[union-attr, call-arg]
+
+    signed = copy.deepcopy(document)
+    signed['proof'] = dict(proof, proofValue='z' + _b58btc_encode(signature))
+    return signed
 
 
 class OB3LdpVerifier:
