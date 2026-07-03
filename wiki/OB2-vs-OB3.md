@@ -38,7 +38,7 @@ OB 3.0 models the badge as a **W3C Verifiable Credential** (VC 2.0 data model) s
 | Token format | JWS compact | JWS compact | JWT-VC |
 | JSON-LD `@context`/`type` | no | **yes** | yes |
 | Assertion identifier | `uid` (SHA-1) | `id` IRI (`urn:uuid:`/URL) | `id` (`urn:uuid:`) |
-| Verification field | `verify {type,url}` | `verification {type,creator}` | JWT proof |
+| Verification field | `verify {type,url}` | `verification {type,creator}` | JWT proof, or Data Integrity `proof` (`eddsa-rdfc-2022`, verify with the `[ldp]` extra) |
 | `hashed` | string `"true"` | boolean `true` | n/a (not hashed) |
 | Dates | Unix timestamp | ISO 8601 | ISO 8601 (`validFrom`/`validUntil`) |
 | Recipient identity | SHA-256 email + salt | SHA-256 email + salt | `mailto:` URI **or** DID |

@@ -4,6 +4,39 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.2.0 - unreleased
+
+  - feat(ob3): verification of OB 3.0 credentials secured with a W3C Data
+    Integrity proof (the Linked Data Proof format), cryptosuite
+    eddsa-rdfc-2022 — new `OB3LdpVerifier` and low-level
+    `verify_data_integrity_proof`, validated against the official W3C
+    vc-di-eddsa test vectors. Verify-only: issuing stays JWT-VC. Requires
+    the new optional extra: `pip install "openbadgeslib[ldp]"` (pyld);
+    everything else works without it.
+
+  - feat(ob3): JSON-LD @context documents are never fetched from the
+    network — the exact context files ship pinned inside the wheel behind
+    an exact-match allowlist (fail-closed on unknown contexts), and Data
+    Integrity documents are capped at 256 KiB before canonicalization.
+
+  - feat(ob3): `resolve_verification_method` resolves the exact
+    verificationMethod URL a proof names (did:key fragment validation;
+    did:web entry selected by id, fail-closed on no match).
+
+  - feat(baking): OB 3.0 §5.3 text-content carrier for Data Integrity
+    credentials — `bake_svg(..., as_text=True)` and an opt-in
+    `extract_svg(..., text_fallback=True)`; the OB3 extraction returns
+    either a compact JWT or the credential JSON. PNG needed no change.
+
+  - feat(cli): `openbadges-verifier -V 3` autodetects the baked payload
+    (JWT-VC vs Data Integrity) with the same trust flags, reports
+    `proof_format` in `--json`, and hints at the missing `[ldp]` extra.
+
+  - feat(api): `OpenBadgeCredential.from_vc_document` reconstructs a
+    credential from its JSON-LD document shape (same validation as the
+    JWT payload path).
+
+
 * v3.1.1 - 2026-07-03
 
   - docs(packaging): discoverability metadata — a descriptive PyPI summary,

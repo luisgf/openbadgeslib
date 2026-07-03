@@ -112,6 +112,44 @@ did:example:abc123           -> did:example:abc123             (unchanged)
 
 So `expected_recipient='recipient@example.com'` and `expected_recipient='mailto:recipient@example.com'` both match a credential issued to `mailto:recipient@example.com`, and a DID is never mangled into `mailto:did:...`.
 
+## Verifying Data Integrity (LDP) credentials — `OB3LdpVerifier`
+
+OB 3.0 allows a second proof format besides VC-JWT: a JSON-LD credential with
+an embedded **W3C Data Integrity proof**. `OB3LdpVerifier` verifies those
+(cryptosuite `eddsa-rdfc-2022`; requires the `[ldp]` extra — see
+[[Installation]]) with the same API and trust model as `OB3Verifier`:
+
+```python
+from openbadgeslib.ob3 import OB3LdpVerifier
+
+# Trusted key pinned by the operator:
+credential = OB3LdpVerifier(pubkey_pem=pub_pem).verify(
+    document, expected_recipient='recipient@example.com', check_status=False)
+
+# Or resolve the key from the proof's verificationMethod (did:key offline,
+# did:web over HTTPS). A did:key is self-asserted: internal consistency only.
+credential = OB3LdpVerifier().verify(document)
+
+# Anchor to an issuer DID (issuer AND verificationMethod must belong to it):
+credential = OB3LdpVerifier.for_issuer_did('did:web:issuer.example').verify(document)
+```
+
+`document` may be the JSON string/bytes extracted from a baked image or an
+already-parsed `dict`; the return value and every failure mode
+(`OB3VerificationError`) match the JWT verifier, and `expected_recipient` /
+`check_status` behave identically. When the key is not pinned, a proof whose
+`verificationMethod` does not belong to the credential's DID issuer is
+rejected fail-closed.
+
+For advanced uses (e.g. non-OB3 Verifiable Credentials or the official W3C
+test vectors) the crypto core is exposed as
+`verify_data_integrity_proof(document, pubkey_pem, *, expected_proof_purpose='assertionMethod', extra_contexts=None)`,
+which checks only the proof itself. `@context` documents are **never fetched
+from the network** — canonicalization uses the contexts bundled with the
+library (see [[Security Model]]); `extra_contexts` extends that allowlist per
+call. An unsupported cryptosuite (e.g. `ecdsa-sd-2023`) fails closed naming
+the supported ones.
+
 ## Issuer-side status lists
 
 `openbadgeslib.ob3.status_list` writes what `check_credential_status` reads, and `StatusRegistry` tracks which credential owns which index:

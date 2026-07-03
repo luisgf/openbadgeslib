@@ -118,7 +118,9 @@ For OB3 the signer auto-detects the algorithm from the private key (RS256 for RS
 
 Extracts the embedded assertion/credential from a signed badge image, checks the cryptographic signature, and verifies that the recipient identity matches `-r`.
 
-**Trust note:** to get a `[+]` trusted result you must supply the issuer's public key out-of-band, via `-l BADGE` (read from `config.ini`) or `-k FILE` (a PEM path). For OB2, if you supply neither, the verifier falls back to the key the badge itself points to and reports a `[~]` warning — the signature is only *internally consistent*, which does not prove issuer identity. For OB3, supplying neither is a hard error. See [[Security Model]].
+For OB3 the baked payload's format is **autodetected**: a compact JWT-VC is verified as before, while a JSON credential document secured with a W3C Data Integrity proof (`eddsa-rdfc-2022`) is verified through the same flags — no new options — provided the `[ldp]` extra is installed (`pip install "openbadgeslib[ldp]"`; without it the failure reason carries that hint). See [[Installation]] and [[Python API OB3]].
+
+**Trust note:** to get a `[+]` trusted result you must supply the issuer's public key out-of-band, via `-l BADGE` (read from `config.ini`) or `-k FILE` (a PEM path). For OB2, if you supply neither, the verifier falls back to the key the badge itself points to and reports a `[~]` warning — the signature is only *internally consistent*, which does not prove issuer identity. For OB3, supplying neither is a hard error (or pass `--resolve-did`, which for a Data Integrity credential resolves the proof's `verificationMethod`). See [[Security Model]].
 
 ### Synopsis
 
@@ -174,11 +176,11 @@ With `--resolve-did` and no explicit key, the issuer DID is read from the (still
 
 ### JSON output
 
-With `--json`, the verifier prints a single JSON object instead of the human `[+]/[-]/[~]` lines. Its exit status reflects issuer trust, not merely signature validity: `0` when the badge is valid **and** the issuer is trusted, `2` when the signature is valid but the issuer is not anchored (an OB2 badge-embedded key or a self-asserted `did:key`), and `1` on any failure — so a CI gate keying on exit `0` never accepts a signature that does not prove issuer identity. Common fields: `valid` (bool), `ob_version` (`"2"`/`"3"`), `recipient`, `trusted` (bool), and `reason` (`null` on success, a message otherwise). OB2 adds `status` (`VALID`/`EXPIRED`/`REVOKED`/…); OB3 adds `issuer`, `achievement`, `issued_on`, `expires`, `evidence`, and `issuer_did` when the key came from `--resolve-did`.
+With `--json`, the verifier prints a single JSON object instead of the human `[+]/[-]/[~]` lines. Its exit status reflects issuer trust, not merely signature validity: `0` when the badge is valid **and** the issuer is trusted, `2` when the signature is valid but the issuer is not anchored (an OB2 badge-embedded key or a self-asserted `did:key`), and `1` on any failure — so a CI gate keying on exit `0` never accepts a signature that does not prove issuer identity. Common fields: `valid` (bool), `ob_version` (`"2"`/`"3"`), `recipient`, `trusted` (bool), and `reason` (`null` on success, a message otherwise). OB2 adds `status` (`VALID`/`EXPIRED`/`REVOKED`/…); OB3 adds `issuer`, `achievement`, `issued_on`, `expires`, `evidence`, `proof_format` (`"vc-jwt"` or `"ldp"`, per the autodetected payload), and `issuer_did` when the key came from `--resolve-did`.
 
 ```sh
 $ openbadges-verifier -i badge.svg -r recipient@example.com -V 3 -k verify.pem --json
-{"ob_version": "3", "recipient": "recipient@example.com", "trusted": true, "valid": true, "reason": null, "issuer": "Issuer", "achievement": "A", "issued_on": "2026-01-01T00:00:00+00:00", "expires": null, "evidence": null}
+{"ob_version": "3", "recipient": "recipient@example.com", "trusted": true, "valid": true, "proof_format": "vc-jwt", "issuer": "Issuer", "achievement": "A", "issued_on": "2026-01-01T00:00:00+00:00", "expires": null, "evidence": null, "reason": null}
 ```
 
 ## openbadges-publish

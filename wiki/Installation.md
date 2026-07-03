@@ -37,6 +37,19 @@ To upgrade an existing install:
 pip install openbadgeslib --upgrade
 ```
 
+### Optional extras
+
+```sh
+pip install "openbadgeslib[ldp]"
+```
+
+The `[ldp]` extra adds [pyld](https://pypi.org/project/PyLD/) and enables
+**verification** of OB 3.0 credentials secured with a W3C Data Integrity proof
+(cryptosuite `eddsa-rdfc-2022`) — the OB 3.0 Linked Data Proof format. Nothing
+else needs it: signing stays JWT-VC, and without the extra the rest of the
+library works unchanged (attempting to verify a Data Integrity credential
+reports the missing extra with an install hint).
+
 ## Development install
 
 Clone the repository and install in editable mode together with the test and lint dependencies:
