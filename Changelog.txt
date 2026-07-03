@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v3.2.0 - unreleased
+* v3.2.0 - 2026-07-03
 
   - feat(ob3): verification of OB 3.0 credentials secured with a W3C Data
     Integrity proof (the Linked Data Proof format), cryptosuite
