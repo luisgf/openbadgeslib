@@ -45,11 +45,14 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Mapping, Optional, Union
 
+from .. import baking
 from ..errors import ErrorSigningFile
 from ..keys import KeyType, detect_key_type, key_to_pem
+from ..util import __version__
 from .contexts import UnknownContextError, document_loader
 from .credential import OpenBadgeCredential, _iso, _parse_iso
-from .did import _b58btc_decode, _b58btc_encode, resolve_verification_method
+from .did import (_b58btc_decode, _b58btc_encode, _public_key_to_pem,
+                  did_key_from_pem, resolve_verification_method)
 from .verifier import (OB3VerificationError, _check_recipient,
                        _check_validity_window, _check_vc_types)
 
@@ -453,3 +456,110 @@ class OB3LdpVerifier:
             raise OB3VerificationError(
                 "credential document must be a JSON object")
         return parsed
+
+
+class OB3LdpSigner:
+    """Signs OpenBadges 3.0 credentials with an embedded Data Integrity
+    proof (cryptosuite eddsa-rdfc-2022) — the issuance counterpart of
+    :class:`OB3LdpVerifier`, and the Linked-Data sibling of
+    :class:`OB3Signer` (which produces compact JWT-VCs).
+
+    Args:
+        privkey_pem: PEM-encoded Ed25519 private key (bytes, str, or a
+                     cryptography key object). eddsa-rdfc-2022 admits no
+                     other key type, so anything else fails here, at
+                     construction, not at first sign.
+        verification_method:
+                     proof ``verificationMethod`` URL embedded in every
+                     proof. ``None`` derives a did:key from the signing
+                     key's public half — self-asserted: it proves the proof
+                     matches the key, not who owns it. Issuers publishing a
+                     DID document (did:web) should pass the method id it
+                     publishes, e.g. ``did:web:host#badge_1``, so verifiers
+                     resolve a trusted key.
+
+    Requires the optional ``[ldp]`` extra (``pip install openbadgeslib[ldp]``)
+    at signing time; constructing the signer works without it.
+    """
+
+    def __init__(self, privkey_pem: Any,
+                 verification_method: Optional[str] = None) -> None:
+        pem = key_to_pem(privkey_pem)
+        pem_bytes = pem.encode('utf-8') if isinstance(pem, str) else pem
+        try:
+            key_type = detect_key_type(pem_bytes)
+        except Exception as exc:
+            raise ErrorSigningFile('unusable signing key: %s' % exc) from exc
+        if key_type is not KeyType.ED25519:
+            raise ErrorSigningFile(
+                'eddsa-rdfc-2022 requires an Ed25519 signing key, got %s'
+                % key_type.value)
+        self.privkey_pem: bytes = pem_bytes
+        if verification_method is None:
+            verification_method = self._did_key_vm(pem_bytes)
+        self.verification_method = verification_method
+
+    @staticmethod
+    def _did_key_vm(privkey_pem: bytes) -> str:
+        """did:key verification method of the key's public half. Derived
+        from the PRIVATE key, so a stale public-key file on disk can never
+        produce an unverifiable badge."""
+        from cryptography.hazmat.primitives.serialization import \
+            load_pem_private_key
+        pub = load_pem_private_key(privkey_pem, password=None).public_key()
+        did = did_key_from_pem(_public_key_to_pem(pub))
+        # The did:key method spec: the only valid fragment is the multibase
+        # identifier itself (resolve_verification_method enforces this).
+        return '%s#%s' % (did, did[len('did:key:'):])
+
+    # ── core signing ─────────────────────────────────────────────────────────
+
+    def sign(self, credential: OpenBadgeCredential, *,
+             created: Optional[datetime] = None) -> dict:
+        """Sign a credential and return the secured VC document (dict) —
+        the credential JSON with the DataIntegrityProof embedded under
+        ``proof``. *created* defaults to now (UTC)."""
+        return add_data_integrity_proof(
+            credential.to_vc(), self.privkey_pem, self.verification_method,
+            created=created)
+
+    def sign_to_json(self, credential: OpenBadgeCredential, *,
+                     created: Optional[datetime] = None) -> str:
+        """Sign and serialize — exactly the text a baked image carries."""
+        return json.dumps(self.sign(credential, created=created),
+                          sort_keys=True, ensure_ascii=True)
+
+    # ── image baking ─────────────────────────────────────────────────────────
+
+    def sign_into_svg(self, credential: OpenBadgeCredential,
+                      svg_bytes: bytes) -> bytes:
+        """Embed a Data-Integrity-signed credential into an SVG badge image.
+
+        The JSON document is stored as the text content of the OB 3.0
+        ``<openbadges:credential>`` element (a JWT-VC travels in its
+        ``verify`` attribute instead); the verifier auto-detects the format.
+        """
+        text = self.sign_to_json(credential)
+        try:
+            return baking.bake_svg(
+                svg_bytes, text,
+                comment=' Signed with OpenBadgesLib %s (OB 3.0 Data '
+                        'Integrity) ' % __version__,
+                element=baking.SVG_ELEMENT_OB3, namespace=baking.SVG_NS_OB3,
+                as_text=True)
+        except Exception as exc:
+            raise ErrorSigningFile(
+                'Unable to bake SVG credential: %s' % exc) from exc
+
+    def sign_into_png(self, credential: OpenBadgeCredential,
+                      png_bytes: bytes) -> bytes:
+        """Embed a Data-Integrity-signed credential into a PNG badge image,
+        as an ``iTXt`` chunk with the OB 3.0 keyword ``openbadgecredential``
+        (same carrier as a JWT-VC; the content format tells them apart)."""
+        text = self.sign_to_json(credential)
+        try:
+            return baking.bake_png(png_bytes, text,
+                                   keyword=baking.ITXT_KEYWORD_OB3)
+        except Exception as exc:
+            raise ErrorSigningFile(
+                'Unable to bake PNG credential: %s' % exc) from exc

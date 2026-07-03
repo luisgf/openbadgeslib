@@ -175,6 +175,97 @@ class TestAddDataIntegrityProof:
             add_data_integrity_proof(doc, priv_pem, _did_key_vm(pub_pem))
 
 
+# ── high-level signer: OB3LdpSigner ──────────────────────────────────────────
+
+class TestOB3LdpSigner:
+    @pytest.fixture(autouse=True)
+    def _needs_pyld(self):
+        pytest.importorskip('pyld')
+
+    def _did_key_credential(self, ob3_credential, pub_pem):
+        from openbadgeslib.ob3 import Issuer
+        import dataclasses
+        return dataclasses.replace(
+            ob3_credential, issuer=Issuer(id=_did_key(pub_pem), name='Test Issuer'))
+
+    def test_sign_verifies_with_pinned_key(self, ob3_credential,
+                                           ed25519_keypair):
+        from openbadgeslib.ob3 import OB3LdpSigner, OB3LdpVerifier
+        priv_pem, pub_pem = ed25519_keypair
+        signed = OB3LdpSigner(priv_pem).sign(ob3_credential)
+        cred = OB3LdpVerifier(pubkey_pem=pub_pem).verify(signed)
+        assert cred.id == ob3_credential.id
+
+    def test_sign_verifies_unpinned_via_did_key(self, ob3_credential,
+                                                ed25519_keypair):
+        # did:key issuer + default VM: the proof itself carries the key.
+        from openbadgeslib.ob3 import OB3LdpSigner, OB3LdpVerifier
+        priv_pem, pub_pem = ed25519_keypair
+        credential = self._did_key_credential(ob3_credential, pub_pem)
+        signed = OB3LdpSigner(priv_pem).sign(credential)
+        cred = OB3LdpVerifier().verify(signed)
+        assert cred.issuer.id == _did_key(pub_pem)
+
+    def test_default_vm_is_did_key_of_signing_key(self, ed25519_keypair):
+        from openbadgeslib.ob3 import OB3LdpSigner
+        priv_pem, pub_pem = ed25519_keypair
+        assert OB3LdpSigner(priv_pem).verification_method == \
+            _did_key_vm(pub_pem)
+
+    def test_did_web_roundtrip_with_published_document(self, ob3_credential,
+                                                       ed25519_keypair):
+        # The §publisher contract: sign with did:web:host#badge_1 and verify
+        # against the DID document openbadges-publish would serve.
+        import dataclasses
+        from openbadgeslib.keys import public_jwk_from_pem
+        from openbadgeslib.ob3 import (Issuer, OB3LdpSigner, OB3LdpVerifier,
+                                       build_did_document)
+        priv_pem, pub_pem = ed25519_keypair
+        did = 'did:web:issuer.example'
+        doc = build_did_document(did, [('badge_1',
+                                        public_jwk_from_pem(pub_pem))])
+        credential = dataclasses.replace(
+            ob3_credential, issuer=Issuer(id=did, name='Test Issuer'))
+        signer = OB3LdpSigner(priv_pem, verification_method=did + '#badge_1')
+        signed = signer.sign(credential)
+
+        fetch = lambda url: json.dumps(doc).encode('utf-8')  # noqa: E731
+        cred = OB3LdpVerifier().verify(signed, download=fetch)
+        assert cred.issuer.id == did
+        cred = OB3LdpVerifier.for_issuer_did(did).verify(signed,
+                                                         download=fetch)
+        assert cred.issuer.id == did
+
+    def test_sign_into_svg_roundtrip(self, ob3_credential, ed25519_keypair,
+                                     svg_image):
+        from openbadgeslib.ob3 import OB3LdpSigner, OB3LdpVerifier, OB3Verifier
+        priv_pem, pub_pem = ed25519_keypair
+        credential = self._did_key_credential(ob3_credential, pub_pem)
+        baked = OB3LdpSigner(priv_pem).sign_into_svg(credential, svg_image)
+        token = OB3Verifier.extract_token_from_svg(baked)
+        assert token.lstrip().startswith('{')
+        cred = OB3LdpVerifier(pubkey_pem=pub_pem).verify(token)
+        assert cred.id == credential.id
+
+    def test_sign_into_png_roundtrip(self, ob3_credential, ed25519_keypair,
+                                     png_image):
+        from openbadgeslib.ob3 import OB3LdpSigner, OB3LdpVerifier, OB3Verifier
+        priv_pem, pub_pem = ed25519_keypair
+        credential = self._did_key_credential(ob3_credential, pub_pem)
+        baked = OB3LdpSigner(priv_pem).sign_into_png(credential, png_image)
+        token = OB3Verifier.extract_token_from_png(baked)
+        assert token.lstrip().startswith('{')
+        cred = OB3LdpVerifier(pubkey_pem=pub_pem).verify(token)
+        assert cred.id == credential.id
+
+    def test_constructor_rejects_non_ed25519(self, rsa_priv_pem,
+                                             ecc_priv_pem):
+        from openbadgeslib.ob3 import OB3LdpSigner
+        for pem in (rsa_priv_pem, ecc_priv_pem):
+            with pytest.raises(ErrorSigningFile, match='Ed25519'):
+                OB3LdpSigner(pem)
+
+
 # ── behaviour without the [ldp] extra (runs with or without pyld) ───────────
 
 class TestSignExtraAbsent:
@@ -188,3 +279,14 @@ class TestSignExtraAbsent:
         with pytest.raises(ErrorSigningFile,
                            match=r'pip install openbadgeslib\[ldp\]'):
             add_data_integrity_proof(doc, priv_pem, _did_key_vm(pub_pem))
+
+    def test_signer_constructs_without_pyld_but_sign_fails(self, monkeypatch,
+                                                           ob3_credential,
+                                                           ed25519_keypair):
+        from openbadgeslib.ob3 import OB3LdpSigner
+        monkeypatch.setitem(sys.modules, 'pyld', None)
+        priv_pem, _ = ed25519_keypair
+        signer = OB3LdpSigner(priv_pem)   # construction needs no pyld
+        with pytest.raises(ErrorSigningFile,
+                           match=r'pip install openbadgeslib\[ldp\]'):
+            signer.sign(ob3_credential)
