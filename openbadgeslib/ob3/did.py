@@ -117,6 +117,62 @@ def _read_varint(data: bytes) -> Any:
     raise OB3VerificationError("truncated multicodec varint")
 
 
+def _b58btc_encode(data: bytes) -> str:
+    num = int.from_bytes(data, 'big')
+    out = ''
+    while num > 0:
+        num, rem = divmod(num, 58)
+        out = _B58_ALPHABET[rem] + out
+    n_pad = len(data) - len(data.lstrip(b'\x00'))   # leading 0x00 => leading '1'
+    return '1' * n_pad + out
+
+
+def _write_varint(code: int) -> bytes:
+    if code < 0:
+        raise ValueError('varint codes are unsigned, got %d' % code)
+    out = bytearray()
+    while True:
+        byte = code & 0x7f
+        code >>= 7
+        out.append(byte | 0x80 if code else byte)
+        if not code:
+            return bytes(out)
+
+
+def multikey_from_pem(pubkey_pem: Any) -> str:
+    """Encode a public key PEM as a Multikey ``publicKeyMultibase`` string:
+    'z' + base58btc(multicodec varint + raw key bytes) — the exact inverse of
+    the did:key/publicKeyMultibase decoding above. Supports Ed25519 (0xed)
+    and NIST P-256 (0x1200, compressed point); raises ValueError otherwise
+    (this runs issuer-side, on the operator's own key material).
+    """
+    if isinstance(pubkey_pem, str):
+        pubkey_pem = pubkey_pem.encode('utf-8')
+    pub = _serialization.load_pem_public_key(pubkey_pem)
+    if isinstance(pub, Ed25519PublicKey):
+        prefixed = _write_varint(_MULTICODEC_ED25519_PUB) + pub.public_bytes(
+            _serialization.Encoding.Raw, _serialization.PublicFormat.Raw)
+    elif isinstance(pub, ec.EllipticCurvePublicKey) \
+            and isinstance(pub.curve, ec.SECP256R1):
+        prefixed = _write_varint(_MULTICODEC_P256_PUB) + pub.public_bytes(
+            _serialization.Encoding.X962,
+            _serialization.PublicFormat.CompressedPoint)
+    else:
+        raise ValueError('multikey encoding supports Ed25519 and NIST P-256 '
+                         'public keys, got %s' % type(pub).__name__)
+    return 'z' + _b58btc_encode(prefixed)
+
+
+def did_key_from_pem(pubkey_pem: Any) -> str:
+    """Derive the did:key identifier of a public key PEM (Ed25519 or P-256).
+
+    Self-certifying: the key IS the identifier, so resolving the returned DID
+    with :func:`resolve_did` yields the same key back. Raises ValueError for
+    unsupported key types.
+    """
+    return 'did:key:' + multikey_from_pem(pubkey_pem)
+
+
 # ── did:web ──────────────────────────────────────────────────────────────────
 
 def _resolve_did_web(did: str, fetch: Any) -> bytes:

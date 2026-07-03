@@ -28,8 +28,8 @@ from .status import check_credential_status
 from .status_list import (build_status_list_credential, encode_bitstring,
                           sign_status_list_credential, status_entry)
 from .status_registry import StatusRegistry
-from .did import (build_did_document, did_web_from_url, resolve_did,
-                  resolve_verification_method)
+from .did import (build_did_document, did_key_from_pem, did_web_from_url,
+                  multikey_from_pem, resolve_did, resolve_verification_method)
 
 __all__ = [
     'Achievement',
@@ -44,8 +44,10 @@ __all__ = [
     'build_did_document',
     'build_status_list_credential',
     'check_credential_status',
+    'did_key_from_pem',
     'did_web_from_url',
     'encode_bitstring',
+    'multikey_from_pem',
     'resolve_did',
     'resolve_verification_method',
     'sign_status_list_credential',

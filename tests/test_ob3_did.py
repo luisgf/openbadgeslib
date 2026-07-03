@@ -140,6 +140,58 @@ class TestDidWeb:
             resolve_did('did:web:issuer.example', download=lambda url: b'not json')
 
 
+# ── encoders (issuance side) ─────────────────────────────────────────────────
+
+class TestEncoders:
+    def test_b58btc_encode_decode_roundtrip(self):
+        from openbadgeslib.ob3.did import _b58btc_decode, _b58btc_encode
+        for raw in (b'', b'\x00', b'\x00\x00ab', b'\xff' * 33, bytes(range(64))):
+            assert _b58btc_decode(_b58btc_encode(raw)) == raw
+
+    def test_write_varint_matches_read_varint(self):
+        from openbadgeslib.ob3.did import _read_varint, _write_varint
+        for code in (0x00, 0x7f, 0xed, 0x1200, 0xffff):
+            assert _read_varint(_write_varint(code) + b'rest') == (code, b'rest')
+
+    def test_write_varint_known_encodings(self):
+        from openbadgeslib.ob3.did import _write_varint
+        assert _write_varint(0xed) == b'\xed\x01'      # Ed25519 multicodec
+        assert _write_varint(0x1200) == b'\x80\x24'    # P-256 multicodec
+
+    def test_multikey_ed25519_roundtrip(self, ed25519_pub_pem):
+        from openbadgeslib.ob3.did import (_b58btc_decode, multikey_from_pem,
+                                           _multicodec_pubkey_to_pem)
+        mb = multikey_from_pem(ed25519_pub_pem)
+        assert mb.startswith('z')
+        assert _multicodec_pubkey_to_pem(_b58btc_decode(mb[1:])) == ed25519_pub_pem
+
+    def test_multikey_p256_roundtrip(self):
+        from openbadgeslib.keys import detect_key_type, KeyType
+        from openbadgeslib.ob3.did import (_b58btc_decode, multikey_from_pem,
+                                           _multicodec_pubkey_to_pem)
+        priv = ec.generate_private_key(ec.SECP256R1())
+        pem = priv.public_key().public_bytes(
+            ser.Encoding.PEM, ser.PublicFormat.SubjectPublicKeyInfo)
+        mb = multikey_from_pem(pem)
+        decoded = _multicodec_pubkey_to_pem(_b58btc_decode(mb[1:]))
+        assert detect_key_type(decoded) is KeyType.ECC
+
+    def test_multikey_rejects_rsa(self, rsa_pub_pem):
+        from openbadgeslib.ob3.did import multikey_from_pem
+        with pytest.raises(ValueError, match='Ed25519'):
+            multikey_from_pem(rsa_pub_pem)
+
+    def test_did_key_from_pem_resolves_back(self, ed25519_pub_pem):
+        from openbadgeslib.ob3 import did_key_from_pem
+        did = did_key_from_pem(ed25519_pub_pem)
+        assert resolve_did(did) == ed25519_pub_pem
+
+    def test_did_key_from_pem_matches_test_helper(self, ed25519_pub_pem):
+        from openbadgeslib.ob3 import did_key_from_pem
+        pub = ser.load_pem_public_key(ed25519_pub_pem)
+        assert did_key_from_pem(ed25519_pub_pem) == _did_key_ed25519(pub)
+
+
 # ── method dispatch ──────────────────────────────────────────────────────────
 
 class TestResolveDidDispatch:
