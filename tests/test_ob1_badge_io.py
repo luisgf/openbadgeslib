@@ -84,6 +84,34 @@ class TestExtractSVGAssertion:
                b'<openbadges:assertion/></svg>')
         assert baking.extract_svg(svg) is None
 
+    def test_text_content_baking_round_trips(self, svg_image):
+        # OB 3.0 §5.3 bakes a Data Integrity credential as the element's TEXT
+        # content (a JSON document), not the verify attribute.
+        doc = '{"@context": ["https://www.w3.org/ns/credentials/v2"], "proof": {}}'
+        baked = baking.bake_svg(svg_image, doc,
+                                element=baking.SVG_ELEMENT_OB3,
+                                namespace=baking.SVG_NS_OB3, as_text=True)
+        # Default extraction (attribute-only) must keep returning None...
+        assert baking.extract_svg(baked, element=baking.SVG_ELEMENT_OB3) is None
+        # ...while the text fallback recovers the document verbatim.
+        assert baking.extract_svg(baked, element=baking.SVG_ELEMENT_OB3,
+                                  text_fallback=True) == doc
+
+    def test_text_fallback_empty_element_still_none(self):
+        svg = (b'<svg xmlns:openbadges="https://purl.imsglobal.org/ob/v3p0">'
+               b'<openbadges:credential>  </openbadges:credential></svg>')
+        assert baking.extract_svg(svg, element=baking.SVG_ELEMENT_OB3,
+                                  text_fallback=True) is None
+
+    def test_text_fallback_prefers_verify_attribute(self, svg_image):
+        # A JWT baked in the verify attribute wins even with the fallback on:
+        # the attribute is the primary OB3 carrier.
+        baked = baking.bake_svg(svg_image, 'h.p.s',
+                                element=baking.SVG_ELEMENT_OB3,
+                                namespace=baking.SVG_NS_OB3)
+        assert baking.extract_svg(baked, element=baking.SVG_ELEMENT_OB3,
+                                  text_fallback=True) == 'h.p.s'
+
 
 class TestExtractPNGAssertion:
     def test_extract_from_signed_png(self, signed_png_rsa):

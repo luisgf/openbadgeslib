@@ -283,9 +283,16 @@ class OB3Verifier:
 
     @staticmethod
     def extract_token_from_svg(svg_bytes: bytes) -> str:
-        """Extract the JWT-VC token embedded in a baked SVG badge."""
+        """Extract the embedded credential from a baked SVG badge.
+
+        Returns either a compact JWT-VC (baked in the ``verify`` attribute) or
+        the JSON document of a Data Integrity credential (baked as the
+        element's text content per OB 3.0 §5.3) — the caller decides how to
+        verify based on the shape.
+        """
         try:
-            token = baking.extract_svg(svg_bytes, element=baking.SVG_ELEMENT_OB3)
+            token = baking.extract_svg(svg_bytes, element=baking.SVG_ELEMENT_OB3,
+                                       text_fallback=True)
         except Exception as exc:
             raise ErrorParsingFile(f"Could not parse SVG: {exc}") from exc
         if token is None:

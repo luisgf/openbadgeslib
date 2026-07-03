@@ -75,16 +75,26 @@ def _bounded_inflate(data: bytes, limit: int = MAX_ITXT_DECOMPRESSED) -> bytes:
 # ── SVG ─────────────────────────────────────────────────────────────────────
 
 def bake_svg(image_bytes: bytes, token: str, comment: Optional[str] = None, *,
-             element: str = SVG_ELEMENT, namespace: str = SVG_NS) -> bytes:
+             element: str = SVG_ELEMENT, namespace: str = SVG_NS,
+             as_text: bool = False) -> bytes:
     """Return *image_bytes* with an ``<element verify=token>`` node (and an
     optional XML comment) appended to the root ``<svg>``. *element*/*namespace*
-    default to the OB 2.0 identifiers; OB 3.0 passes its own."""
+    default to the OB 2.0 identifiers; OB 3.0 passes its own.
+
+    With ``as_text=True`` the token is stored as the element's text content
+    instead of the ``verify`` attribute — the OB 3.0 carrier for credentials
+    secured with a Data Integrity proof, whose payload is a JSON document
+    rather than a compact JWT (OB 3.0 §5.3).
+    """
     svg_doc = parseString(image_bytes)
     try:
         svg_tag = svg_doc.getElementsByTagName('svg').item(0)
         node = svg_doc.createElement(element)
         node.attributes['xmlns:openbadges'] = namespace
-        node.attributes['verify'] = token
+        if as_text:
+            node.appendChild(svg_doc.createTextNode(token))
+        else:
+            node.attributes['verify'] = token
         svg_tag.appendChild(node)
         if comment:
             svg_tag.appendChild(svg_doc.createComment(comment))
@@ -102,12 +112,18 @@ def has_svg(image_bytes: bytes, *, element: str = SVG_ELEMENT) -> bool:
         svg_doc.unlink()
 
 
-def extract_svg(image_bytes: bytes, *, element: str = SVG_ELEMENT) -> Optional[str]:
+def extract_svg(image_bytes: bytes, *, element: str = SVG_ELEMENT,
+                text_fallback: bool = False) -> Optional[str]:
     """Return the embedded token string, or None if the badge carries no token.
 
     None covers both a missing *element* node and a present element with no
     ``verify`` attribute (a well-formed SVG that simply isn't a signed badge).
     Malformed XML still raises (left to the caller to map to its own error type).
+
+    With ``text_fallback=True``, an element without a ``verify`` attribute
+    falls back to its text content — where OB 3.0 §5.3 bakes a credential
+    secured with a Data Integrity proof (a JSON document, not a compact JWT).
+    An empty/whitespace-only text content still yields None.
     """
     svg_doc = None
     try:
@@ -116,7 +132,15 @@ def extract_svg(image_bytes: bytes, *, element: str = SVG_ELEMENT) -> Optional[s
         if not nodes:
             return None
         attrs = nodes[0].attributes
-        return attrs['verify'].nodeValue if 'verify' in attrs else None
+        if 'verify' in attrs:
+            return attrs['verify'].nodeValue
+        if not text_fallback:
+            return None
+        text = ''.join(
+            child.data for child in nodes[0].childNodes
+            if child.nodeType in (child.TEXT_NODE, child.CDATA_SECTION_NODE)
+        ).strip()
+        return text or None
     finally:
         if svg_doc is not None:
             svg_doc.unlink()
