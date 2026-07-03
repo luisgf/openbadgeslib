@@ -39,9 +39,12 @@ import os.path
 import time
 
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-from .keys import detect_key_type, alg_for_key_type
+if TYPE_CHECKING:
+    from .ob3 import OpenBadgeCredential
+
+from .keys import KeyType, detect_key_type, alg_for_key_type
 from .errors import BadgeImgFormatUnsupported
 from .confparser import read_config_or_exit, resolve_badge_section
 from .logs import enable_debug_logging
@@ -81,6 +84,13 @@ def build_parser() -> argparse.ArgumentParser:
                         metavar='VERSION',
                         help='OpenBadges specification version: 1 (legacy JWS), '
                              '2 (strict OB 2.0 JWS), or 3 (default, JWT-VC).')
+    parser.add_argument('-P', '--proof-format', choices=['vc-jwt', 'ldp'],
+                        metavar='FORMAT',
+                        help="OB3 only (-V 3): proof format — 'vc-jwt' (compact "
+                             "JWT-VC, the default) or 'ldp' (embedded W3C Data "
+                             "Integrity proof, eddsa-rdfc-2022; needs an Ed25519 "
+                             "key and the [ldp] extra). Overrides the badge's "
+                             "'proof_format' config key.")
     parser.add_argument('-d', '--debug', action='store_true', help='Show debug messages in runtime.')
     parser.add_argument('-v', '--version', action='version', version=__version__)
     return parser
@@ -92,6 +102,9 @@ def main() -> None:
 
     if bool(args.no_evidence) != (args.evidence is None):  # XOR
         sys.exit("Please, choose '-e' OR '-E'")
+
+    if args.proof_format and args.ob_version != '3':
+        sys.exit("[!] --proof-format applies to OpenBadges 3.0 only (-V 3)")
 
     evidence = args.evidence  # If no evidence, evidence=None
 
@@ -216,6 +229,11 @@ def _sign_ob2(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
 def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
               badge_obj: Badge, badge_file_out: str, evidence: Optional[str]) -> None:
     """Sign a badge using OpenBadges 1.0 (legacy JWS)."""
+    if badge_obj.key_type not in (KeyType.RSA, KeyType.ECC):
+        # The legacy JWS path predates Ed25519 support (RSA/ECC key objects).
+        sys.exit('[!] OpenBadges 1.0 (-V 1) supports RSA and ECC keys only; '
+                 '[%s] uses %s.' % (badge, badge_obj.key_type.value
+                                    if badge_obj.key_type else 'no key'))
     if args.expires:
         expiration = int(time.time()) + args.expires * 86400
     else:
@@ -277,14 +295,15 @@ def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
 
 def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
               badge_obj: Badge, badge_file_out: str, evidence: Optional[str]) -> None:
-    """Sign a badge using OpenBadges 3.0 (JWT-VC)."""
+    """Sign a badge using OpenBadges 3.0 (JWT-VC or a Data Integrity proof)."""
     from .ob3 import OB3Signer, Issuer, Achievement, OpenBadgeCredential
-    from .confparser import ob3_issuer_id, ob3_status_config
+    from .confparser import ob3_issuer_id, ob3_proof_format, ob3_status_config
 
     issuer_section = conf['issuer']
     try:
         issuer_id = ob3_issuer_id(conf)
         status_conf = ob3_status_config(conf, badge)
+        proof_format = args.proof_format or ob3_proof_format(conf, badge)
     except ValueError as exc:
         print('[!] %s' % exc)
         sys.exit(-1)
@@ -349,22 +368,28 @@ def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
     assert badge_obj.privkey_pem is not None and badge_obj.image is not None
 
     key_type = detect_key_type(badge_obj.privkey_pem)
-    algorithm = alg_for_key_type(key_type)
-    logger.debug("OB3 sign: key_type=%s algorithm=%s recipient=%s",
-                 key_type, algorithm, recipient_id)
 
-    signer = OB3Signer(privkey_pem=badge_obj.privkey_pem, algorithm=algorithm)
-
-    if badge_obj.image_type is BadgeImgType.SVG:
-        signed_bytes = signer.sign_into_svg(credential, badge_obj.image)
+    if proof_format == 'ldp':
+        signed_bytes = _sign_ob3_ldp(badge, badge_obj, credential, issuer_id,
+                                     key_type, recipient_id)
     else:
-        signed_bytes = signer.sign_into_png(credential, badge_obj.image)
+        algorithm = alg_for_key_type(key_type)
+        logger.debug("OB3 sign: key_type=%s algorithm=%s recipient=%s",
+                     key_type, algorithm, recipient_id)
+        signer = OB3Signer(privkey_pem=badge_obj.privkey_pem,
+                           algorithm=algorithm)
+        if badge_obj.image_type is BadgeImgType.SVG:
+            signed_bytes = signer.sign_into_svg(credential, badge_obj.image)
+        else:
+            signed_bytes = signer.sign_into_png(credential, badge_obj.image)
 
     with open(badge_file_out, 'wb') as f:
         f.write(signed_bytes)
 
     msg = '%s %s OB3 SIGNED for %s JTI %s' % (
         datetime.today().isoformat(), badge, args.receptor, credential.id)
+    if proof_format == 'ldp':
+        msg += ' PROOF ldp'
     if status_index is not None:
         msg += ' STATUS %d' % status_index
     sign_log = os.path.join(conf['paths']['base_log'], conf['logs']['signer'])
@@ -374,6 +399,61 @@ def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
     except OSError as err:
         print('[!] Could not write sign log: %s' % err)
     print('%s at: %s' % (msg, badge_file_out))
+
+
+def _sign_ob3_ldp(badge: str, badge_obj: Badge,
+                  credential: 'OpenBadgeCredential', issuer_id: str,
+                  key_type: KeyType, recipient_id: str) -> bytes:
+    """Sign an OB3 credential with a Data Integrity proof, baked into the
+    badge image. The proof's verificationMethod follows the issuer config:
+    a did:web issuer signs with the method id openbadges-publish publishes
+    (did:web:…#badge_section — trusted); anything else falls back to a
+    did:key derived from the signing key (self-asserted)."""
+    from .errors import ErrorSigningFile
+    from .ob3 import OB3LdpSigner
+
+    if key_type is not KeyType.ED25519:
+        print("[!] --proof-format ldp (eddsa-rdfc-2022) requires an Ed25519 "
+              "key; [%s] uses %s. Generate one with: "
+              "openbadges-keygenerator -t ED25519" % (badge, key_type.value))
+        sys.exit(-1)
+
+    verification_method = None
+    if issuer_id.startswith('did:web:'):
+        verification_method = '%s#%s' % (issuer_id, badge)
+
+    assert badge_obj.privkey_pem is not None and badge_obj.image is not None
+    try:
+        signer = OB3LdpSigner(badge_obj.privkey_pem,
+                              verification_method=verification_method)
+    except ErrorSigningFile as exc:
+        print('[!] %s' % exc)
+        sys.exit(-1)
+
+    if issuer_id.startswith('did:key:'):
+        # A did:key issuer IS its key; signing with a different one would
+        # produce a credential no verifier accepts.
+        derived = signer.verification_method.partition('#')[0]
+        if derived != issuer_id:
+            print("[!] [issuer] did %s does not match the signing key's "
+                  "did:key (%s); a did:key issuer must be the signing key "
+                  "itself" % (issuer_id, derived))
+            sys.exit(-1)
+    elif not issuer_id.startswith('did:'):
+        print("[i] The issuer id is not a DID, so the proof carries a "
+              "self-asserted did:key verification method and verifiers must "
+              "pin the public key (-k/-l). Set [issuer] did = auto to "
+              "publish a trusted did:web instead.")
+
+    logger.debug("OB3 sign: proof_format=ldp vm=%s recipient=%s",
+                 signer.verification_method, recipient_id)
+    try:
+        if badge_obj.image_type is BadgeImgType.SVG:
+            return signer.sign_into_svg(credential, badge_obj.image)
+        return signer.sign_into_png(credential, badge_obj.image)
+    except ErrorSigningFile as exc:
+        print('[!] %s' % exc)
+        sys.exit(-1)
 
 
 if __name__ == '__main__':

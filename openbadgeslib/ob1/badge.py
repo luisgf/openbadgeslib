@@ -145,6 +145,25 @@ class Badge():
                     self.priv_key = SigningKey.from_pem(self.privkey_pem)
                 except Exception as exc:
                     raise PrivateKeyReadError('Unable to read ECC private key: %s' % exc) from exc
+        elif self.key_type is KeyType.ED25519:
+            from cryptography.hazmat.primitives.serialization import (
+                load_pem_private_key, load_pem_public_key)
+            if self.pubkey_pem:
+                try:
+                    pub_pem = self.pubkey_pem.encode('utf-8') \
+                        if isinstance(self.pubkey_pem, str) else self.pubkey_pem
+                    self.pub_key = load_pem_public_key(pub_pem)
+                except Exception as exc:
+                    raise PublicKeyReadError(
+                        'Unable to read Ed25519 public key: %s' % exc) from exc
+            if self.privkey_pem:
+                try:
+                    priv_pem = self.privkey_pem.encode('utf-8') \
+                        if isinstance(self.privkey_pem, str) else self.privkey_pem
+                    self.priv_key = load_pem_private_key(priv_pem, password=None)
+                except Exception as exc:
+                    raise PrivateKeyReadError(
+                        'Unable to read Ed25519 private key: %s' % exc) from exc
         elif self.key_type is not None:
             # key_type=None is a valid "no key material yet" state; any other
             # value is an unsupported key type and must fail loudly.

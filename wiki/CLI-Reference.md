@@ -73,7 +73,7 @@ You **must** choose exactly one of `-e / --evidence` or `-E / --no-evidence`. Su
 ### Synopsis
 
 ```sh
-openbadges-signer -b BADGE -r RECEPTOR (-e URL | -E) [-c FILE] [-o DIR] [-M] [-H] [-x DAYS] [-V {1,2,3}] [-d]
+openbadges-signer -b BADGE -r RECEPTOR (-e URL | -E) [-c FILE] [-o DIR] [-M] [-H] [-x DAYS] [-V {1,2,3}] [-P {vc-jwt,ldp}] [-d]
 ```
 
 | Short | Long | Meaning | Default |
@@ -88,6 +88,7 @@ openbadges-signer -b BADGE -r RECEPTOR (-e URL | -E) [-c FILE] [-o DIR] [-M] [-H
 | `-E` | `--no-evidence` | Sign without evidence (mutually exclusive with `-e`) | off |
 | `-x` | `--expires DAYS` | Expire the badge after `DAYS` days | none |
 | `-V` | `--ob-version {1,2,3}` | `1` = legacy JWS (OB 1.0), `2` = strict OB 2.0 JWS, `3` = JWT-VC | `3` |
+| `-P` | `--proof-format {vc-jwt,ldp}` | OB 3.0 only (`-V 3`): `vc-jwt` = compact JWT-VC, `ldp` = embedded W3C Data Integrity proof (`eddsa-rdfc-2022`; needs an Ed25519 key and the `[ldp]` extra). Overrides the badge's `proof_format` config key | `vc-jwt` |
 | `-d` | `--debug` | Show debug messages at runtime | off |
 | `-v` | `--version` | Print version and exit | — |
 
@@ -113,6 +114,17 @@ $ openbadges-signer -c ./config/config.ini -b 1 \
 ```
 
 For OB3 the signer auto-detects the algorithm from the private key (RS256 for RSA, ES256 for ECC, EdDSA for Ed25519).
+
+### Example (OB3, Data Integrity / LDP)
+
+```sh
+$ openbadges-signer -c ./config/config.ini -b 1 \
+    -r recipient@example.com \
+    -E -o /tmp/ -V 3 -P ldp
+2026-07-03T10:00:00 badge_1 OB3 SIGNED for recipient@example.com JTI urn:uuid:… PROOF ldp at: /tmp/badge_1_recipient@example.com.svg
+```
+
+Data Integrity issuance requires an Ed25519 key (`key_type = ED25519`, see [[Keys and Errors]]) and the `[ldp]` extra. The proof's `verificationMethod` is the `did:web:…#badge_N` method that `openbadges-publish -V 3` publishes when `[issuer] did` is configured (trusted); without a DID it falls back to a self-asserted `did:key`, which verifiers must pin with `-k`/`-l`. A badge permanently issued as LDP can set `proof_format = ldp` in its config section instead of passing `-P`. See [[Signing and Verification]].
 
 ## openbadges-verifier
 
