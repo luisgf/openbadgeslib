@@ -169,6 +169,29 @@ class TestVerifyBlockEdgeCases:
         with pytest.raises(SignatureError):
             verify_block(jws, key=k.get_pub_key())
 
+    def test_unclassifiable_key_fails_closed(self, rsa_priv_pem, rsa_pub_pem):
+        """A verification key whose type cannot be classified must be refused,
+        not have its algorithm pinning silently skipped (issue #20)."""
+        priv, _pub = _load_rsa_keys(rsa_priv_pem, rsa_pub_pem)
+        raw_sig = sign({'alg': 'RS256'}, PAYLOAD, key=priv)
+        jws = _build_jws({'alg': 'RS256'}, PAYLOAD, raw_sig)
+        with pytest.raises(SignatureError, match='pinned'):
+            verify_block(jws, key=b'not a real pem key')
+
+    def test_empty_allowed_algs_fails_closed(self, rsa_priv_pem, rsa_pub_pem,
+                                             monkeypatch):
+        """Even with an otherwise-valid signature, an empty allowed-algorithm
+        set (an unclassifiable or future key type) must fail closed: the
+        algorithm cannot be pinned, so verification is refused rather than
+        falling through to the header-chosen algorithm."""
+        import openbadgeslib._jws as jws_mod
+        priv, pub = _load_rsa_keys(rsa_priv_pem, rsa_pub_pem)
+        raw_sig = sign({'alg': 'RS256'}, PAYLOAD, key=priv)
+        jws = _build_jws({'alg': 'RS256'}, PAYLOAD, raw_sig)
+        monkeypatch.setattr(jws_mod, '_allowed_algs_for_key', lambda key: set())
+        with pytest.raises(SignatureError, match='pinned'):
+            verify_block(jws, key=pub)
+
     @pytest.mark.parametrize('bad_alg', [['ES256'], {'a': 1}, 123, True])
     def test_non_string_alg_header_raises_jws_exception(self, rsa_pub_pem, bad_alg):
         """A non-string 'alg' (esp. an unhashable list/dict) must be rejected as

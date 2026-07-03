@@ -99,7 +99,16 @@ def verify_block(msg: Union[str, bytes], key: Optional[Any] = None) -> bool:
         raise MissingVerifier("JWS header 'alg' is missing or not a string")
 
     allowed = _allowed_algs_for_key(key)
-    if allowed and alg_name not in allowed:
+    if not allowed:
+        # Fail closed: if the key type cannot be classified we cannot pin the
+        # algorithm to it, so refuse rather than let the header's 'alg' dictate
+        # verification. Skipping the check here would reopen the cross-type
+        # confusion / RS256->HS256 downgrade this guard exists to stop, were a
+        # key type ever added without a matching branch in _allowed_algs_for_key.
+        raise SignatureError(
+            "Cannot determine the verification key type; refusing to verify a "
+            "JWS whose algorithm cannot be pinned to the key")
+    if alg_name not in allowed:
         raise SignatureError(
             "Algorithm %r in JWS header is not allowed for this key type"
             % alg_name)
