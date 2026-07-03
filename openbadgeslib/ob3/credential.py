@@ -194,12 +194,31 @@ class OpenBadgeCredential:
         """Reconstruct an OpenBadgeCredential from a decoded JWT payload.
 
         OB 3.0 native VC-JWT: the payload IS the credential (its members at the
-        top level), so ``payload`` is read directly as the credential body. It
-        is untrusted input, so its structure is validated explicitly: every
-        required object/field is checked and a clear ``ValueError`` is raised on
-        anything missing or malformed (the OB3 verifier wraps these as
-        ``OB3VerificationError``). The registered claims (iss/sub/jti/nbf/exp)
-        coexist at the top level and are simply ignored by the field reads here.
+        top level), so ``payload`` is read directly as the credential body. The
+        registered claims (iss/sub/jti/nbf/exp) coexist at the top level and
+        are simply ignored by the field reads.
+        """
+        return cls._from_vc(payload)
+
+    @classmethod
+    def from_vc_document(cls, document: dict) -> "OpenBadgeCredential":
+        """Reconstruct an OpenBadgeCredential from a JSON-LD VC document.
+
+        The shape a credential secured with an embedded Data Integrity proof
+        has (OB 3.0 Linked Data Proof format): the document is the credential
+        itself, with a ``proof`` member — ignored here, verified separately by
+        ob3.ldp — and no JWT registered claims.
+        """
+        return cls._from_vc(document)
+
+    @classmethod
+    def _from_vc(cls, payload: dict) -> "OpenBadgeCredential":
+        """Shared constructor from an untrusted credential body.
+
+        Every required object/field is checked and a clear ``ValueError`` is
+        raised on anything missing or malformed (the OB3 verifiers wrap these
+        as ``OB3VerificationError``). Unknown members (JWT claims, ``proof``)
+        are simply ignored by the field reads.
         """
         vc = _as_dict(payload, "credential")
 

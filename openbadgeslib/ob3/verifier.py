@@ -68,6 +68,31 @@ class OB3VerificationError(LibOpenBadgesException):
     """
 
 
+def _check_vc_types(vc: dict) -> None:
+    """Require the credential ``type`` array to declare an OB3 credential.
+
+    OpenBadgeCredential and AchievementCredential are aliases in the OB v3
+    context; accept either. VerifiableCredential must also be present. Shared
+    by the JWT verifier below and the Data Integrity verifier (ob3.ldp).
+    """
+    vc_types = vc.get("type", [])
+    if isinstance(vc_types, str):
+        vc_types = [vc_types]
+    elif not isinstance(vc_types, list):
+        vc_types = []
+    if not ({"OpenBadgeCredential", "AchievementCredential"} & set(vc_types)):
+        raise OB3VerificationError(
+            "credential is not an OpenBadgeCredential/AchievementCredential "
+            "(type=%r) — this may be an OB 2.0 JWS token, not an OB 3.0 credential"
+            % (vc_types,)
+        )
+    if "VerifiableCredential" not in vc_types:
+        raise OB3VerificationError(
+            "credential type must include 'VerifiableCredential' (type=%r)"
+            % (vc_types,)
+        )
+
+
 class OB3Verifier:
     """Verifies OpenBadges 3.0 JWT-VC credentials.
 
@@ -235,24 +260,7 @@ class OB3Verifier:
                 "JWT payload must be a JSON object, got %s" % type(payload).__name__)
         vc = payload   # native: the payload is the credential body
 
-        vc_types = vc.get("type", [])
-        if isinstance(vc_types, str):
-            vc_types = [vc_types]
-        elif not isinstance(vc_types, list):
-            vc_types = []
-        # OpenBadgeCredential and AchievementCredential are aliases in the OB v3
-        # context; accept either. VerifiableCredential must also be present.
-        if not ({"OpenBadgeCredential", "AchievementCredential"} & set(vc_types)):
-            raise OB3VerificationError(
-                "JWT payload is not an OpenBadgeCredential/AchievementCredential "
-                "(type=%r) — this may be an OB 2.0 JWS token, not an OB 3.0 JWT-VC"
-                % (vc_types,)
-            )
-        if "VerifiableCredential" not in vc_types:
-            raise OB3VerificationError(
-                "JWT payload type must include 'VerifiableCredential' (type=%r)"
-                % (vc_types,)
-            )
+        _check_vc_types(vc)
 
         try:
             credential = OpenBadgeCredential.from_jwt_payload(payload)

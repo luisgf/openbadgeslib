@@ -238,6 +238,38 @@ class TestOpenBadgeCredential:
         assert restored.evidence_url is None
 
 
+class TestFromVcDocument:
+    def test_vc_roundtrip_without_jwt_claims(self):
+        # A JSON-LD VC document (the Data Integrity shape) has no iss/nbf/sub
+        # registered claims; from_vc_document must reconstruct it all the same.
+        original = _make_credential()
+        doc = original.to_vc()
+        assert 'iss' not in doc and 'nbf' not in doc
+        restored = OpenBadgeCredential.from_vc_document(doc)
+        assert restored.id == original.id
+        assert restored.issuer.id == original.issuer.id
+        assert restored.recipient_id == original.recipient_id
+        assert restored.achievement.id == original.achievement.id
+
+    def test_proof_member_is_ignored(self):
+        doc = _make_credential().to_vc()
+        doc['proof'] = {'type': 'DataIntegrityProof',
+                        'cryptosuite': 'eddsa-rdfc-2022', 'proofValue': 'z1'}
+        restored = OpenBadgeCredential.from_vc_document(doc)
+        assert restored.id == doc['id']
+
+    def test_same_validation_as_jwt_payload(self):
+        # The shared _from_vc body enforces the same structural checks.
+        doc = _make_credential().to_vc()
+        del doc['credentialSubject']
+        with pytest.raises(ValueError):
+            OpenBadgeCredential.from_vc_document(doc)
+        doc2 = _make_credential().to_vc()
+        doc2['@context'] = ['https://evil.example/context']
+        with pytest.raises(ValueError):
+            OpenBadgeCredential.from_vc_document(doc2)
+
+
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 class TestHelpers:
