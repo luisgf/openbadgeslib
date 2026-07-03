@@ -117,6 +117,7 @@ Define one section per badge. The part after `badge_` is the badge id you pass t
 | `private_key` | `${paths:base_key}/sign_rsa_key_1.pem` | Path to the signing (private) key. |
 | `public_key` | `${paths:base_key}/verify_rsa_key_1.pem` | Path to the verify (public) key. |
 | `key_type` | `RSA` | Algorithm for `openbadges-keygenerator`: `RSA` (default), `ECC`, or `ED25519`. |
+| `proof_format` | `vc-jwt` *(commented)* | OB3 proof format: `vc-jwt` (compact JWT-VC, the default) or `ldp` (embedded W3C Data Integrity proof, `eddsa-rdfc-2022`). `ldp` requires `key_type = ED25519` and the `[ldp]` extra. Overridden by `openbadges-signer -P`. |
 | `status_lists` | `revocation, suspension` *(commented)* | OB3 credential status **opt-in**: purposes to attach to newly signed credentials (subset of `revocation`, `suspension`). Unset: credentials carry no `credentialStatus` (the pre-3.1 behaviour). |
 | `status_size_bits` | `131072` *(commented)* | Bitstring capacity (the W3C minimum by default). Can be grown later; shrinking is rejected. |
 | `status_base` | `https://.../badge_1/` *(commented)* | Public base URL the status lists are served under (`<status_base><purpose>.jwt`). Default: `${issuer:publish_url}badge_N/`. |

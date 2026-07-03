@@ -22,8 +22,8 @@ legacy format, selected with `-V {1,2,3}` (default `3`).
 - Expiration and revocation checking
 - Issuer-side OB 3.0 revocation and suspension: W3C Bitstring Status List
   publication and `--revoke` / `--suspend` / `--unsuspend` management
-- Verify OB 3.0 W3C Data Integrity credentials (`eddsa-rdfc-2022`, optional
-  `[ldp]` extra) in addition to JWT-VC
+- Issue and verify OB 3.0 W3C Data Integrity credentials (`eddsa-rdfc-2022`,
+  optional `[ldp]` extra) in addition to JWT-VC
 - did:web issuer identity: `did.json` generation and DID resolution
 - Five command-line tools included
 
@@ -47,7 +47,7 @@ Best-effort comparison from each project's public documentation as of July 2026;
 | --- | --- | --- |
 | Open Badges versions | 1.0, 2.0, **3.0** | 3.0 (v2→v3 planned) |
 | OB 3.0 proof: VC-JWT (JOSE) | ✅ RS/ES/EdDSA | roadmap |
-| OB 3.0 proof: Data Integrity / LDP | ✅ verify (`eddsa-rdfc-2022`, `[ldp]` extra) | JSON-LD signing (format unspecified) |
+| OB 3.0 proof: Data Integrity / LDP | ✅ issue + verify (`eddsa-rdfc-2022`, `[ldp]` extra) | JSON-LD signing (format unspecified) |
 | Revocation / suspension (Bitstring Status List) | ✅ issue + publish + manage | — |
 | `did:web` (generate + resolve) | ✅ | — |
 | Image baking (SVG + PNG) | ✅ | roadmap |

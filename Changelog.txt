@@ -4,6 +4,36 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.3.0 - unreleased
+
+  - feat(ob3): issuance of OB 3.0 credentials secured with a W3C Data
+    Integrity proof (eddsa-rdfc-2022) — new `OB3LdpSigner` and low-level
+    `add_data_integrity_proof`, the signing counterparts of the verifiers
+    shipped in 3.2.0, sharing their canonicalization core and reproducing
+    the official W3C vc-di-eddsa test vector byte for byte. Ed25519 keys
+    only; requires the `[ldp]` extra, which now covers both directions.
+
+  - feat(cli): `openbadges-signer -P/--proof-format {vc-jwt,ldp}` (OB3
+    only) plus an optional per-badge `proof_format` config key (flag wins;
+    default vc-jwt). With `[issuer] did` configured the proof names the
+    `did:web:...#badge_N` verification method `openbadges-publish -V 3`
+    publishes (trusted via `--resolve-did`); otherwise it falls back to a
+    self-asserted did:key derived from the signing key and tells the
+    operator so. LDP-signed badges are tagged `PROOF ldp` in the signer
+    audit log. Status lists stay VC-JWT regardless of the badge's proof
+    format.
+
+  - feat(ob3): multikey/did:key encoders in `ob3.did` —
+    `multikey_from_pem` (publicKeyMultibase) and `did_key_from_pem`,
+    the exact inverses of the resolvers, for Ed25519 and NIST P-256.
+
+  - fix(cli): `Badge.create_from_conf` rejected `key_type = ED25519`
+    outright, so the CLI could never sign with the keys
+    `openbadges-keygenerator -t ED25519` produces; Ed25519 key material
+    now loads, and the legacy OB 1.0 path (`-V 1`) refuses non-RSA/ECC
+    keys with a clean message instead of failing mid-JWS.
+
+
 * v3.2.0 - 2026-07-03
 
   - feat(ob3): verification of OB 3.0 credentials secured with a W3C Data

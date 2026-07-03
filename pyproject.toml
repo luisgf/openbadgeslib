@@ -16,6 +16,7 @@ keywords = [
     "openbadges", "open-badges", "verifiable-credentials", "vc-jwt", "w3c-vc",
     "digital-credentials", "did", "did-web", "bitstring-status-list",
     "revocation", "ob3", "credentials", "ed25519", "cryptography",
+    "data-integrity", "eddsa",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -45,7 +46,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Verification of Data Integrity (Linked Data Proof) credentials needs a
+# Issuing and verifying Data Integrity (Linked Data Proof) credentials needs a
 # JSON-LD processor for RDF canonicalization; everything else works without it.
 ldp = [
     "pyld>=2.0.4",

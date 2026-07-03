@@ -95,6 +95,41 @@ credential = v.verify(token, expected_recipient='recipient@example.org')
 
 Every failure raises `OB3VerificationError` (a subclass of `LibOpenBadgesException`, so one `except` catches both OB2 and OB3 errors). See [[Python API OB3]] for the credential model, and [[OB2 vs OB3]] for how the two generations differ.
 
+## OB3: the Data Integrity (LDP) path
+
+OB 3.0's second proof format embeds a **W3C Data Integrity proof** in the
+credential JSON itself instead of wrapping it in a JWT. Both directions live
+in `openbadgeslib/ob3/ldp.py` (cryptosuite `eddsa-rdfc-2022`, Ed25519 only;
+needs the `[ldp]` extra — see [[Installation]]) and share the same
+canonicalization core: the document (without `proof`) and the proof options
+(with the document's `@context` injected) are RDFC-1.0-canonicalized, hashed
+(`SHA-256(config) || SHA-256(document)`), and the Ed25519 signature travels as
+a multibase base58btc `proofValue`. `@context` documents are **never fetched
+from the network** — only the contexts bundled with the library are accepted.
+
+```python
+from openbadgeslib.ob3 import OB3LdpSigner, OB3LdpVerifier
+
+signer = OB3LdpSigner(ed25519_priv_pem)          # or -P ldp on the CLI
+signed = signer.sign(credential)                 # dict with embedded proof
+svg    = signer.sign_into_svg(credential, svg_bytes)
+
+credential = OB3LdpVerifier(pubkey_pem=pub_pem).verify(signed)
+```
+
+The proof's `verificationMethod` decides what a verifier can trust:
+
+| Issuer configuration | verificationMethod | Verifier trust |
+| --- | --- | --- |
+| `[issuer] did = auto` (or an explicit `did:web:…`) | `did:web:…#badge_N` — the method id `openbadges-publish -V 3` publishes in `did.json` | **trusted** via `--resolve-did` (DNS + TLS) |
+| explicit `did:key:…` | the signing key's did:key (must match the configured DID) | valid but **self-asserted** |
+| plain URL issuer (no `did`) | did:key derived from the signing key | self-asserted; verifiers must pin the key with `-k`/`-l` |
+
+Status lists are unaffected: `openbadges-publish -V 3` signs Bitstring Status
+List credentials as **VC-JWT regardless of the badge's proof format**, and
+`check_status` on an LDP credential consumes them as-is (see
+[[Security Model]]).
+
 ## Baking: hiding the token in an image
 
 Both versions share `openbadgeslib/baking.py`. Keeping one implementation stops the OB2 and OB3 paths from drifting into two slightly different readers. The carrier **mechanism** is the same; only the element/keyword identifiers differ, because OB 2.0 and OB 3.0 specify different ones (selected via keyword-only args). OB2 uses `<openbadges:assertion>` / the `openbadges` iTXt keyword; OB3 uses `<openbadges:credential>` (namespace `https://purl.imsglobal.org/ob/v3p0`) / the `openbadgecredential` keyword.
@@ -106,6 +141,8 @@ Both versions share `openbadgeslib/baking.py`. Keeping one implementation stops 
 ```xml
 <openbadges:credential xmlns:openbadges="https://purl.imsglobal.org/ob/v3p0" verify="eyJhbGciOi…"/>
 ```
+
+A Data Integrity credential is a JSON document rather than a compact token, so it is stored as the element's **text content** instead of the `verify` attribute (`bake_svg(..., as_text=True)`); the OB3 verifier falls back to the text node automatically and auto-detects the format by the leading `{`.
 
 `extract_svg()` reverses it: it finds the version's node and returns the `verify` attribute value, or `None` if the element is absent. `has_svg()` reports whether one is already present (so re-signing is refused). XML is parsed with `defusedxml` to neutralize entity-expansion attacks.
 

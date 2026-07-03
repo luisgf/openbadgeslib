@@ -150,6 +150,40 @@ library (see [[Security Model]]); `extra_contexts` extends that allowlist per
 call. An unsupported cryptosuite (e.g. `ecdsa-sd-2023`) fails closed naming
 the supported ones.
 
+## Issuing Data Integrity (LDP) credentials — `OB3LdpSigner`
+
+The issuance counterpart of `OB3LdpVerifier` (cryptosuite `eddsa-rdfc-2022`;
+requires an **Ed25519** key and the `[ldp]` extra). Its API mirrors
+`OB3Signer`, but the output is the signed JSON document (a `dict` with the
+proof embedded under `proof`), not a compact JWT:
+
+```python
+from openbadgeslib.ob3 import OB3LdpSigner
+
+signer = OB3LdpSigner(priv_pem)                 # did:key verificationMethod
+signed = signer.sign(credential)                # dict with embedded proof
+svg    = signer.sign_into_svg(credential, svg_bytes)   # baked badge image
+png    = signer.sign_into_png(credential, png_bytes)
+```
+
+Without a `verification_method` argument the proof carries a **did:key**
+derived from the signing key's public half — self-asserted, so verifiers must
+pin the public key. Issuers publishing a DID document should pass the method
+id `openbadges-publish -V 3` publishes, which verifiers resolve as trusted:
+
+```python
+signer = OB3LdpSigner(priv_pem,
+                      verification_method='did:web:issuer.example#badge_1')
+```
+
+A non-Ed25519 key raises `ErrorSigningFile` at construction; signing without
+the `[ldp]` extra raises it with the install hint. The schema-agnostic core is
+`add_data_integrity_proof(document, privkey_pem, verification_method, *,
+proof_purpose='assertionMethod', created=None, extra_contexts=None)` — the
+mirror of `verify_data_integrity_proof`, able to reproduce the official W3C
+vc-di-eddsa test vectors byte for byte (`created` is injectable for
+deterministic output; contexts come from the same bundled allowlist).
+
 ## Issuer-side status lists
 
 `openbadgeslib.ob3.status_list` writes what `check_credential_status` reads, and `StatusRegistry` tracks which credential owns which index:
