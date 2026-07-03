@@ -17,7 +17,8 @@ dependencies:
   - pytest-cov>=5.0
 
   # Install the library itself in editable mode (with the dev extras:
-  # flake8, mypy, pdoc — the docs are the GitHub Wiki + a pdoc API site).
+  # flake8, mypy, pdoc — the docs are the GitHub Wiki + a pdoc API site —
+  # and the optional ldp extra: pyld, for Data Integrity verification).
   - pip
   - pip:
-    - -e ".[dev]"
+    - -e ".[dev,ldp]"
