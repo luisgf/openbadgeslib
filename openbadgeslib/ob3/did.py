@@ -120,6 +120,11 @@ def _read_varint(data: bytes) -> Any:
 # ── did:web ──────────────────────────────────────────────────────────────────
 
 def _resolve_did_web(did: str, fetch: Any) -> bytes:
+    return _pem_from_did_document(_fetch_did_web_document(did, fetch))
+
+
+def _fetch_did_web_document(did: str, fetch: Any) -> dict:
+    """Fetch and parse the DID document a did:web identifier resolves to."""
     from urllib.parse import unquote
     ident = did[len('did:web:'):]
     if not ident:
@@ -141,7 +146,53 @@ def _resolve_did_web(did: str, fetch: Any) -> bytes:
     except (ValueError, UnicodeDecodeError) as exc:
         raise OB3VerificationError(
             "malformed DID document at %s: %s" % (url, exc)) from exc
-    return _pem_from_did_document(doc)
+    if not isinstance(doc, dict):
+        raise OB3VerificationError("DID document is not a JSON object")
+    return doc
+
+
+def resolve_verification_method(vm_url: str, download: Any = None) -> bytes:
+    """Resolve a proof ``verificationMethod`` URL to a PEM public key.
+
+    Unlike :func:`resolve_did` — which takes a bare DID and (for did:web)
+    reads the FIRST verification method — this resolves the specific method a
+    Data Integrity proof names, typically ``did:...#fragment``:
+
+    * ``did:key``: the key is the identifier itself; a fragment, when present,
+      must equal the multibase identifier (per the did:key method spec) or
+      resolution fails closed.
+    * ``did:web``: the DID document is fetched and the verificationMethod
+      entry whose ``id`` equals *vm_url* exactly is used — no match fails
+      closed rather than silently trusting a different key.
+
+    Raises OB3VerificationError for unsupported methods or any failure.
+    ``download`` defaults to util.download_file; injectable for testing.
+    """
+    if not isinstance(vm_url, str) or not vm_url.startswith('did:'):
+        raise OB3VerificationError(
+            "unsupported verificationMethod (expected a did: URL): %r" % (vm_url,))
+    fetch = download if download is not None else download_file
+    did, _, fragment = vm_url.partition('#')
+
+    if did.startswith('did:key:'):
+        ident = did[len('did:key:'):]
+        if fragment and fragment != ident:
+            raise OB3VerificationError(
+                "did:key fragment %r does not name the key %r" % (fragment, ident))
+        return _resolve_did_key(did)
+
+    if did.startswith('did:web:'):
+        doc = _fetch_did_web_document(did, fetch)
+        methods = doc.get('verificationMethod')
+        if not isinstance(methods, list) or not methods:
+            raise OB3VerificationError("DID document has no verificationMethod")
+        for method in methods:
+            if isinstance(method, dict) and method.get('id') == vm_url:
+                return _pem_from_vm(method)
+        raise OB3VerificationError(
+            "DID document has no verificationMethod with id %r" % (vm_url,))
+
+    raise OB3VerificationError("unsupported DID method: %r" % did)
 
 
 def did_web_from_url(url: str) -> str:
@@ -208,7 +259,11 @@ def _pem_from_did_document(doc: Any) -> bytes:
     methods = doc.get('verificationMethod')
     if not isinstance(methods, list) or not methods:
         raise OB3VerificationError("DID document has no verificationMethod")
-    vm = methods[0]
+    return _pem_from_vm(methods[0])
+
+
+def _pem_from_vm(vm: Any) -> bytes:
+    """Extract the public key of one verificationMethod entry as PEM."""
     if not isinstance(vm, dict):
         raise OB3VerificationError("verificationMethod entry is not an object")
 

@@ -152,6 +152,80 @@ class TestResolveDidDispatch:
             resolve_did('did:ion:EiClk...')
 
 
+# ── resolve_verification_method (proof verificationMethod URLs) ──────────────
+
+def _jwk(pub_pem):
+    from openbadgeslib.keys import public_jwk_from_pem
+    return public_jwk_from_pem(pub_pem)
+
+
+class TestResolveVerificationMethod:
+    def test_did_key_with_matching_fragment(self, ed25519_pub_pem):
+        from openbadgeslib.ob3 import resolve_verification_method
+        pub = ser.load_pem_public_key(ed25519_pub_pem)
+        did = _did_key_ed25519(pub)
+        ident = did[len('did:key:'):]
+        pem = resolve_verification_method('%s#%s' % (did, ident))
+        assert ser.load_pem_public_key(pem).public_bytes(
+            ser.Encoding.Raw, ser.PublicFormat.Raw) == pub.public_bytes(
+            ser.Encoding.Raw, ser.PublicFormat.Raw)
+
+    def test_did_key_without_fragment(self, ed25519_pub_pem):
+        from openbadgeslib.ob3 import resolve_verification_method
+        pub = ser.load_pem_public_key(ed25519_pub_pem)
+        did = _did_key_ed25519(pub)
+        assert resolve_verification_method(did)
+
+    def test_did_key_fragment_mismatch_fails_closed(self, ed25519_pub_pem):
+        from openbadgeslib.ob3 import resolve_verification_method
+        pub = ser.load_pem_public_key(ed25519_pub_pem)
+        did = _did_key_ed25519(pub)
+        with pytest.raises(OB3VerificationError, match='fragment'):
+            resolve_verification_method(did + '#other-key')
+
+    def test_did_web_selects_entry_by_exact_id(self, rsa_pub_pem, ed25519_pub_pem):
+        from openbadgeslib.ob3 import resolve_verification_method
+        # Two methods; the SECOND is the one the proof names — [0] must not win.
+        pub = ser.load_pem_public_key(ed25519_pub_pem)
+        raw = pub.public_bytes(ser.Encoding.Raw, ser.PublicFormat.Raw)
+        doc = {
+            "id": "did:web:issuer.example",
+            "verificationMethod": [
+                {"id": "did:web:issuer.example#rsa",
+                 "type": "JsonWebKey2020",
+                 "controller": "did:web:issuer.example",
+                 "publicKeyJwk": _jwk(rsa_pub_pem)},
+                {"id": "did:web:issuer.example#ed",
+                 "type": "Multikey",
+                 "controller": "did:web:issuer.example",
+                 "publicKeyMultibase": 'z' + _b58encode(b'\xed\x01' + raw)},
+            ],
+        }
+        pem = resolve_verification_method(
+            'did:web:issuer.example#ed',
+            download=lambda url: json.dumps(doc).encode('utf-8'))
+        assert detect_key_type(pem) is KeyType.ED25519
+
+    def test_did_web_unknown_id_fails_closed(self, ed25519_pub_pem):
+        from openbadgeslib.ob3 import resolve_verification_method
+        pub = ser.load_pem_public_key(ed25519_pub_pem)
+        raw = pub.public_bytes(ser.Encoding.Raw, ser.PublicFormat.Raw)
+        doc = {"id": "did:web:issuer.example",
+               "verificationMethod": [
+                   {"id": "did:web:issuer.example#key-1", "type": "Multikey",
+                    "controller": "did:web:issuer.example",
+                    "publicKeyMultibase": 'z' + _b58encode(b'\xed\x01' + raw)}]}
+        with pytest.raises(OB3VerificationError, match='no verificationMethod with id'):
+            resolve_verification_method(
+                'did:web:issuer.example#nope',
+                download=lambda url: json.dumps(doc).encode('utf-8'))
+
+    def test_non_did_rejected(self):
+        from openbadgeslib.ob3 import resolve_verification_method
+        with pytest.raises(OB3VerificationError, match='did: URL'):
+            resolve_verification_method('https://issuer.example/keys/1')
+
+
 # ── end-to-end through OB3Verifier.for_issuer_did ────────────────────────────
 
 class TestForIssuerDid:
