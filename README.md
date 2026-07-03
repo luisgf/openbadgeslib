@@ -5,11 +5,12 @@
 [![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue.svg)](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-LGPLv3%20%2F%20BSD-blue.svg)](#license)
 
-A Python library and CLI for signing and verifying
-[Open Badges](https://www.imsglobal.org/activity/digital-badges) embedded in SVG
-and PNG image files. It supports strict **OpenBadges 2.0** (JWS / hosted
-assertions) and **OpenBadges 3.0** (W3C Verifiable Credentials / JWT-VC), plus a
-frozen **OpenBadges 1.0** legacy format — selected with `-V {1,2,3}` (default `3`).
+**A production-ready Python library & CLI for the full Open Badges 3.0 issuer
+lifecycle** — issue [W3C Verifiable Credentials](https://www.w3.org/TR/vc-data-model-2.0/)
+as JWT-VC, bake them into SVG/PNG, verify them, and **revoke or suspend** them
+with W3C Bitstring Status Lists and `did:web`. It also ships strict
+**OpenBadges 2.0** (JWS / hosted assertions) and a frozen **OpenBadges 1.0**
+legacy format, selected with `-V {1,2,3}` (default `3`).
 
 ## Features
 
@@ -23,6 +24,38 @@ frozen **OpenBadges 1.0** legacy format — selected with `-V {1,2,3}` (default 
   publication and `--revoke` / `--suspend` / `--unsuspend` management
 - did:web issuer identity: `did.json` generation and DID resolution
 - Five command-line tools included
+
+## Why openbadgeslib
+
+- **The complete OB 3.0 issuer lifecycle in Python** — not just issuing, but
+  publishing trust artefacts (`did:web`) and revoking/suspending credentials via
+  Bitstring Status Lists, driven from the CLI or the library.
+- **Native VC-JWT** signing with RSA (RS256), ECC P-256 (ES256) and Ed25519
+  (EdDSA), and offline verification.
+- **Lean and typed** — `mypy --strict`, CI on Python 3.10–3.13, a small
+  dependency set, dataclasses + explicit validation (no Pydantic).
+- **Dual-licensed** LGPLv3 (library) / BSD-2-Clause (CLI tools).
+
+### How it compares
+
+Best-effort comparison from each project's public documentation as of July 2026;
+"not documented" is shown as `—`. Corrections welcome via issue/PR.
+
+| Capability | **openbadgeslib** | [PyOpenBadges](https://github.com/CoopCodeCommun/pyopenbadges) |
+| --- | --- | --- |
+| Open Badges versions | 1.0, 2.0, **3.0** | 3.0 (v2→v3 planned) |
+| OB 3.0 proof: VC-JWT (JOSE) | ✅ RS/ES/EdDSA | roadmap |
+| OB 3.0 proof: Data Integrity / LDP | — (verify-first, planned) | JSON-LD signing (format unspecified) |
+| Revocation / suspension (Bitstring Status List) | ✅ issue + publish + manage | — |
+| `did:web` (generate + resolve) | ✅ | — |
+| Image baking (SVG + PNG) | ✅ | roadmap |
+| Command-line tools | ✅ 5 tools | — |
+| Typing / CI | `mypy --strict`, CI 3.10–3.13 | — |
+| Validation | dataclasses + explicit checks | Pydantic |
+
+For OB 2.0 validation the reference implementation is 1EdTech's Node
+[`openbadges-validator`](https://github.com/1EdTech/openbadges-validator); this
+table focuses on the OB 3.0 Python landscape.
 
 ## Requirements
 

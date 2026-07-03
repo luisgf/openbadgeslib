@@ -5,18 +5,26 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openbadgeslib"
 dynamic = ["version"]
-description = "A library to sign and verify OpenBadges"
+description = "Production-ready Python library & CLI for Open Badges 3.0 (W3C Verifiable Credentials): issue, verify, and revoke JWT-VC credentials with Bitstring Status Lists and did:web — plus strict OB 2.0 and legacy OB 1.0."
 readme = "README.md"
 license = { text = "LGPLv3" }
 authors = [
     { name = "Luis González Fernández", email = "luisgf@luisgf.es" },
     { name = "Jesús Cea Avión", email = "jcea@jcea.es" },
 ]
-keywords = ["openbadges"]
+keywords = [
+    "openbadges", "open-badges", "verifiable-credentials", "vc-jwt", "w3c-vc",
+    "digital-credentials", "did", "did-web", "bitstring-status-list",
+    "revocation", "ob3", "credentials", "ed25519", "cryptography",
+]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Information Technology",
     "Operating System :: OS Independent",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Education",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
