@@ -327,9 +327,29 @@ def _issuer_did_from_token(token: str) -> str:
     return iss
 
 
+def _issuer_did_from_document(document: str) -> str:
+    """Read the issuer DID from an unverified Data Integrity credential.
+
+    The LDP counterpart of _issuer_did_from_token, with the same trust
+    caveat: the DID comes from the untrusted document and is only an anchor
+    for --resolve-did."""
+    import json
+    from .ob3 import OB3VerificationError
+    try:
+        doc = json.loads(document)
+    except ValueError as exc:
+        raise OB3VerificationError(
+            'could not read credential issuer: %s' % exc) from exc
+    issuer = doc.get('issuer') if isinstance(doc, dict) else None
+    iss = issuer.get('id') if isinstance(issuer, dict) else issuer
+    if not isinstance(iss, str) or not iss.startswith('did:'):
+        raise OB3VerificationError('credential issuer is not a DID: %r' % (iss,))
+    return iss
+
+
 def _verify_ob3(args: argparse.Namespace) -> None:
-    """Verify a badge using OpenBadges 3.0 (JWT-VC)."""
-    from .ob3 import OB3Verifier, OB3VerificationError
+    """Verify a badge using OpenBadges 3.0 (JWT-VC or Data Integrity)."""
+    from .ob3 import OB3LdpVerifier, OB3VerificationError, OB3Verifier
     from .errors import ErrorParsingFile
 
     result: Dict[str, Any] = {'ob_version': '3', 'recipient': args.receptor,
@@ -364,23 +384,33 @@ def _verify_ob3(args: argparse.Namespace) -> None:
         _finish(args, result)
         return
 
+    # The baked payload is either a compact JWT-VC or (for the OB 3.0 Linked
+    # Data Proof format) the credential JSON itself. Both verifiers share the
+    # verify() signature, so only the construction differs.
+    is_ldp = token.lstrip().startswith('{')
+    result['proof_format'] = 'ldp' if is_ldp else 'vc-jwt'
+
     # Let the library own recipient binding (it normalises mailto:/DID and
     # compares), instead of re-implementing the comparison here.
     try:
+        verifier: Any
         if pub_pem is not None:
-            verifier = OB3Verifier(pubkey_pem=pub_pem)
+            verifier = (OB3LdpVerifier(pubkey_pem=pub_pem) if is_ldp
+                        else OB3Verifier(pubkey_pem=pub_pem))
         else:
-            issuer_did = _issuer_did_from_token(token)
+            issuer_did = (_issuer_did_from_document(token) if is_ldp
+                          else _issuer_did_from_token(token))
             result['issuer_did'] = issuer_did
-            # The DID is read from the untrusted token itself. A did:key IS the
-            # presenter's chosen key, so resolving it proves only internal
-            # consistency, not issuer identity — mark it untrusted, mirroring
-            # OB2's badge-embedded-key case. did:web is anchored on the issuer's
-            # DNS + TLS, so it stays trusted.
+            # The DID is read from the untrusted credential itself. A did:key
+            # IS the presenter's chosen key, so resolving it proves only
+            # internal consistency, not issuer identity — mark it untrusted,
+            # mirroring OB2's badge-embedded-key case. did:web is anchored on
+            # the issuer's DNS + TLS, so it stays trusted.
             result['trusted'] = issuer_did.startswith('did:web:')
             if not args.json:
                 print('[*] Resolving issuer DID %s' % issuer_did)
-            verifier = OB3Verifier.for_issuer_did(issuer_did)
+            verifier = (OB3LdpVerifier.for_issuer_did(issuer_did) if is_ldp
+                        else OB3Verifier.for_issuer_did(issuer_did))
         credential = verifier.verify(token, expected_recipient=args.receptor,
                                      check_status=args.check_status)
     except OB3VerificationError as exc:

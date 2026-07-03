@@ -12,8 +12,6 @@ from pathlib import Path
 
 import pytest
 
-from cryptography.hazmat.primitives import serialization as ser
-
 from openbadgeslib.ob3 import OB3VerificationError, OB3Verifier
 from openbadgeslib.ob3.ldp import (
     MAX_LDP_DOCUMENT_BYTES,
@@ -21,51 +19,11 @@ from openbadgeslib.ob3.ldp import (
     verify_data_integrity_proof,
 )
 
+from ldp_helpers import b58encode as _b58encode
+from ldp_helpers import did_key as _did_key
+from ldp_helpers import sign_ldp as _sign_ldp
+
 FIXTURES = Path(__file__).parent / 'fixtures' / 'vc_di_eddsa'
-
-_B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
-
-
-def _b58encode(data: bytes) -> str:
-    n = int.from_bytes(data, 'big')
-    out = ''
-    while n > 0:
-        n, r = divmod(n, 58)
-        out = _B58[r] + out
-    pad = len(data) - len(data.lstrip(b'\x00'))
-    return '1' * pad + out
-
-
-def _did_key(pub_pem: bytes) -> str:
-    pub = ser.load_pem_public_key(pub_pem)
-    raw = pub.public_bytes(ser.Encoding.Raw, ser.PublicFormat.Raw)
-    return 'did:key:z' + _b58encode(b'\xed\x01' + raw)
-
-
-def _sign_ldp(document: dict, priv_pem: bytes, pub_pem: bytes, *,
-              purpose: str = 'assertionMethod',
-              extra_contexts=None) -> dict:
-    """Test-only eddsa-rdfc-2022 signer (the library is verify-only)."""
-    from openbadgeslib.ob3.contexts import document_loader
-    from openbadgeslib.ob3.ldp import _canonize
-    did = _did_key(pub_pem)
-    proof = {
-        'type': 'DataIntegrityProof',
-        'cryptosuite': 'eddsa-rdfc-2022',
-        'created': '2026-07-03T00:00:00Z',
-        'verificationMethod': '%s#%s' % (did, did[len('did:key:'):]),
-        'proofPurpose': purpose,
-    }
-    loader = document_loader(extra_contexts)
-    config = dict(proof)
-    config['@context'] = document['@context']
-    cfg_hash = hashlib.sha256(_canonize(config, loader).encode()).digest()
-    doc_hash = hashlib.sha256(_canonize(document, loader).encode()).digest()
-    priv = ser.load_pem_private_key(priv_pem, password=None)
-    signature = priv.sign(cfg_hash + doc_hash)
-    signed = copy.deepcopy(document)
-    signed['proof'] = dict(proof, proofValue='z' + _b58encode(signature))
-    return signed
 
 
 @pytest.fixture(scope='session')
