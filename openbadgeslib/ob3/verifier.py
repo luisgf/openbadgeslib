@@ -93,6 +93,36 @@ def _check_vc_types(vc: dict) -> None:
         )
 
 
+def _check_validity_window(credential: OpenBadgeCredential) -> None:
+    """Validate vc-level validFrom/validUntil against wall-clock time.
+
+    Shared by the JWT verifier and the Data Integrity verifier (ob3.ldp), so
+    both enforce the same window semantics on the credential body itself.
+    """
+    now = datetime.now(timezone.utc)
+    if credential.expiration_date is not None and credential.expiration_date < now:
+        raise OB3VerificationError(
+            "Credential has expired (validUntil %s)" % credential.expiration_date.isoformat())
+    if credential.issuance_date is not None and credential.issuance_date > now:
+        raise OB3VerificationError(
+            "Credential is not yet valid (validFrom %s)" % credential.issuance_date.isoformat())
+
+
+def _check_recipient(credential: OpenBadgeCredential,
+                     expected_recipient: Optional[str]) -> None:
+    """Opt-in recipient binding, shared by both OB3 verifiers. No-op when the
+    caller passes no expected recipient (the caller must then compare
+    credential.recipient_id itself)."""
+    if expected_recipient is None:
+        return
+    expected = normalize_recipient_id(expected_recipient)
+    if not recipient_ids_match(credential.recipient_id, expected):
+        raise OB3VerificationError(
+            "Recipient mismatch: credential is for %s, expected %s"
+            % (credential.recipient_id, expected)
+        )
+
+
 class OB3Verifier:
     """Verifies OpenBadges 3.0 JWT-VC credentials.
 
@@ -183,24 +213,12 @@ class OB3Verifier:
         # what downstream consumers actually read. Re-validate the vc-level
         # dates against wall-clock time independently, mirroring OB2Verifier's
         # check_expiration().
-        now = datetime.now(timezone.utc)
-        if credential.expiration_date is not None and credential.expiration_date < now:
-            raise OB3VerificationError(
-                "Credential has expired (validUntil %s)" % credential.expiration_date.isoformat())
-        if credential.issuance_date is not None and credential.issuance_date > now:
-            raise OB3VerificationError(
-                "Credential is not yet valid (validFrom %s)" % credential.issuance_date.isoformat())
+        _check_validity_window(credential)
 
         if check_status:
             self.check_status(credential)
 
-        if expected_recipient is not None:
-            expected = normalize_recipient_id(expected_recipient)
-            if not recipient_ids_match(credential.recipient_id, expected):
-                raise OB3VerificationError(
-                    "Recipient mismatch: credential is for %s, expected %s"
-                    % (credential.recipient_id, expected)
-                )
+        _check_recipient(credential, expected_recipient)
 
         return credential
 
@@ -219,6 +237,15 @@ class OB3Verifier:
     def _decode_payload(self, token: str) -> dict:
         """Verify the signature (algorithm pinned to the key type) and return
         the decoded JWT payload."""
+        # A baked OB3 credential may instead be a JSON document secured with an
+        # embedded Data Integrity proof (OB 3.0 Linked Data Proof format).
+        # That is a different verification model — point the caller at the
+        # right tool instead of failing with a cryptic "invalid JWT".
+        if isinstance(token, str) and token.lstrip().startswith('{'):
+            raise OB3VerificationError(
+                "this looks like a Data Integrity (Linked Data Proof) "
+                "credential, not a compact JWT — verify it with "
+                "OB3LdpVerifier (requires: pip install openbadgeslib[ldp])")
         try:
             header = jwt.get_unverified_header(token)
         except jwt.exceptions.DecodeError as exc:

@@ -23,6 +23,7 @@
 from .credential import Achievement, Issuer, OpenBadgeCredential
 from .signer import OB3Signer
 from .verifier import OB3VerificationError, OB3Verifier
+from .ldp import OB3LdpVerifier, verify_data_integrity_proof
 from .status import check_credential_status
 from .status_list import (build_status_list_credential, encode_bitstring,
                           sign_status_list_credential, status_entry)
@@ -34,9 +35,11 @@ __all__ = [
     'Achievement',
     'Issuer',
     'OpenBadgeCredential',
+    'OB3LdpVerifier',
     'OB3Signer',
     'OB3Verifier',
     'OB3VerificationError',
+    'verify_data_integrity_proof',
     'StatusRegistry',
     'build_did_document',
     'build_status_list_credential',
