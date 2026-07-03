@@ -45,6 +45,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Verification of Data Integrity (Linked Data Proof) credentials needs a
+# JSON-LD processor for RDF canonicalization; everything else works without it.
+ldp = [
+    "pyld>=2.0.4",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
@@ -72,9 +77,12 @@ openbadges-publish = "openbadgeslib.openbadges_publish:main"
 where = ["."]
 include = ["openbadgeslib*"]
 
-# Ship the PEP 561 marker so downstream type checkers use our annotations.
+# Ship the PEP 561 marker so downstream type checkers use our annotations,
+# and the pinned JSON-LD contexts the Data Integrity verifier canonicalizes
+# against (see openbadgeslib/ob3/contexts/__init__.py for provenance).
 [tool.setuptools.package-data]
 openbadgeslib = ["py.typed"]
+"openbadgeslib.ob3.contexts" = ["*.json"]
 
 # Single source of truth for the version: openbadgeslib/util.py __version__.
 # setuptools reads it by AST (no import), so it stays in sync automatically.
@@ -93,7 +101,7 @@ warn_unused_ignores = true
 
 # Third-party dependencies that ship no type information.
 [[tool.mypy.overrides]]
-module = ["Crypto.*", "ecdsa.*", "png.*", "defusedxml.*"]
+module = ["Crypto.*", "ecdsa.*", "png.*", "defusedxml.*", "pyld.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
