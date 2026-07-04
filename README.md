@@ -7,7 +7,8 @@
 
 **A production-ready Python library & CLI for the full Open Badges 3.0 issuer
 lifecycle** — issue [W3C Verifiable Credentials](https://www.w3.org/TR/vc-data-model-2.0/)
-as JWT-VC, bake them into SVG/PNG, verify them, and **revoke or suspend** them
+as JWT-VC or W3C Data Integrity (LDP) proofs, bake them into SVG/PNG, verify them,
+and **revoke or suspend** them
 with W3C Bitstring Status Lists and `did:web`. It also ships strict
 **OpenBadges 2.0** (JWS / hosted assertions) and a frozen **OpenBadges 1.0**
 legacy format, selected with `-V {1,2,3}` (default `3`).
@@ -16,7 +17,7 @@ legacy format, selected with `-V {1,2,3}` (default `3`).
 
 - Sign badge images (SVG and PNG) as strict OB 2.0 JWS / hosted assertions (with a frozen OB 1.0 legacy format)
 - Issue and verify OpenBadges 3.0 JWT-VC credentials
-- Bake OB 3.0 JWT tokens into SVG and PNG badge images
+- Bake OB 3.0 credentials (JWT-VC or Data Integrity JSON-LD) into SVG and PNG badge images
 - RSA 2048-bit (RS256), ECC NIST P-256 (ES256), and Ed25519 (EdDSA) key support
 - SHA-256 hashed recipient identity with salt (OB 2.0)
 - Expiration and revocation checking
@@ -32,8 +33,10 @@ legacy format, selected with `-V {1,2,3}` (default `3`).
 - **The complete OB 3.0 issuer lifecycle in Python** — not just issuing, but
   publishing trust artefacts (`did:web`) and revoking/suspending credentials via
   Bitstring Status Lists, driven from the CLI or the library.
-- **Native VC-JWT** signing with RSA (RS256), ECC P-256 (ES256) and Ed25519
-  (EdDSA), and offline verification.
+- **Native VC-JWT signing** with RSA (RS256), ECC P-256 (ES256) and Ed25519
+  (EdDSA) — *plus* native **W3C Data Integrity / LDP** signing
+  (`eddsa-rdfc-2022`, Ed25519, optional `[ldp]` extra). Both proof formats
+  issue *and* verify offline, no external service.
 - **Lean and typed** — `mypy --strict`, CI on Python 3.10–3.13, a small
   dependency set, dataclasses + explicit validation (no Pydantic).
 - **Dual-licensed** LGPLv3 (library) / BSD-2-Clause (CLI tools).
@@ -144,7 +147,15 @@ with open('/tmp/signed_badge.svg', 'wb') as f:
 
 For the frozen OpenBadges 1.0 legacy API (`Badge` / `Signer` / `Verifier`), import from `openbadgeslib.ob1` instead.
 
-## Using the library — OpenBadges 3.0 (JWT-VC)
+## Using the library — OpenBadges 3.0
+
+OB 3.0 credentials can be secured with either of the two proof formats the
+spec allows: a compact **VC-JWT** (`OB3Signer`, RS256/ES256/EdDSA) or an
+embedded **Data Integrity** proof (`OB3LdpSigner`, cryptosuite
+`eddsa-rdfc-2022`, Ed25519 only — needs the `[ldp]` extra). Both bake into
+the same SVG/PNG carriers and the verifier auto-detects the format.
+
+### VC-JWT (JOSE)
 
 ```python
 from openbadgeslib.ob3 import (
@@ -179,6 +190,35 @@ token = OB3Verifier.extract_token_from_svg(baked_svg)
 restored = verifier.verify(token, expected_recipient='recipient@example.com')
 print('Recipient:', restored.recipient_id)
 ```
+
+### Data Integrity (LDP)
+
+Same credential, an embedded JSON-LD proof instead of a JWT. Requires an
+Ed25519 signing key and the `[ldp]` extra (`pip install openbadgeslib[ldp]`).
+Reuse the `credential` built above:
+
+```python
+from openbadgeslib.ob3 import OB3LdpSigner, OB3LdpVerifier
+
+with open('sign_ed25519.pem', 'rb') as f:
+    priv_pem = f.read()
+
+# Bake a credential carrying an eddsa-rdfc-2022 DataIntegrityProof into an SVG
+signer = OB3LdpSigner(priv_pem)
+with open('badge.svg', 'rb') as f:
+    baked_svg = signer.sign_into_svg(credential, f.read())
+
+# Verify (the LDP credential travels as JSON in the baked image)
+with open('verify_ed25519.pem', 'rb') as f:
+    verifier = OB3LdpVerifier(pubkey_pem=f.read())
+document = OB3Verifier.extract_token_from_svg(baked_svg)
+restored = verifier.verify(document, expected_recipient='recipient@example.com')
+print('Recipient:', restored.recipient_id)
+```
+
+From the CLI, select the format with `openbadges-signer -P ldp` (OB 3.0 only),
+or set `proof_format = ldp` in the badge's INI section; the default stays
+`vc-jwt`. Status lists remain VC-JWT regardless of the badge's proof format.
 
 ## Documentation
 
