@@ -44,23 +44,39 @@ legacy format, selected with `-V {1,2,3}` (default `3`).
 ### How it compares
 
 Best-effort comparison from each project's public documentation as of July 2026;
-"not documented" is shown as `—`. Corrections welcome via issue/PR.
+"not documented" is shown as `—`. Corrections welcome via issue/PR. The Python
+Open Badges landscape splits into three groups: 1EdTech's **verify-only** OB 2.0
+reference validator, heavyweight **Django server platforms** (the Badgr lineage),
+and a thin tail of **standalone libraries** — of which openbadgeslib is the only
+actively-maintained, pip-installable, offline one that covers all three OB
+versions and both OB 3.0 proof formats.
 
-| Capability | **openbadgeslib** | [PyOpenBadges](https://github.com/CoopCodeCommun/pyopenbadges) |
-| --- | --- | --- |
-| Open Badges versions | 1.0, 2.0, **3.0** | 3.0 (v2→v3 planned) |
-| OB 3.0 proof: VC-JWT (JOSE) | ✅ RS/ES/EdDSA | roadmap |
-| OB 3.0 proof: Data Integrity / LDP | ✅ issue + verify (`eddsa-rdfc-2022`, `[ldp]` extra) | JSON-LD signing (format unspecified) |
-| Revocation / suspension (Bitstring Status List) | ✅ issue + publish + manage | — |
-| `did:web` (generate + resolve) | ✅ | — |
-| Image baking (SVG + PNG) | ✅ | roadmap |
-| Command-line tools | ✅ 5 tools | — |
-| Typing / CI | `mypy --strict`, CI 3.10–3.13 | — |
-| Validation | dataclasses + explicit checks | Pydantic |
+| Capability | **openbadgeslib** | [validator-core](https://github.com/1EdTech/openbadges-validator-core) | [Badgr / mint-o-badges](https://github.com/mint-o-badges/badgr-server) (a) | [pyopenbadges](https://github.com/CoopCodeCommun/pyopenbadges) | [didkit](https://github.com/spruceid/didkit-python) (b) |
+| --- | --- | --- | --- | --- | --- |
+| Open Badges versions | 1.0, 2.0, **3.0** | 0.5–2.0 | 1.1, 2.0, 3.0 | 3.0 only | generic VC |
+| Issue / verify | ✅ both | verify only | issue; partial verify | both | both (VC + VP) |
+| OB 3.0 proof: VC-JWT (JOSE) | ✅ RS/ES/EdDSA | — | — | roadmap | ✅ not OB-aware |
+| OB 3.0 proof: Data Integrity / LDP | ✅ issue + verify (`eddsa-rdfc-2022`) | — | issue only (Ed25519) | home-grown, non-conformant | older suites; no `rdfc-2022` in wheel |
+| Revocation / suspension | ✅ W3C Bitstring Status List | hosted check | `1EdTechRevocationList` | ad-hoc flag | — |
+| `did:web` (generate + resolve) | ✅ | — | — | — | resolve only |
+| Image baking (SVG + PNG) | ✅ | unbake only | ✅ | — | — |
+| Form factor | library + 5 CLI tools | library + CLI | Django server | library | binding |
+| Typing / CI | `mypy --strict`, CI 3.10–3.13 | — | — | Pydantic | — |
+| License | LGPLv3 / BSD-2 | Apache-2.0 | AGPL-3.0 | MIT/LGPL | Apache-2.0 |
 
-For OB 2.0 validation the reference implementation is 1EdTech's Node
-[`openbadges-validator`](https://github.com/1EdTech/openbadges-validator); this
-table focuses on the OB 3.0 Python landscape.
+(a) The actively-maintained community fork (open-educational-badges): it
+genuinely issues OB 3.0 Data Integrity credentials, but only as a server (not a
+pip library) and only with Ed25519 (no VC-JWT). The classic Concentric Sky
+`badgr-server` is OB 2.0 and its canonical repo is gone; SURF's
+`edubadges-server` delegates OB 3.0 signing to external agents.
+(b) Generic W3C VC/DID toolkit (Rust `ssi` bindings), not Open Badges-aware, and
+archived (read-only since July 2025).
+
+For authoritative OB 2.0 *validation* semantics, 1EdTech's Python
+[`openbadges-validator-core`](https://github.com/1EdTech/openbadges-validator-core)
+and Node [`openbadges-validator`](https://github.com/1EdTech/openbadges-validator)
+remain the reference; openbadgeslib focuses on the full issuer lifecycle across
+all three OB versions.
 
 ## Requirements
 
