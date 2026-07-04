@@ -58,6 +58,12 @@ dev = [
     "pdoc>=14",
     "mypy>=1.8",
     "gitlint>=0.19",
+    # Validates issued OB 3.0 credentials against the official 1EdTech JSON
+    # Schemas (draft 2019-09); see tests/test_ob3_conformance_schema.py. The
+    # format-nongpl extra activates the date-time/uri format checkers (via
+    # rfc3339-validator etc.) so `format` keywords are asserted, not ignored —
+    # and stays GPL-free, unlike the plain [format] extra.
+    "jsonschema[format-nongpl]>=4.20",
 ]
 
 [project.urls]
@@ -107,6 +113,14 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The conformance_docker suite drives 1EdTech's official validators as Docker
+# services (network + DID resolution) — deselected by default so the local
+# run and the release gate stay fast and hermetic. The nightly conformance
+# workflow opts in with `pytest -m conformance_docker`.
+addopts = "-m 'not conformance_docker'"
+markers = [
+    "conformance_docker: validates issued badges against the official 1EdTech validators running in Docker (opt-in; needs Docker, network)",
+]
 
 [tool.coverage.run]
 source = ["openbadgeslib"]

@@ -1,0 +1,42 @@
+# Official 1EdTech validators, run locally as Docker services for the opt-in
+# `conformance_docker` test suite. NOT part of the default/release test run —
+# see tests/conformance/README.md for the full rationale and the confirmed vs.
+# unconfirmed parts of each validator's contract.
+#
+#   docker compose -f tests/conformance/docker-compose.yml up -d --build
+#   OB2_VALIDATOR_URL=http://localhost:8000 \
+#   OB3_VALIDATOR_URL=http://localhost:8080 \
+#       .venv/bin/pytest -m conformance_docker -v
+#   docker compose -f tests/conformance/docker-compose.yml down
+services:
+
+  # ── Open Badges 2.0: 1EdTech/openbadges-validator-core (Flask/gunicorn) ─────
+  # The develop-branch Dockerfile builds straight from the Python source, so a
+  # git-context build needs no extra step. The validator fetches the hosted
+  # badge graph the OB2 test serves on an ephemeral host port; extra_hosts maps
+  # host.docker.internal to the host gateway (built in on Docker Desktop, added
+  # here for Linux/CI) so the same CONFORMANCE_ADVERTISE_HOST=host.docker.internal
+  # works on both — verified live on macOS and the pattern is standard on Linux.
+  ob2-validator:
+    build:
+      context: "https://github.com/1EdTech/openbadges-validator-core.git#develop"
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  # ── Open Badges 3.0: 1EdTech/digital-credentials-public-validator (Spring) ──
+  # The repo's own Dockerfile COPYs a pre-built target/inspector-vc-web.jar, so
+  # it assumes `mvn package` already ran. Dockerfile.ob3 adds that Maven stage
+  # so the image builds from a clean checkout. The OB3 tests feed self-contained
+  # credentials (did:key LDP / jwk JWT-VC), so no host networking is needed.
+  ob3-validator:
+    build:
+      context: .
+      dockerfile: Dockerfile.ob3
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+    restart: unless-stopped

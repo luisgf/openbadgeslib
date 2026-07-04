@@ -1,0 +1,29 @@
+# Buildable image for 1EdTech's official OB 3.0 validator
+# (github.com/1EdTech/digital-credentials-public-validator). The repo's own
+# inspector-vc-web/Dockerfile only COPYs a pre-built jar, so this adds the
+# Maven build stage that produces it — the whole thing builds from a clean
+# checkout with a single `docker build`.
+#
+# Pinned to a tag/commit is safer than a moving branch; bump deliberately.
+ARG VALIDATOR_REF=main
+
+FROM maven:3.9-eclipse-temurin-17 AS build
+ARG VALIDATOR_REF
+RUN git clone --depth 1 --branch "${VALIDATOR_REF}" \
+        https://github.com/1EdTech/digital-credentials-public-validator.git /src
+WORKDIR /src
+# libsodium is needed by the crypto libs even during test-compile; skip tests
+# for image build speed (we exercise the service through its REST API instead).
+RUN apt-get update && apt-get install -y --no-install-recommends libsodium23 \
+    && rm -rf /var/lib/apt/lists/* \
+    && mvn -q -DskipTests package
+
+FROM eclipse-temurin:17-jdk
+RUN apt-get update && apt-get install -y --no-install-recommends libsodium23 \
+    && rm -rf /var/lib/apt/lists/*
+# finalName in the web module's pom produces target/inspector-vc-web.jar (the
+# name the upstream Dockerfile also assumes). If a future version drops the
+# finalName, adjust this glob to inspector-vc-web-*.jar.
+COPY --from=build /src/inspector-vc-web/target/inspector-vc-web.jar /app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app.jar"]

@@ -1,0 +1,62 @@
+name: Conformance (official 1EdTech validators)
+
+# Opt-in, NON-BLOCKING fidelity check: issue badges with this library and run
+# them through 1EdTech's official validators (OB 2.0 Flask + OB 3.0 Spring Boot)
+# in Docker. It is deliberately NOT wired into ci.yml — it needs Docker, builds
+# a Java image (slow) and touches the network, none of which belong on the
+# release path. Runs nightly and on demand; a failure here is a signal to look,
+# not a blocked release.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * *'      # 04:00 UTC nightly
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45       # the OB3 Maven+Docker build is the long pole
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install package + test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,ldp]" requests
+
+      - name: Build & start the official validators
+        run: docker compose -f tests/conformance/docker-compose.yml up -d --build
+
+      - name: Wait for the validators to answer
+        run: |
+          for target in "OB2 http://localhost:8000/" "OB3 http://localhost:8080/v3/api-docs"; do
+            name=${target%% *}; url=${target#* }
+            echo "waiting for $name at $url"
+            for i in $(seq 1 60); do
+              if curl -fsS -o /dev/null "$url"; then echo "$name up"; break; fi
+              if [ "$i" = 60 ]; then echo "::warning::$name did not come up in time"; fi
+              sleep 5
+            done
+          done
+
+      - name: Run the conformance suite
+        env:
+          OB2_VALIDATOR_URL: http://localhost:8000
+          OB3_VALIDATOR_URL: http://localhost:8080
+        run: pytest -m conformance_docker -v
+
+      - name: Validator logs (on failure)
+        if: failure()
+        run: docker compose -f tests/conformance/docker-compose.yml logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f tests/conformance/docker-compose.yml down -v
