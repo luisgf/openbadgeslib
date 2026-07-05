@@ -28,12 +28,12 @@ jobs:
           cache: pip
 
       - name: Install package and dev dependencies
-        # The ldp extra pulls pyld so the Data Integrity verification tests
-        # run in CI (they importorskip without it; the extra-absent behaviour
-        # is covered by monkeypatch tests that run either way).
+        # ldp pulls pyld (Data Integrity tests) and eudi pulls openvc-core
+        # (the SD-JWT VC tests); both importorskip without their extra, and the
+        # extra-absent behaviour is covered by monkeypatch tests that run either way.
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,ldp]"
+          pip install -e ".[dev,ldp,eudi]"
 
       - name: Lint (flake8)
         run: flake8 openbadgeslib tests

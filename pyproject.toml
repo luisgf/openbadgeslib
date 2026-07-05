@@ -51,6 +51,12 @@ dependencies = [
 ldp = [
     "pyld>=2.0.4",
 ]
+# EUDI track: issue/verify badges as SD-JWT VC (the EU wallet / ARF format) via
+# the generic openvc-core library. Pinned tight because openvc-core is pre-1.0.
+# See openbadgeslib/ob3/eudi.py.
+eudi = [
+    "openvc-core>=0.3.1,<0.4",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
@@ -109,6 +115,13 @@ warn_unused_ignores = true
 # Third-party dependencies that ship no type information.
 [[tool.mypy.overrides]]
 module = ["Crypto.*", "ecdsa.*", "png.*", "defusedxml.*", "pyld.*"]
+ignore_missing_imports = true
+
+# openvc-core is behind the optional [eudi] extra and is not installed in the
+# default (dev,ldp) type-check environment; ignore it when absent. It ships
+# py.typed, so where installed its real types are still used.
+[[tool.mypy.overrides]]
+module = ["openvc.*", "openvc_ebsi.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
