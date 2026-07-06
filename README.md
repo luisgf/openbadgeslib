@@ -51,14 +51,16 @@ Open Badges landscape splits into three groups: 1EdTech's **verify-only** OB 2.0
 reference validator, heavyweight **Django server platforms** (the Badgr lineage),
 and a thin tail of **standalone libraries** — of which openbadgeslib is the only
 actively-maintained, pip-installable, offline one that covers all three OB
-versions and both OB 3.0 proof formats.
+versions, both native OB 3.0 proof formats (VC-JWT and Data Integrity), and an
+additive EUDI SD-JWT VC wallet track.
 
-| Capability | **openbadgeslib** | [validator-core](https://github.com/1EdTech/openbadges-validator-core) | [Badgr / mint-o-badges](https://github.com/mint-o-badges/badgr-server) (a) | [pyopenbadges](https://github.com/CoopCodeCommun/pyopenbadges) | [didkit](https://github.com/spruceid/didkit-python) (b) |
+| Capability | **openbadgeslib** | [validator-core](https://github.com/1EdTech/openbadges-validator-core) | [Badgr / open-educational-badges](https://github.com/open-educational-badges/badgr-server) (a) | [pyopenbadges](https://github.com/CoopCodeCommun/pyopenbadges) | [didkit](https://github.com/spruceid/didkit-python) (b) |
 | --- | --- | --- | --- | --- | --- |
 | Open Badges versions | 1.0, 2.0, **3.0** | 0.5–2.0 | 1.1, 2.0, 3.0 | 3.0 only | generic VC |
 | Issue / verify | ✅ both | verify only | issue; partial verify | both | both (VC + VP) |
 | OB 3.0 proof: VC-JWT (JOSE) | ✅ RS/ES/EdDSA | — | — | roadmap | ✅ not OB-aware |
 | OB 3.0 proof: Data Integrity / LDP | ✅ issue + verify (`eddsa-rdfc-2022`) | — | issue only (Ed25519) | home-grown, non-conformant | older suites; no `rdfc-2022` in wheel |
+| OB 3.0 as EUDI SD-JWT VC (selective disclosure) | ✅ issue + verify (Ed25519/P-256, `[eudi]` extra) | — | — | — | — |
 | Revocation / suspension | ✅ W3C Bitstring Status List | hosted check | `1EdTechRevocationList` | ad-hoc flag | — |
 | `did:web` (generate + resolve) | ✅ | — | — | — | resolve only |
 | Image baking (SVG + PNG) | ✅ | unbake only | ✅ | — | — |
@@ -76,7 +78,7 @@ archived (read-only since July 2025).
 
 For authoritative OB 2.0 *validation* semantics, 1EdTech's Python
 [`openbadges-validator-core`](https://github.com/1EdTech/openbadges-validator-core)
-and Node [`openbadges-validator`](https://github.com/1EdTech/openbadges-validator)
+and Node [`openbadges-validator`](https://github.com/mozilla/openbadges-validator)
 remain the reference; openbadgeslib focuses on the full issuer lifecycle across
 all three OB versions.
 
