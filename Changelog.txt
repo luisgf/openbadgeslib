@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v3.4.1 - unreleased
+* v3.4.1 - 2026-07-06
 
   - build: advertise Python 3.14 support — add it to the CI test matrix (lint
     + mypy + the full suite now run on 3.10–3.14) and the trove classifier, so
