@@ -4,6 +4,14 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.4.1 - unreleased
+
+  - build: advertise Python 3.14 support — add it to the CI test matrix (lint
+    + mypy + the full suite now run on 3.10–3.14) and the trove classifier, so
+    3.14 shows as supported on PyPI. No code change; the suite already runs
+    clean on CPython 3.14.
+
+
 * v3.4.0 - 2026-07-06
 
   - feat(ob3): issue and verify Open Badges 3.0 as EUDI **SD-JWT VC** (the

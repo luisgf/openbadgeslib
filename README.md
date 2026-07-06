@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml/badge.svg)](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/openbadgeslib.svg)](https://pypi.org/project/openbadgeslib/)
-[![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue.svg)](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%E2%80%933.14-blue.svg)](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-LGPLv3%20%2F%20BSD-blue.svg)](#license)
 
 **A production-ready Python library & CLI for the full Open Badges 3.0 issuer
@@ -39,7 +39,7 @@ legacy format, selected with `-V {1,2,3}` (default `3`).
   (EdDSA) — *plus* native **W3C Data Integrity / LDP** signing
   (`eddsa-rdfc-2022`, Ed25519, optional `[ldp]` extra). Both proof formats
   issue *and* verify offline, no external service.
-- **Lean and typed** — `mypy --strict`, CI on Python 3.10–3.13, a small
+- **Lean and typed** — `mypy --strict`, CI on Python 3.10–3.14, a small
   dependency set, dataclasses + explicit validation (no Pydantic).
 - **Dual-licensed** LGPLv3 (library) / BSD-2-Clause (CLI tools).
 
@@ -63,7 +63,7 @@ versions and both OB 3.0 proof formats.
 | `did:web` (generate + resolve) | ✅ | — | — | — | resolve only |
 | Image baking (SVG + PNG) | ✅ | unbake only | ✅ | — | — |
 | Form factor | library + 5 CLI tools | library + CLI | Django server | library | binding |
-| Typing / CI | `mypy --strict`, CI 3.10–3.13 | — | — | Pydantic | — |
+| Typing / CI | `mypy --strict`, CI 3.10–3.14 | — | — | Pydantic | — |
 | License | LGPLv3 / BSD-2 | Apache-2.0 | AGPL-3.0 | MIT/LGPL | Apache-2.0 |
 
 (a) The actively-maintained community fork (open-educational-badges): it
@@ -82,7 +82,7 @@ all three OB versions.
 
 ## Requirements
 
-- Python >= 3.10 (tested on 3.10–3.13)
+- Python >= 3.10 (tested on 3.10–3.14)
 - [pycryptodome](https://pypi.org/project/pycryptodome/) >= 3.20
 - [ecdsa](https://pypi.org/project/ecdsa/) >= 0.19
 - [pypng](https://pypi.org/project/pypng/) >= 0.20220715.0
