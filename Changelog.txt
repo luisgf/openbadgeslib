@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v3.4.0 - unreleased
+* v3.4.0 - 2026-07-06
 
   - feat(ob3): issue and verify Open Badges 3.0 as EUDI **SD-JWT VC** (the
     EU Digital Identity Wallet / ARF format), delegating the crypto to the
