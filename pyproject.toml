@@ -55,7 +55,7 @@ ldp = [
 # the generic openvc-core library. Pinned tight because openvc-core is pre-1.0.
 # See openbadgeslib/ob3/eudi.py.
 eudi = [
-    "openvc-core>=0.3.1,<0.4",
+    "openvc-core>=0.8,<0.9",
 ]
 dev = [
     "pytest>=8.0",
