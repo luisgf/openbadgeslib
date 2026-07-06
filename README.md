@@ -25,6 +25,8 @@ legacy format, selected with `-V {1,2,3}` (default `3`).
   publication and `--revoke` / `--suspend` / `--unsuspend` management
 - Issue and verify OB 3.0 W3C Data Integrity credentials (`eddsa-rdfc-2022`,
   optional `[ldp]` extra) in addition to JWT-VC
+- Issue and verify badges as EUDI **SD-JWT VC** (the EU wallet / ARF format)
+  with selective disclosure, via the optional `[eudi]` extra
 - did:web issuer identity: `did.json` generation and DID resolution
 - Five command-line tools included
 
@@ -94,8 +96,15 @@ all three OB versions.
 pip install openbadgeslib
 ```
 
-All dependencies are installed automatically. For a development checkout with
-the test suite and linters:
+All dependencies are installed automatically. The two OB 3.0 side-tracks ship
+as optional extras (the base install stays lean):
+
+```bash
+pip install "openbadgeslib[ldp]"    # W3C Data Integrity issuance/verification
+pip install "openbadgeslib[eudi]"   # EUDI SD-JWT VC (pulls openvc-core)
+```
+
+For a development checkout with the test suite and linters:
 
 ```bash
 pip install -e ".[dev]"
@@ -235,6 +244,39 @@ print('Recipient:', restored.recipient_id)
 From the CLI, select the format with `openbadges-signer -P ldp` (OB 3.0 only),
 or set `proof_format = ldp` in the badge's INI section; the default stays
 `vc-jwt`. Status lists remain VC-JWT regardless of the badge's proof format.
+
+### EUDI SD-JWT VC (selective disclosure)
+
+An **additive** track: issue the same badge as an IETF **SD-JWT VC** — the
+format the EU Digital Identity Wallet / ARF converges on — delegating the
+crypto to the generic [`openvc-core`](https://pypi.org/project/openvc-core/)
+library. It does not touch the native VC-JWT / Data Integrity issuance above:
+it is a separate credential format for wallet flows, not a third image proof.
+Needs the `[eudi]` extra (`pip install "openbadgeslib[eudi]"`) and an Ed25519
+(EdDSA) or NIST P-256 (ES256) key — SD-JWT's algorithm set (RSA is rejected).
+The achievement is always disclosed; the recipient identity is *selectively
+disclosable*, so a holder can prove the badge while withholding who they are.
+
+```python
+from openbadgeslib.ob3.eudi import issue_badge_sd_jwt, verify_badge_sd_jwt
+
+with open('sign_ed25519.pem', 'rb') as f:
+    priv_pem = f.read()
+
+# Issue the compact SD-JWT VC (<issuer-jwt>~<disclosure>~…). Reuse `credential`.
+token = issue_badge_sd_jwt(credential, privkey_pem=priv_pem)
+
+# Verify the issuer form (or a later holder presentation)
+with open('verify_ed25519.pem', 'rb') as f:
+    pub_pem = f.read()
+result = verify_badge_sd_jwt(token, pubkey_pem=pub_pem)
+print('Achievement:', result.claims['achievement']['name'])
+```
+
+Pass `holder_jwk=` at issuance to bind the credential to a holder key, then
+build a Key-Binding presentation (`SdJwtVcProofSuite.create_presentation`,
+bound to an audience + nonce) for the EUDI wallet flow. This track is
+library-only — there is no CLI tool for it.
 
 ## Documentation
 

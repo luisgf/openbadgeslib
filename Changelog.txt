@@ -4,6 +4,29 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.4.0 - unreleased
+
+  - feat(ob3): issue and verify Open Badges 3.0 as EUDI **SD-JWT VC** (the
+    EU Digital Identity Wallet / ARF format), delegating the crypto to the
+    generic openvc-core library — new `openbadgeslib.ob3.eudi` module
+    (`issue_badge_sd_jwt`, `verify_badge_sd_jwt`, `badge_to_sd_jwt_claims`).
+    Additive: the native OB 3.0 VC-JWT and Data Integrity issuance stay
+    untouched and conformant — this is a separate credential format for
+    wallet flows, not a swap. The achievement is always disclosed while the
+    recipient identity is selectively disclosable, so a holder can prove the
+    badge yet withhold who they are; key-binding presentations (holder `cnf`,
+    audience + nonce) are supported. Ed25519 (EdDSA) and NIST P-256 (ES256)
+    keys only — the SD-JWT algorithm set; RSA is rejected with a clear
+    message. Needs the new optional `[eudi]` extra; the base install is
+    unchanged.
+
+  - build(eudi): the `[eudi]` extra now tracks `openvc-core>=0.8,<0.9` (was
+    `>=0.3.1,<0.4`). The SD-JWT VC API openbadgeslib consumes is unchanged
+    across the bump and the full test suite passes against openvc-core 0.8.
+    That extra transitively requires `cryptography>=45`, while the base
+    install floor stays `>=42` for non-EUDI users.
+
+
 * v3.3.0 - 2026-07-04
 
   - feat(ob3): issuance of OB 3.0 credentials secured with a W3C Data
