@@ -21,6 +21,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     fetched did:web or Data Integrity document (up to 5 MiB / 256 KiB) can no
     longer burn CPU. No real multikey exceeds ~70 characters.
 
+  - fix(ob2): an `evidence` array (which OB 2.0 permits) is preserved when
+    parsing an Assertion instead of being silently dropped — `_iri_or_none`
+    returned None for a list. A single value still collapses to its IRI.
+
 
 * v3.5.0 - 2026-07-07
 

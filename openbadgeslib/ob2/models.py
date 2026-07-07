@@ -32,7 +32,7 @@
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 
 from ..util import hash_email
 
@@ -122,6 +122,25 @@ def _iri_or_none(value: Any) -> Optional[str]:
     return None
 
 
+def _iri_or_iris(value: Any) -> Optional[Union[str, List[str]]]:
+    """Like :func:`_iri_or_none`, but keep an array instead of dropping it.
+
+    OB 2.0 lets ``evidence`` be a bare IRI, an object with an ``id``, or an
+    array of either. A single value collapses to its IRI string (unchanged
+    behaviour); an array yields the list of IRIs it carries. None when nothing
+    usable is present — so a conformant multi-evidence assertion is no longer
+    silently discarded on parse.
+    """
+    if isinstance(value, list):
+        iris = []
+        for item in value:
+            iri = _iri_or_none(item)
+            if iri is not None:
+                iris.append(iri)
+        return iris or None
+    return _iri_or_none(value)
+
+
 def hash_identity(email: str, salt: Optional[str]) -> str:
     """Return the ``sha256$<hex>`` IdentityHash for an email plus optional salt."""
     return "sha256$" + hash_email(email, salt if salt is not None else "").decode("ascii")
@@ -209,7 +228,7 @@ class Assertion:
     issued_on: Optional[datetime] = None   # defaults to now (UTC)
     expires: Optional[datetime] = None
     image: Optional[str] = None
-    evidence: Optional[str] = None
+    evidence: Optional[Union[str, List[str]]] = None
     narrative: Optional[str] = None
 
     def __post_init__(self) -> None:
@@ -265,7 +284,7 @@ class Assertion:
             issued_on=issued_on,
             expires=expires,
             image=_iri_or_none(d.get("image")),
-            evidence=_iri_or_none(d.get("evidence")),
+            evidence=_iri_or_iris(d.get("evidence")),
             narrative=d.get("narrative") if isinstance(d.get("narrative"), str) else None,
         )
 

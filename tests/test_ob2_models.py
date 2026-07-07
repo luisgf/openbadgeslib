@@ -130,6 +130,19 @@ class TestAssertion:
         d['@context'] = [OB2_CONTEXT, 'https://example.com/extension']
         assert Assertion.from_dict(d).badge == d['badge']
 
+    def test_from_dict_keeps_an_evidence_array(self):
+        # OB 2.0 allows an array of evidence (IRIs or objects); it must not be
+        # silently dropped on parse.
+        d = _assertion().to_dict()
+        d['evidence'] = ['https://e/ev1', {'id': 'https://e/ev2'}]
+        assert Assertion.from_dict(d).evidence == ['https://e/ev1',
+                                                   'https://e/ev2']
+
+    def test_from_dict_keeps_single_evidence_as_string(self):
+        d = _assertion().to_dict()
+        d['evidence'] = 'https://e/only'
+        assert Assertion.from_dict(d).evidence == 'https://e/only'
+
     def test_from_dict_rejects_wrong_type(self):
         d = _assertion().to_dict()
         d['type'] = 'BadgeClass'
