@@ -195,6 +195,9 @@ class TestOB3LdpSigner:
         signed = OB3LdpSigner(priv_pem).sign(ob3_credential)
         cred = OB3LdpVerifier(pubkey_pem=pub_pem).verify(signed)
         assert cred.id == ob3_credential.id
+        # The LDP path exposes the raw document too (set in _from_vc), including
+        # the proof it was verified with.
+        assert cred.raw is not None and 'proof' in cred.raw
 
     def test_sign_verifies_unpinned_via_did_key(self, ob3_credential,
                                                 ed25519_keypair):

@@ -40,6 +40,16 @@ _OB_CONTEXT_RE = re.compile(
 
 _SUPPORTED_ALGORITHMS = {'RS256', 'RS384', 'RS512', 'ES256', 'ES384', 'ES512', 'EdDSA'}
 
+# 1EdTech's published JSON Schema for an AchievementCredential. Issued badges
+# carry a credentialSchema pointing at it (§8, 1EdTechJsonSchemaValidator2019),
+# so validators and wallets can self-check them; the offline conformance gate
+# proves our credentials satisfy this exact schema.
+_OB3_CREDENTIAL_SCHEMA = {
+    "id": "https://purl.imsglobal.org/spec/ob/v3p0/schema/json/"
+          "ob_v3p0_achievementcredential_schema.json",
+    "type": "1EdTechJsonSchemaValidator2019",
+}
+
 
 def _validate_context(ctx: Any) -> None:
     """Validate an OpenBadgeCredential ``@context`` per the schema: an array
@@ -132,6 +142,13 @@ class OpenBadgeCredential:
     # normalised to a list of objects. Consumed by ob3.status to check
     # revocation; empty when the credential carries no status.
     credential_status: List[dict[str, Any]] = field(default_factory=list)
+    # The raw, already-validated VC document this credential was parsed from
+    # (set by the verifiers, via _from_vc); None when built in-memory to issue.
+    # Lets a caller read spec fields the model does not map — alignment,
+    # results, multiple evidence, endorsements, … — without re-parsing the
+    # token. Excluded from equality/repr so it never affects comparisons.
+    raw: Optional[dict[str, Any]] = field(default=None, compare=False,
+                                          repr=False)
 
     def __post_init__(self) -> None:
         if self.id is None:
@@ -166,6 +183,7 @@ class OpenBadgeCredential:
                 "type": ["AchievementSubject"],
                 "achievement": self.achievement.to_dict(),
             },
+            "credentialSchema": [dict(_OB3_CREDENTIAL_SCHEMA)],
         }
         # credentialSubject.id is optional; emit it only when present.
         if self.recipient_id is not None:
@@ -311,7 +329,7 @@ class OpenBadgeCredential:
                     "vc.credentialSubject must have an 'id' or an 'identifier'")
             recipient_id = None
 
-        return cls(
+        credential = cls(
             id=_require(vc, "id", "vc"),
             issuer=issuer,
             recipient_id=recipient_id,
@@ -322,6 +340,11 @@ class OpenBadgeCredential:
             evidence_url=evidence_url,
             credential_status=credential_status,
         )
+        # Keep the validated document so the caller can read fields the model
+        # does not map (see the ``raw`` field). This is the JWT-VC payload or
+        # the Data Integrity document, exactly as verified.
+        credential.raw = vc
+        return credential
 
 
 def _as_dict(value: Any, where: str) -> dict[str, Any]:

@@ -634,3 +634,39 @@ class TestJtiBinding:
         token = ob3_rsa_signer.sign_payload(payload)
         with pytest.raises(OB3VerificationError, match="jti"):
             ob3_rsa_verifier.verify(token)
+
+
+class TestRawPassthrough:
+    # The verified credential exposes the raw validated document so a caller can
+    # read spec fields the model does not map, without re-parsing the token.
+    def test_verify_exposes_raw_document(
+        self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential
+    ):
+        token = ob3_rsa_signer.sign(ob3_credential)
+        credential = ob3_rsa_verifier.verify(token)
+        assert credential.raw is not None
+        assert credential.raw['id'] == credential.id
+        # credentialSchema is emitted but not mapped onto the model — raw is the
+        # only way to read it back.
+        assert credential.raw['credentialSchema'][0]['type'] \
+            == '1EdTechJsonSchemaValidator2019'
+
+    def test_raw_passes_through_unmapped_fields(
+        self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential
+    ):
+        payload = ob3_credential.to_jwt_payload()
+        # alignment is a real OB3 achievement field the model does not map.
+        payload['credentialSubject']['achievement']['alignment'] = [
+            {'type': ['Alignment'], 'targetName': 'Competency X',
+             'targetUrl': 'https://framework.example/x'}]
+        token = ob3_rsa_signer.sign_payload(payload)
+        credential = ob3_rsa_verifier.verify(token)
+        alignment = credential.raw['credentialSubject']['achievement']['alignment']
+        assert alignment[0]['targetName'] == 'Competency X'
+
+    def test_raw_excluded_from_equality(self, ob3_credential):
+        from dataclasses import replace
+        a = replace(ob3_credential)
+        b = replace(ob3_credential)
+        a.raw = {'x': 1}
+        assert a == b   # raw is compare=False, so it never affects ==

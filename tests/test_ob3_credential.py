@@ -144,6 +144,14 @@ class TestOpenBadgeCredential:
         vc = _make_credential().to_vc()
         assert vc['validFrom'] == '2026-01-01T00:00:00Z'
 
+    def test_to_vc_emits_credential_schema(self):
+        vc = _make_credential().to_vc()
+        schema = vc['credentialSchema']
+        assert isinstance(schema, list) and len(schema) == 1
+        assert schema[0]['type'] == '1EdTechJsonSchemaValidator2019'
+        assert schema[0]['id'].startswith(
+            'https://purl.imsglobal.org/spec/ob/v3p0/schema/json/')
+
     def test_to_vc_expiration_date_included_when_set(self):
         exp = datetime(2030, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
         vc = _make_credential(expiration_date=exp).to_vc()

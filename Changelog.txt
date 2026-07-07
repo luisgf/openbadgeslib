@@ -4,7 +4,20 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v3.5.2 - unreleased
+* v3.6.0 - unreleased
+
+  - feat(ob3): the verifier now exposes the raw, already-validated VC document
+    on the returned credential (`credential.raw`) — on both the JWT-VC and the
+    Data Integrity path — so an integrator can read spec fields the dataclass
+    does not map (alignment, results, multiple evidence, endorsements, …)
+    without re-parsing the token. It is None for an in-memory credential built
+    to issue, and excluded from equality/repr so it never affects comparisons.
+
+  - feat(ob3): issued OB 3.0 credentials now carry a `credentialSchema` entry
+    (`1EdTechJsonSchemaValidator2019`) pointing at 1EdTech's published
+    AchievementCredential JSON Schema, so validators and wallets can
+    self-check them. The offline conformance gate proves our issued
+    credentials satisfy that exact schema.
 
   - refactor(typing): the library now type-checks clean under `mypy --strict`
     (73 bare `dict` annotations parameterised as `dict[str, Any]`, 20 Any
