@@ -142,11 +142,16 @@ class OpenBadgeCredential:
     # normalised to a list of objects. Consumed by ob3.status to check
     # revocation; empty when the credential carries no status.
     credential_status: List[dict[str, Any]] = field(default_factory=list)
-    # The raw, already-validated VC document this credential was parsed from
-    # (set by the verifiers, via _from_vc); None when built in-memory to issue.
-    # Lets a caller read spec fields the model does not map — alignment,
-    # results, multiple evidence, endorsements, … — without re-parsing the
-    # token. Excluded from equality/repr so it never affects comparisons.
+    # A read-only view of the already-validated document this credential was
+    # parsed from (set by the verifiers via _from_vc); None when built in-memory
+    # to issue. Lets a caller read spec fields the model does not map —
+    # alignment, results, multiple evidence, endorsements, … — without
+    # re-parsing the token. Do NOT mutate it: on the from_*() classmethods it
+    # may alias the caller-supplied dict. Its shape is the document as parsed,
+    # so it reflects parse time (not later edits to the model fields) and is
+    # path-dependent — the JWT-VC payload (with the registered iss/sub/jti/nbf/
+    # exp claims alongside) or the Data Integrity document (with its proof).
+    # Excluded from equality/repr so it never affects comparisons.
     raw: Optional[dict[str, Any]] = field(default=None, compare=False,
                                           repr=False)
 

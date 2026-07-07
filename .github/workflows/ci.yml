@@ -9,9 +9,9 @@ on:
     types: [published]
   workflow_dispatch:   # manual "publish current master to PyPI" trigger
 
-# Least-privilege default for GITHUB_TOKEN. The token-based PyPI publish needs
-# no repo write; a future Trusted Publishing migration would add
-# `id-token: write` on the publish job specifically (see #149).
+# Least-privilege default for GITHUB_TOKEN. The publish job re-declares its own
+# permissions (adds `id-token: write` for PyPI Trusted Publishing); every other
+# job only needs read (see #149).
 permissions:
   contents: read
 

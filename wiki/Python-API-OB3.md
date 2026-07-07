@@ -237,7 +237,7 @@ pip install "openbadgeslib[eudi]"
 
 The achievement is always disclosed; the recipient identity (`credentialSubject`) is *selectively disclosable*, so a holder can present the badge while withholding who they are.
 
-**Keys:** Ed25519 (EdDSA), NIST P-256 (ES256), or NIST P-384 (ES384) — SD-JWT's algorithm set; RSA is rejected. The OpenID4VC High Assurance Interoperability Profile (HAIP) that EUDI wallets adopt restricts algorithms to the **P-256 (ES256)** family, so prefer a P-256 key for wallet interoperability; Ed25519 / P-384 work where HAIP-strict acceptance is not required.
+**Keys:** Ed25519 (EdDSA), NIST P-256 (ES256), or NIST P-384 (ES384) — the signing algorithms `openvc-core` accepts for this track; RSA keys are rejected. The OpenID4VC High Assurance Interoperability Profile (HAIP) that EUDI wallets adopt restricts algorithms to the **P-256 (ES256)** family, so prefer a P-256 key for wallet interoperability; Ed25519 / P-384 work where HAIP-strict acceptance is not required.
 
 ```python
 from openbadgeslib.ob3.eudi import issue_badge_sd_jwt, verify_badge_sd_jwt
