@@ -611,3 +611,26 @@ class TestEndToEndRoundtrip:
         token = OB3Verifier.extract_token_from_svg(signed_svg)
         restored = ob3_rsa_verifier.verify(token)
         assert restored.evidence_url == 'https://example.com/proof/123'
+
+
+class TestJtiBinding:
+    # The jti claim binds the token to the credential id (OB3 §8.2). A validly
+    # signed token whose jti disagrees with (or omits) the credential id must be
+    # rejected — sign_payload lets us forge exactly that.
+    def test_mismatched_jti_raises(
+        self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential
+    ):
+        payload = ob3_credential.to_jwt_payload()
+        payload['jti'] = 'urn:uuid:00000000-0000-0000-0000-000000000000'
+        token = ob3_rsa_signer.sign_payload(payload)
+        with pytest.raises(OB3VerificationError, match="jti"):
+            ob3_rsa_verifier.verify(token)
+
+    def test_missing_jti_raises(
+        self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential
+    ):
+        payload = ob3_credential.to_jwt_payload()
+        del payload['jti']
+        token = ob3_rsa_signer.sign_payload(payload)
+        with pytest.raises(OB3VerificationError, match="jti"):
+            ob3_rsa_verifier.verify(token)

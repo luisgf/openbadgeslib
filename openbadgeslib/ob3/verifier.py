@@ -311,6 +311,15 @@ class OB3Verifier:
             raise OB3VerificationError("JWT payload is missing the required 'sub' claim")
         if sub is not None and sub != subject_id:
             raise OB3VerificationError("JWT 'sub' does not match the credentialSubject id")
+        # jti is the registered claim bound to the credential id (OB3 §8.2); the
+        # signer always emits it. Require it whenever the body carries an id, and
+        # reject any mismatch, so a token cannot claim one id and carry another.
+        jti = payload.get("jti")
+        vc_id = vc.get("id")
+        if vc_id is not None and jti is None:
+            raise OB3VerificationError("JWT payload is missing the required 'jti' claim")
+        if jti is not None and jti != vc_id:
+            raise OB3VerificationError("JWT 'jti' does not match the credential id")
 
         return credential
 

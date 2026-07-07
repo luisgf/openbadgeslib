@@ -11,6 +11,11 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     validFrom/validUntil no longer silently shift by the host's offset and
     stay consistent with the nbf/exp JWT claims.
 
+  - fix(ob3): the JWT verifier now cross-checks the `jti` claim against the
+    credential `id` (OB3 §8.2 binds them). A validly signed token whose jti
+    disagrees with — or omits — the credential id is rejected, alongside the
+    existing iss/nbf/sub checks.
+
 
 * v3.5.0 - 2026-07-07
 
