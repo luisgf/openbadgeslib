@@ -4,6 +4,20 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.4.2 - unreleased
+
+  - build(eudi): the `[eudi]` extra now tracks `openvc-core>=1.8,<2` (was
+    `>=0.8,<0.9`). openvc-core reached 1.0 with a published SemVer/deprecation
+    contract and an add-only return-object guarantee, so the tight pre-1.0 pin
+    is no longer needed — the pin now floors at the tested version and caps at
+    the next major. The SD-JWT VC API openbadgeslib consumes
+    (`SdJwtVcProofSuite.issue/.verify`, `Ed25519SigningKey`, `P256SigningKey`)
+    is unchanged across the jump and the full test suite passes against
+    openvc-core 1.8.0. Note the 1.0 breaking changes (schema resolver returns
+    bytes, proof-error taxonomy move) touch surfaces openbadgeslib never
+    imports.
+
+
 * v3.4.1 - 2026-07-06
 
   - build: advertise Python 3.14 support — add it to the CI test matrix (lint

@@ -53,10 +53,12 @@ ldp = [
     "pyld>=2.0.4",
 ]
 # EUDI track: issue/verify badges as SD-JWT VC (the EU wallet / ARF format) via
-# the generic openvc-core library. Pinned tight because openvc-core is pre-1.0.
+# the generic openvc-core library. openvc-core is stable (1.x) with a published
+# SemVer/deprecation contract, so the pin follows SemVer: floor at the version
+# the suite is tested against, ceiling at the next major.
 # See openbadgeslib/ob3/eudi.py.
 eudi = [
-    "openvc-core>=0.8,<0.9",
+    "openvc-core>=1.8,<2",
 ]
 dev = [
     "pytest>=8.0",
