@@ -21,7 +21,7 @@
         License along with this library.
 """
 
-__version__ = '3.4.2'
+__version__ = '3.5.0'
 
 import hashlib
 import ipaddress

@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v3.5.0 - unreleased
+* v3.5.0 - 2026-07-07
 
   - fix(status): serialise status-registry writes with an exclusive
     inter-process lock. Concurrent `openbadges-signer` runs (or a signer
