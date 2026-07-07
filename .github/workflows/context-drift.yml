@@ -1,0 +1,33 @@
+name: Context drift
+
+# Weekly check that the pinned, versioned JSON-LD contexts still match upstream
+# byte-for-byte (semantically). 1EdTech has mutated a versioned context in place
+# before (context-3.0.3.json gained endorsementJwt); if it recurs, credentials
+# signed against our bundled copy would silently stop verifying against peers
+# that fetch the mutated document. This turns that into a red build. See #153.
+on:
+  schedule:
+    - cron: '23 6 * * 1'   # Mondays, 06:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contexts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install the package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Check pinned contexts against upstream
+        run: python scripts/check_context_drift.py

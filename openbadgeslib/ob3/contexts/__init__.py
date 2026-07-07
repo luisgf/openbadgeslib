@@ -79,7 +79,11 @@ _URL_TO_RESOURCE: Dict[str, str] = {
         'ob-v3p0-context-3.0.2.json',
     'https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json':
         'ob-v3p0-context-3.0.3.json',
-    # The unversioned OB3 context URL serves the latest published revision.
+    # The unversioned OB3 context URL is an internal alias to our latest
+    # bundled revision (3.0.3). We deliberately pin it here rather than mirror
+    # 1EdTech's moving unversioned endpoint (which currently serves an older
+    # revision matching none we ship); the context-drift check skips it for
+    # that reason.
     'https://purl.imsglobal.org/spec/ob/v3p0/context.json':
         'ob-v3p0-context-3.0.3.json',
     'https://w3id.org/security/data-integrity/v2':
