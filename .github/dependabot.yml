@@ -1,0 +1,22 @@
+# Dependabot keeps dependencies and GitHub Actions current, replacing the
+# manual action bumps this repo used to do by hand. See #149.
+version: 2
+updates:
+  # Python dependencies declared in pyproject.toml (base + extras).
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+
+  # The actions pinned in .github/workflows/*.yml.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - ci

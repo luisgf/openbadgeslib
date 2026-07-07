@@ -1,0 +1,38 @@
+name: Audit
+
+# Weekly dependency vulnerability scan (pip-audit). Separate from CI so it does
+# not gate pushes/releases; it surfaces newly-disclosed advisories against the
+# installed dependency tree. See #149.
+on:
+  schedule:
+    - cron: '17 6 * * 1'   # Mondays, 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install the package (with extras) and pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,ldp,eudi]"
+          pip install pip-audit
+
+      - name: Audit installed dependencies
+        # PYSEC-2026-1325 (CVE-2024-23342, "Minerva"): a timing side-channel in
+        # python-ecdsa that upstream declares out of scope (wontfix). It is off
+        # the signing hot path here — keys.py uses ecdsa only for PEM
+        # parse/serialise and ECC key generation — and is tracked for removal by
+        # the cryptography port (#167). Ignored so the audit stays green on
+        # everything else and a genuinely new advisory is not lost in the noise.
+        run: pip-audit --ignore-vuln PYSEC-2026-1325
