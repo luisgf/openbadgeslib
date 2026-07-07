@@ -38,6 +38,12 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     others, and exits non-zero with a summary. An urgent revocation is no
     longer masked by an unrelated half-configured badge.
 
+  - refactor(keygen): `openbadges-keygenerator` uses `enable_debug_logging`
+    instead of the legacy `Logger` class (now removed from logs.py), so key
+    generation no longer requires the `[paths]`/`[logs]` config sections just
+    to emit console lines (they raised a raw KeyError/FileNotFoundError), and
+    a missing `[issuer] name` degrades gracefully.
+
 
 * v3.5.0 - 2026-07-07
 

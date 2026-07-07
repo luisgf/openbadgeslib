@@ -30,13 +30,16 @@
 """
 
 import argparse
+import logging
 import os
 import sys
 
-from .logs import Logger
+from .logs import enable_debug_logging
 from .keys import KeyFactory, KeyType
 from .confparser import read_config_or_exit, resolve_badge_section
 from .util import __version__
+
+logger = logging.getLogger(__name__)
 
 # Entry Point
 
@@ -100,15 +103,17 @@ def main() -> None:
             print('[!] Key file is present at %s' % i)
             sys.exit(1)
 
-    log = Logger(base_log=conf['paths']['base_log'],
-                 general=conf['logs']['general'],
-                 signer=conf['logs']['signer'],
-                 show_debug=args.debug)
+    # Key generation must not require [paths]/[logs]/[issuer]: the legacy Logger
+    # opened general.log/signer.log (KeyError/FileNotFoundError on an incomplete
+    # config) just to emit these console lines. The module logger needs none.
+    enable_debug_logging(args.debug)
 
-    log.console.debug("key_type=%s private=%s public=%s"
-                      % (key_type.name, private_key, public_key))
-    log.console.info("Generating OpenBadges %s %s key pair for issuer '%s'"
-                     % (args.ob_version, key_type.name, conf['issuer']['name']))
+    logger.debug("key_type=%s private=%s public=%s",
+                 key_type.name, private_key, public_key)
+    issuer_name = (conf['issuer'].get('name', '?')
+                   if conf.has_section('issuer') else '?')
+    logger.info("Generating OpenBadges %s %s key pair for issuer '%s'",
+                args.ob_version, key_type.name, issuer_name)
 
     kf = KeyFactory(key_type)
     priv_key_pem, pub_key_pem = kf.generate_keypair()
@@ -116,8 +121,8 @@ def main() -> None:
     _write_pem_file(private_key, priv_key_pem, 0o600)
     _write_pem_file(public_key, pub_key_pem, 0o644)
 
-    log.console.info('Private key saved at: %s' % private_key)
-    log.console.info('Public key saved at: %s' % public_key)
+    logger.info('Private key saved at: %s', private_key)
+    logger.info('Public key saved at: %s', public_key)
 
 
 if __name__ == '__main__':

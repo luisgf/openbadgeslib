@@ -22,7 +22,6 @@
 """
 
 import logging
-import os
 from typing import Any
 
 
@@ -40,46 +39,3 @@ def enable_debug_logging(debug: bool = False) -> None:
         handler._obl_console = True
         root.addHandler(handler)
     root.setLevel(logging.DEBUG if debug else logging.INFO)
-
-
-class Logger():
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.main = self.init_log(logger='general', base_log=kwargs['base_log'],
-                                  file=kwargs['general'])
-        self.signer = self.init_log(logger='signer', base_log=kwargs['base_log'],
-                                    file=kwargs['signer'])
-        try:
-            self.console = self.init_console(show_debug=kwargs['show_debug'])
-        except KeyError:
-            self.console = self.init_console()
-
-    def init_log(self, logger: Any = '', base_log: Any = None,
-                 log_level: int = logging.INFO,
-                 file: Any = None) -> logging.Logger:
-        logger = logging.getLogger(logger)
-        logger.setLevel(logging.DEBUG)
-        file_path = os.path.join(base_log, file)
-
-        """ Create a file handler """
-        handler = logging.FileHandler(file_path, "a",
-                                      encoding='utf-8', delay=False)
-        handler.setLevel(log_level)
-        formatter = logging.Formatter("%(asctime)s %(message)s")
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-
-        return logger
-
-    def init_console(self, show_debug: bool = False) -> logging.Logger:
-        logger = logging.getLogger()
-        logger.setLevel(logging.NOTSET)
-
-        """ Console a console handler """
-        handler = logging.StreamHandler()
-        if not show_debug:
-            handler.setLevel(logging.INFO)
-        formatter = logging.Formatter("%(levelname)s - %(message)s")
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-
-        return logger
