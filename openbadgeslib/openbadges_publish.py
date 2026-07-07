@@ -38,6 +38,7 @@ import shutil
 import sys
 import tempfile
 
+from typing import Any
 from urllib.parse import urljoin
 from .confparser import read_config_or_exit, resolve_badge_section
 from .util import __version__
@@ -89,7 +90,7 @@ def main() -> None:
     _publish_ob1(args, parser)
 
 
-def _dump(obj: dict) -> str:
+def _dump(obj: dict[str, Any]) -> str:
     return json.dumps(obj, sort_keys=True, ensure_ascii=True)
 
 

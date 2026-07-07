@@ -23,7 +23,7 @@
 
 import os
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, cast
 
 from Crypto.PublicKey import RSA
 from ecdsa import SigningKey, VerifyingKey
@@ -78,7 +78,7 @@ class Assertion():
         return jws_utils.decode(self.body)
 
     def get_assertion(self) -> bytes:
-        return self.header + b'.' + self.body + b'.' + self.signature
+        return cast(bytes, self.header + b'.' + self.body + b'.' + self.signature)
 
     def encode_header(self, header: Any) -> None:
         self.header = jws_utils.encode(header)
@@ -350,13 +350,13 @@ class BadgeSigned():
         self.file_out = file_name
 
     def get_identity(self) -> str:
-        return self.identity.decode('utf-8')
+        return cast(str, self.identity.decode('utf-8'))
 
     def get_identity_hashed(self) -> str:
         return (b'sha256$' + hash_email(self.identity, self.salt)).decode('utf-8')
 
     def get_salt(self) -> str:
-        return self.salt.decode('utf-8')
+        return cast(str, self.salt.decode('utf-8'))
 
     def get_assertion(self) -> Optional[str]:
         if self.assertion:
@@ -380,7 +380,7 @@ class BadgeSigned():
     def get_signkey_pem(self) -> Union[str, bytes]:
         """ Return the public key pem used to sign the openbadge """
 
-        return self.source.pubkey_pem
+        return cast(Union[str, bytes], self.source.pubkey_pem)
 
 
 def extract_svg_assertion(file_data: bytes) -> Assertion:

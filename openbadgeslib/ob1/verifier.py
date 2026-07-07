@@ -21,7 +21,7 @@
         License along with this library.
 """
 
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from .badge import BadgeStatus
 from ..util import hash_email, download_file, show_ecc_disclaimer
@@ -225,7 +225,7 @@ class Verifier():
             email_salt = badge.salt if badge.salt else b''
             email_hashed = b'sha256$' + hash_email(self.identity, email_salt)
 
-            return email_hashed == badge.identity
+            return cast(bool, email_hashed == badge.identity)
         except Exception:
             raise NotIdentityInAssertion('The assertion doesn\'t have an identify ')
 

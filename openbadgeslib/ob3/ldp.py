@@ -75,7 +75,7 @@ def _require_jsonld() -> Any:
     return jsonld
 
 
-def _select_proof(document: dict) -> dict:
+def _select_proof(document: dict[str, Any]) -> dict[str, Any]:
     """Pick the single supported DataIntegrityProof from ``proof``.
 
     ``proof`` may be an object or an array. Exactly one entry with a
@@ -106,7 +106,7 @@ def _select_proof(document: dict) -> dict:
     return candidates[0]
 
 
-def _validate_proof(proof: dict, expected_proof_purpose: str) -> None:
+def _validate_proof(proof: dict[str, Any], expected_proof_purpose: str) -> None:
     """Structural validation of a DataIntegrityProof entry (fail-closed)."""
     purpose = proof.get('proofPurpose')
     if purpose != expected_proof_purpose:
@@ -154,7 +154,7 @@ def _decode_proof_value(value: Any) -> bytes:
     return signature
 
 
-def _canonize(document: dict, loader: Any) -> str:
+def _canonize(document: dict[str, Any], loader: Any) -> str:
     """RDFC-1.0-canonicalize a JSON-LD document to N-Quads via pyld.
 
     pyld implements the algorithm under its pre-standardisation name
@@ -177,7 +177,7 @@ def _canonize(document: dict, loader: Any) -> str:
             "could not canonicalize the credential: %s" % exc) from exc
 
 
-def _hash_data(unsecured_doc: dict, proof_config: dict, loader: Any) -> bytes:
+def _hash_data(unsecured_doc: dict[str, Any], proof_config: dict[str, Any], loader: Any) -> bytes:
     """hashData per vc-di-eddsa: SHA-256(proof config) || SHA-256(document)."""
     config_hash = hashlib.sha256(
         _canonize(proof_config, loader).encode('utf-8')).digest()
@@ -186,7 +186,7 @@ def _hash_data(unsecured_doc: dict, proof_config: dict, loader: Any) -> bytes:
     return config_hash + doc_hash
 
 
-def _verify_eddsa_rdfc_2022(document: dict, proof: dict, pubkey_pem: bytes,
+def _verify_eddsa_rdfc_2022(document: dict[str, Any], proof: dict[str, Any], pubkey_pem: bytes,
                             loader: Any) -> None:
     """Verify one eddsa-rdfc-2022 proof over *document* with *pubkey_pem*."""
     from cryptography.exceptions import InvalidSignature
@@ -229,15 +229,15 @@ def _verify_eddsa_rdfc_2022(document: dict, proof: dict, pubkey_pem: bytes,
 #: Registry of supported cryptosuites. ecdsa-sd-2023 (selective disclosure)
 #: is deliberately absent — deferred until there is real interop demand; an
 #: unknown suite fails closed naming the supported ones.
-_CRYPTOSUITES: Dict[str, Callable[[dict, dict, bytes, Any], None]] = {
+_CRYPTOSUITES: Dict[str, Callable[[dict[str, Any], dict[str, Any], bytes, Any], None]] = {
     'eddsa-rdfc-2022': _verify_eddsa_rdfc_2022,
 }
 
 
 def verify_data_integrity_proof(
-        document: dict, pubkey_pem: Any, *,
+        document: dict[str, Any], pubkey_pem: Any, *,
         expected_proof_purpose: str = 'assertionMethod',
-        extra_contexts: Optional[Mapping[str, dict]] = None) -> None:
+        extra_contexts: Optional[Mapping[str, dict[str, Any]]] = None) -> None:
     """Verify the embedded Data Integrity proof of a JSON-LD document.
 
     Low-level building block: checks ONLY the proof (canonicalization,
@@ -261,10 +261,10 @@ def verify_data_integrity_proof(
 
 
 def add_data_integrity_proof(
-        document: dict, privkey_pem: Any, verification_method: str, *,
+        document: dict[str, Any], privkey_pem: Any, verification_method: str, *,
         proof_purpose: str = 'assertionMethod',
         created: Optional[datetime] = None,
-        extra_contexts: Optional[Mapping[str, dict]] = None) -> dict:
+        extra_contexts: Optional[Mapping[str, dict[str, Any]]] = None) -> dict[str, Any]:
     """Return a deep copy of *document* secured with an eddsa-rdfc-2022
     DataIntegrityProof — the signing counterpart of
     :func:`verify_data_integrity_proof`, and like it schema-agnostic: it
@@ -367,7 +367,7 @@ class OB3LdpVerifier:
         del download   # resolution happens per-proof in verify()
         return cls(pubkey_pem=None, issuer_did=did)
 
-    def verify(self, document: Union[str, bytes, dict],
+    def verify(self, document: Union[str, bytes, dict[str, Any]],
                expected_recipient: Optional[str] = None,
                check_status: bool = False,
                download: Any = None) -> OpenBadgeCredential:
@@ -432,7 +432,7 @@ class OB3LdpVerifier:
         return credential
 
     @staticmethod
-    def _parse_document(document: Union[str, bytes, dict]) -> dict:
+    def _parse_document(document: Union[str, bytes, dict[str, Any]]) -> dict[str, Any]:
         """Normalize/parse the input document, bounding its size first."""
         if isinstance(document, dict):
             raw_len = len(json.dumps(document))
@@ -515,7 +515,7 @@ class OB3LdpSigner:
     # ── core signing ─────────────────────────────────────────────────────────
 
     def sign(self, credential: OpenBadgeCredential, *,
-             created: Optional[datetime] = None) -> dict:
+             created: Optional[datetime] = None) -> dict[str, Any]:
         """Sign a credential and return the secured VC document (dict) —
         the credential JSON with the DataIntegrityProof embedded under
         ``proof``. *created* defaults to now (UTC)."""

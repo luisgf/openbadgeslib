@@ -89,7 +89,7 @@ _URL_TO_RESOURCE: Dict[str, str] = {
 
 
 @functools.lru_cache(maxsize=None)
-def load_context(url: str) -> dict:
+def load_context(url: str) -> dict[str, Any]:
     """Return the bundled JSON-LD context document for an allowlisted URL.
 
     Raises UnknownContextError for any URL outside the allowlist — the match
@@ -109,8 +109,8 @@ def load_context(url: str) -> dict:
 
 
 def document_loader(
-        extra_contexts: Optional[Mapping[str, dict]] = None,
-) -> Callable[[str, Any], dict]:
+        extra_contexts: Optional[Mapping[str, dict[str, Any]]] = None,
+) -> Callable[[str, Any], dict[str, Any]]:
     """Build a static documentLoader in the shape pyld expects.
 
     *extra_contexts* extends the allowlist for one loader instance (e.g. a
@@ -118,9 +118,9 @@ def document_loader(
     global allowlist. Every other URL raises UnknownContextError, which the
     Data Integrity verifier surfaces as a clean verification failure.
     """
-    extras: Dict[str, dict] = dict(extra_contexts) if extra_contexts else {}
+    extras: Dict[str, dict[str, Any]] = dict(extra_contexts) if extra_contexts else {}
 
-    def _loader(url: str, options: Any = None) -> dict:
+    def _loader(url: str, options: Any = None) -> dict[str, Any]:
         document = extras[url] if url in extras else load_context(url)
         return {'contextUrl': None, 'documentUrl': url, 'document': document}
 

@@ -66,7 +66,7 @@ def check_credential_status(
         _check_entry(entry, fetch)
 
 
-def _check_entry(entry: dict, download: Callable[[str], bytes]) -> None:
+def _check_entry(entry: dict[str, Any], download: Callable[[str], bytes]) -> None:
     types = set(_as_list(entry.get("type")))
     if not (types & _SUPPORTED_ENTRY_TYPES):
         raise OB3VerificationError(
@@ -145,7 +145,7 @@ def _parse_index(value: Any) -> int:
         raise OB3VerificationError("invalid statusListIndex: %r" % (value,)) from None
 
 
-def _status_list_subject(raw: bytes) -> dict:
+def _status_list_subject(raw: bytes) -> dict[str, Any]:
     """Return the credentialSubject of a status-list credential served either as
     a JSON-LD VC document or as a compact JWT-VC string."""
     text = raw.decode('utf-8').strip()

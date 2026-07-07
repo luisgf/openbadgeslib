@@ -95,13 +95,13 @@ def _validate_type(value: Any, expected: str, where: str) -> None:
         raise ValueError("%s.type must include %r, got %r" % (where, expected, value))
 
 
-def _as_dict(value: Any, where: str) -> dict:
+def _as_dict(value: Any, where: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("%s must be a JSON object" % where)
     return value
 
 
-def _require(data: dict, key: str, where: str) -> str:
+def _require(data: dict[str, Any], key: str, where: str) -> str:
     """Return ``data[key]`` as a non-empty string, else raise a clear error."""
     value = data.get(key)
     if value is None or value == "":
@@ -162,8 +162,8 @@ class IdentityObject:
         """Build a hashed email IdentityObject from a plaintext email + salt."""
         return cls(identity=hash_identity(email, salt), hashed=True, salt=salt, type="email")
 
-    def to_dict(self) -> dict:
-        d: dict = {"type": self.type, "hashed": self.hashed, "identity": self.identity}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"type": self.type, "hashed": self.hashed, "identity": self.identity}
         if self.salt is not None:
             d["salt"] = self.salt
         return d
@@ -193,8 +193,8 @@ class Verification:
     type: str                       # "SignedBadge" or "HostedBadge"
     creator: Optional[str] = None   # IRI of the issuer's CryptographicKey (signed)
 
-    def to_dict(self) -> dict:
-        d: dict = {"type": self.type}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"type": self.type}
         if self.creator:
             d["creator"] = self.creator
         return d
@@ -237,9 +237,9 @@ class Assertion:
         if self.issued_on is None:
             self.issued_on = datetime.now(timezone.utc)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         assert self.issued_on is not None   # set by __post_init__
-        d: dict = {
+        d: dict[str, Any] = {
             "@context": OB2_CONTEXT,
             "type": "Assertion",
             "id": self.id,
@@ -297,7 +297,7 @@ class CryptographicKey:
     owner: str                # IRI of the owning issuer Profile (bidirectional)
     public_key_pem: str
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "@context": OB2_CONTEXT,
             "type": "CryptographicKey",
@@ -329,8 +329,8 @@ class Profile:
     public_key: List[str] = field(default_factory=list)   # CryptographicKey IRIs
     revocation_list: Optional[str] = None
 
-    def to_dict(self) -> dict:
-        d: dict = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "@context": OB2_CONTEXT,
             "type": "Issuer",
             "id": self.id,
@@ -361,8 +361,8 @@ class BadgeClass:
     issuer: str              # issuer Profile IRI
     tags: List[str] = field(default_factory=list)
 
-    def to_dict(self) -> dict:
-        d: dict = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "@context": OB2_CONTEXT,
             "type": "BadgeClass",
             "id": self.id,
@@ -385,7 +385,7 @@ class RevocationList:
     issuer: str
     revoked_assertions: List[Any] = field(default_factory=list)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "@context": OB2_CONTEXT,
             "type": "RevocationList",

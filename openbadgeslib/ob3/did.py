@@ -36,7 +36,7 @@
 
 import json
 
-from typing import Any, Sequence, Tuple
+from typing import Any, Sequence, Tuple, cast
 
 from cryptography.hazmat.primitives import serialization as _serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -189,7 +189,7 @@ def _resolve_did_web(did: str, fetch: Any) -> bytes:
     return _pem_from_did_document(_fetch_did_web_document(did, fetch))
 
 
-def _fetch_did_web_document(did: str, fetch: Any) -> dict:
+def _fetch_did_web_document(did: str, fetch: Any) -> dict[str, Any]:
     """Fetch and parse the DID document a did:web identifier resolves to."""
     from urllib.parse import unquote
     ident = did[len('did:web:'):]
@@ -290,8 +290,8 @@ def did_web_from_url(url: str) -> str:
 
 
 def build_did_document(did: str,
-                       verification_methods: Sequence[Tuple[str, dict]]
-                       ) -> dict:
+                       verification_methods: Sequence[Tuple[str, dict[str, Any]]]
+                       ) -> dict[str, Any]:
     """Build a DID document publishing *verification_methods*, given as
     ``(fragment, public JWK)`` pairs (see keys.public_jwk_from_pem).
 
@@ -344,7 +344,7 @@ def _pem_from_vm(vm: Any) -> bytes:
         "(publicKeyJwk or z-base58 publicKeyMultibase)")
 
 
-def _jwk_to_pem(jwk: dict) -> bytes:
+def _jwk_to_pem(jwk: dict[str, Any]) -> bytes:
     kty = jwk.get('kty')
     jwk_json = json.dumps(jwk)
     key: Any
@@ -368,6 +368,6 @@ def _jwk_to_pem(jwk: dict) -> bytes:
 
 
 def _public_key_to_pem(key: Any) -> bytes:
-    return key.public_bytes(
+    return cast(bytes, key.public_bytes(
         _serialization.Encoding.PEM,
-        _serialization.PublicFormat.SubjectPublicKeyInfo)
+        _serialization.PublicFormat.SubjectPublicKeyInfo))

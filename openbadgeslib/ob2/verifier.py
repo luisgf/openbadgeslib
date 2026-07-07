@@ -215,7 +215,7 @@ class OB2Verifier:
                          "hosted trust comes from the HTTPS fetch, not the signature.",
                          assertion.id, exc)
 
-    def _check_hosted_scope(self, assertion_id: str, issuer: dict) -> None:
+    def _check_hosted_scope(self, assertion_id: str, issuer: dict[str, Any]) -> None:
         """Enforce the OB 2.0 hosted-verification scope for ``assertion_id``."""
         verification = issuer.get("verification")
         if isinstance(verification, dict):
@@ -287,7 +287,7 @@ class OB2Verifier:
 
     # ── network / decode helpers ─────────────────────────────────────────────────
 
-    def _fetch_issuer(self, assertion: Assertion) -> dict:
+    def _fetch_issuer(self, assertion: Assertion) -> dict[str, Any]:
         """Resolve the issuer Profile via the assertion's BadgeClass ``badge`` URL."""
         badge = self._fetch_json(assertion.badge, "BadgeClass")
         issuer_url = badge.get("issuer")
@@ -299,7 +299,7 @@ class OB2Verifier:
                 "BadgeClass at %s has no valid 'issuer'" % assertion.badge)
         return self._fetch_json(issuer_url, "issuer Profile")
 
-    def _fetch_json(self, url: str, where: str) -> dict:
+    def _fetch_json(self, url: str, where: str) -> dict[str, Any]:
         try:
             raw = download_file(url)
         except Exception as exc:

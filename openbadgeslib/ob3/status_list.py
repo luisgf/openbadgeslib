@@ -77,7 +77,7 @@ def encode_bitstring(set_indices: Iterable[int],
 def build_status_list_credential(issuer_id: str, url: str, purpose: str,
                                  set_indices: Iterable[int],
                                  size_bits: int = DEFAULT_SIZE_BITS,
-                                 issued: Optional[datetime] = None) -> dict:
+                                 issued: Optional[datetime] = None) -> dict[str, Any]:
     """Build an (unsigned) BitstringStatusListCredential document.
 
     *url* is the public HTTPS URL the list will be served from — it becomes
@@ -104,7 +104,7 @@ def build_status_list_credential(issuer_id: str, url: str, purpose: str,
     }
 
 
-def sign_status_list_credential(vc: dict, privkey_pem: Any,
+def sign_status_list_credential(vc: dict[str, Any], privkey_pem: Any,
                                 algorithm: str) -> str:
     """Sign a status list credential as a compact JWT-VC string.
 
@@ -121,7 +121,7 @@ def sign_status_list_credential(vc: dict, privkey_pem: Any,
                      algorithm=algorithm).sign_payload(payload)
 
 
-def status_entry(list_url: str, purpose: str, index: int) -> dict:
+def status_entry(list_url: str, purpose: str, index: int) -> dict[str, Any]:
     """Build the ``credentialStatus`` entry that binds an issued credential
     to bit *index* of the status list served at *list_url*."""
     if purpose not in STATUS_PURPOSES:

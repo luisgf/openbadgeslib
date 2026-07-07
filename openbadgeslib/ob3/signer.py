@@ -22,7 +22,7 @@
 
 import json
 
-from typing import Any
+from typing import Any, cast
 
 import jwt
 
@@ -65,7 +65,7 @@ class OB3Signer:
         """
         return self.sign_payload(credential.to_jwt_payload())
 
-    def sign_payload(self, payload: dict) -> str:
+    def sign_payload(self, payload: dict[str, Any]) -> str:
         """Sign an arbitrary JWT payload with the same JOSE header (embedded
         public ``jwk``) used for credentials. Lets the issuer sign auxiliary
         VCs — e.g. a BitstringStatusListCredential — with one key setup."""
@@ -77,7 +77,7 @@ class OB3Signer:
             raise ErrorSigningFile(
                 "Could not sign credential with algorithm %s: %s" % (self.algorithm, exc)) from exc
 
-    def _public_jwk(self) -> dict:
+    def _public_jwk(self) -> dict[str, Any]:
         """Return the public JWK for the JOSE header, derived from the signing
         key. Loaded via ``cryptography`` (which reads the RSA/EC/Ed25519 PEMs
         this library produces) and serialised with PyJWT's algorithm; only
@@ -98,7 +98,7 @@ class OB3Signer:
                 jwk_json = OKPAlgorithm.to_jwk(pub)
         except Exception as exc:
             raise ErrorSigningFile("Could not derive the public JWK: %s" % exc) from exc
-        return json.loads(jwk_json)
+        return cast(dict[str, Any], json.loads(jwk_json))
 
     # ── image baking ───────────────────────────────────────────────────────────
 

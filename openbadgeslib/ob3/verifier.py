@@ -68,7 +68,7 @@ class OB3VerificationError(LibOpenBadgesException):
     """
 
 
-def _check_vc_types(vc: dict) -> None:
+def _check_vc_types(vc: dict[str, Any]) -> None:
     """Require the credential ``type`` array to declare an OB3 credential.
 
     OpenBadgeCredential and AchievementCredential are aliases in the OB v3
@@ -234,7 +234,7 @@ class OB3Verifier:
         from .status import check_credential_status
         check_credential_status(credential)
 
-    def _decode_payload(self, token: str) -> dict:
+    def _decode_payload(self, token: str) -> dict[str, Any]:
         """Verify the signature (algorithm pinned to the key type) and return
         the decoded JWT payload."""
         # A baked OB3 credential may instead be a JSON document secured with an
@@ -275,7 +275,7 @@ class OB3Verifier:
             raise OB3VerificationError(str(exc)) from exc
 
     @staticmethod
-    def _build_credential(payload: dict) -> OpenBadgeCredential:
+    def _build_credential(payload: dict[str, Any]) -> OpenBadgeCredential:
         """Validate the credential structure and registered claims, returning
         the reconstructed credential.
 

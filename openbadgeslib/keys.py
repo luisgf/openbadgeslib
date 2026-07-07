@@ -21,7 +21,7 @@
         License along with this library.
 """
 
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Optional, Tuple, Union, cast
 from .errors import PublicKeyReadError, UnknownKeyType
 from ecdsa import SigningKey, VerifyingKey, NIST256p
 from Crypto.PublicKey import RSA
@@ -91,10 +91,10 @@ class KeyRSA(KeyBase):
         self.pub_key = RSA.import_key(key_pem)
 
     def get_priv_key_pem(self) -> bytes:
-        return self.priv_key.export_key('PEM')
+        return cast(bytes, self.priv_key.export_key('PEM'))
 
     def get_pub_key_pem(self) -> bytes:
-        return self.pub_key.export_key('PEM')
+        return cast(bytes, self.pub_key.export_key('PEM'))
 
 
 class KeyECC(KeyBase):
@@ -126,10 +126,10 @@ class KeyECC(KeyBase):
         self.pub_key = VerifyingKey.from_pem(key_pem)
 
     def get_priv_key_pem(self) -> bytes:
-        return self.priv_key.to_pem()
+        return cast(bytes, self.priv_key.to_pem())
 
     def get_pub_key_pem(self) -> bytes:
-        return self.pub_key.to_pem()
+        return cast(bytes, self.pub_key.to_pem())
 
 
 def _pem_bytes(key_pem: Union[str, bytes]) -> bytes:
@@ -177,15 +177,15 @@ class KeyEd25519(KeyBase):
         self.pub_key = _load_ed25519_public_key(key_pem)
 
     def get_priv_key_pem(self) -> bytes:
-        return self.priv_key.private_bytes(
+        return cast(bytes, self.priv_key.private_bytes(
             _crypto_serialization.Encoding.PEM,
             _crypto_serialization.PrivateFormat.PKCS8,
-            _crypto_serialization.NoEncryption())
+            _crypto_serialization.NoEncryption()))
 
     def get_pub_key_pem(self) -> bytes:
-        return self.pub_key.public_bytes(
+        return cast(bytes, self.pub_key.public_bytes(
             _crypto_serialization.Encoding.PEM,
-            _crypto_serialization.PublicFormat.SubjectPublicKeyInfo)
+            _crypto_serialization.PublicFormat.SubjectPublicKeyInfo))
 
 
 def alg_for_key_type(key_type: 'KeyType') -> str:
@@ -209,7 +209,7 @@ def key_to_pem(key: Any) -> Union[str, bytes]:
     if isinstance(key, RSA.RsaKey):
         return key.export_key('PEM')
     if isinstance(key, (SigningKey, VerifyingKey)):
-        return key.to_pem()
+        return cast(Union[str, bytes], key.to_pem())
     if isinstance(key, Ed25519PrivateKey):
         return key.private_bytes(
             _crypto_serialization.Encoding.PEM,
@@ -224,7 +224,7 @@ def key_to_pem(key: Any) -> Union[str, bytes]:
     raise UnknownKeyType('Unsupported key object type: %r' % type(key))
 
 
-def public_jwk_from_pem(pubkey_pem: Union[str, bytes]) -> dict:
+def public_jwk_from_pem(pubkey_pem: Union[str, bytes]) -> dict[str, Any]:
     """Serialise a public key PEM as a public JWK dict.
 
     Counterpart of the OB3 signer's private-key-based JWK derivation, for
@@ -250,7 +250,7 @@ def public_jwk_from_pem(pubkey_pem: Union[str, bytes]) -> dict:
     except Exception as exc:
         raise PublicKeyReadError(
             'could not read public key PEM: %s' % exc) from exc
-    return json.loads(jwk_json)
+    return cast(dict[str, Any], json.loads(jwk_json))
 
 
 def ec_curve_from_pem(pem_data: Union[str, bytes]) -> Optional[str]:

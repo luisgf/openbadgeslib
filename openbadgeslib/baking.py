@@ -29,7 +29,7 @@
 from struct import pack
 from zlib import crc32
 
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, cast
 
 from defusedxml.minidom import parseString
 from png import Reader, signature as _png_signature
@@ -98,7 +98,7 @@ def bake_svg(image_bytes: bytes, token: str, comment: Optional[str] = None, *,
         svg_tag.appendChild(node)
         if comment:
             svg_tag.appendChild(svg_doc.createComment(comment))
-        return svg_doc.toxml().encode('utf-8')
+        return cast(bytes, svg_doc.toxml().encode('utf-8'))
     finally:
         svg_doc.unlink()
 
@@ -133,7 +133,7 @@ def extract_svg(image_bytes: bytes, *, element: str = SVG_ELEMENT,
             return None
         attrs = nodes[0].attributes
         if 'verify' in attrs:
-            return attrs['verify'].nodeValue
+            return cast(Optional[str], attrs['verify'].nodeValue)
         if not text_fallback:
             return None
         text = ''.join(
@@ -158,7 +158,7 @@ def _serialize_png(chunks: List[Tuple[Union[str, bytes], bytes]]) -> bytes:
         checksum = crc32(tag)
         checksum = crc32(data, checksum) & 0xFFFFFFFF
         out += pack("!I", checksum)
-    return out
+    return cast(bytes, out)
 
 
 def bake_png(image_bytes: bytes, token: str, text_comment: Optional[str] = None, *,

@@ -1,6 +1,6 @@
 """JWS sign/verify backed by PyJWT algorithm implementations (RS256/384/512, ES256/384/512)."""
 
-from typing import Any, Dict, Optional, Set, Union
+from typing import Any, Dict, Optional, Set, Union, cast
 
 from . import utils
 from .exceptions import SignatureError, MissingKey, MissingSigner, MissingVerifier, RouteMissingError
@@ -66,7 +66,7 @@ def sign(header_dict: Dict[str, Any], payload_dict: Dict[str, Any], key: Any) ->
     algo = _algo_for(alg_name)
     try:
         prepared = algo.prepare_key(key_to_pem(key))
-        return algo.sign(signing_input, prepared)
+        return cast(bytes, algo.sign(signing_input, prepared))
     except (InvalidKeyError, ValueError) as exc:
         raise SignatureError(str(exc)) from exc
 

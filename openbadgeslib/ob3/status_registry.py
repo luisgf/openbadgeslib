@@ -45,7 +45,7 @@ except ImportError:                 # pragma: no cover - non-POSIX (e.g. Windows
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, Iterator, List, Optional, Set
+from typing import Any, Dict, Iterator, List, Optional, Set
 
 from ..errors import (
     AlreadyRevoked,
@@ -100,8 +100,8 @@ class StatusEvent:
     date: str
     reason: Optional[str] = None
 
-    def to_dict(self) -> dict:
-        data: dict = {'date': self.date}
+    def to_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {'date': self.date}
         if self.reason is not None:
             data['reason'] = self.reason
         return data
@@ -328,8 +328,8 @@ class StatusRegistry:
                 'no credential %r in %s' % (jti, self.path)) from None
 
 
-def _entry_to_dict(entry: StatusEntry) -> dict:
-    data: dict = {
+def _entry_to_dict(entry: StatusEntry) -> dict[str, Any]:
+    data: dict[str, Any] = {
         'index': entry.index,
         'recipient': entry.recipient,
         'issued_on': entry.issued_on,
@@ -341,7 +341,7 @@ def _entry_to_dict(entry: StatusEntry) -> dict:
     return data
 
 
-def _event_from(raw: Optional[dict]) -> Optional[StatusEvent]:
+def _event_from(raw: Optional[dict[str, Any]]) -> Optional[StatusEvent]:
     if raw is None:
         return None
     return StatusEvent(date=raw['date'], reason=raw.get('reason'))

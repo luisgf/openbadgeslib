@@ -77,8 +77,8 @@ class Issuer:
     email: Optional[str] = None
     image_url: Optional[str] = None
 
-    def to_dict(self) -> dict:
-        d: dict = {"id": self.id, "type": ["Profile"], "name": self.name}
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"id": self.id, "type": ["Profile"], "name": self.name}
         if self.url:
             d["url"] = self.url
         if self.email:
@@ -99,8 +99,8 @@ class Achievement:
     image_url: Optional[str] = None
     tags: List[str] = field(default_factory=list)
 
-    def to_dict(self) -> dict:
-        d: dict = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "id": self.id,
             "type": ["Achievement"],
             "name": self.name,
@@ -131,7 +131,7 @@ class OpenBadgeCredential:
     # Raw credentialStatus entries (Bitstring Status List / StatusList2021),
     # normalised to a list of objects. Consumed by ob3.status to check
     # revocation; empty when the credential carries no status.
-    credential_status: List[dict] = field(default_factory=list)
+    credential_status: List[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.id is None:
@@ -151,11 +151,11 @@ class OpenBadgeCredential:
 
     # ── serialisation ──────────────────────────────────────────────────────────
 
-    def to_vc(self) -> dict:
+    def to_vc(self) -> dict[str, Any]:
         """Return the Verifiable Credential JSON object (no JWT wrapper)."""
         # __post_init__ guarantees issuance_date is set.
         assert self.issuance_date is not None
-        vc: dict = {
+        vc: dict[str, Any] = {
             "@context": OB3_CONTEXT,
             "id": self.id,
             "type": ["VerifiableCredential", "OpenBadgeCredential"],
@@ -180,7 +180,7 @@ class OpenBadgeCredential:
                 else self.credential_status)
         return vc
 
-    def to_jwt_payload(self) -> dict:
+    def to_jwt_payload(self) -> dict[str, Any]:
         """Return the JWT payload for a JWT-VC signed credential.
 
         OB 3.0 §8.2.4.1 (native VC-JWT): the JWT payload **is** the
@@ -192,7 +192,7 @@ class OpenBadgeCredential:
         """
         # __post_init__ guarantees issuance_date is set.
         assert self.issuance_date is not None
-        payload: dict = dict(self.to_vc())   # credential at the payload top level
+        payload: dict[str, Any] = dict(self.to_vc())   # credential at the payload top level
         payload["iss"] = self.issuer.id
         if self.recipient_id is not None:
             payload["sub"] = self.recipient_id
@@ -205,7 +205,7 @@ class OpenBadgeCredential:
     # ── deserialisation ────────────────────────────────────────────────────────
 
     @classmethod
-    def from_jwt_payload(cls, payload: dict) -> "OpenBadgeCredential":
+    def from_jwt_payload(cls, payload: dict[str, Any]) -> "OpenBadgeCredential":
         """Reconstruct an OpenBadgeCredential from a decoded JWT payload.
 
         OB 3.0 native VC-JWT: the payload IS the credential (its members at the
@@ -216,7 +216,7 @@ class OpenBadgeCredential:
         return cls._from_vc(payload)
 
     @classmethod
-    def from_vc_document(cls, document: dict) -> "OpenBadgeCredential":
+    def from_vc_document(cls, document: dict[str, Any]) -> "OpenBadgeCredential":
         """Reconstruct an OpenBadgeCredential from a JSON-LD VC document.
 
         The shape a credential secured with an embedded Data Integrity proof
@@ -227,7 +227,7 @@ class OpenBadgeCredential:
         return cls._from_vc(document)
 
     @classmethod
-    def _from_vc(cls, payload: dict) -> "OpenBadgeCredential":
+    def _from_vc(cls, payload: dict[str, Any]) -> "OpenBadgeCredential":
         """Shared constructor from an untrusted credential body.
 
         Every required object/field is checked and a clear ``ValueError`` is
@@ -324,19 +324,19 @@ class OpenBadgeCredential:
         )
 
 
-def _as_dict(value: Any, where: str) -> dict:
+def _as_dict(value: Any, where: str) -> dict[str, Any]:
     """Return value if it is a dict, else raise a clear ValueError."""
     if not isinstance(value, dict):
         raise ValueError("%s must be a JSON object" % where)
     return value
 
 
-def _as_dict_or_empty(value: Any) -> dict:
+def _as_dict_or_empty(value: Any) -> dict[str, Any]:
     """Return value if it is a dict, else an empty dict (optional sub-objects)."""
     return value if isinstance(value, dict) else {}
 
 
-def _require(data: dict, key: str, where: str) -> str:
+def _require(data: dict[str, Any], key: str, where: str) -> str:
     """Return data[key] as a string, raising a clear ValueError if missing,
     empty, or not a string. All fields validated here (id/name) are identifiers
     consumed as strings downstream (e.g. recipient binding calls .lower()), so a

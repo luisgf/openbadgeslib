@@ -4,6 +4,16 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.5.2 - unreleased
+
+  - refactor(typing): the library now type-checks clean under `mypy --strict`
+    (73 bare `dict` annotations parameterised as `dict[str, Any]`, 20 Any
+    returns narrowed with `typing.cast`), and `strict = true` is enabled in
+    the mypy config so CI enforces it. This makes the README's long-standing
+    `mypy --strict` claim true and improves the shipped `py.typed` annotations
+    for downstream type-checkers. Annotations only — no runtime change.
+
+
 * v3.5.1 - 2026-07-07
 
   - fix(ob3): a naive datetime passed as the issuance/expiration date is now

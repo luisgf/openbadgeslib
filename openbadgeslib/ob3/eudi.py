@@ -34,7 +34,7 @@
 # which pulls ``openvc-core``. SD-JWT allows only Ed25519 (EdDSA) and the NIST
 # curves P-256 (ES256) / P-384 (ES384) — RSA is not in its algorithm set.
 
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Optional, cast
 
 from .credential import OpenBadgeCredential
 from ..errors import LibOpenBadgesException
@@ -92,7 +92,7 @@ def _signing_key(privkey_pem: Any, kid: str) -> Any:
         % key_type.value)
 
 
-def badge_to_sd_jwt_claims(credential: OpenBadgeCredential) -> dict:
+def badge_to_sd_jwt_claims(credential: OpenBadgeCredential) -> dict[str, Any]:
     """Map an OpenBadgeCredential to a flat SD-JWT VC claim set.
 
     The ``achievement`` (the badge itself) is always disclosed; the recipient's
@@ -122,7 +122,7 @@ def issue_badge_sd_jwt(
     privkey_pem: Any,
     kid: Optional[str] = None,
     disclosable: Iterable[str] = DEFAULT_DISCLOSABLE,
-    holder_jwk: Optional[dict] = None,
+    holder_jwk: Optional[dict[str, Any]] = None,
     expires_in_s: Optional[int] = None,
     vct: str = OB3_SD_JWT_VCT,
 ) -> str:
@@ -138,9 +138,9 @@ def issue_badge_sd_jwt(
     claims = badge_to_sd_jwt_claims(credential)
     present = [name for name in disclosable if name in claims]
     try:
-        return SdJwtVcProofSuite().issue(
+        return cast(str, SdJwtVcProofSuite().issue(
             claims, signing_key=signing_key, disclosable=present, vct=vct,
-            holder_jwk=holder_jwk, expires_in_s=expires_in_s)
+            holder_jwk=holder_jwk, expires_in_s=expires_in_s))
     except EudiError:
         raise
     except Exception as exc:
