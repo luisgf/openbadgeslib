@@ -348,15 +348,17 @@ def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
 
         # The registry is persisted BEFORE the badge is signed and written:
         # a signing failure leaves a harmless orphan index, while a delivered
-        # badge missing from the registry could never be revoked.
+        # badge missing from the registry could never be revoked. The whole
+        # load→allocate→save runs under an exclusive lock so a concurrent
+        # signer cannot clobber this allocation (see StatusRegistry.locked).
         try:
-            registry = StatusRegistry.load(status_conf.registry_path,
-                                           status_conf.size_bits)
-            assert credential.id is not None \
-                and credential.issuance_date is not None
-            status_index = registry.allocate(credential.id, recipient_id,
-                                             credential.issuance_date)
-            registry.save()
+            with StatusRegistry.locked(status_conf.registry_path,
+                                       status_conf.size_bits) as registry:
+                assert credential.id is not None \
+                    and credential.issuance_date is not None
+                status_index = registry.allocate(credential.id, recipient_id,
+                                                 credential.issuance_date)
+                registry.save()
         except (StatusError, OSError) as exc:
             print('[!] Could not allocate a status list index: %s' % exc)
             sys.exit(-1)

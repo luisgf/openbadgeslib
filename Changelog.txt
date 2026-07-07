@@ -6,6 +6,19 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v3.5.0 - unreleased
 
+  - fix(status): serialise status-registry writes with an exclusive
+    inter-process lock. Concurrent `openbadges-signer` runs (or a signer
+    overlapping `openbadges-publish --revoke`) each did load→mutate→save with
+    no lock, so the second `save()` clobbered the first's new entry — and a
+    delivered credential missing from the registry can never be revoked. Both
+    mutation paths now run inside the new `StatusRegistry.locked(path)` context
+    manager, which holds a POSIX `fcntl` lock on a sibling `<registry>.lock`
+    file across the whole load→mutate→save (a dedicated lock file, because
+    `save()` renames the JSON and a lock on its inode would be orphaned). The
+    revoke path searches unlocked and reloads the winning registry under the
+    lock before mutating. Where `fcntl` is unavailable (non-POSIX) it degrades
+    to the previous unlocked behaviour, so single-operator use is unchanged.
+
   - feat(eudi): the SD-JWT VC track now also signs with NIST **P-384**
     (ES384) keys, not only Ed25519 and P-256. `issue_badge_sd_jwt` reads the
     ECDSA curve from the key and picks openvc-core's matching backend

@@ -32,14 +32,20 @@
 # leave a truncated registry behind, because a lost registry makes every
 # outstanding credential unrevocable.
 
+import contextlib
 import json
 import os
 import secrets
 import tempfile
 
+try:
+    import fcntl                    # POSIX advisory file locking
+except ImportError:                 # pragma: no cover - non-POSIX (e.g. Windows)
+    fcntl = None                    # type: ignore[assignment]
+
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Set
+from typing import Dict, Iterator, List, Optional, Set
 
 from ..errors import (
     AlreadyRevoked,
@@ -57,6 +63,35 @@ _SCHEMA_VERSION = 1
 #: Random allocation attempts before falling back to a linear scan. With the
 #: spec-minimum 131072-bit list this only triggers past ~99.9% occupancy.
 _MAX_RANDOM_TRIES = 1000
+
+
+@contextlib.contextmanager
+def _exclusive_file_lock(lock_path: str) -> Iterator[None]:
+    """Hold an exclusive inter-process lock for the duration of the block.
+
+    Backed by POSIX ``fcntl.flock`` on a dedicated lock file. Where ``fcntl``
+    is unavailable (non-POSIX platforms) it degrades to no locking — the same
+    behaviour as before this guard existed — so single-process use is
+    unaffected and nothing regresses; concurrent writers are simply not
+    serialised there.
+    """
+    directory = os.path.dirname(lock_path) or '.'
+    umask = os.umask(0o077)
+    try:
+        os.makedirs(directory, exist_ok=True)
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    finally:
+        os.umask(umask)
+    try:
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_EX)        # blocks until the lock frees
+        yield
+    finally:
+        try:
+            if fcntl is not None:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 
 @dataclass
@@ -147,6 +182,26 @@ class StatusRegistry:
         except (KeyError, TypeError, ValueError) as exc:
             raise RegistryCorrupt('%s: %s' % (path, exc)) from exc
         return registry
+
+    @classmethod
+    @contextlib.contextmanager
+    def locked(cls, path: str,
+               size_bits: int = DEFAULT_SIZE_BITS) -> Iterator['StatusRegistry']:
+        """Load the registry under an exclusive inter-process lock, yield it.
+
+        The lock (a sibling ``<path>.lock`` file) is held for the whole block,
+        so a ``load → allocate/revoke/… → save()`` sequence inside it is
+        atomic against other processes. This closes the race where two
+        concurrent writers both load, and the second :meth:`save` clobbers the
+        first's new entry — leaving a delivered credential unrevocable. Call
+        :meth:`save` inside the block; the lock releases on exit.
+
+        A dedicated lock file (not the registry JSON) is used on purpose:
+        :meth:`save` replaces the JSON via ``os.rename``, so a lock held on the
+        JSON inode would be orphaned by the first write.
+        """
+        with _exclusive_file_lock(path + '.lock'):
+            yield cls.load(path, size_bits)
 
     def save(self) -> None:
         """Write the registry atomically (temp file + rename) under a

@@ -38,6 +38,55 @@ def _registry(tmp_path, size_bits=131072):
     return StatusRegistry.load(str(tmp_path / 'badge_1.json'), size_bits)
 
 
+# ── inter-process locking ────────────────────────────────────────────────────
+
+def _alloc_worker(path, size_bits, jti, recipient, when):
+    # Module-level so it is importable under the 'spawn' start method. Each
+    # call is a separate process doing the full locked load→allocate→save.
+    from openbadgeslib.ob3.status_registry import StatusRegistry
+    with StatusRegistry.locked(path, size_bits) as registry:
+        registry.allocate(jti, recipient, when)
+        registry.save()
+
+
+class TestLocked:
+    def test_yields_loaded_registry_and_creates_lock_file(self, tmp_path):
+        path = str(tmp_path / 'badge_1.json')
+        with StatusRegistry.locked(path, 131072) as registry:
+            assert registry.path == path
+            registry.allocate(JTI, 'mailto:a@example.org', NOW)
+            registry.save()
+        assert os.path.exists(path + '.lock')          # dedicated lock file
+        assert JTI in StatusRegistry.load(path, 131072).entries
+
+    def test_concurrent_allocations_are_never_lost(self, tmp_path):
+        # Without the lock, N processes each load→allocate→save would clobber
+        # one another and only the last save() would survive. With it, every
+        # allocation must be present.
+        pytest.importorskip('fcntl')                   # POSIX-only guarantee
+        import multiprocessing as mp
+        path = str(tmp_path / 'badge_1.json')
+        bits = 131072
+        n = 6
+        ctx = mp.get_context('spawn')                  # deterministic on macOS
+        procs = [
+            ctx.Process(target=_alloc_worker,
+                        args=(path, bits, 'urn:jti:%d' % i,
+                              'mailto:u%d@example.org' % i, NOW))
+            for i in range(n)
+        ]
+        for p in procs:
+            p.start()
+        for p in procs:
+            p.join(timeout=60)
+            assert p.exitcode == 0
+
+        registry = StatusRegistry.load(path, bits)
+        assert {e.jti for e in registry.entries.values()} == \
+            {'urn:jti:%d' % i for i in range(n)}
+        assert len({e.index for e in registry.entries.values()}) == n
+
+
 # ── allocation ───────────────────────────────────────────────────────────────
 
 class TestAllocate:

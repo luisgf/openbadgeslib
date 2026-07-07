@@ -200,19 +200,25 @@ def _publish_ob3(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
             sys.exit(-1)
 
         name, registry, entry = matches[0]
+        jti = entry.jti
         now = datetime.now(tz=timezone.utc)
+        # The search above is an unlocked best-effort locator; the mutation
+        # reloads the winning registry under an exclusive lock so it is atomic
+        # against a concurrent signer or revoke (see StatusRegistry.locked).
         try:
-            if op == 'revoke':
-                registry.revoke(entry.jti, now, args.reason)
-            elif op == 'suspend':
-                registry.suspend(entry.jti, now, args.reason)
-            else:
-                registry.unsuspend(entry.jti)
-            registry.save()
-        except StatusError as exc:
+            with StatusRegistry.locked(registry.path,
+                                       registry.size_bits) as registry:
+                if op == 'revoke':
+                    registry.revoke(jti, now, args.reason)
+                elif op == 'suspend':
+                    registry.suspend(jti, now, args.reason)
+                else:
+                    registry.unsuspend(jti)
+                registry.save()
+        except (StatusError, OSError) as exc:
             print('[!] %s' % exc)
             sys.exit(-1)
-        print('[+] %s %s %s (index %d)' % (verb, name, entry.jti, entry.index))
+        print('[+] %s %s %s (index %d)' % (verb, name, jti, entry.index))
 
     # ── regenerate every managed artefact from the registries ───────────────
     publish_url = conf['issuer']['publish_url']
