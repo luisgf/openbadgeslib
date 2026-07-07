@@ -56,7 +56,14 @@ def _validate_context(ctx: Any) -> None:
 
 
 def _iso(dt: datetime) -> str:
-    """Return a datetime as an ISO 8601 string with Z suffix."""
+    """Return a datetime as an ISO 8601 string with Z suffix.
+
+    A naive datetime is assumed to be UTC (matching status_registry._iso_z),
+    not local time — so validFrom/validUntil never silently shift by the host's
+    offset and stay consistent with the nbf/exp JWT claims.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -131,6 +138,14 @@ class OpenBadgeCredential:
             self.id = f"urn:uuid:{uuid.uuid4()}"
         if self.issuance_date is None:
             self.issuance_date = datetime.now(timezone.utc)
+        elif self.issuance_date.tzinfo is None:
+            # A naive datetime is assumed UTC, so validFrom (string) and nbf
+            # (epoch int) agree instead of diverging by the host's offset.
+            self.issuance_date = self.issuance_date.replace(tzinfo=timezone.utc)
+        if self.expiration_date is not None \
+                and self.expiration_date.tzinfo is None:
+            self.expiration_date = self.expiration_date.replace(
+                tzinfo=timezone.utc)
         if self.name is None:
             self.name = self.achievement.name
 

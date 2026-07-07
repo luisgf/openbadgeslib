@@ -4,6 +4,14 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.5.1 - unreleased
+
+  - fix(ob3): a naive datetime passed as the issuance/expiration date is now
+    assumed UTC (matching status_registry._iso_z), not local time — so
+    validFrom/validUntil no longer silently shift by the host's offset and
+    stay consistent with the nbf/exp JWT claims.
+
+
 * v3.5.0 - 2026-07-07
 
   - fix(status): serialise status-registry writes with an exclusive

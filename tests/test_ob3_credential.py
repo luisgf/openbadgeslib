@@ -306,3 +306,19 @@ class TestHelpers:
         # calls .lower()); a non-string must be rejected here.
         with pytest.raises(ValueError, match="must be a string"):
             _require({'id': bad_value}, 'id', 'vc.credentialSubject')
+
+
+class TestNaiveDatetimeAssumedUtc:
+    def test_naive_issuance_date_coerced_to_utc(self):
+        # A naive datetime is assumed UTC, so validFrom (string) and nbf (epoch)
+        # agree instead of diverging by the host's local offset.
+        cred = _make_credential(issuance_date=datetime(2026, 1, 1, 12, 0, 0))
+        assert cred.issuance_date.tzinfo is not None
+        assert cred.to_vc()['validFrom'] == '2026-01-01T12:00:00Z'
+        aware = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        assert cred.to_jwt_payload()['nbf'] == int(aware.timestamp())
+
+    def test_naive_expiration_date_coerced_to_utc(self):
+        cred = _make_credential(expiration_date=datetime(2030, 6, 1, 0, 0, 0))
+        assert cred.expiration_date.tzinfo is not None
+        assert cred.to_vc()['validUntil'] == '2030-06-01T00:00:00Z'
