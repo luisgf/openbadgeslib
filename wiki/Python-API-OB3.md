@@ -227,6 +227,47 @@ doc = build_did_document(did, [('badge_1', public_jwk_from_pem(pub_pem))])
 
 The document round-trips through `resolve_did`. Order the methods deliberately: resolvers (this library's included) typically read only `verificationMethod[0]`.
 
+## EUDI SD-JWT VC (selective disclosure)
+
+An **additive** track — it does not touch the VC-JWT or Data Integrity issuance above: issue the same badge as an IETF **SD-JWT VC**, the credential format the EU Digital Identity Wallet / ARF converges on, delegating the crypto to [`openvc-core`](https://pypi.org/project/openvc-core/). It needs the `[eudi]` extra (see [[Installation]]):
+
+```
+pip install "openbadgeslib[eudi]"
+```
+
+The achievement is always disclosed; the recipient identity (`credentialSubject`) is *selectively disclosable*, so a holder can present the badge while withholding who they are.
+
+**Keys:** Ed25519 (EdDSA), NIST P-256 (ES256), or NIST P-384 (ES384) — SD-JWT's algorithm set; RSA is rejected. The OpenID4VC High Assurance Interoperability Profile (HAIP) that EUDI wallets adopt restricts algorithms to the **P-256 (ES256)** family, so prefer a P-256 key for wallet interoperability; Ed25519 / P-384 work where HAIP-strict acceptance is not required.
+
+```python
+from openbadgeslib.ob3.eudi import issue_badge_sd_jwt, verify_badge_sd_jwt
+
+priv_pem = open('sign_p256.pem', 'rb').read()      # P-256 -> ES256 (HAIP)
+
+# Issue the compact SD-JWT VC: <issuer-jwt>~<disclosure>~…
+token = issue_badge_sd_jwt(credential, privkey_pem=priv_pem)
+
+# Verify the issuer form (the recipient disclosure is present):
+pub_pem = open('verify_p256.pem', 'rb').read()
+result = verify_badge_sd_jwt(token, pubkey_pem=pub_pem)
+print(result.claims['achievement']['name'])
+```
+
+`badge_to_sd_jwt_claims(credential)` returns the flat claim set that gets signed, if you want to inspect it.
+
+**Key binding (holder presentation).** Bind the credential to a holder key at issue time with `holder_jwk`, then verify a wallet's presentation against the transaction's audience and nonce:
+
+```python
+token = issue_badge_sd_jwt(credential, privkey_pem=priv_pem, holder_jwk=holder_public_jwk)
+# … the holder builds a Key-Binding presentation with openvc-core …
+result = verify_badge_sd_jwt(presentation, pubkey_pem=pub_pem,
+                             audience='https://verifier.example', nonce='n-123',
+                             require_key_binding=True)
+assert result.key_bound
+```
+
+The OID4VCI / OID4VP wallet-exchange protocol itself lives in `openvc-core`, not here: this module maps a badge to and from SD-JWT VC claims and runs the issuer/holder crypto through it.
+
 ## Errors
 
 `OB3VerificationError` is the single exception for every verification failure (invalid signature, expired token, disallowed algorithm, recipient mismatch, wrong credential type, malformed payload, missing embedded token). It subclasses `LibOpenBadgesException`, so one `except` can catch both OB2 and OB3 failures. Token extraction may additionally raise `ErrorParsingFile` for unreadable images. See [[Keys and Errors]] for the full exception hierarchy.
