@@ -268,26 +268,25 @@ def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
             print('[!] Could not write sign log: %s' % err)
 
         if bool(args.mail_badge):
-            server = conf['smtp']['smtp_server']
-            port = int(conf['smtp']['smtp_port'])
-            # configparser stores everything as strings; 'False' would be truthy.
-            use_ssl = conf['smtp'].getboolean('use_ssl', False)
-            mail_from = conf['smtp']['mail_from']
-            username = conf['smtp'].get('username')
-            password = conf['smtp'].get('password')
-
             try:
+                server = conf['smtp']['smtp_server']
+                port = int(conf['smtp']['smtp_port'])
+                # configparser stores everything as strings; 'False' is truthy.
+                use_ssl = conf['smtp'].getboolean('use_ssl', False)
+                mail_from = conf['smtp']['mail_from']
+                username = conf['smtp'].get('username')
+                password = conf['smtp'].get('password')
                 mail = BadgeMail(server, port, use_ssl, mail_from, username, password)
                 subject, body = mail.get_mail_content(conf[badge]['mail'])
                 mail.set_subject(subject)
                 mail.set_body(body)
                 mail.send(badge_signed)
             except (ValueError, OSError, KeyError) as err:
-                # e.g. a username set without use_ssl=True (ValueError), a
-                # missing/unreadable mail template file (OSError), or a badge
-                # section with no 'mail' key (KeyError) — the badge is already
-                # signed and saved, so report the config error instead of
-                # crashing with a traceback.
+                # e.g. a missing [smtp] section or key (KeyError), a username
+                # set without use_ssl=True (ValueError), or a missing/unreadable
+                # mail template file (OSError) — the badge is already signed and
+                # saved, so report the config error instead of crashing with a
+                # traceback. The [smtp] reads are inside the try for that reason.
                 print('[!] Could not send mail: %s' % err)
 
         print('%s at: %s' % (msg, badge_file_out))
@@ -401,6 +400,9 @@ def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
     except OSError as err:
         print('[!] Could not write sign log: %s' % err)
     print('%s at: %s' % (msg, badge_file_out))
+    if args.mail_badge:
+        print('[i] --mail-badge is not supported for -V 3; the badge was saved '
+              'but not emailed.')
 
 
 def _sign_ob3_ldp(badge: str, badge_obj: Badge,
@@ -416,8 +418,9 @@ def _sign_ob3_ldp(badge: str, badge_obj: Badge,
 
     if key_type is not KeyType.ED25519:
         print("[!] --proof-format ldp (eddsa-rdfc-2022) requires an Ed25519 "
-              "key; [%s] uses %s. Generate one with: "
-              "openbadges-keygenerator -t ED25519" % (badge, key_type.value))
+              "key; [%s] uses %s. Set 'key_type = ED25519' in that badge's "
+              "config section and regenerate its key with "
+              "openbadges-keygenerator -g" % (badge, key_type.value))
         sys.exit(-1)
 
     verification_method = None

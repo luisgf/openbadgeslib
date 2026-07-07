@@ -190,9 +190,10 @@ class TestSignerLdpCli:
 
 
 class TestEd25519CliSupport:
-    # Badge.create_from_conf rejected key_type = ED25519 outright, so the
-    # CLI could never sign with the keys openbadges-keygenerator -t ED25519
-    # produces — a prerequisite for LDP issuance, fixed alongside it.
+    # Badge.create_from_conf rejected key_type = ED25519 outright, so the CLI
+    # could never sign with the keys openbadges-keygenerator produces from a
+    # key_type = ED25519 badge section — a prerequisite for LDP issuance,
+    # fixed alongside it.
 
     def test_vc_jwt_with_ed25519_key_roundtrips(self, tmp_path,
                                                 ed25519_key_files, capsys):

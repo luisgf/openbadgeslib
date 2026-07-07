@@ -25,6 +25,13 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     parsing an Assertion instead of being silently dropped — `_iri_or_none`
     returned None for a list. A single value still collapses to its IRI.
 
+  - fix(cli): `openbadges-signer -M/--mail-badge` now prints a clear notice
+    on the default OB3 path (it was a silent no-op there); the stale
+    `openbadges-keygenerator -t ED25519` hint on the LDP path is corrected to
+    the real `key_type = ED25519` config key; and the OB1 mail path reads its
+    `[smtp]` config inside the try, so a missing `[smtp]` section is reported
+    cleanly after signing instead of raising a traceback.
+
 
 * v3.5.0 - 2026-07-07
 
