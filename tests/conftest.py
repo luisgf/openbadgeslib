@@ -40,6 +40,33 @@ def ecc_pub_pem():
 
 
 @pytest.fixture(scope='session')
+def p384_keypair():
+    # Generated in-session (no committed P-384 key material on disk), like the
+    # Ed25519 keypair. NIST P-384 -> ES384 on the EUDI SD-JWT track.
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    priv = ec.generate_private_key(ec.SECP384R1())
+    priv_pem = priv.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption())
+    pub_pem = priv.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo)
+    return priv_pem, pub_pem
+
+
+@pytest.fixture(scope='session')
+def p384_priv_pem(p384_keypair):
+    return p384_keypair[0]
+
+
+@pytest.fixture(scope='session')
+def p384_pub_pem(p384_keypair):
+    return p384_keypair[1]
+
+
+@pytest.fixture(scope='session')
 def ed25519_keypair():
     # Generated in-session (not a committed key file) so the suite ships no
     # private key material on disk.

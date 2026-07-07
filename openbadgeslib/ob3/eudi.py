@@ -31,14 +31,15 @@
 # withholding their identity.
 #
 # Requires the optional ``[eudi]`` extra (``pip install openbadgeslib[eudi]``),
-# which pulls ``openvc-core``. SD-JWT allows only Ed25519 (EdDSA) and NIST P-256
-# (ES256) keys — RSA is not in its algorithm set.
+# which pulls ``openvc-core``. SD-JWT allows only Ed25519 (EdDSA) and the NIST
+# curves P-256 (ES256) / P-384 (ES384) — RSA is not in its algorithm set.
 
 from typing import Any, Iterable, Optional
 
 from .credential import OpenBadgeCredential
 from ..errors import LibOpenBadgesException
-from ..keys import KeyType, detect_key_type, public_jwk_from_pem
+from ..keys import (
+    KeyType, detect_key_type, ec_curve_from_pem, public_jwk_from_pem)
 
 # A vct (Verifiable Credential Type) for Open Badges expressed as SD-JWT VC.
 OB3_SD_JWT_VCT = "https://purl.imsglobal.org/spec/ob/v3p0#OpenBadgeCredential"
@@ -58,24 +59,37 @@ class EudiError(LibOpenBadgesException):
 def _require_openvc() -> Any:
     """Import the openvc-core pieces, or raise with an actionable hint."""
     try:
-        from openvc.keys import Ed25519SigningKey, P256SigningKey
+        from openvc.keys import (
+            Ed25519SigningKey, P256SigningKey, P384SigningKey)
         from openvc.proof.sd_jwt import SdJwtVcProofSuite
     except ImportError as exc:
         raise EudiError(_INSTALL_HINT) from exc
-    return Ed25519SigningKey, P256SigningKey, SdJwtVcProofSuite
+    return Ed25519SigningKey, P256SigningKey, P384SigningKey, SdJwtVcProofSuite
 
 
 def _signing_key(privkey_pem: Any, kid: str) -> Any:
-    """Build the openvc SigningKey matching the PEM's key type (Ed25519 / P-256)."""
-    Ed25519SigningKey, P256SigningKey, _ = _require_openvc()
+    """Build the openvc SigningKey matching the PEM's key type / curve.
+
+    Ed25519 -> EdDSA; NIST P-256 -> ES256; NIST P-384 -> ES384. The ECDSA
+    curve is read from the key itself, since it fixes the JOSE algorithm.
+    """
+    Ed25519SigningKey, P256SigningKey, P384SigningKey, _ = _require_openvc()
     key_type = detect_key_type(privkey_pem)
     if key_type is KeyType.ED25519:
         return Ed25519SigningKey.from_pem(privkey_pem, kid=kid)
-    if key_type is KeyType.ECC:                       # NIST P-256 -> ES256
-        return P256SigningKey.from_pem(privkey_pem, kid=kid)
+    if key_type is KeyType.ECC:                       # NIST curve -> ES256/ES384
+        curve = ec_curve_from_pem(privkey_pem)
+        if curve == "secp256r1":                      # P-256 -> ES256
+            return P256SigningKey.from_pem(privkey_pem, kid=kid)
+        if curve == "secp384r1":                      # P-384 -> ES384
+            return P384SigningKey.from_pem(privkey_pem, kid=kid)
+        raise EudiError(
+            "SD-JWT VC over ECDSA needs a NIST P-256 (ES256) or P-384 (ES384) "
+            "key; got curve %r." % curve)
     raise EudiError(
-        "SD-JWT VC allows only Ed25519 (EdDSA) or NIST P-256 (ES256) keys; got "
-        "%s (RSA is not in the SD-JWT algorithm set)." % key_type.value)
+        "SD-JWT VC allows only Ed25519 (EdDSA) or NIST P-256/P-384 (ES256/"
+        "ES384) keys; got %s (RSA is not in the SD-JWT algorithm set)."
+        % key_type.value)
 
 
 def badge_to_sd_jwt_claims(credential: OpenBadgeCredential) -> dict:
@@ -117,9 +131,9 @@ def issue_badge_sd_jwt(
     Returns the compact SD-JWT (``<issuer-jwt>~<disclosure>~…``). Only claims in
     *disclosable* that are actually present are made selectively disclosable.
     Pass *holder_jwk* to bind the credential to a holder key (``cnf``) for a later
-    Key-Binding presentation. Ed25519 / P-256 keys only.
+    Key-Binding presentation. Ed25519, P-256 or P-384 keys only.
     """
-    _, _, SdJwtVcProofSuite = _require_openvc()
+    _, _, _, SdJwtVcProofSuite = _require_openvc()
     signing_key = _signing_key(privkey_pem, kid or ("%s#key-1" % credential.issuer.id))
     claims = badge_to_sd_jwt_claims(credential)
     present = [name for name in disclosable if name in claims]
@@ -149,7 +163,7 @@ def verify_badge_sd_jwt(
     Pass *audience*/*nonce* (and ``require_key_binding=True``) to check a Key
     Binding JWT from a holder presentation.
     """
-    _, _, SdJwtVcProofSuite = _require_openvc()
+    _, _, _, SdJwtVcProofSuite = _require_openvc()
     try:
         public_key_jwk = public_jwk_from_pem(pubkey_pem)
         return SdJwtVcProofSuite().verify(

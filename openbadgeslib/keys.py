@@ -253,6 +253,32 @@ def public_jwk_from_pem(pubkey_pem: Union[str, bytes]) -> dict:
     return json.loads(jwk_json)
 
 
+def ec_curve_from_pem(pem_data: Union[str, bytes]) -> Optional[str]:
+    """Return the NIST curve name of an elliptic-curve key PEM, else ``None``.
+
+    The name is ``cryptography``'s (``'secp256r1'`` for P-256, ``'secp384r1'``
+    for P-384, …); ``None`` if the PEM is not an EC key (RSA, Ed25519 or
+    unreadable). Accepts a public or private PEM. The SD-JWT VC (EUDI) track
+    uses this to pick the ES256 vs ES384 signing backend — the ECDSA curve
+    fixes the JOSE algorithm.
+    """
+    from cryptography.hazmat.primitives.asymmetric import ec
+    data = _pem_bytes(pem_data)
+    for load in (
+        lambda: _crypto_serialization.load_pem_public_key(data),
+        lambda: _crypto_serialization.load_pem_private_key(data, password=None),
+    ):
+        try:
+            key = load()
+        except Exception:
+            continue
+        if isinstance(key, (ec.EllipticCurvePublicKey,
+                            ec.EllipticCurvePrivateKey)):
+            return key.curve.name
+        return None                                   # readable, but not EC
+    return None
+
+
 def _is_ed25519_pem(pem_data: Union[str, bytes]) -> bool:
     """True if pem_data is an Ed25519 public or private key.
 

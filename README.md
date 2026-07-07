@@ -60,7 +60,7 @@ additive EUDI SD-JWT VC wallet track.
 | Issue / verify | ✅ both | verify only | issue; partial verify | both | both (VC + VP) |
 | OB 3.0 proof: VC-JWT (JOSE) | ✅ RS/ES/EdDSA | — | — | roadmap | ✅ not OB-aware |
 | OB 3.0 proof: Data Integrity / LDP | ✅ issue + verify (`eddsa-rdfc-2022`) | — | issue only (Ed25519) | home-grown, non-conformant | older suites; no `rdfc-2022` in wheel |
-| OB 3.0 as EUDI SD-JWT VC (selective disclosure) | ✅ issue + verify (Ed25519/P-256, `[eudi]` extra) | — | — | — | — |
+| OB 3.0 as EUDI SD-JWT VC (selective disclosure) | ✅ issue + verify (Ed25519/P-256/P-384, `[eudi]` extra) | — | — | — | — |
 | Revocation / suspension | ✅ W3C Bitstring Status List | hosted check | `1EdTechRevocationList` | ad-hoc flag | — |
 | `did:web` (generate + resolve) | ✅ | — | — | — | resolve only |
 | Image baking (SVG + PNG) | ✅ | unbake only | ✅ | — | — |
@@ -255,7 +255,9 @@ crypto to the generic [`openvc-core`](https://pypi.org/project/openvc-core/)
 library. It does not touch the native VC-JWT / Data Integrity issuance above:
 it is a separate credential format for wallet flows, not a third image proof.
 Needs the `[eudi]` extra (`pip install "openbadgeslib[eudi]"`) and an Ed25519
-(EdDSA) or NIST P-256 (ES256) key — SD-JWT's algorithm set (RSA is rejected).
+(EdDSA), NIST P-256 (ES256) or P-384 (ES384) key — SD-JWT's algorithm set (RSA
+is rejected). HAIP profiles the P-256 family, so P-256 stays the safe default
+for EUDI wallets; P-384 may be refused by HAIP-strict verifiers.
 The achievement is always disclosed; the recipient identity is *selectively
 disclosable*, so a holder can prove the badge while withholding who they are.
 

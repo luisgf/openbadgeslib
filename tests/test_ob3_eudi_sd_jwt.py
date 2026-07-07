@@ -39,6 +39,19 @@ class TestSdJwtBadge:
         assert result.issuer == ob3_credential.issuer.id
         assert result.claims["achievement"]["name"] == ob3_credential.achievement.name
 
+    def test_roundtrip_es384(self, ob3_credential, p384_priv_pem, p384_pub_pem):
+        import base64
+        import json
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=p384_priv_pem)
+        # A P-384 key must pin the ES384 algorithm in the issuer JWT header.
+        header_b64 = token.split(".", 1)[0]
+        header = json.loads(base64.urlsafe_b64decode(header_b64 + "=="))
+        assert header["alg"] == "ES384"
+        result = verify_badge_sd_jwt(token, pubkey_pem=p384_pub_pem)
+        assert result.issuer == ob3_credential.issuer.id
+        assert result.claims["achievement"]["name"] == ob3_credential.achievement.name
+        assert result.claims["credentialSubject"]["id"] == ob3_credential.recipient_id
+
     def test_claims_shape(self, ob3_credential):
         claims = badge_to_sd_jwt_claims(ob3_credential)
         assert claims["iss"] == ob3_credential.issuer.id
@@ -100,9 +113,21 @@ class TestSdJwtBadge:
                                 expected_vct="https://example.com/other-type")
 
     def test_rsa_key_rejected(self, ob3_credential, rsa_priv_pem):
-        # SD-JWT's algorithm set is {ES256, EdDSA}; RSA is not allowed.
+        # SD-JWT's algorithm set is {ES256, ES384, EdDSA}; RSA is not allowed.
         with pytest.raises(EudiError, match="Ed25519|P-256|RSA"):
             issue_badge_sd_jwt(ob3_credential, privkey_pem=rsa_priv_pem)
+
+    def test_unsupported_curve_rejected(self, ob3_credential):
+        # SD-JWT's ECDSA set is P-256/P-384; a P-521 key must be refused with a
+        # clear message rather than mis-signed under the wrong algorithm.
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        p521 = ec.generate_private_key(ec.SECP521R1()).private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption())
+        with pytest.raises(EudiError, match="P-256|P-384|curve"):
+            issue_badge_sd_jwt(ob3_credential, privkey_pem=p521)
 
 
 # ── behaviour without the [eudi] extra (runs with or without openvc) ─────────
