@@ -231,6 +231,7 @@ def _publish_ob3(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
             print('[!] Cannot derive a did:web identifier: %s' % exc)
             sys.exit(-1)
 
+    failures = []                 # badges skipped (unreadable key / registry)
     umask = os.umask(0o077)  # rwx------
     try:
         os.makedirs(args.output, exist_ok=True)
@@ -264,8 +265,13 @@ def _publish_ob3(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
                 with open(conf[name]['private_key'], 'rb') as key:
                     priv_pem = key.read()
             except (StatusError, OSError) as exc:
-                print('[!] %s' % exc)
-                sys.exit(-1)
+                # Isolate a per-badge failure (unreadable key, corrupt registry)
+                # like the did.json skip above: don't abort the whole publish —
+                # a badge_2 mid-configuration must not make an urgent badge_1
+                # revocation appear to fail after its list was already written.
+                print('[!] Skipping [%s] status lists — %s' % (name, exc))
+                failures.append(name)
+                continue
             algorithm = alg_for_key_type(detect_key_type(priv_pem))
 
             badge_dir = os.path.join(args.output, name)
@@ -285,8 +291,13 @@ def _publish_ob3(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
     finally:
         os.umask(umask)
 
+    if failures:
+        print('[!] %d badge(s) skipped (see above): %s — their status lists '
+              'were NOT regenerated' % (len(failures), ', '.join(failures)))
     print('Please configure your Web server to publish the folder %s as %s' %
           (args.output, publish_url))
+    if failures:
+        sys.exit(1)
     print('[i] Issuer DID: %s' % did)
     if ':' not in did[len('did:web:'):]:
         print('[i] A bare-host did:web resolves at '

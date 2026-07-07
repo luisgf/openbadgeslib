@@ -32,6 +32,12 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     `[smtp]` config inside the try, so a missing `[smtp]` section is reported
     cleanly after signing instead of raising a traceback.
 
+  - fix(publish): `openbadges-publish -V 3` no longer aborts mid-loop when a
+    badge has an unreadable key or corrupt registry — it skips that badge
+    with a notice (like the did.json path already did), regenerates the
+    others, and exits non-zero with a summary. An urgent revocation is no
+    longer masked by an unrelated half-configured badge.
+
 
 * v3.5.0 - 2026-07-07
 
