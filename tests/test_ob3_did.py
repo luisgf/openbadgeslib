@@ -69,6 +69,12 @@ class TestDidKey:
         with pytest.raises(OB3VerificationError, match='base58'):
             resolve_did('did:key:z0OIl')   # 0, O, I, l are not in the alphabet
 
+    def test_overlong_base58_rejected(self):
+        # A hostile did:key must be length-bounded before the O(n^2) decode; no
+        # real multikey exceeds ~70 chars.
+        with pytest.raises(OB3VerificationError, match='too long'):
+            resolve_did('did:key:z' + 'a' * 200)
+
     def test_non_z_multibase_rejected(self):
         with pytest.raises(OB3VerificationError, match='base58btc'):
             resolve_did('did:key:Qabc')

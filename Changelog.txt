@@ -16,6 +16,11 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     disagrees with — or omits — the credential id is rejected, alongside the
     existing iss/nbf/sub checks.
 
+  - fix(ob3): `_b58btc_decode` bounds its input to 128 characters before the
+    O(n^2) base58 decode, so a hostile did:key / publicKeyMultibase in a
+    fetched did:web or Data Integrity document (up to 5 MiB / 256 KiB) can no
+    longer burn CPU. No real multikey exceeds ~70 characters.
+
 
 * v3.5.0 - 2026-07-07
 

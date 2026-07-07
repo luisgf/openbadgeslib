@@ -95,7 +95,17 @@ def _multicodec_pubkey_to_pem(data: bytes) -> bytes:
     raise OB3VerificationError("unsupported did:key multicodec 0x%x" % code)
 
 
+#: Bound on base58btc input length. Decoding is O(n^2) in the length (big-int
+#: accumulation), and a hostile did:key / publicKeyMultibase in a fetched
+#: document could be hundreds of KB; no real multikey exceeds ~70 characters.
+_MAX_B58_LEN = 128
+
+
 def _b58btc_decode(value: str) -> bytes:
+    if len(value) > _MAX_B58_LEN:
+        raise OB3VerificationError(
+            "base58btc value too long: %d characters (max %d)"
+            % (len(value), _MAX_B58_LEN))
     num = 0
     for ch in value:
         idx = _B58_INDEX.get(ch)
