@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v3.6.0 - unreleased
+* v3.6.0 - 2026-07-08
 
   - feat(ob3): the verifier now exposes the raw, already-validated VC document
     on the returned credential (`credential.raw`) — on both the JWT-VC and the
