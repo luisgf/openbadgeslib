@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v3.4.2 - unreleased
+* v3.4.2 - 2026-07-07
 
   - build(eudi): the `[eudi]` extra now tracks `openvc-core>=1.8,<2` (was
     `>=0.8,<0.9`). openvc-core reached 1.0 with a published SemVer/deprecation
