@@ -6,6 +6,16 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v3.10.0 - unreleased
 
+  - docs(examples): #168 library integration tutorial + runnable examples. New
+    `examples/` scripts — issue+verify an OB 3.0 JWT-VC, issue with a Data
+    Integrity (LDP) proof, and issue from a config section via the high-level API
+    (single + batch) — each self-contained and executed in CI (`test_examples.py`,
+    anti-drift, same philosophy as `test_docs.py`). Two new wiki pages: the
+    "Library Integration Tutorial" narrating them end to end (issue → sign →
+    publish → revoke → verify) and a "Certification Cookbook" on passing the
+    official 1EdTech OB 3.0 conformance tests without the paid membership.
+    (Closes #168)
+
   - test(coverage): #169 targeted-coverage round. New dedicated suites for the
     shared token carrier (`test_baking.py` — embed/extract round-trips per
     format, compression and malformed-iTXt edges), mail (`test_mail.py` — SMTP

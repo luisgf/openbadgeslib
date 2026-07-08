@@ -22,6 +22,8 @@
 
 **Guides**
 - [[Guides]]
+- [[Library Integration Tutorial]]
+- [[Certification Cookbook]]
 
 **Project**
 - [[Contributing]]
