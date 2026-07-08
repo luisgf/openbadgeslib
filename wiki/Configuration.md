@@ -121,6 +121,7 @@ Define one section per badge. The part after `badge_` is the badge id you pass t
 | `status_lists` | `revocation, suspension` *(commented)* | OB3 credential status **opt-in**: purposes to attach to newly signed credentials (subset of `revocation`, `suspension`). Unset: credentials carry no `credentialStatus` (the pre-3.1 behaviour). |
 | `status_size_bits` | `131072` *(commented)* | Bitstring capacity (the W3C minimum by default). Can be grown later; shrinking is rejected. |
 | `status_base` | `https://.../badge_1/` *(commented)* | Public base URL the status lists are served under (`<status_base><purpose>.jwt`). Default: `${issuer:publish_url}badge_N/`. |
+| `status_validity_days` | *(unset)* | OB3, **opt-in**: when set (e.g. `7`–`30`), published status lists carry a `validUntil = now + N days`, and a verifier rejects a stale copy served past that instant (replay protection). Requires republishing (e.g. a cron `openbadges-publish -V 3`) within the window. Unset: lists never expire. |
 | `mail` | `${paths:base}/badge_1_mail.txt` | Path to the mail template used by `openbadges-signer -M`. |
 
 ```ini

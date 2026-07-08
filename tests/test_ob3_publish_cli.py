@@ -585,3 +585,58 @@ class TestPublishJson:
         with patch.object(sys, 'argv', argv):
             with pytest.raises(SystemExit, match='-V 3'):
                 openbadges_publish.main()
+
+
+# ── #164: status list validUntil + opt-in proof verification ─────────────────
+
+class TestPublishValidUntil:
+    def test_validuntil_emitted_when_configured(self, tmp_path):
+        import jwt as pyjwt
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        with cfg.open('a') as f:
+            f.write('status_validity_days = 7\n')
+        _sign(tmp_path, cfg)
+        pub = _publish(tmp_path, cfg)
+        token = (pub / 'badge_1' / 'revocation.jwt').read_text()
+        payload = pyjwt.decode(token, options={'verify_signature': False})
+        assert 'validUntil' in payload and 'validFrom' in payload
+
+    def test_no_validuntil_by_default(self, tmp_path):
+        import jwt as pyjwt
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        _sign(tmp_path, cfg)
+        pub = _publish(tmp_path, cfg)
+        token = (pub / 'badge_1' / 'revocation.jwt').read_text()
+        payload = pyjwt.decode(token, options={'verify_signature': False})
+        assert 'validUntil' not in payload
+
+    def test_invalid_validity_days_exits_cleanly(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        with cfg.open('a') as f:
+            f.write('status_validity_days = soon\n')
+        with pytest.raises(SystemExit):
+            _publish(tmp_path, cfg)
+        assert 'status_validity_days' in capsys.readouterr().out
+
+
+class TestPublishVerifyList:
+    def test_verify_list_proof_end_to_end(self, tmp_path, rsa_pub_pem):
+        # The published list is signed with the badge key and its issuer is the
+        # badge issuer, so verify_list=True (with that key) passes.
+        from openbadgeslib.ob3 import check_credential_status
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        badge_file = _sign(tmp_path, cfg)
+        pub = _publish(tmp_path, cfg)
+        credential = _credential_from(badge_file, rsa_pub_pem)
+        check_credential_status(credential, download=_served_from(pub),
+                                verify_list=True, list_pubkey_pem=rsa_pub_pem)
+
+    def test_verify_list_wrong_key_fails(self, tmp_path, rsa_pub_pem, ecc_pub_pem):
+        from openbadgeslib.ob3 import check_credential_status, OB3VerificationError
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        badge_file = _sign(tmp_path, cfg)
+        pub = _publish(tmp_path, cfg)
+        credential = _credential_from(badge_file, rsa_pub_pem)
+        with pytest.raises(OB3VerificationError, match='proof is invalid'):
+            check_credential_status(credential, download=_served_from(pub),
+                                    verify_list=True, list_pubkey_pem=ecc_pub_pem)

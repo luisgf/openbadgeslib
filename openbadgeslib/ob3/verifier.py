@@ -245,17 +245,26 @@ class OB3Verifier:
 
         return credential
 
-    def check_status(self, credential: OpenBadgeCredential) -> None:
+    def check_status(self, credential: OpenBadgeCredential,
+                     *, verify_list: bool = False) -> None:
         """Check the credential's ``credentialStatus`` (revocation) over the
         network, raising :class:`OB3VerificationError` if it is revoked/
         suspended or if the status cannot be determined (fail-closed). A
-        credential carrying no credentialStatus is a no-op.
+        credential carrying no credentialStatus is a no-op. The status list's
+        validFrom/validUntil window is always enforced.
+
+        Pass ``verify_list=True`` to also verify each status list credential's
+        own JWT-VC proof and bind its issuer to the badge's — this verifier's
+        key is reused, since ``openbadges-publish`` signs the list with the same
+        badge key that signed the credential.
 
         Imported lazily so the (network-touching) status module is only pulled
         in when a caller actually opts into status checking.
         """
         from .status import check_credential_status
-        check_credential_status(credential)
+        check_credential_status(
+            credential, verify_list=verify_list,
+            list_pubkey_pem=self.pubkey_pem if verify_list else None)
 
     def _key_for_token(
             self, header: dict[str, Any]) -> tuple[Union[str, bytes], list[str]]:

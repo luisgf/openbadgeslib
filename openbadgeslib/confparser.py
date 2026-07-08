@@ -105,6 +105,7 @@ class OB3StatusConfig:
     size_bits: int
     registry_path: str            # private index registry JSON
     list_urls: Dict[str, str]     # purpose -> public status list URL
+    validity_days: Optional[int] = None   # validUntil horizon; None => no bound
 
 
 def ob3_status_config(conf: ConfigParser,
@@ -140,6 +141,22 @@ def ob3_status_config(conf: ConfigParser,
         raise ValueError("[%s] status_size_bits must be an integer"
                          % badge_section) from None
 
+    # Optional validUntil horizon: when set, published status lists carry a
+    # validUntil = now + N days, and a verifier rejects a stale copy (replay
+    # protection). Unset => no bound (offline-friendly default). The issuer
+    # must republish within the window (see the wiki).
+    validity_raw = (conf[badge_section].get('status_validity_days') or '').strip()
+    validity_days: Optional[int] = None
+    if validity_raw:
+        try:
+            validity_days = int(validity_raw)
+        except ValueError:
+            raise ValueError("[%s] status_validity_days must be an integer"
+                             % badge_section) from None
+        if validity_days <= 0:
+            raise ValueError("[%s] status_validity_days must be positive"
+                             % badge_section)
+
     base_status = conf['paths'].get('base_status') or \
         os.path.join(conf['paths']['base'], 'status')
     registry_path = os.path.join(base_status, badge_section + '.json')
@@ -151,7 +168,8 @@ def ob3_status_config(conf: ConfigParser,
     list_urls = {p: urljoin(status_base, p + '.jwt') for p in purposes}
 
     return OB3StatusConfig(purposes=purposes, size_bits=size_bits,
-                           registry_path=registry_path, list_urls=list_urls)
+                           registry_path=registry_path, list_urls=list_urls,
+                           validity_days=validity_days)
 
 
 class ConfParser():

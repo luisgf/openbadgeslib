@@ -77,18 +77,25 @@ def encode_bitstring(set_indices: Iterable[int],
 def build_status_list_credential(issuer_id: str, url: str, purpose: str,
                                  set_indices: Iterable[int],
                                  size_bits: int = DEFAULT_SIZE_BITS,
-                                 issued: Optional[datetime] = None) -> dict[str, Any]:
+                                 issued: Optional[datetime] = None,
+                                 valid_until: Optional[datetime] = None
+                                 ) -> dict[str, Any]:
     """Build an (unsigned) BitstringStatusListCredential document.
 
     *url* is the public HTTPS URL the list will be served from — it becomes
     the credential ``id`` and must match the ``statusListCredential`` of the
     entries that point at it (see :func:`status_entry`). ``statusSize`` is
     omitted: entries are single-bit, the only size the verifier accepts.
+
+    *valid_until*, when given, adds a ``validUntil`` bound: a reader
+    (ob3.status) then rejects a stale copy served past that instant, so a
+    replayed old ``revocation.jwt`` cannot silently resurrect a revoked badge.
+    The issuer must republish the list before it lapses (see the wiki).
     """
     if purpose not in STATUS_PURPOSES:
         raise ValueError("statusPurpose must be one of %r, got %r"
                          % (STATUS_PURPOSES, purpose))
-    return {
+    vc: dict[str, Any] = {
         "@context": [_VC2_CONTEXT],
         "id": url,
         "type": ["VerifiableCredential", "BitstringStatusListCredential"],
@@ -102,6 +109,9 @@ def build_status_list_credential(issuer_id: str, url: str, purpose: str,
             "encodedList": encode_bitstring(set_indices, size_bits),
         },
     }
+    if valid_until is not None:
+        vc["validUntil"] = _iso(valid_until)
+    return vc
 
 
 def sign_status_list_credential(vc: dict[str, Any], privkey_pem: Any,

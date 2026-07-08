@@ -322,7 +322,7 @@ def _publish_ob3(args: argparse.Namespace,
     every status change is the normal workflow, and the managed files are
     replaced atomically.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
     from .confparser import ob3_issuer_id, ob3_status_config
     from .errors import LibOpenBadgesException, StatusError
     from .keys import alg_for_key_type, detect_key_type, public_jwk_from_pem
@@ -481,6 +481,11 @@ def _publish_ob3(args: argparse.Namespace,
                 continue
             algorithm = alg_for_key_type(detect_key_type(priv_pem))
 
+            valid_until = None
+            if status_conf.validity_days is not None:
+                valid_until = (datetime.now(tz=timezone.utc)
+                               + timedelta(days=status_conf.validity_days))
+
             badge_dir = os.path.join(args.output, name)
             os.makedirs(badge_dir, exist_ok=True)
             for purpose in status_conf.purposes:
@@ -488,7 +493,7 @@ def _publish_ob3(args: argparse.Namespace,
                     else registry.suspended_indices()
                 vc = build_status_list_credential(
                     issuer_id, status_conf.list_urls[purpose], purpose,
-                    indices, registry.size_bits)
+                    indices, registry.size_bits, valid_until=valid_until)
                 token = sign_status_list_credential(vc, priv_pem, algorithm)
                 _write_atomic(os.path.join(badge_dir, purpose + '.jwt'), token)
                 files_written.append(os.path.join(name, purpose + '.jwt'))

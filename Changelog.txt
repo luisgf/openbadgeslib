@@ -4,6 +4,24 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.8.0 - unreleased
+
+  - security(ob3): status lists gain replay protection and opt-in proof
+    verification, closing two documented trust gaps. (1) A per-badge
+    `status_validity_days` makes published lists carry a `validUntil`, and the
+    reader now enforces the list's validFrom/validUntil window — a lapsed
+    (replayed, or no-longer-republished) `revocation.jwt` is rejected instead
+    of silently resurrecting a revoked badge. (2)
+    `check_credential_status(..., verify_list=True)` (and
+    `OB3Verifier.check_status(..., verify_list=True)`) additionally verifies
+    the status list credential's own JWT-VC proof and binds its issuer to the
+    badge's, so a compromised status host cannot serve a validly-shaped list
+    that silently un-revokes. The list is signed with the badge key, so that
+    same key (reused automatically) verifies it; a did:web/did:key issuer is
+    resolved otherwise. Both are opt-in — the default stays a single
+    offline-friendly fetch, no behaviour break. (#164)
+
+
 * v3.7.0 - 2026-07-08
 
   - security(deps): `keys.py` (and the OB1 key-loading path) are ported to

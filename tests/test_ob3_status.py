@@ -249,3 +249,126 @@ class TestVerifyWithStatus:
         monkeypatch.setattr(status_mod, 'download_file', _fail)
         token = self._sign(ob3_rsa_signer, [_status_entry(94)])
         assert ob3_rsa_verifier.verify(token) is not None
+
+
+# ── #164: validFrom/validUntil window + opt-in proof verification ────────────
+
+def _iso(dt):
+    return dt.isoformat(timespec='seconds').replace('+00:00', 'Z')
+
+
+def _served_token(token):
+    data = token.encode('utf-8') if isinstance(token, str) else token
+
+    def _dl(url):
+        assert url == LIST_URL
+        return data
+    return _dl
+
+
+class TestStatusListWindow:
+    def _doc(self, **extra):
+        doc = _status_list_doc([])           # empty list: no bit set
+        doc['issuer'] = 'https://issuer.example'
+        doc.update(extra)
+        return doc
+
+    def test_no_validuntil_never_expires(self):
+        # Backward compatible: a list without validUntil is accepted.
+        check_credential_status(_credential([_status_entry(5)]),
+                                download=_downloader(self._doc()))
+
+    def test_future_validuntil_accepted(self):
+        from datetime import datetime, timedelta, timezone
+        doc = self._doc(validUntil=_iso(datetime.now(timezone.utc)
+                                        + timedelta(days=7)))
+        check_credential_status(_credential([_status_entry(5)]),
+                                download=_downloader(doc))
+
+    def test_expired_validuntil_rejected(self):
+        from datetime import datetime, timedelta, timezone
+        doc = self._doc(validUntil=_iso(datetime.now(timezone.utc)
+                                        - timedelta(days=1)))
+        with pytest.raises(OB3VerificationError, match='expired'):
+            check_credential_status(_credential([_status_entry(5)]),
+                                    download=_downloader(doc))
+
+    def test_not_yet_valid_validfrom_rejected(self):
+        from datetime import datetime, timedelta, timezone
+        doc = self._doc(validFrom=_iso(datetime.now(timezone.utc)
+                                       + timedelta(days=1)))
+        with pytest.raises(OB3VerificationError, match='not yet valid'):
+            check_credential_status(_credential([_status_entry(5)]),
+                                    download=_downloader(doc))
+
+    def test_malformed_validuntil_rejected(self):
+        with pytest.raises(OB3VerificationError, match='invalid validUntil'):
+            check_credential_status(
+                _credential([_status_entry(5)]),
+                download=_downloader(self._doc(validUntil='not-a-date')))
+
+
+class TestVerifyListProof:
+    def _signed(self, priv_pem, issuer_id, indices=()):
+        from openbadgeslib.ob3.status_list import (
+            build_status_list_credential, sign_status_list_credential)
+        vc = build_status_list_credential(issuer_id, LIST_URL, 'revocation',
+                                          indices)
+        return sign_status_list_credential(vc, priv_pem, 'EdDSA')
+
+    def _cred(self, issuer_id, entries):
+        from openbadgeslib.ob3 import Achievement, Issuer
+        return OpenBadgeCredential(
+            id='urn:uuid:00000000-0000-0000-0000-0000000000ab',
+            issuer=Issuer(id=issuer_id, name='I'),
+            recipient_id='mailto:r@example.com',
+            achievement=Achievement(id='https://a.example/1', name='A',
+                                    description='d', criteria_narrative='c'),
+            credential_status=entries)
+
+    def test_verify_with_pubkey_passes(self, ed25519_keypair):
+        priv, pub = ed25519_keypair
+        token = self._signed(priv, 'https://issuer.example')
+        check_credential_status(
+            self._cred('https://issuer.example', [_status_entry(5)]),
+            download=_served_token(token), verify_list=True, list_pubkey_pem=pub)
+
+    def test_issuer_mismatch_fails(self, ed25519_keypair):
+        priv, pub = ed25519_keypair
+        token = self._signed(priv, 'https://attacker.example')
+        with pytest.raises(OB3VerificationError,
+                           match='does not match the badge issuer'):
+            check_credential_status(
+                self._cred('https://issuer.example', [_status_entry(5)]),
+                download=_served_token(token), verify_list=True,
+                list_pubkey_pem=pub)
+
+    def test_bad_signature_fails(self, ed25519_keypair):
+        from openbadgeslib.keys import KeyEd25519
+        priv, _pub = ed25519_keypair
+        _priv2, wrong_pub = KeyEd25519().generate_keypair()
+        token = self._signed(priv, 'https://issuer.example')
+        with pytest.raises(OB3VerificationError, match='proof is invalid'):
+            check_credential_status(
+                self._cred('https://issuer.example', [_status_entry(5)]),
+                download=_served_token(token), verify_list=True,
+                list_pubkey_pem=wrong_pub)
+
+    def test_verify_via_did_key_resolution(self, ed25519_keypair):
+        # No list_pubkey_pem: the issuer DID (did:key, offline) is resolved.
+        from openbadgeslib.ob3.did import did_key_from_pem
+        priv, pub = ed25519_keypair
+        did = did_key_from_pem(pub)
+        token = self._signed(priv, did)
+        check_credential_status(self._cred(did, [_status_entry(5)]),
+                                download=_served_token(token), verify_list=True)
+
+    def test_unsigned_list_rejected_when_verify_requested(self):
+        # verify_list=True on a plain JSON (unsigned) list fails closed.
+        doc = _status_list_doc([])
+        doc['issuer'] = 'https://issuer.example'
+        with pytest.raises(OB3VerificationError, match='not a signed JWT-VC'):
+            check_credential_status(
+                self._cred('https://issuer.example', [_status_entry(5)]),
+                download=_downloader(doc), verify_list=True,
+                list_pubkey_pem=b'unused')
