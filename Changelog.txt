@@ -6,6 +6,19 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v3.7.0 - unreleased
 
+  - feat(ob1): OpenBadges 1.0 is now deprecated (removal scheduled for the
+    grouped 4.0.0 release, #170). Reaching the legacy import surface — the
+    `openbadgeslib.ob1` package, the top-level `openbadgeslib.badge` /
+    `openbadgeslib.signer` / `openbadgeslib.verifier` shims, and the
+    unprefixed `openbadgeslib.Signer` / `Verifier` / `Badge` / … re-exports —
+    now emits a `DeprecationWarning`, and the `-V 1` CLI paths (signer,
+    verifier, publish) print a `[!]` notice (suppressed under the verifier's
+    `--json`, so machine output stays clean). OB1 stays fully functional; a
+    bare `import openbadgeslib` and the OB2/OB3 APIs stay silent. OpenBadges
+    2.0 is **not** affected — it remains fully supported. The lifecycle policy
+    and the rejected alternatives (a `[legacy]` extra, a separate PyPI
+    package) are recorded on the "Python API OB1" wiki page. (#159)
+
   - feat(publish): `openbadges-publish -V 3` gains two read-only registry
     query commands, closing the credential lifecycle from the CLI
     (issue → revoke → audit). `--list [-b badge]` tabulates every issued

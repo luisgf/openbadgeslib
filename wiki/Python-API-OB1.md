@@ -1,5 +1,29 @@
 Programmatic guide to the **OpenBadges 1.0 (legacy)** API exposed by `openbadgeslib.ob1`. This is the frozen pre-2.0 wire format (a `uid`, a `verify: {type, url}` object, `hashed: "true"` as a string, and Unix-timestamp dates, with no `@context`/`type`). It is kept only for backward compatibility with badges already issued in this format — for new work use strict Open Badges 2.0 ([[Python API OB2]]) or 3.0 ([[Python API OB3]]). For how the generations differ see [[OB2 vs OB3]].
 
+## Deprecation and lifecycle policy
+
+**OpenBadges 1.0 is deprecated as of v3.7.0.** It is a dead format in the ecosystem (the Mozilla Backpack that anchored it shut down in 2019) and is de-facto frozen here. It remains **fully functional** for now; deprecation is about signalling, not removal.
+
+What deprecation means in this release:
+
+- **Library.** Reaching the OB1 API through its public surface emits a `DeprecationWarning`: the `openbadgeslib.ob1` package (e.g. `from openbadgeslib.ob1 import Signer`), the top-level `openbadgeslib.badge` / `openbadgeslib.signer` / `openbadgeslib.verifier` compatibility shims, and the unprefixed `openbadgeslib.Signer` / `openbadgeslib.Verifier` / `openbadgeslib.Badge` / … re-exports. `DeprecationWarning` is silent by default; run Python with `-W default::DeprecationWarning` (or under a test runner) to see it. A bare `import openbadgeslib` and the OB2/OB3 APIs stay silent.
+- **CLI.** `openbadges-signer`, `openbadges-verifier` and `openbadges-publish` print a `[!] OpenBadges 1.0 (-V 1) is deprecated …` notice on the `-V 1` paths. The verifier suppresses it under `--json` so machine output stays clean.
+
+**Removal** is scheduled for the grouped **4.0.0** breaking release (tracked in issue #170), not before. Ample notice, one migration.
+
+**OpenBadges 2.0 is _not_ legacy** and is unaffected: it is strict, recent and ecosystem-mainstream, and stays fully supported. Only the pre-2.0 OB1 format is deprecated.
+
+### Migrating off OB1
+
+- Issue strict OB 2.0 (`-V 2`, [[Python API OB2]]) or OB 3.0 (`-V 3`, [[Python API OB3]]) instead of `-V 1`.
+- Replace `openbadgeslib.signer.Signer` / `openbadgeslib.verifier.Verifier` with `openbadgeslib.ob2.OB2Signer`/`OB2Verifier` or `openbadgeslib.ob3.OB3Signer`/`OB3Verifier`.
+- Existing OB1 badges stay verifiable with `-V 1` until 4.0.0; re-issue them in OB 2.0/3.0 when convenient.
+
+### Evaluated and rejected (so they are not re-litigated)
+
+- **A `[legacy]` install extra** gating OB1 behind `pip install openbadgeslib[legacy]`: after the planned port of `keys.py` to `cryptography` (#167) drops OB1's last unique dependencies (`pycryptodome`, `python-ecdsa`), the extra would be an empty container — it would isolate no dependency weight while adding install-time friction. Not worth it.
+- **A separate PyPI package** for OB1: a large (L) effort — split packaging, CI, versioning and cross-package compatibility — for a near-zero user base. `deprecate now → remove in 4.0.0` dominates it.
+
 > The full, always-up-to-date class/function reference is generated from the docstrings: **[API Reference](https://luisgf.github.io/openbadgeslib/)**.
 
 The legacy names are re-exported both from `openbadgeslib.ob1` and, for backward compatibility, from the top-level `openbadgeslib.badge` / `openbadgeslib.signer` / `openbadgeslib.verifier` shims:

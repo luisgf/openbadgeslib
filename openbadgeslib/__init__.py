@@ -21,17 +21,7 @@
         License along with this library.
 """
 
-# ── OpenBadges 1.0 (legacy) ─────────────────────────────────────────────────────
-# The classes formerly exposed as "OpenBadges 2.0" are the pre-2.0 wire format
-# (no @context/type, uid, verify{}, Unix timestamps). They are re-exported here
-# unchanged for backward compatibility; the strict OB 2.0 implementation lives
-# in openbadgeslib.ob2 (OB2Signer/OB2Verifier).
-from .ob1 import (  # noqa: F401
-    Signer, Verifier, VerifyInfo,
-    Badge, BadgeSigned, Assertion,
-    BadgeStatus, BadgeImgType, BadgeType,
-    extract_svg_assertion, extract_png_assertion,
-)
+from typing import Any
 
 # ── OpenBadges 2.0 (strict) ──────────────────────────────────────────────────
 from .ob2 import (  # noqa: F401
@@ -47,3 +37,34 @@ from .ob3 import (  # noqa: F401
 # ── Shared utilities ────────────────────────────────────────────────────────────
 from .keys import KeyFactory, KeyRSA, KeyECC  # noqa: F401
 from .util import __version__  # noqa: F401
+
+
+# ── OpenBadges 1.0 (legacy) ──────────────────────────────────────────────────
+# The unprefixed OB1 names (Signer, Verifier, Badge, …) stay importable from
+# the top-level package for backward compatibility, but they are the legacy
+# OpenBadges 1.0 surface: accessing one now emits a DeprecationWarning
+# (removal in 4.0.0). Modern code uses openbadgeslib.ob2 / openbadgeslib.ob3.
+# They are resolved lazily from the ob1 leaf modules (PEP 562), so a bare
+# `import openbadgeslib` neither warns nor drags in the ob1 package.
+_OB1_API = {
+    'Signer': 'signer', 'Verifier': 'verifier', 'VerifyInfo': 'verifier',
+    'Badge': 'badge', 'BadgeSigned': 'badge', 'Assertion': 'badge',
+    'BadgeStatus': 'badge', 'BadgeImgType': 'badge', 'BadgeType': 'badge',
+    'extract_svg_assertion': 'badge', 'extract_png_assertion': 'badge',
+}
+
+
+def __getattr__(name: str) -> Any:
+    module = _OB1_API.get(name)
+    if module is None:
+        raise AttributeError(
+            'module %r has no attribute %r' % (__name__, name))
+    import importlib
+    import warnings
+    warnings.warn(
+        'openbadgeslib.%s is the legacy OpenBadges 1.0 API and is deprecated; '
+        'it will be removed in openbadgeslib 4.0.0. Use openbadgeslib.ob2 '
+        '(strict OB 2.0) or openbadgeslib.ob3 (OB 3.0). See the "OpenBadges '
+        '1.0 lifecycle" wiki page.' % name,
+        DeprecationWarning, stacklevel=2)
+    return getattr(importlib.import_module('.ob1.' + module, __name__), name)

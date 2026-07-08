@@ -547,6 +547,8 @@ def _publish_ob2(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
 
 def _publish_ob1(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     """Publish OpenBadges 1.0 (legacy) hosted issuer/badge/revocation metadata."""
+    print('[!] OpenBadges 1.0 (-V 1) is deprecated and will be removed in a '
+          'future release; publish OB 2.0 (-V 2) or OB 3.0 (-V 3) instead.')
     conf = read_config_or_exit(args.config)
 
     if args.output:

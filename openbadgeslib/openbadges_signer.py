@@ -48,7 +48,11 @@ from .keys import KeyType, detect_key_type, alg_for_key_type
 from .errors import BadgeImgFormatUnsupported
 from .confparser import read_config_or_exit, resolve_badge_section
 from .logs import enable_debug_logging
-from .ob1 import Signer, Badge, BadgeImgType, BadgeType
+# Badge (the config-driven badge model) and BadgeImgType are shared across all
+# OB versions here, so they import from the ob1 leaf module directly — reaching
+# them through the deprecated openbadgeslib.ob1 package surface would warn. The
+# genuinely OB1-only names (Signer, BadgeType) load lazily inside _sign_ob1.
+from .ob1.badge import Badge, BadgeImgType
 from .mail import BadgeMail
 from .util import __version__, normalize_recipient_id
 
@@ -229,6 +233,12 @@ def _sign_ob2(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
 def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
               badge_obj: Badge, badge_file_out: str, evidence: Optional[str]) -> None:
     """Sign a badge using OpenBadges 1.0 (legacy JWS)."""
+    from .ob1.signer import Signer
+    from .ob1.badge import BadgeType
+
+    print('[!] OpenBadges 1.0 (-V 1) is deprecated and will be removed in a '
+          'future release; issue OB 2.0 (-V 2) or OB 3.0 (-V 3) instead.')
+
     if badge_obj.key_type not in (KeyType.RSA, KeyType.ECC):
         # The legacy JWS path predates Ed25519 support (RSA/ECC key objects).
         sys.exit('[!] OpenBadges 1.0 (-V 1) supports RSA and ECC keys only; '

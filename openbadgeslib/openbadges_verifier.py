@@ -40,7 +40,6 @@ from typing import Any, Dict, Optional
 from .errors import LibOpenBadgesException
 from .confparser import read_config_or_exit, resolve_badge_section
 from .logs import enable_debug_logging
-from .ob1 import Verifier, BadgeSigned, BadgeStatus
 from .util import __version__
 
 logger = logging.getLogger(__name__)
@@ -246,6 +245,14 @@ def _verify_ob2(args: argparse.Namespace) -> None:
 
 def _verify_ob1(args: argparse.Namespace) -> None:
     """Verify a badge using OpenBadges 1.0 (legacy JWS)."""
+    from .ob1.verifier import Verifier
+    from .ob1.badge import BadgeSigned, BadgeStatus
+
+    if not args.json:
+        print('[!] OpenBadges 1.0 (-V 1) is deprecated and will be removed in '
+              'a future release; verify OB 2.0 (-V 2) or OB 3.0 (-V 3) badges '
+              'instead.')
+
     result: Dict[str, Any] = {'ob_version': '1', 'recipient': args.receptor, '_exit': None}
     try:
         badge = BadgeSigned.read_from_file(args.filein)
