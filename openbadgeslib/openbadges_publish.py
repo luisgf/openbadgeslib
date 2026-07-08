@@ -38,10 +38,10 @@ import shutil
 import sys
 import tempfile
 
-from typing import Any, List, TYPE_CHECKING, Tuple
+from typing import Any, List, Optional, TYPE_CHECKING, Tuple
 from urllib.parse import urljoin
 from .confparser import read_config_or_exit, resolve_badge_section
-from .util import __version__
+from .util import __version__, emit_cli_json
 
 if TYPE_CHECKING:
     from .ob3.status_registry import StatusEntry, StatusEvent, StatusRegistry
@@ -79,6 +79,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('-b', '--badge',
                         help='Badge name; scopes the --revoke/--suspend/--unsuspend '
                              'lookup to that badge registry')
+    parser.add_argument('--json', action='store_true',
+                        help='OB3 only (-V 3): emit a machine-readable JSON '
+                             'result instead of the human output — for publish '
+                             '{did, files_written, status_operation, skipped} '
+                             'and for --list/--status the queried records. Exit '
+                             'status: 0 success, 2 partial (some badges '
+                             'skipped), 1 any error.')
     parser.add_argument('-v', '--version', action='version', version=__version__)
     return parser
 
@@ -87,20 +94,36 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
+    # JSON output is defined for the OB3 artefacts/registries only (did.json,
+    # status lists, the status registries); OB1/OB2 hosted metadata has no such
+    # contract, so reject the combination rather than emit half of one.
+    if args.json and args.ob_version != '3':
+        sys.exit('[!] --json is supported for OpenBadges 3.0 (-V 3) only')
+
     # Read-only registry queries need no output directory and never touch the
     # published tree, so they route before the publish paths and the -o check.
     if args.list or args.status is not None:
         if args.ob_version != '3':
             sys.exit('[!] --list/--status query the OpenBadges 3.0 status '
                      'registries and need -V 3')
-        _query_ob3(args, parser)
+        if args.json:
+            emit_cli_json(lambda: _query_ob3(args, parser))
+        else:
+            _query_ob3(args, parser)
         return
 
     if args.ob_version == '3':
         if args.output is None:
             parser.error('-o/--output is required to publish '
                          '(it is not needed for --list/--status)')
-        _publish_ob3(args, parser)
+        if args.json:
+            emit_cli_json(lambda: _publish_ob3(args, parser))
+        else:
+            result = _publish_ob3(args, parser)
+            # A partial failure historically exits 1 in human mode; --json maps
+            # it to 2 (see the result's _exit). Preserve the human exit here.
+            if result.get('_exit') == 2:
+                sys.exit(1)
         return
 
     if args.revoke or args.suspend or args.unsuspend or args.reason or args.badge:
@@ -137,7 +160,7 @@ def _write_atomic(path: str, data: str) -> None:
 
 
 def _query_ob3(args: argparse.Namespace,
-               parser: argparse.ArgumentParser) -> None:
+               parser: argparse.ArgumentParser) -> dict[str, Any]:
     """Read-only inspection of the private OB3 status registries.
 
     ``--list`` tabulates every issued credential (jti, recipient, issue date,
@@ -193,9 +216,8 @@ def _query_ob3(args: argparse.Namespace,
         sys.exit(-1)
 
     if args.status is not None:
-        _print_status_detail(registries, args.status)
-    else:
-        _print_registry_table(registries)
+        return _print_status_detail(registries, args.status)
+    return _print_registry_table(registries)
 
 
 def _state_label(entry: 'StatusEntry') -> str:
@@ -213,14 +235,32 @@ def _event_detail(event: 'StatusEvent') -> str:
     return event.date
 
 
+def _entry_to_dict(name: str, entry: 'StatusEntry') -> dict[str, Any]:
+    """The machine-readable record of one credential, for --json output."""
+    data: dict[str, Any] = {
+        'badge': name, 'jti': entry.jti, 'index': entry.index,
+        'recipient': entry.recipient, 'issued_on': entry.issued_on,
+        'state': _state_label(entry),
+    }
+    if entry.revoked is not None:
+        data['revoked'] = entry.revoked.to_dict()
+    if entry.suspended is not None:
+        data['suspended'] = entry.suspended.to_dict()
+    return data
+
+
 def _print_registry_table(
-        registries: List[Tuple[str, 'StatusRegistry']]) -> None:
+        registries: List[Tuple[str, 'StatusRegistry']]) -> dict[str, Any]:
     header = ('JTI', 'RECIPIENT', 'ISSUED', 'STATE')
     grand_total = 0
+    badges = []
     for name, registry in registries:
         entries = sorted(registry.entries.values(),
                          key=lambda e: (e.issued_on, e.jti))
         grand_total += len(entries)
+        badges.append({'badge': name,
+                       'credentials': [_entry_to_dict(name, e)
+                                       for e in entries]})
         print('\n# %s — %d credential%s'
               % (name, len(entries), '' if len(entries) == 1 else 's'))
         if not entries:
@@ -235,10 +275,11 @@ def _print_registry_table(
     print('\n%d credential%s total across %d badge%s'
           % (grand_total, '' if grand_total == 1 else 's',
              len(registries), '' if len(registries) == 1 else 's'))
+    return {'badges': badges, 'total': grand_total}
 
 
 def _print_status_detail(registries: List[Tuple[str, 'StatusRegistry']],
-                         ident: str) -> None:
+                         ident: str) -> dict[str, Any]:
     matches = [(name, entry)
                for name, registry in registries
                for entry in registry.find(ident)]
@@ -259,13 +300,16 @@ def _print_status_detail(registries: List[Tuple[str, 'StatusRegistry']],
             _print_field('revoked', _event_detail(entry.revoked))
         if entry.suspended is not None:
             _print_field('suspended', _event_detail(entry.suspended))
+    return {'matches': [_entry_to_dict(name, entry)
+                        for name, entry in matches]}
 
 
 def _print_field(label: str, value: str) -> None:
     print('%-11s %s' % (label + ':', value))
 
 
-def _publish_ob3(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+def _publish_ob3(args: argparse.Namespace,
+                 parser: argparse.ArgumentParser) -> dict[str, Any]:
     """Publish OpenBadges 3.0 issuer artefacts and manage credential status.
 
     Always regenerates, from the per-badge status registries: the issuer's
@@ -315,6 +359,7 @@ def _publish_ob3(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
 
     # ── status management (before regeneration, so the lists pick it up) ────
     operation = None
+    operation_result: Optional[dict[str, Any]] = None
     if args.revoke:
         operation = ('revoke', 'REVOKED', args.revoke)
     elif args.suspend:
@@ -377,6 +422,8 @@ def _publish_ob3(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
             print('[!] %s' % exc)
             sys.exit(-1)
         print('[+] %s %s %s (index %d)' % (verb, name, jti, entry.index))
+        operation_result = {'operation': op, 'badge': name, 'jti': jti,
+                            'index': entry.index, 'reason': args.reason}
 
     # ── regenerate every managed artefact from the registries ───────────────
     publish_url = conf['issuer']['publish_url']
@@ -390,6 +437,7 @@ def _publish_ob3(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
             sys.exit(-1)
 
     failures = []                 # badges skipped (unreadable key / registry)
+    files_written: List[str] = []  # output-relative paths, for --json
     umask = os.umask(0o077)  # rwx------
     try:
         os.makedirs(args.output, exist_ok=True)
@@ -411,6 +459,7 @@ def _publish_ob3(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
                      'pairs with openbadges-keygenerator first')
         _write_atomic(os.path.join(args.output, 'did.json'),
                       _dump(build_did_document(did, methods)))
+        files_written.append('did.json')
 
         for name, status_conf in status_confs.items():
             if status_conf is None:
@@ -442,10 +491,12 @@ def _publish_ob3(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
                     indices, registry.size_bits)
                 token = sign_status_list_credential(vc, priv_pem, algorithm)
                 _write_atomic(os.path.join(badge_dir, purpose + '.jwt'), token)
+                files_written.append(os.path.join(name, purpose + '.jwt'))
 
             # Keep the raw PEM alongside for tools that fetch it directly.
             shutil.copyfile(conf[name]['public_key'],
                             os.path.join(badge_dir, 'verify.pem'))
+            files_written.append(os.path.join(name, 'verify.pem'))
     finally:
         os.umask(umask)
 
@@ -454,15 +505,25 @@ def _publish_ob3(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
               'were NOT regenerated' % (len(failures), ', '.join(failures)))
     print('Please configure your Web server to publish the folder %s as %s' %
           (args.output, publish_url))
-    if failures:
-        sys.exit(1)
-    print('[i] Issuer DID: %s' % did)
-    if ':' not in did[len('did:web:'):]:
-        print('[i] A bare-host did:web resolves at '
-              'https://%s/.well-known/did.json — serve did.json there.'
-              % did[len('did:web:'):])
-    if operation is not None:
-        print('[!] Re-upload %s so the change takes effect' % args.output)
+    if not failures:
+        print('[i] Issuer DID: %s' % did)
+        if ':' not in did[len('did:web:'):]:
+            print('[i] A bare-host did:web resolves at '
+                  'https://%s/.well-known/did.json — serve did.json there.'
+                  % did[len('did:web:'):])
+        if operation is not None:
+            print('[!] Re-upload %s so the change takes effect' % args.output)
+
+    # A partial failure reports exit 2 in --json (a documented "some work
+    # skipped" outcome); the human path preserves its historical exit 1 (set in
+    # main). The internal sys.exit(1) used to live here.
+    return {
+        'did': did,
+        'files_written': sorted(files_written),
+        'status_operation': operation_result,
+        'skipped': failures,
+        '_exit': 2 if failures else 0,
+    }
 
 
 def _publish_ob2(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:

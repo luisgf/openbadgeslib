@@ -470,3 +470,118 @@ class TestPublishQuery:
         with patch.object(sys, 'argv', argv):
             with pytest.raises(SystemExit):    # argparse: not allowed with
                 openbadges_publish.main()
+
+
+# ── #166: --json machine-readable output + exit-code contract ────────────────
+
+def _run_json(main, argv):
+    """Run a CLI main() in --json mode; return (exit_code, stdout)."""
+    with patch.object(sys, 'argv', argv):
+        with pytest.raises(SystemExit) as exc:
+            main()
+    return exc.value.code
+
+
+class TestSignerJson:
+    def test_sign_ob3_json_success(self, tmp_path, rsa_pub_pem, capsys):
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        out = tmp_path / 'out'
+        out.mkdir(exist_ok=True)
+        argv = ['openbadges-signer', '-c', str(cfg), '-b', '1', '-r', RECIPIENT,
+                '-o', str(out), '-E', '-V', '3', '--json']
+        code = _run_json(openbadges_signer.main, argv)
+        result = json.loads(capsys.readouterr().out)
+        assert code == 0
+        assert result['ob_version'] == '3'
+        assert result['jti'].startswith('urn:uuid:')
+        assert result['status_index'] is not None
+        assert result['proof_format'] == 'vc-jwt'
+        assert result['badge_file'].endswith('.svg')
+
+    def test_sign_json_error_is_json(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path)
+        out = tmp_path / 'out'
+        out.mkdir(exist_ok=True)
+        argv = ['openbadges-signer', '-c', str(cfg), '-b', '99', '-r', RECIPIENT,
+                '-o', str(out), '-E', '-V', '3', '--json']
+        code = _run_json(openbadges_signer.main, argv)
+        result = json.loads(capsys.readouterr().out)
+        assert code == 1
+        assert 'error' in result and 'badge' in result['error']
+
+
+class TestPublishJson:
+    def test_publish_ob3_json_success(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path, status_lists='revocation, suspension')
+        _sign(tmp_path, cfg)
+        capsys.readouterr()
+        argv = ['openbadges-publish', '-c', str(cfg), '-o', str(tmp_path / 'pub'),
+                '-V', '3', '--json']
+        code = _run_json(openbadges_publish.main, argv)
+        result = json.loads(capsys.readouterr().out)
+        assert code == 0
+        assert result['did'] == 'did:web:example.com:issuer'
+        assert 'did.json' in result['files_written']
+        assert 'badge_1/revocation.jwt' in result['files_written']
+        assert result['status_operation'] is None
+        assert result['skipped'] == []
+
+    def test_publish_revoke_json(self, tmp_path, rsa_pub_pem, capsys):
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        badge_file = _sign(tmp_path, cfg)
+        credential = _credential_from(badge_file, rsa_pub_pem)
+        capsys.readouterr()
+        argv = ['openbadges-publish', '-c', str(cfg), '-o', str(tmp_path / 'pub'),
+                '-V', '3', '--revoke', credential.id, '--reason', 'oops', '--json']
+        code = _run_json(openbadges_publish.main, argv)
+        result = json.loads(capsys.readouterr().out)
+        assert code == 0
+        assert result['status_operation']['operation'] == 'revoke'
+        assert result['status_operation']['jti'] == credential.id
+        assert result['status_operation']['reason'] == 'oops'
+
+    def test_list_json(self, tmp_path, rsa_pub_pem, capsys):
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        badge_file = _sign(tmp_path, cfg)
+        credential = _credential_from(badge_file, rsa_pub_pem)
+        capsys.readouterr()
+        argv = ['openbadges-publish', '-c', str(cfg), '-V', '3', '--list',
+                '--json']
+        code = _run_json(openbadges_publish.main, argv)
+        result = json.loads(capsys.readouterr().out)
+        assert code == 0
+        assert result['total'] == 1
+        cred = result['badges'][0]['credentials'][0]
+        assert cred['jti'] == credential.id
+        assert cred['state'] == 'active'
+
+    def test_status_json(self, tmp_path, rsa_pub_pem, capsys):
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        badge_file = _sign(tmp_path, cfg)
+        credential = _credential_from(badge_file, rsa_pub_pem)
+        capsys.readouterr()
+        argv = ['openbadges-publish', '-c', str(cfg), '-V', '3', '--status',
+                credential.id, '--json']
+        code = _run_json(openbadges_publish.main, argv)
+        result = json.loads(capsys.readouterr().out)
+        assert code == 0
+        assert result['matches'][0]['jti'] == credential.id
+
+    def test_status_json_not_found_exits_1(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        _sign(tmp_path, cfg)
+        capsys.readouterr()
+        argv = ['openbadges-publish', '-c', str(cfg), '-V', '3', '--status',
+                'urn:uuid:nope', '--json']
+        code = _run_json(openbadges_publish.main, argv)
+        result = json.loads(capsys.readouterr().out)
+        assert code == 1
+        assert 'error' in result
+
+    def test_json_rejected_for_v2(self, tmp_path):
+        cfg = _write_config(tmp_path)
+        argv = ['openbadges-publish', '-c', str(cfg), '-o', str(tmp_path / 'p'),
+                '-V', '2', '--json']
+        with patch.object(sys, 'argv', argv):
+            with pytest.raises(SystemExit, match='-V 3'):
+                openbadges_publish.main()

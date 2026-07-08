@@ -1,5 +1,6 @@
 """Tests for openbadgeslib.util."""
 import hashlib
+import json
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -8,8 +9,53 @@ from openbadgeslib.util import (
     sha1_string, sha256_string, md5_string,
     hash_email, download_file, show_ecc_disclaimer,
     normalize_recipient_id, recipient_ids_match,
-    __version__,
+    emit_cli_json, __version__,
 )
+
+
+class TestEmitCliJson:
+    """The shared --json contract used by the signer/publish/keygenerator
+    CLIs (#166): 0 success, 2 partial, 1 any error; human stdout swallowed."""
+
+    def _run(self, fn, capsys):
+        with pytest.raises(SystemExit) as exc:
+            emit_cli_json(fn)
+        return exc.value.code, json.loads(capsys.readouterr().out)
+
+    def test_success_exits_0(self, capsys):
+        code, result = self._run(lambda: {'ok': 1}, capsys)
+        assert code == 0 and result == {'ok': 1}
+
+    def test_human_stdout_is_swallowed(self, capsys):
+        def run():
+            print('human noise that must not reach stdout')
+            return {'value': 42}
+        code, result = self._run(run, capsys)
+        assert code == 0 and result == {'value': 42}
+
+    def test_exit_key_sets_partial_status(self, capsys):
+        code, result = self._run(lambda: {'skipped': ['b'], '_exit': 2}, capsys)
+        assert code == 2
+        assert result == {'skipped': ['b']}   # _exit is stripped from payload
+
+    def test_exception_becomes_json_error(self, capsys):
+        def run():
+            raise ValueError('boom')
+        code, result = self._run(run, capsys)
+        assert code == 1 and result['error'] == 'ValueError: boom'
+
+    def test_sys_exit_message_becomes_json_error(self, capsys):
+        def run():
+            raise SystemExit('[!] something went wrong')
+        code, result = self._run(run, capsys)
+        assert code == 1 and result['error'] == '[!] something went wrong'
+
+    def test_sys_exit_code_recovers_last_printed_line(self, capsys):
+        def run():
+            print('[!] the real reason')
+            raise SystemExit(-1)     # numeric code: message is in the buffer
+        code, result = self._run(run, capsys)
+        assert code == 1 and result['error'] == '[!] the real reason'
 
 
 class TestHashFunctions:

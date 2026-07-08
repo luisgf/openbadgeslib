@@ -39,7 +39,7 @@ import os.path
 import time
 
 from datetime import datetime, timezone, timedelta
-from typing import Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .ob3 import OpenBadgeCredential
@@ -54,7 +54,7 @@ from .logs import enable_debug_logging
 # genuinely OB1-only names (Signer, BadgeType) load lazily inside _sign_ob1.
 from .ob1.badge import Badge, BadgeImgType
 from .mail import BadgeMail
-from .util import __version__, normalize_recipient_id
+from .util import __version__, emit_cli_json, normalize_recipient_id
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +96,11 @@ def build_parser() -> argparse.ArgumentParser:
                              "key and the [ldp] extra). Overrides the badge's "
                              "'proof_format' config key.")
     parser.add_argument('-d', '--debug', action='store_true', help='Show debug messages in runtime.')
+    parser.add_argument('--json', action='store_true',
+                        help='Emit a machine-readable JSON result '
+                             '{ob_version, badge_file, jti, status_index, '
+                             'proof_format} instead of the human output. Exit '
+                             'status: 0 on success, 1 on any error.')
     parser.add_argument('-v', '--version', action='version', version=__version__)
     return parser
 
@@ -103,7 +108,15 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
     enable_debug_logging(args.debug)
+    if args.json:
+        emit_cli_json(lambda: _run_sign(args))
+        return
+    _run_sign(args)
 
+
+def _run_sign(args: argparse.Namespace) -> dict[str, Any]:
+    """Sign one badge and return the machine-readable result (consumed by the
+    --json path); the human output is printed as a side effect."""
     if bool(args.no_evidence) != (args.evidence is None):  # XOR
         sys.exit("Please, choose '-e' OR '-E'")
 
@@ -141,15 +154,15 @@ def main() -> None:
         sys.exit(-1)
 
     if args.ob_version == '3':
-        _sign_ob3(args, conf, badge, badge_obj, badge_file_out, evidence)
-    elif args.ob_version == '2':
-        _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence)
-    else:
-        _sign_ob1(args, conf, badge, badge_obj, badge_file_out, evidence)
+        return _sign_ob3(args, conf, badge, badge_obj, badge_file_out, evidence)
+    if args.ob_version == '2':
+        return _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence)
+    return _sign_ob1(args, conf, badge, badge_obj, badge_file_out, evidence)
 
 
 def _sign_ob2(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
-              badge_obj: Badge, badge_file_out: str, evidence: Optional[str]) -> None:
+              badge_obj: Badge, badge_file_out: str,
+              evidence: Optional[str]) -> dict[str, Any]:
     """Sign a badge using strict OpenBadges 2.0 (SignedBadge JWS or HostedBadge)."""
     import json
     import uuid
@@ -228,10 +241,15 @@ def _sign_ob2(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
     if args.mail_badge:
         print('[i] --mail-badge is not supported for -V 2 yet; the badge was saved '
               'but not emailed.')
+    result: dict[str, Any] = {'ob_version': '2', 'badge_file': badge_file_out}
+    if args.hosted:
+        result['assertion_id'] = assertion.id
+    return result
 
 
 def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
-              badge_obj: Badge, badge_file_out: str, evidence: Optional[str]) -> None:
+              badge_obj: Badge, badge_file_out: str,
+              evidence: Optional[str]) -> dict[str, Any]:
     """Sign a badge using OpenBadges 1.0 (legacy JWS)."""
     from .ob1.signer import Signer
     from .ob1.badge import BadgeType
@@ -300,10 +318,14 @@ def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
                 print('[!] Could not send mail: %s' % err)
 
         print('%s at: %s' % (msg, badge_file_out))
+        return {'ob_version': '1', 'badge_file': badge_file_out}
+
+    sys.exit('[!] OpenBadges 1.0 signing produced no badge')
 
 
 def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
-              badge_obj: Badge, badge_file_out: str, evidence: Optional[str]) -> None:
+              badge_obj: Badge, badge_file_out: str,
+              evidence: Optional[str]) -> dict[str, Any]:
     """Sign a badge using OpenBadges 3.0 (JWT-VC or a Data Integrity proof)."""
     from .ob3 import OB3Signer, Issuer, Achievement, OpenBadgeCredential
     from .confparser import ob3_issuer_id, ob3_proof_format, ob3_status_config
@@ -413,6 +435,9 @@ def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
     if args.mail_badge:
         print('[i] --mail-badge is not supported for -V 3; the badge was saved '
               'but not emailed.')
+    return {'ob_version': '3', 'badge_file': badge_file_out,
+            'jti': credential.id, 'status_index': status_index,
+            'proof_format': proof_format}
 
 
 def _sign_ob3_ldp(badge: str, badge_obj: Badge,

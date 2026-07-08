@@ -6,6 +6,19 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v3.7.0 - unreleased
 
+  - feat(cli): `--json` machine-readable output and a documented exit-code
+    contract for `openbadges-signer`, `openbadges-publish` and
+    `openbadges-keygenerator` (the verifier already had one), so issuance can
+    be automated without scraping human text. Each prints exactly one JSON
+    object to stdout — the signer `{ob_version, badge_file, jti, status_index,
+    proof_format}`, the keygenerator `{key_type, private_key, public_key}`,
+    publish `{did, files_written, status_operation, skipped}`, and
+    `--list`/`--status` the queried records — under a shared exit contract:
+    `0` success, `2` partial (some badges skipped), `1` any error (reported as
+    `{"error": "..."}`). Human output and its historical (inconsistent) exit
+    codes are untouched — unifying those is reserved for 4.0.0. `publish
+    --json` is OpenBadges 3.0 only. (#166)
+
   - feat(ob3): JWT-VC verification now honours the token's `kid` header for a
     multi-key did:web issuer. `OB3Verifier.for_issuer_did` fetches the DID
     document once and selects the exact `verificationMethod` the kid names (an

@@ -118,6 +118,39 @@ def test_keygenerator_generates_rsa_by_default(tmp_path):
     assert detect_key_type(pub) is KeyType.RSA
 
 
+def test_keygenerator_json_success(tmp_path, capsys):
+    import json
+    import pytest
+    from openbadgeslib import openbadges_keygenerator
+    cfg = _write_keygen_config(tmp_path, 'ECC')
+    argv = ['openbadges-keygenerator', '-c', str(cfg), '-g', '1', '--json']
+    with patch.object(sys, 'argv', argv):
+        with pytest.raises(SystemExit) as exc:
+            openbadges_keygenerator.main()
+    assert exc.value.code == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result['key_type'] == 'ECC'
+    assert result['private_key'].endswith('sign.pem')
+    assert result['public_key'].endswith('verify.pem')
+
+
+def test_keygenerator_json_error_is_json(tmp_path, capsys):
+    import json
+    import pytest
+    from openbadgeslib import openbadges_keygenerator
+    cfg = _write_keygen_config(tmp_path, 'ECC')
+    argv = ['openbadges-keygenerator', '-c', str(cfg), '-g', '1', '--json']
+    with patch.object(sys, 'argv', argv):    # first run creates the keys ...
+        with pytest.raises(SystemExit):
+            openbadges_keygenerator.main()
+    capsys.readouterr()
+    with patch.object(sys, 'argv', argv):    # ... second run must fail cleanly
+        with pytest.raises(SystemExit) as exc:
+            openbadges_keygenerator.main()
+    assert exc.value.code == 1
+    assert 'error' in json.loads(capsys.readouterr().out)
+
+
 # ── openbadges-verifier OB3 end-to-end ──────────────────────────────────────────
 
 def test_verifier_ob3_end_to_end(tmp_path, rsa_priv_pem, rsa_pub_pem, svg_image, capsys):

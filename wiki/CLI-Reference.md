@@ -36,7 +36,7 @@ Generates a PEM key pair (private signing key + public verification key) for a b
 ### Synopsis
 
 ```sh
-openbadges-keygenerator -g BADGE [-c FILE] [-d]
+openbadges-keygenerator -g BADGE [-c FILE] [--json] [-d]
 ```
 
 | Short | Long | Meaning | Default |
@@ -44,6 +44,7 @@ openbadges-keygenerator -g BADGE [-c FILE] [-d]
 | `-c` | `--config` | Config file to use | `config.ini` |
 | `-g` | `--genkey BADGE` | Generate a key pair for section `[badge_<BADGE>]` (the suffix after `badge_`) | none (prints help) |
 | `-d` | `--debug` | Show debug messages at runtime | off |
+| — | `--json` | Emit a machine-readable JSON result (`{key_type, private_key, public_key}`) instead of the human log lines. See [Machine-readable output](#machine-readable-output-and-exit-codes) | off |
 | `-v` | `--version` | Print version and exit | — |
 
 The command refuses to overwrite: if either key file already exists it prints `[!] Key file is present at <path>` and exits with status 1.
@@ -68,7 +69,7 @@ You **must** choose exactly one of `-e / --evidence` or `-E / --no-evidence`. Su
 ### Synopsis
 
 ```sh
-openbadges-signer -b BADGE -r RECEPTOR (-e URL | -E) [-c FILE] [-o DIR] [-M] [-H] [-x DAYS] [-V {1,2,3}] [-P {vc-jwt,ldp}] [-d]
+openbadges-signer -b BADGE -r RECEPTOR (-e URL | -E) [-c FILE] [-o DIR] [-M] [-H] [-x DAYS] [-V {1,2,3}] [-P {vc-jwt,ldp}] [--json] [-d]
 ```
 
 | Short | Long | Meaning | Default |
@@ -85,6 +86,7 @@ openbadges-signer -b BADGE -r RECEPTOR (-e URL | -E) [-c FILE] [-o DIR] [-M] [-H
 | `-V` | `--ob-version {1,2,3}` | `1` = legacy JWS (OB 1.0), `2` = strict OB 2.0 JWS, `3` = JWT-VC | `3` |
 | `-P` | `--proof-format {vc-jwt,ldp}` | OB 3.0 only (`-V 3`): `vc-jwt` = compact JWT-VC, `ldp` = embedded W3C Data Integrity proof (`eddsa-rdfc-2022`; needs an Ed25519 key and the `[ldp]` extra). Overrides the badge's `proof_format` config key | `vc-jwt` |
 | `-d` | `--debug` | Show debug messages at runtime | off |
+| — | `--json` | Emit a machine-readable JSON result (`{ob_version, badge_file, jti, status_index, proof_format}`) instead of the human output. See [Machine-readable output](#machine-readable-output-and-exit-codes) | off |
 | `-v` | `--version` | Print version and exit | — |
 
 `-M / --mail-badge` requires an `[smtp]` section in `config.ini` (server, port, `use_ssl`, `mail_from`, optional `username`/`password`) and a `mail` entry in the badge section pointing to a text file (first line = subject, rest = body). See [[Configuration]].
@@ -203,8 +205,8 @@ The output directory is created with a `0o077` umask.
 
 ```sh
 openbadges-publish -o DIR [-c FILE] [-V {1,2,3}]
-openbadges-publish -o DIR -V 3 [--revoke ID | --suspend ID | --unsuspend ID] [--reason TEXT] [-b BADGE]
-openbadges-publish -V 3 (--list | --status ID) [-c FILE] [-b BADGE]
+openbadges-publish -o DIR -V 3 [--revoke ID | --suspend ID | --unsuspend ID] [--reason TEXT] [-b BADGE] [--json]
+openbadges-publish -V 3 (--list | --status ID) [-c FILE] [-b BADGE] [--json]
 ```
 
 | Short | Long | Meaning | Default |
@@ -218,6 +220,7 @@ openbadges-publish -V 3 (--list | --status ID) [-c FILE] [-b BADGE]
 | — | `--list` | OB3 only: tabulate issued credentials — jti, recipient, issue date, state (read-only) | — |
 | — | `--status ID` | OB3 only: full status record of a credential by jti or recipient email, revocation/suspension reason included (read-only) | — |
 | — | `--reason TEXT` | Free-text reason recorded with `--revoke`/`--suspend` | — |
+| — | `--json` | OB3 only: emit a machine-readable JSON result instead of the human output — `{did, files_written, status_operation, skipped}` when publishing, the queried records for `--list`/`--status`. See [Machine-readable output](#machine-readable-output-and-exit-codes) | off |
 | `-b` | `--badge NAME` | Scope the lookup/listing to one badge's registry | all badges |
 | `-v` | `--version` | Print version and exit | — |
 
@@ -270,3 +273,32 @@ revoked:    2026-07-08T05:26:12Z  (reason: issued in error)
 ```
 
 `--status` exits non-zero when the credential is not found, so it composes in scripts.
+
+## Machine-readable output and exit codes
+
+Every CLI accepts `--json` for scripting: it prints exactly **one JSON object** to stdout and nothing else (human `[+]`/`[!]` lines and logs are suppressed or go to stderr), so automation can parse the result without scraping text.
+
+Success payloads:
+
+| Command | `--json` object |
+|---------|-----------------|
+| `openbadges-keygenerator` | `{key_type, private_key, public_key}` |
+| `openbadges-signer` | `{ob_version, badge_file, jti, status_index, proof_format}` (`jti`/`status_index`/`proof_format` are OB3; `null` where not applicable) |
+| `openbadges-publish -V 3` | `{did, files_written, status_operation, skipped}` |
+| `openbadges-publish -V 3 --list` | `{badges: [{badge, credentials: [...]}], total}` |
+| `openbadges-publish -V 3 --status` | `{matches: [...]}` |
+| `openbadges-verifier` | the verification result (`valid`, `trusted`, `issuer`, `achievement`, …) |
+
+On error the object is `{"error": "<message>"}`.
+
+Exit-code contract (shared across the `--json` paths):
+
+| Code | Meaning |
+|------|---------|
+| `0` | success |
+| `2` | partial success — verifier: valid signature but the issuer is untrusted; publish: some badges were skipped |
+| `1` | any error |
+
+`openbadges-publish -V 3 --json` is defined for OpenBadges 3.0 only (the OB1/OB2 hosted-metadata paths have no JSON contract); combining `--json` with `-V 1`/`-V 2` is rejected.
+
+> Note: without `--json`, the human-mode exit codes are **not** part of this contract and are inconsistent across versions for historical reasons (e.g. an invalid OB1/OB2 badge exits `0`, an OB3 one exits non-zero). Unifying them is a breaking change reserved for the 4.0.0 release. Gate automation on `--json`.

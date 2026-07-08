@@ -34,10 +34,12 @@ import logging
 import os
 import sys
 
+from typing import Any
+
 from .logs import enable_debug_logging
 from .keys import KeyFactory, KeyType
 from .confparser import read_config_or_exit, resolve_badge_section
-from .util import __version__
+from .util import __version__, emit_cli_json
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,11 @@ def build_parser() -> argparse.ArgumentParser:
                               "badge's key_type field; default RSA."))
     parser.add_argument('-d', '--debug', action='store_true',
                         help='Show debug messages at runtime.')
+    parser.add_argument('--json', action='store_true',
+                        help='Emit a machine-readable JSON result '
+                             '{key_type, private_key, public_key} instead of '
+                             'the human log lines. Exit status: 0 on success, '
+                             '1 on any error.')
     parser.add_argument('-v', '--version', action='version',
                         version=__version__)
     return parser
@@ -72,9 +79,21 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
+    if args.json:
+        emit_cli_json(lambda: _generate(args))
+        return
+
     if not args.genkey:
         parser.print_help()
         return
+    _generate(args)
+
+
+def _generate(args: argparse.Namespace) -> dict[str, Any]:
+    """Generate the badge key pair; returns the machine-readable result
+    {key_type, private_key, public_key} consumed by the --json path."""
+    if not args.genkey:
+        sys.exit('nothing to do: pass -g/--genkey BADGE to generate a key pair')
 
     conf = read_config_or_exit(args.config)
     badge = resolve_badge_section(conf, args.genkey)
@@ -119,6 +138,8 @@ def main() -> None:
 
     logger.info('Private key saved at: %s', private_key)
     logger.info('Public key saved at: %s', public_key)
+    return {'key_type': key_type.name, 'private_key': private_key,
+            'public_key': public_key}
 
 
 if __name__ == '__main__':

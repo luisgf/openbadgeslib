@@ -23,10 +23,14 @@
 
 __version__ = '3.6.0'
 
+import contextlib
 import hashlib
+import io
 import ipaddress
+import json
 import socket
-from typing import Any, List, Optional, Union, overload
+import sys
+from typing import Any, Callable, List, Optional, Union, overload
 from urllib import request
 from urllib.parse import urlparse
 
@@ -257,6 +261,48 @@ def download_file(url: str, allow_insecure: bool = False,
                     % (url, MAX_DOWNLOAD_SIZE))
             chunks.append(chunk)
         return b''.join(chunks)
+
+
+def _last_nonempty_line(text: str) -> Optional[str]:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[-1] if lines else None
+
+
+def emit_cli_json(run: Callable[[], dict[str, Any]]) -> None:
+    """Run a CLI operation in ``--json`` mode: emit exactly one JSON object and
+    set the process exit status per the shared machine-output contract.
+
+    *run* performs the operation and RETURNS the machine-readable result dict;
+    its human-readable stdout is captured and discarded so that only the JSON
+    object reaches stdout. A result may carry an ``_exit`` key to request a
+    specific status (stripped from the emitted payload) — e.g. ``2`` for a
+    partial success; otherwise a returned result exits ``0``.
+
+    Any failure — a raised exception, or a ``sys.exit(...)`` from the operation
+    (including the shared read_config_or_exit) — is reported as
+    ``{"error": "..."}`` on stdout with exit status ``1``, so automation never
+    has to parse a traceback or a half-written human message.
+
+    Exit contract shared by the signer/publish/keygenerator ``--json`` paths:
+    ``0`` success, ``2`` partial success (some work skipped), ``1`` any error.
+    """
+    buffer = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buffer):
+            result = run()
+    except SystemExit as exc:
+        # A sys.exit('message') carries the message in .code; a sys.exit(-1)
+        # after a human print left it in the captured buffer — recover either.
+        detail = exc.code if isinstance(exc.code, str) \
+            else _last_nonempty_line(buffer.getvalue())
+        print(json.dumps({'error': detail or 'operation failed'}))
+        sys.exit(1)
+    except Exception as exc:
+        print(json.dumps({'error': '%s: %s' % (type(exc).__name__, exc)}))
+        sys.exit(1)
+    exit_code = result.pop('_exit', 0)
+    print(json.dumps(result))
+    sys.exit(exit_code)
 
 
 def show_ecc_disclaimer() -> None:
