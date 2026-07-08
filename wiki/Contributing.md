@@ -15,7 +15,7 @@ pip install --upgrade pip
 pip install -e ".[dev]"
 ```
 
-This installs the runtime dependencies (`pycryptodome`, `ecdsa`, `pypng`, `PyJWT[crypto]`, `defusedxml`) plus the dev tooling. The five console scripts (`openbadges-init`, `openbadges-keygenerator`, `openbadges-signer`, `openbadges-verifier`, `openbadges-publish`) are placed on your `PATH` and point at your working tree, so edits take effect immediately. See [[CLI Reference]] for how to use them.
+This installs the runtime dependencies (`pypng`, `PyJWT[crypto]`, `cryptography`, `defusedxml`) plus the dev tooling. The five console scripts (`openbadges-init`, `openbadges-keygenerator`, `openbadges-signer`, `openbadges-verifier`, `openbadges-publish`) are placed on your `PATH` and point at your working tree, so edits take effect immediately. See [[CLI Reference]] for how to use them.
 
 The minimum supported Python version is **3.10**.
 

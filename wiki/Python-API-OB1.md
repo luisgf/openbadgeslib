@@ -21,7 +21,7 @@ What deprecation means in this release:
 
 ### Evaluated and rejected (so they are not re-litigated)
 
-- **A `[legacy]` install extra** gating OB1 behind `pip install openbadgeslib[legacy]`: after the planned port of `keys.py` to `cryptography` (#167) drops OB1's last unique dependencies (`pycryptodome`, `python-ecdsa`), the extra would be an empty container — it would isolate no dependency weight while adding install-time friction. Not worth it.
+- **A `[legacy]` install extra** gating OB1 behind `pip install openbadgeslib[legacy]`: now that the port of `keys.py` to `cryptography` (#167) has dropped OB1's last unique dependencies (`pycryptodome`, `python-ecdsa`), the extra would be an empty container — it would isolate no dependency weight while adding install-time friction. Not worth it.
 - **A separate PyPI package** for OB1: a large (L) effort — split packaging, CI, versioning and cross-package compatibility — for a near-zero user base. `deprecate now → remove in 4.0.0` dominates it.
 
 > The full, always-up-to-date class/function reference is generated from the docstrings: **[API Reference](https://luisgf.github.io/openbadgeslib/)**.

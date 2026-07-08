@@ -25,9 +25,6 @@ import os
 from enum import Enum
 from typing import Any, Optional, Union, cast
 
-from Crypto.PublicKey import RSA
-from ecdsa import SigningKey, VerifyingKey
-
 from ..keys import KeyType, detect_key_type
 from ..errors import (BadgeImgFormatUnsupported, AssertionFormatIncorrect,
                       ErrorParsingFile, UnknownKeyType, PrivateKeyReadError,
@@ -122,32 +119,14 @@ class Badge():
         self.priv_key: Any = None
         self.pub_key: Any = None
 
-        # Initialize an Key Object
-        if self.key_type is KeyType.RSA:
-            if self.pubkey_pem:
-                try:
-                    self.pub_key = RSA.import_key(self.pubkey_pem)
-                except Exception as exc:
-                    raise PublicKeyReadError('Unable to read RSA public key: %s' % exc) from exc
-            if self.privkey_pem:
-                try:
-                    self.priv_key = RSA.import_key(self.privkey_pem)
-                except Exception as exc:
-                    raise PrivateKeyReadError('Unable to read RSA private key: %s' % exc) from exc
-        elif self.key_type is KeyType.ECC:
-            if self.pubkey_pem:
-                try:
-                    self.pub_key = VerifyingKey.from_pem(self.pubkey_pem)
-                except Exception as exc:
-                    raise PublicKeyReadError('Unable to read ECC public key: %s' % exc) from exc
-            if self.privkey_pem:
-                try:
-                    self.priv_key = SigningKey.from_pem(self.privkey_pem)
-                except Exception as exc:
-                    raise PrivateKeyReadError('Unable to read ECC private key: %s' % exc) from exc
-        elif self.key_type is KeyType.ED25519:
+        # Load whatever key material was supplied. RSA/ECC used to go through
+        # pycryptodome/python-ecdsa; all three families now share cryptography's
+        # unambiguous PEM loaders (the #167 port), producing cryptography key
+        # objects that the JWS layer serialises via keys.key_to_pem.
+        if self.key_type in (KeyType.RSA, KeyType.ECC, KeyType.ED25519):
             from cryptography.hazmat.primitives.serialization import (
                 load_pem_private_key, load_pem_public_key)
+            label = self.key_type.name
             if self.pubkey_pem:
                 try:
                     pub_pem = self.pubkey_pem.encode('utf-8') \
@@ -155,7 +134,7 @@ class Badge():
                     self.pub_key = load_pem_public_key(pub_pem)
                 except Exception as exc:
                     raise PublicKeyReadError(
-                        'Unable to read Ed25519 public key: %s' % exc) from exc
+                        'Unable to read %s public key: %s' % (label, exc)) from exc
             if self.privkey_pem:
                 try:
                     priv_pem = self.privkey_pem.encode('utf-8') \
@@ -163,7 +142,7 @@ class Badge():
                     self.priv_key = load_pem_private_key(priv_pem, password=None)
                 except Exception as exc:
                     raise PrivateKeyReadError(
-                        'Unable to read Ed25519 private key: %s' % exc) from exc
+                        'Unable to read %s private key: %s' % (label, exc)) from exc
         elif self.key_type is not None:
             # key_type=None is a valid "no key material yet" state; any other
             # value is an unsupported key type and must fail loudly.

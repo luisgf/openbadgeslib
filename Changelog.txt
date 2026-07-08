@@ -6,6 +6,19 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v3.7.0 - unreleased
 
+  - security(deps): `keys.py` (and the OB1 key-loading path) are ported to
+    `cryptography`, and both `pycryptodome` and `python-ecdsa` are dropped as
+    dependencies. They only generated and parsed key material here — signing
+    always went through PyJWT+`cryptography` — all of which `cryptography`
+    (already a hard dependency via `PyJWT[crypto]`) covers. This removes
+    python-ecdsa's permanent pip-audit flag (CVE-2024-23342 "Minerva", wontfix
+    upstream), moves ECC key generation onto constant-time code, and shrinks
+    the install to a single crypto backend. PEM output is byte-compatible
+    (PKCS#1 `RSA PRIVATE KEY`, SEC1 `EC PRIVATE KEY`, SubjectPublicKeyInfo
+    public keys), so existing key files round-trip. `key_to_pem` still accepts
+    a live pycryptodome/python-ecdsa key object via a soft import, for a caller
+    predating the port. (#167)
+
   - feat(cli): `--json` machine-readable output and a documented exit-code
     contract for `openbadges-signer`, `openbadges-publish` and
     `openbadges-keygenerator` (the verifier already had one), so issuance can

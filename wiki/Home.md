@@ -12,7 +12,7 @@
 pip install openbadgeslib
 ```
 
-All dependencies (pycryptodome, ecdsa, pypng, PyJWT[crypto], defusedxml) are installed automatically. See [[Installation]] for development setup and extras.
+All dependencies (pypng, PyJWT[crypto], cryptography, defusedxml) are installed automatically. See [[Installation]] for development setup and extras.
 
 ## What next
 

@@ -21,11 +21,17 @@
         License along with this library.
 """
 
+# Key material generation and parsing. All backed by ``cryptography`` (already
+# a hard dependency through PyJWT[crypto]); pycryptodome and python-ecdsa were
+# dropped in the 3.7 port (#167) — they only ever generated/parsed keys here,
+# never signed, and python-ecdsa carried a permanent pip-audit CVE flag
+# (CVE-2024-23342, Minerva). ``key_to_pem`` still accepts a live pycryptodome /
+# python-ecdsa key object via a soft import, for a caller predating the port.
+
 from typing import Any, Optional, Tuple, Union, cast
 from .errors import PublicKeyReadError, UnknownKeyType
-from ecdsa import SigningKey, VerifyingKey, NIST256p
-from Crypto.PublicKey import RSA
 from cryptography.hazmat.primitives import serialization as _crypto_serialization
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey, Ed25519PublicKey)
 from enum import Enum
@@ -52,6 +58,27 @@ def KeyFactory(key_type: 'KeyType' = KeyType.RSA) -> 'Union[KeyRSA, KeyECC, KeyE
         raise UnknownKeyType()
 
 
+def _pem_bytes(key_pem: Union[str, bytes]) -> bytes:
+    return key_pem.encode('utf-8') if isinstance(key_pem, str) else key_pem
+
+
+def _private_pem(key: Any) -> bytes:
+    """Serialise an RSA/EC private key to a TraditionalOpenSSL PEM — PKCS#1
+    ``RSA PRIVATE KEY`` / SEC1 ``EC PRIVATE KEY``, exactly what pycryptodome and
+    python-ecdsa emitted, so existing key files round-trip unchanged."""
+    return cast(bytes, key.private_bytes(
+        _crypto_serialization.Encoding.PEM,
+        _crypto_serialization.PrivateFormat.TraditionalOpenSSL,
+        _crypto_serialization.NoEncryption()))
+
+
+def _public_pem(key: Any) -> bytes:
+    """Serialise a public key to a SubjectPublicKeyInfo ``PUBLIC KEY`` PEM."""
+    return cast(bytes, key.public_bytes(
+        _crypto_serialization.Encoding.PEM,
+        _crypto_serialization.PublicFormat.SubjectPublicKeyInfo))
+
+
 class KeyBase():
     def __init__(self) -> None:
         self.priv_key: Any = None         # crypto Object
@@ -73,67 +100,56 @@ class KeyRSA(KeyBase):
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
         """ Generate a RSA Key, returning in PEM Format """
-
-        # RSA Key Generation
-        self.priv_key = RSA.generate(self._key_size)
-        priv_key_pem = self.priv_key.export_key('PEM')
-        self.pub_key = self.priv_key.publickey()
-        pub_key_pem = self.pub_key.export_key('PEM')
-
-        return priv_key_pem, pub_key_pem
+        self.priv_key = rsa.generate_private_key(
+            public_exponent=65537, key_size=self._key_size)
+        self.pub_key = self.priv_key.public_key()
+        return self.get_priv_key_pem(), self.get_pub_key_pem()
 
     def read_private_key(self, key_pem: Any = None) -> None:
         """ Read the private key from param in PEM format """
-        self.priv_key = RSA.import_key(key_pem)
+        self.priv_key = _crypto_serialization.load_pem_private_key(
+            _pem_bytes(key_pem), password=None)
 
     def read_public_key(self, key_pem: Any = None) -> None:
         """ Read the public key from param in PEM format """
-        self.pub_key = RSA.import_key(key_pem)
+        self.pub_key = _crypto_serialization.load_pem_public_key(
+            _pem_bytes(key_pem))
 
     def get_priv_key_pem(self) -> bytes:
-        return cast(bytes, self.priv_key.export_key('PEM'))
+        return _private_pem(self.priv_key)
 
     def get_pub_key_pem(self) -> bytes:
-        return cast(bytes, self.pub_key.export_key('PEM'))
+        return _public_pem(self.pub_key)
 
 
 class KeyECC(KeyBase):
-    """ Elliptic Curve Cryptography Factory class """
+    """ Elliptic Curve Cryptography Factory class (NIST P-256 / ES256) """
 
-    def __init__(self, key_curve: Any = NIST256p) -> None:
-        self._key_curve = key_curve
+    def __init__(self, key_curve: Any = None) -> None:
+        self._key_curve = key_curve or ec.SECP256R1()
         super().__init__()
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
-        """ Generate a ECDSA keypair """
+        """ Generate an ECDSA keypair """
+        self.priv_key = ec.generate_private_key(self._key_curve)
+        self.pub_key = self.priv_key.public_key()
+        return self.get_priv_key_pem(), self.get_pub_key_pem()
 
-        # Private key generation
-        self.priv_key = SigningKey.generate(curve=self._key_curve)
-        priv_key_pem = self.priv_key.to_pem()
-
-        # Derive the public (verifying) key from the private key.
-        self.pub_key = self.priv_key.get_verifying_key()
-        pub_key_pem = self.pub_key.to_pem()
-
-        return priv_key_pem, pub_key_pem
-
-    def read_private_key(self, key_pem: Optional[Union[str, bytes]] = None) -> None:
+    def read_private_key(self, key_pem: Any = None) -> None:
         """ Read the private key from param in PEM format """
-        self.priv_key = SigningKey.from_pem(key_pem)
+        self.priv_key = _crypto_serialization.load_pem_private_key(
+            _pem_bytes(key_pem), password=None)
 
-    def read_public_key(self, key_pem: Optional[Union[str, bytes]] = None) -> None:
+    def read_public_key(self, key_pem: Any = None) -> None:
         """ Read the public key from param in PEM format """
-        self.pub_key = VerifyingKey.from_pem(key_pem)
+        self.pub_key = _crypto_serialization.load_pem_public_key(
+            _pem_bytes(key_pem))
 
     def get_priv_key_pem(self) -> bytes:
-        return cast(bytes, self.priv_key.to_pem())
+        return _private_pem(self.priv_key)
 
     def get_pub_key_pem(self) -> bytes:
-        return cast(bytes, self.pub_key.to_pem())
-
-
-def _pem_bytes(key_pem: Union[str, bytes]) -> bytes:
-    return key_pem.encode('utf-8') if isinstance(key_pem, str) else key_pem
+        return _public_pem(self.pub_key)
 
 
 def _load_ed25519_private_key(key_pem: Optional[Union[str, bytes]]) -> Ed25519PrivateKey:
@@ -158,8 +174,8 @@ class KeyEd25519(KeyBase):
     """Edwards-curve Ed25519 (EdDSA) key class, backed by ``cryptography``.
 
     Kept separate from KeyECC: Ed25519 is an EdDSA curve, not an ECDSA NIST
-    curve. It maps to the JWS ``EdDSA`` algorithm, and the ``ecdsa`` library
-    used for the NIST curves would misread its PEM (see detect_key_type).
+    curve. It maps to the JWS ``EdDSA`` algorithm, and its PEM is PKCS#8
+    (Ed25519 has no TraditionalOpenSSL encoding).
     """
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
@@ -183,9 +199,7 @@ class KeyEd25519(KeyBase):
             _crypto_serialization.NoEncryption()))
 
     def get_pub_key_pem(self) -> bytes:
-        return cast(bytes, self.pub_key.public_bytes(
-            _crypto_serialization.Encoding.PEM,
-            _crypto_serialization.PublicFormat.SubjectPublicKeyInfo))
+        return _public_pem(self.pub_key)
 
 
 def alg_for_key_type(key_type: 'KeyType') -> str:
@@ -199,28 +213,54 @@ def alg_for_key_type(key_type: 'KeyType') -> str:
     raise UnknownKeyType('No signing algorithm for key type: %r' % (key_type,))
 
 
-def key_to_pem(key: Any) -> Union[str, bytes]:
-    """Convert a pycryptodome RSA or ecdsa key object to PEM bytes.
+def _legacy_key_to_pem(key: Any) -> Optional[Union[str, bytes]]:
+    """Best-effort PEM for a live pycryptodome RSA or python-ecdsa key object.
 
-    Bytes/str are passed through unchanged. Centralised here so the OB2 JWS
-    layer and both OB3 signer/verifier share one implementation instead of
-    three hand-maintained copies.
+    Kept for backward compatibility with a caller still holding one from before
+    the cryptography port (#167). Both libraries were dropped as dependencies,
+    so this soft-imports them and returns ``None`` when they are absent (or the
+    object is neither) — the caller then raises UnknownKeyType.
     """
-    if isinstance(key, RSA.RsaKey):
-        return key.export_key('PEM')
-    if isinstance(key, (SigningKey, VerifyingKey)):
-        return cast(Union[str, bytes], key.to_pem())
+    try:
+        from Crypto.PublicKey import RSA as _RSA
+        if isinstance(key, _RSA.RsaKey):
+            return cast(bytes, key.export_key('PEM'))
+    except ImportError:
+        pass
+    try:
+        from ecdsa import SigningKey as _SigningKey, VerifyingKey as _VerifyingKey
+        if isinstance(key, (_SigningKey, _VerifyingKey)):
+            return cast(Union[str, bytes], key.to_pem())
+    except ImportError:
+        pass
+    return None
+
+
+def key_to_pem(key: Any) -> Union[str, bytes]:
+    """Convert a key object to PEM bytes.
+
+    Handles ``cryptography`` key objects (what keys.py and ob1.badge now
+    produce) and passes bytes/str through unchanged; a live pycryptodome /
+    python-ecdsa object is still accepted via :func:`_legacy_key_to_pem`.
+    Centralised here so the OB1/OB2 JWS layer and both OB3 signer/verifier
+    share one implementation instead of hand-maintained copies.
+    """
+    if isinstance(key, (bytes, str)):
+        return key
+    if isinstance(key, (rsa.RSAPrivateKey, ec.EllipticCurvePrivateKey)):
+        return _private_pem(key)
+    if isinstance(key, (rsa.RSAPublicKey, ec.EllipticCurvePublicKey)):
+        return _public_pem(key)
     if isinstance(key, Ed25519PrivateKey):
         return key.private_bytes(
             _crypto_serialization.Encoding.PEM,
             _crypto_serialization.PrivateFormat.PKCS8,
             _crypto_serialization.NoEncryption())
     if isinstance(key, Ed25519PublicKey):
-        return key.public_bytes(
-            _crypto_serialization.Encoding.PEM,
-            _crypto_serialization.PublicFormat.SubjectPublicKeyInfo)
-    if isinstance(key, (bytes, str)):
-        return key
+        return _public_pem(key)
+    legacy = _legacy_key_to_pem(key)
+    if legacy is not None:
+        return legacy
     raise UnknownKeyType('Unsupported key object type: %r' % type(key))
 
 
@@ -232,7 +272,6 @@ def public_jwk_from_pem(pubkey_pem: Union[str, bytes]) -> dict[str, Any]:
     verification keys in a did:web DID document.
     """
     import json
-    from cryptography.hazmat.primitives.asymmetric import ec, rsa
     from jwt.algorithms import ECAlgorithm, OKPAlgorithm, RSAAlgorithm
     try:
         pub = _crypto_serialization.load_pem_public_key(_pem_bytes(pubkey_pem))
@@ -262,7 +301,6 @@ def ec_curve_from_pem(pem_data: Union[str, bytes]) -> Optional[str]:
     uses this to pick the ES256 vs ES384 signing backend — the ECDSA curve
     fixes the JOSE algorithm.
     """
-    from cryptography.hazmat.primitives.asymmetric import ec
     data = _pem_bytes(pem_data)
     for load in (
         lambda: _crypto_serialization.load_pem_public_key(data),
@@ -279,53 +317,30 @@ def ec_curve_from_pem(pem_data: Union[str, bytes]) -> Optional[str]:
     return None
 
 
-def _is_ed25519_pem(pem_data: Union[str, bytes]) -> bool:
-    """True if pem_data is an Ed25519 public or private key.
+def detect_key_type(pem_data: Union[str, bytes]) -> 'KeyType':
+    """Positive key-type detection via ``cryptography``'s PEM loaders.
 
-    Probed before the RSA/ECC checks in detect_key_type: the ``ecdsa`` library's
-    VerifyingKey/SigningKey.from_pem *accept* an Ed25519 PEM and would otherwise
-    misclassify it as KeyType.ECC, pinning the wrong (ES*) algorithm family.
-    ``cryptography``'s loaders are unambiguous about the key type.
+    Accepts a public or private PEM and distinguishes Ed25519/RSA/EC by the
+    loaded key's concrete type — cryptography's loaders are unambiguous, unlike
+    the old python-ecdsa loader which accepted an Ed25519 PEM as an EC key and
+    forced the wrong (ES*) algorithm family.
     """
     data = _pem_bytes(pem_data)
-    try:
-        if isinstance(_crypto_serialization.load_pem_public_key(data), Ed25519PublicKey):
-            return True
-    except Exception:
-        pass
-    try:
-        if isinstance(_crypto_serialization.load_pem_private_key(data, password=None),
-                      Ed25519PrivateKey):
-            return True
-    except Exception:
-        pass
-    return False
+    key: Any = None
+    for load in (
+        lambda: _crypto_serialization.load_pem_public_key(data),
+        lambda: _crypto_serialization.load_pem_private_key(data, password=None),
+    ):
+        try:
+            key = load()
+            break
+        except Exception:
+            continue
 
-
-def detect_key_type(pem_data: Union[str, bytes]) -> 'KeyType':
-    """ Positive Key type detection """
-
-    # Ed25519 first: see _is_ed25519_pem — the ecdsa library would otherwise
-    # claim an Ed25519 PEM as ECC below.
-    if _is_ed25519_pem(pem_data):
+    if isinstance(key, (Ed25519PrivateKey, Ed25519PublicKey)):
         return KeyType.ED25519
-
-    try:
-        RSA.import_key(pem_data)
+    if isinstance(key, (rsa.RSAPrivateKey, rsa.RSAPublicKey)):
         return KeyType.RSA
-    except Exception:
-        pass
-
-    try:
-        VerifyingKey.from_pem(pem_data)
+    if isinstance(key, (ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey)):
         return KeyType.ECC
-    except Exception:
-        pass
-
-    try:
-        SigningKey.from_pem(pem_data)
-        return KeyType.ECC
-    except Exception:
-        pass
-
     raise UnknownKeyType('Unable to guess Key type')

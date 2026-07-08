@@ -85,8 +85,6 @@ all three OB versions.
 ## Requirements
 
 - Python >= 3.10 (tested on 3.10–3.14)
-- [pycryptodome](https://pypi.org/project/pycryptodome/) >= 3.20
-- [ecdsa](https://pypi.org/project/ecdsa/) >= 0.19
 - [pypng](https://pypi.org/project/pypng/) >= 0.20220715.0
 - [PyJWT[crypto]](https://pypi.org/project/PyJWT/) >= 2.8
 - [cryptography](https://pypi.org/project/cryptography/) >= 42

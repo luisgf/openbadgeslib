@@ -2,7 +2,7 @@ This page documents the key abstractions in `openbadgeslib.keys` and the full ex
 
 ## Keys
 
-Everything lives in `openbadgeslib.keys`. The library supports three key types, each backed by a different crypto library: RSA (via `pycryptodome`), ECC on the NIST256p curve (via `ecdsa`), and Ed25519 (via `cryptography`).
+Everything lives in `openbadgeslib.keys`. The library supports three key types, all backed by [`cryptography`](https://cryptography.io/) (already pulled in by `PyJWT[crypto]`): RSA, ECC on the NIST P-256 curve, and Ed25519. Signing and verification run through PyJWT; `keys.py` only generates and parses the key material.
 
 ### KeyType and the JWS algorithm
 
@@ -71,7 +71,7 @@ from openbadgeslib.keys import detect_key_type, KeyType
 detect_key_type(priv_pem)   # -> KeyType.RSA, KeyType.ECC, or KeyType.ED25519
 ```
 
-`key_to_pem(key)` normalises any supported key into PEM. It exports `pycryptodome` RSA objects, `ecdsa` `SigningKey`/`VerifyingKey` objects, and `cryptography` `Ed25519PrivateKey`/`Ed25519PublicKey` objects, passes `bytes`/`str` through unchanged, and raises `UnknownKeyType` for anything else. It is the single shared implementation used by the OB2 JWS layer and both OB3 signer/verifier.
+`key_to_pem(key)` normalises any supported key into PEM. It exports `cryptography` key objects (RSA, EC and Ed25519, public or private) — what the library now produces — passes `bytes`/`str` through unchanged, and still accepts a live `pycryptodome`/`python-ecdsa` object via a soft import (for a caller predating the 3.7 port). It raises `UnknownKeyType` for anything else. It is the single shared implementation used by the OB2 JWS layer and both OB3 signer/verifier.
 
 ```python
 from openbadgeslib.keys import key_to_pem

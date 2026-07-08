@@ -11,10 +11,9 @@ These are resolved automatically when you install via pip:
 
 | Package | Version | Purpose |
 | --- | --- | --- |
-| `pycryptodome` | `>=3.20` | RSA key generation and PEM handling |
-| `ecdsa` | `>=0.19` | ECC key generation and PEM handling |
 | `pypng` | `>=0.20220715.0` | PNG image manipulation |
 | `PyJWT[crypto]` | `>=2.8` | JWS / JWT-VC signing and verification (pulls in `cryptography`) |
+| `cryptography` | `>=42` | All key generation, PEM handling and signing (RSA, ECC, Ed25519) |
 | `defusedxml` | `>=0.7` | Hardened XML parsing of untrusted SVG badges |
 
 ## Install from PyPI

@@ -29,10 +29,7 @@ jobs:
           pip install pip-audit
 
       - name: Audit installed dependencies
-        # PYSEC-2026-1325 (CVE-2024-23342, "Minerva"): a timing side-channel in
-        # python-ecdsa that upstream declares out of scope (wontfix). It is off
-        # the signing hot path here — keys.py uses ecdsa only for PEM
-        # parse/serialise and ECC key generation — and is tracked for removal by
-        # the cryptography port (#167). Ignored so the audit stays green on
-        # everything else and a genuinely new advisory is not lost in the noise.
-        run: pip-audit --ignore-vuln PYSEC-2026-1325
+        # No ignores: the python-ecdsa Minerva advisory (PYSEC-2026-1325 /
+        # CVE-2024-23342, wontfix upstream) that used to need one is gone with
+        # the dependency itself (the cryptography port, #167).
+        run: pip-audit

@@ -38,8 +38,6 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "pycryptodome>=3.20",
-    "ecdsa>=0.19",
     "pypng>=0.20220715.0",
     "PyJWT[crypto]>=2.8",
     "cryptography>=42",

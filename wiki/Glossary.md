@@ -35,8 +35,8 @@ General term for a signed claim about a subject. In OB3 the concrete type is the
 ### ECC
 Elliptic Curve Cryptography. This library uses the NIST P-256 curve with ECDSA and SHA-256 (algorithm identifier `ES256`). See [[Security Model]].
 
-### ecdsa
-A pure-Python implementation of ECDSA cryptography. Used by this library for ECC key generation, loading, and PEM serialisation.
+### cryptography
+The [`cryptography`](https://cryptography.io/) package: the single backend for all of this library's key generation, PEM handling and (through PyJWT) signing — RSA, ECC (NIST P-256) and Ed25519. Pulled in by `PyJWT[crypto]`. Since 3.7 it replaced `pycryptodome` and `python-ecdsa`.
 
 ### Ed25519
 An Edwards-curve digital signature scheme (EdDSA over Curve25519). This library supports it via the `cryptography` package (JWS algorithm identifier `EdDSA`). See [[Security Model]].
@@ -93,9 +93,6 @@ PEP 8 — Style Guide for Python Code, the coding conventions followed by this p
 
 ### PNG
 Portable Network Graphics, a raster image format with lossless compression. One of the two image formats openbadgeslib can bake an OB2 assertion into.
-
-### pycryptodome
-A self-contained Python package of low-level cryptographic primitives (a maintained fork of `pycrypto`). Used for RSA key generation and PEM serialisation (ECC is handled by `ecdsa`, Ed25519 by `cryptography`).
 
 ### PyJWT
 A Python library for encoding/decoding JSON Web Tokens. openbadgeslib uses `jwt.algorithms.RSAAlgorithm`, `jwt.algorithms.ECAlgorithm`, and `jwt.algorithms.OKPAlgorithm` (Ed25519/EdDSA) for JWS signing and verification; requires the `cryptography` package (installed via `PyJWT[crypto]`). See [[Installation]].
