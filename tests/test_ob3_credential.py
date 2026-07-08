@@ -330,3 +330,121 @@ class TestNaiveDatetimeAssumedUtc:
         cred = _make_credential(expiration_date=datetime(2030, 6, 1, 0, 0, 0))
         assert cred.expiration_date.tzinfo is not None
         assert cred.to_vc()['validUntil'] == '2030-06-01T00:00:00Z'
+
+
+# ── #162: broadened model — Evidence, Alignment, achievementType, credits ────
+
+from openbadgeslib.ob3.credential import Alignment, Evidence  # noqa: E402
+
+
+class TestBroadenedModel:
+    def _credential(self, **achievement_kw):
+        return OpenBadgeCredential(
+            issuer=Issuer(id='https://issuer.example', name='I'),
+            recipient_id='mailto:r@example.com',
+            achievement=Achievement(id='https://a.example/1', name='A',
+                                    description='d', criteria_narrative='c',
+                                    **achievement_kw))
+
+    def test_alignment_round_trip(self):
+        cred = self._credential(alignments=[
+            Alignment(target_name='Competency X',
+                      target_url='https://framework.example/x',
+                      target_framework='EU Framework', target_code='X.1'),
+        ])
+        vc = cred.to_vc()
+        assert vc['credentialSubject']['achievement']['alignment'] == [{
+            'type': ['Alignment'],
+            'targetName': 'Competency X',
+            'targetUrl': 'https://framework.example/x',
+            'targetFramework': 'EU Framework',
+            'targetCode': 'X.1',
+        }]
+        again = OpenBadgeCredential.from_vc_document(vc)
+        assert again.achievement.alignments[0].target_name == 'Competency X'
+        assert again.achievement.alignments[0].target_code == 'X.1'
+
+    def test_achievement_type_and_credits_round_trip(self):
+        cred = self._credential(achievement_type='Competency',
+                                credits_available=3.5)
+        ach = cred.to_vc()['credentialSubject']['achievement']
+        assert ach['achievementType'] == 'Competency'
+        assert ach['creditsAvailable'] == 3.5
+        again = OpenBadgeCredential.from_vc_document(cred.to_vc())
+        assert again.achievement.achievement_type == 'Competency'
+        assert again.achievement.credits_available == 3.5
+
+    def test_evidence_list_round_trip(self):
+        cred = OpenBadgeCredential(
+            issuer=Issuer(id='https://issuer.example', name='I'),
+            recipient_id='mailto:r@example.com',
+            achievement=Achievement(id='https://a.example/1', name='A',
+                                    description='d', criteria_narrative='c'),
+            evidence=[
+                Evidence(id='https://ev.example/1', narrative='Did the thing',
+                         name='Project'),
+                Evidence(narrative='No URL, just a narrative'),
+            ])
+        vc = cred.to_vc()
+        assert len(vc['evidence']) == 2
+        assert vc['evidence'][0] == {
+            'type': ['Evidence'], 'id': 'https://ev.example/1',
+            'narrative': 'Did the thing', 'name': 'Project'}
+        assert vc['evidence'][1] == {
+            'type': ['Evidence'], 'narrative': 'No URL, just a narrative'}
+        again = OpenBadgeCredential.from_vc_document(vc)
+        assert [e.narrative for e in again.evidence] == \
+            ['Did the thing', 'No URL, just a narrative']
+        # backward-compatible convenience: first evidence URL
+        assert again.evidence_url == 'https://ev.example/1'
+
+    def test_evidence_url_still_works(self):
+        # The single-URL convenience keeps issuing one Evidence object.
+        cred = self._credential()
+        cred.evidence_url = 'https://ev.example/only'
+        vc = cred.to_vc()
+        assert vc['evidence'] == [
+            {'type': ['Evidence'], 'id': 'https://ev.example/only'}]
+
+    def test_parse_from_raw_vc(self):
+        vc = {
+            '@context': OB3_CONTEXT,
+            'id': 'urn:uuid:00000000-0000-0000-0000-0000000000f1',
+            'type': ['VerifiableCredential', 'OpenBadgeCredential'],
+            'issuer': 'https://issuer.example',
+            'validFrom': '2024-01-01T00:00:00Z',
+            'credentialSubject': {
+                'id': 'mailto:r@example.com',
+                'type': ['AchievementSubject'],
+                'achievement': {
+                    'id': 'https://a.example/1', 'type': ['Achievement'],
+                    'name': 'A', 'description': 'd',
+                    'criteria': {'narrative': 'c'},
+                    'achievementType': 'Certificate',
+                    'creditsAvailable': 2,
+                    'alignment': [{'type': ['Alignment'],
+                                   'targetName': 'C', 'targetUrl': 'https://f/x'}],
+                },
+            },
+            'evidence': [{'type': ['Evidence'], 'id': 'https://ev/1',
+                          'narrative': 'n'}],
+        }
+        cred = OpenBadgeCredential.from_vc_document(vc)
+        assert cred.achievement.achievement_type == 'Certificate'
+        assert cred.achievement.credits_available == 2.0
+        assert cred.achievement.alignments[0].target_url == 'https://f/x'
+        assert cred.evidence[0].narrative == 'n'
+
+    def test_signed_credential_preserves_new_fields(self, rsa_priv_pem,
+                                                    rsa_pub_pem):
+        # End-to-end: the fields survive signing and verification.
+        from openbadgeslib.ob3 import OB3Signer, OB3Verifier
+        cred = self._credential(achievement_type='Competency',
+                                credits_available=1.0,
+                                alignments=[Alignment(
+                                    target_name='Skill',
+                                    target_url='https://f/skill')])
+        token = OB3Signer(privkey_pem=rsa_priv_pem, algorithm='RS256').sign(cred)
+        verified = OB3Verifier(pubkey_pem=rsa_pub_pem).verify(token)
+        assert verified.achievement.achievement_type == 'Competency'
+        assert verified.achievement.alignments[0].target_name == 'Skill'

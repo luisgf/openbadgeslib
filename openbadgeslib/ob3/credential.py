@@ -105,6 +105,77 @@ class Issuer:
 
 
 @dataclass
+class Alignment:
+    """Alignment of an achievement to a node in an educational framework
+    (OB 3.0 `alignment`) — what an LMS reads to map a badge to a competency."""
+
+    target_name: str
+    target_url: str
+    target_framework: Optional[str] = None
+    target_code: Optional[str] = None
+    target_description: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
+            "type": ["Alignment"],
+            "targetName": self.target_name,
+            "targetUrl": self.target_url,
+        }
+        if self.target_framework:
+            d["targetFramework"] = self.target_framework
+        if self.target_code:
+            d["targetCode"] = self.target_code
+        if self.target_description:
+            d["targetDescription"] = self.target_description
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Alignment":
+        return cls(
+            target_name=_require(data, "targetName", "alignment"),
+            target_url=_require(data, "targetUrl", "alignment"),
+            target_framework=data.get("targetFramework"),
+            target_code=data.get("targetCode"),
+            target_description=data.get("targetDescription"),
+        )
+
+
+@dataclass
+class Evidence:
+    """A piece of evidence supporting a credential (OB 3.0 `evidence`), richer
+    than a bare URL: an optional narrative and descriptive metadata."""
+
+    id: Optional[str] = None          # dereferenceable URL of the evidence
+    narrative: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    genre: Optional[str] = None
+    audience: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"type": ["Evidence"]}
+        if self.id:
+            d["id"] = self.id
+        for key, value in (("narrative", self.narrative), ("name", self.name),
+                           ("description", self.description),
+                           ("genre", self.genre), ("audience", self.audience)):
+            if value:
+                d[key] = value
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Evidence":
+        return cls(
+            id=data.get("id"),
+            narrative=data.get("narrative"),
+            name=data.get("name"),
+            description=data.get("description"),
+            genre=data.get("genre"),
+            audience=data.get("audience"),
+        )
+
+
+@dataclass
 class Achievement:
     """A badge class / achievement definition."""
 
@@ -117,6 +188,13 @@ class Achievement:
     # Compact EndorsementCredential JWTs vouching for this achievement
     # (OB 3.0 `endorsementJwt`). See Issuer.endorsement_jwts.
     endorsement_jwts: List[str] = field(default_factory=list)
+    # Kind of achievement (OB 3.0 `achievementType`, e.g. 'Badge',
+    # 'Certificate', 'Competency', …) and any academic credit it carries.
+    achievement_type: Optional[str] = None
+    credits_available: Optional[float] = None
+    # Framework alignments (OB 3.0 `alignment`): the competency mappings LMSes
+    # consume. Empty when the achievement declares none.
+    alignments: List[Alignment] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -126,10 +204,16 @@ class Achievement:
             "description": self.description,
             "criteria": {"narrative": self.criteria_narrative},
         }
+        if self.achievement_type:
+            d["achievementType"] = self.achievement_type
+        if self.credits_available is not None:
+            d["creditsAvailable"] = self.credits_available
         if self.image_url:
             d["image"] = {"id": self.image_url, "type": "Image"}
         if self.tags:
             d["tag"] = self.tags
+        if self.alignments:
+            d["alignment"] = [a.to_dict() for a in self.alignments]
         if self.endorsement_jwts:
             d["endorsementJwt"] = list(self.endorsement_jwts)
         return d
@@ -148,7 +232,11 @@ class OpenBadgeCredential:
     name: Optional[str] = None  # defaults to achievement.name
     issuance_date: Optional[datetime] = None   # defaults to now (UTC)
     expiration_date: Optional[datetime] = None
+    # Backward-compatible single-URL evidence convenience. For the full OB 3.0
+    # evidence list (narrative, name, …) use `evidence`; when both are set the
+    # list wins. Parsing populates both (evidence_url = evidence[0].id).
     evidence_url: Optional[str] = None
+    evidence: List["Evidence"] = field(default_factory=list)
     # Raw credentialStatus entries (Bitstring Status List / StatusList2021),
     # normalised to a list of objects. Consumed by ob3.status to check
     # revocation; empty when the credential carries no status.
@@ -211,8 +299,10 @@ class OpenBadgeCredential:
             vc["credentialSubject"]["id"] = self.recipient_id
         if self.expiration_date:
             vc["validUntil"] = _iso(self.expiration_date)
-        if self.evidence_url:
-            vc["evidence"] = [{"id": self.evidence_url, "type": ["Evidence"]}]
+        evidence_items = self.evidence or (
+            [Evidence(id=self.evidence_url)] if self.evidence_url else [])
+        if evidence_items:
+            vc["evidence"] = [e.to_dict() for e in evidence_items]
         if self.credential_status:
             vc["credentialStatus"] = (
                 self.credential_status[0] if len(self.credential_status) == 1
@@ -318,6 +408,10 @@ class OpenBadgeCredential:
                             "vc.credentialSubject.achievement")
         criteria = _as_dict_or_empty(ach_data.get("criteria"))
         image = _as_dict_or_empty(ach_data.get("image"))
+        alignment_raw = ach_data.get("alignment")
+        alignments = [Alignment.from_dict(a) for a in alignment_raw
+                      if isinstance(a, dict)] \
+            if isinstance(alignment_raw, list) else []
         achievement = Achievement(
             id=_require(ach_data, "id", "vc.credentialSubject.achievement"),
             name=_require(ach_data, "name", "vc.credentialSubject.achievement"),
@@ -326,6 +420,9 @@ class OpenBadgeCredential:
             image_url=image.get("id"),
             tags=ach_data.get("tag", []),
             endorsement_jwts=_string_list(ach_data.get("endorsementJwt")),
+            achievement_type=ach_data.get("achievementType"),
+            credits_available=_float_or_none(ach_data.get("creditsAvailable")),
+            alignments=alignments,
         )
 
         # Accept both VC 2.0 (validFrom/validUntil) and VC 1.1
@@ -335,10 +432,16 @@ class OpenBadgeCredential:
         expires = vc.get("validUntil") or vc.get("expirationDate")
         expiration_date = _parse_date(expires, "vc.validUntil") if expires else None
 
-        evidence_url = None
-        evidence = vc.get("evidence")
-        if isinstance(evidence, list) and evidence and isinstance(evidence[0], dict):
-            evidence_url = evidence[0].get("id")
+        evidence_raw = vc.get("evidence")
+        if isinstance(evidence_raw, list):
+            evidence_list = [Evidence.from_dict(e) for e in evidence_raw
+                             if isinstance(e, dict)]
+        elif isinstance(evidence_raw, dict):
+            evidence_list = [Evidence.from_dict(evidence_raw)]
+        else:
+            evidence_list = []
+        # Backward-compatible convenience: the first evidence's URL.
+        evidence_url = evidence_list[0].id if evidence_list else None
 
         # credentialStatus may be a single object or an array; keep only object
         # entries so the status checker can rely on .get() without crashing.
@@ -372,6 +475,7 @@ class OpenBadgeCredential:
             issuance_date=issuance_date,
             expiration_date=expiration_date,
             evidence_url=evidence_url,
+            evidence=evidence_list,
             credential_status=credential_status,
             endorsement_jwts=_string_list(vc.get("endorsementJwt")),
         )
@@ -392,6 +496,16 @@ def _as_dict(value: Any, where: str) -> dict[str, Any]:
 def _as_dict_or_empty(value: Any) -> dict[str, Any]:
     """Return value if it is a dict, else an empty dict (optional sub-objects)."""
     return value if isinstance(value, dict) else {}
+
+
+def _float_or_none(value: Any) -> Optional[float]:
+    """Coerce a JSON number to float, else None (for optional numeric fields
+    like creditsAvailable). A bool is not a number here."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
 
 
 def _string_list(value: Any) -> List[str]:

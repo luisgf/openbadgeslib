@@ -37,6 +37,12 @@ The badge class / achievement definition.
 | `criteria_narrative` | yes | Serialised as `criteria.narrative`. |
 | `image_url` | no | Badge image; serialised as an `Image` object. |
 | `tags` | no | List of strings; serialised under `tag`. Defaults to `[]`. |
+| `achievement_type` | no | OB 3.0 `achievementType` (e.g. `'Badge'`, `'Certificate'`, `'Competency'`). |
+| `credits_available` | no | Academic credit (`creditsAvailable`, a float). |
+| `alignments` | no | List of `Alignment` — competency-framework mappings; serialised under `alignment`. Defaults to `[]`. |
+| `endorsement_jwts` | no | List of compact `endorsementJwt` strings (see Endorsements). |
+
+An **`Alignment`** (`from openbadgeslib.ob3 import Alignment`) aligns the achievement to a framework node: required `target_name`, `target_url`; optional `target_framework`, `target_code`, `target_description`. This is what an LMS reads to map a badge to a competency.
 
 ### `OpenBadgeCredential`
 
@@ -51,7 +57,8 @@ The credential itself. Several fields are auto-filled in `__post_init__`:
 | `name` | no | Falls back to `achievement.name`. |
 | `issuance_date` | no | `datetime.now(timezone.utc)` when omitted. |
 | `expiration_date` | no | Sets `validUntil` / JWT `exp` when present. |
-| `evidence_url` | no | Adds an `Evidence` entry. |
+| `evidence_url` | no | Convenience for a single-URL `Evidence`. |
+| `evidence` | no | List of `Evidence` (id, narrative, name, description, genre, audience) — the full OB 3.0 `evidence` array. When set it wins over `evidence_url`; parsing populates both. Defaults to `[]`. |
 
 Useful serialisation methods:
 

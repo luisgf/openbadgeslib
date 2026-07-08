@@ -6,6 +6,17 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v3.9.0 - unreleased
 
+  - feat(ob3): broaden the credential data model toward the OB 3.0 spec — the
+    gap versus the spec was the model, not the crypto. New `Evidence` (the full
+    `evidence` array: narrative, name, description, genre, audience — beyond the
+    single `evidence_url`) and `Alignment` (competency-framework mappings, what
+    LMSes read to map a badge to a competency) dataclasses, plus
+    `achievementType`, `creditsAvailable` and an `alignments` list on
+    `Achievement`. All are validated in the house style (dataclasses + mypy, no
+    Pydantic), parse from a verified credential, round-trip through `to_vc`, and
+    still satisfy the offline conformance schema. (Refs #162 —
+    Result/ResultDescription, IdentityObject and creditsEarned follow.)
+
   - feat(ob3): support OpenBadges 3.0 `endorsementJwt` (spec errata v1.6, added
     to context 3.0.3). Third-party endorsement JWTs were passing through as
     opaque, unmapped fields; the credential model now exposes them at the three

@@ -20,7 +20,8 @@
         License along with this library.
 """
 
-from .credential import Achievement, Issuer, OpenBadgeCredential
+from .credential import (Achievement, Alignment, Evidence, Issuer,
+                         OpenBadgeCredential)
 from .signer import OB3Signer
 from .verifier import (OB3VerificationError, OB3Verifier,
                        verify_endorsement_jwt)
@@ -35,6 +36,8 @@ from .did import (build_did_document, did_key_from_pem, did_web_from_url,
 
 __all__ = [
     'Achievement',
+    'Alignment',
+    'Evidence',
     'Issuer',
     'OpenBadgeCredential',
     'OB3LdpSigner',
