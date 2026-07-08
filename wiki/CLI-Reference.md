@@ -36,14 +36,13 @@ Generates a PEM key pair (private signing key + public verification key) for a b
 ### Synopsis
 
 ```sh
-openbadges-keygenerator -g BADGE [-c FILE] [-V {1,2,3}] [-d]
+openbadges-keygenerator -g BADGE [-c FILE] [-d]
 ```
 
 | Short | Long | Meaning | Default |
 |-------|------|---------|---------|
 | `-c` | `--config` | Config file to use | `config.ini` |
 | `-g` | `--genkey BADGE` | Generate a key pair for section `[badge_<BADGE>]` (the suffix after `badge_`) | none (prints help) |
-| `-V` | `--ob-version {1,2,3}` | OB spec version; key material is identical for all | `3` |
 | `-d` | `--debug` | Show debug messages at runtime | off |
 | `-v` | `--version` | Print version and exit | — |
 
@@ -53,16 +52,12 @@ The command refuses to overwrite: if either key file already exists it prints `[
 
 ```sh
 $ openbadges-keygenerator -c ./config/config.ini -g 1
-INFO - Generating OpenBadges 3 RSA key pair for issuer 'OpenBadge issuer'
+INFO - Generating a RSA key pair for issuer 'OpenBadge issuer'
 INFO - Private key saved at: ./config/keys/sign_rsa_key_1.pem
 INFO - Public key saved at:  ./config/keys/verify_rsa_key_1.pem
 ```
 
-Key material is identical for every version, so `-V` changes only the version shown in the log line; `-V 1` / `-V 2` produce the same keys:
-
-```sh
-$ openbadges-keygenerator -c ./config/config.ini -g 1 -V 2
-```
+The key algorithm comes from the badge's `key_type` field, not from a flag, so key material does not depend on the OpenBadges version.
 
 ## openbadges-signer
 

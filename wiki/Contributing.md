@@ -34,13 +34,6 @@ pytest --cov=openbadgeslib --cov-report=term-missing
 pytest -x
 ```
 
-There is also a thin wrapper script that simply forwards its arguments to `pytest`:
-
-```sh
-sh tests/runtests.sh
-sh tests/runtests.sh -x        # arguments are passed through
-```
-
 Shared fixtures (key material, badge objects, signed badges) live in `tests/conftest.py`. Session-scoped fixtures are used for performance; fixtures consumed by tests that mutate badge state are function-scoped to avoid cross-test contamination.
 
 ## Linting and type checking
@@ -134,10 +127,10 @@ openbadgeslib/
 tests/
     conftest.py          shared pytest fixtures (OB 2.0 + OB 3.0)
     test_*.py            unit + end-to-end tests
-    runtests.sh          wrapper that runs python3 -m pytest
+    fixtures/            schema + test-vector data files
 ```
 
-Note: `baking.py` is a single shared top-level module (`openbadgeslib.baking`) that embeds/extracts the token in the SVG/PNG carrier; the OB1, OB2 and OB3 signers/verifiers all call it. The legacy OB 1.0 implementation lives in `ob1/` (the top-level `badge.py`, `signer.py`, and `verifier.py` are one-line re-export shims that keep imports like `from openbadgeslib.badge import Badge` working); the strict OB 2.0 implementation lives in `ob2/` (`from openbadgeslib.ob2 import OB2Signer, OB2Verifier`). For how the generations differ see [[OB2 vs OB3]], and for the public interfaces see [[Python API OB1]], [[Python API OB2]] and [[Python API OB3]].
+Note: `baking.py` is a single shared top-level module (`openbadgeslib.baking`) that embeds/extracts the token in the SVG/PNG carrier; the OB1, OB2 and OB3 signers/verifiers all call it. The legacy OB 1.0 implementation lives in `ob1/` (the top-level `badge.py`, `signer.py`, and `verifier.py` are **deprecated** compatibility shims that re-export it so imports like `from openbadgeslib.badge import Badge` keep working, now with a `DeprecationWarning` — see [[Python API OB1]]); the strict OB 2.0 implementation lives in `ob2/` (`from openbadgeslib.ob2 import OB2Signer, OB2Verifier`). For how the generations differ see [[OB2 vs OB3]], and for the public interfaces see [[Python API OB1]], [[Python API OB2]] and [[Python API OB3]].
 
 ## Continuous integration
 

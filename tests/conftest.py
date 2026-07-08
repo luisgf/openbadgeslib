@@ -68,8 +68,8 @@ def p384_pub_pem(p384_keypair):
 
 @pytest.fixture(scope='session')
 def ed25519_keypair():
-    # Generated in-session (not a committed key file) so the suite ships no
-    # private key material on disk.
+    # Generated in-session rather than shipped as a committed key file (unlike
+    # the throwaway legacy RSA/ECC test_sign_*.pem, which are committed).
     from openbadgeslib.keys import KeyEd25519
     return KeyEd25519().generate_keypair()  # (priv_pem, pub_pem)
 

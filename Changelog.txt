@@ -28,6 +28,13 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     Both read only the private status registries, so neither needs an output
     directory (`-o`). (#157)
 
+  - refactor(cli): `openbadges-keygenerator` no longer accepts the decorative
+    `-V/--ob-version` flag. Key material never depended on the OpenBadges
+    version (the algorithm comes from the badge's `key_type`), so the flag only
+    changed a log line. Internal tidy-ups alongside it: a dead `if args.badge`
+    guard in the signer (`-b` is required), the redundant `tests/runtests.sh`
+    wrapper, and an inaccurate conftest comment. (#156)
+
 
 * v3.6.0 - 2026-07-08
 

@@ -112,40 +112,40 @@ def main() -> None:
 
     evidence = args.evidence  # If no evidence, evidence=None
 
-    if args.badge:
-        logger.debug("Signing badge '%s' for %s (OB %s, output %s)",
-                     args.badge, args.receptor, args.ob_version, args.output)
-        conf = read_config_or_exit(args.config)
-        badge = resolve_badge_section(conf, args.badge)
-        try:
-            safe_badge = _safe_filename_component(badge, 'badge')
-            safe_receptor = _safe_filename_component(args.receptor, 'receptor')
-        except ValueError as exc:
-            print('ERROR: %s' % exc)
-            sys.exit(-1)
+    # -b/--badge is required=True, so args.badge is always set here.
+    logger.debug("Signing badge '%s' for %s (OB %s, output %s)",
+                 args.badge, args.receptor, args.ob_version, args.output)
+    conf = read_config_or_exit(args.config)
+    badge = resolve_badge_section(conf, args.badge)
+    try:
+        safe_badge = _safe_filename_component(badge, 'badge')
+        safe_receptor = _safe_filename_component(args.receptor, 'receptor')
+    except ValueError as exc:
+        print('ERROR: %s' % exc)
+        sys.exit(-1)
 
-        badge_obj = Badge.create_from_conf(conf, badge)
+    badge_obj = Badge.create_from_conf(conf, badge)
 
-        if badge_obj.image_type is BadgeImgType.PNG:
-            fbase = '%s_%s.png' % (safe_badge, safe_receptor)
-        elif badge_obj.image_type is BadgeImgType.SVG:
-            fbase = '%s_%s.svg' % (safe_badge, safe_receptor)
-        else:
-            raise BadgeImgFormatUnsupported(
-                'Unsupported image type: %r' % (badge_obj.image_type,))
+    if badge_obj.image_type is BadgeImgType.PNG:
+        fbase = '%s_%s.png' % (safe_badge, safe_receptor)
+    elif badge_obj.image_type is BadgeImgType.SVG:
+        fbase = '%s_%s.svg' % (safe_badge, safe_receptor)
+    else:
+        raise BadgeImgFormatUnsupported(
+            'Unsupported image type: %r' % (badge_obj.image_type,))
 
-        badge_file_out = os.path.join(args.output, fbase)
+    badge_file_out = os.path.join(args.output, fbase)
 
-        if os.path.isfile(badge_file_out):
-            print('A %s OpenBadge has already signed for %s in %s' % (args.badge, args.receptor, badge_file_out))
-            sys.exit(-1)
+    if os.path.isfile(badge_file_out):
+        print('A %s OpenBadge has already signed for %s in %s' % (args.badge, args.receptor, badge_file_out))
+        sys.exit(-1)
 
-        if args.ob_version == '3':
-            _sign_ob3(args, conf, badge, badge_obj, badge_file_out, evidence)
-        elif args.ob_version == '2':
-            _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence)
-        else:
-            _sign_ob1(args, conf, badge, badge_obj, badge_file_out, evidence)
+    if args.ob_version == '3':
+        _sign_ob3(args, conf, badge, badge_obj, badge_file_out, evidence)
+    elif args.ob_version == '2':
+        _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence)
+    else:
+        _sign_ob1(args, conf, badge, badge_obj, badge_file_out, evidence)
 
 
 def _sign_ob2(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,

@@ -61,10 +61,6 @@ def build_parser() -> argparse.ArgumentParser:
                               "[badge_<BADGE>] (the suffix after 'badge_'). "
                               "Key type (RSA/ECC/ED25519) is taken from the "
                               "badge's key_type field; default RSA."))
-    parser.add_argument('-V', '--ob-version', choices=['1', '2', '3'], default='3',
-                        metavar='VERSION',
-                        help='OpenBadges specification version to use: 1, 2, or 3 '
-                        '(default). Key material is identical for all versions.')
     parser.add_argument('-d', '--debug', action='store_true',
                         help='Show debug messages at runtime.')
     parser.add_argument('-v', '--version', action='version',
@@ -112,8 +108,8 @@ def main() -> None:
                  key_type.name, private_key, public_key)
     issuer_name = (conf['issuer'].get('name', '?')
                    if conf.has_section('issuer') else '?')
-    logger.info("Generating OpenBadges %s %s key pair for issuer '%s'",
-                args.ob_version, key_type.name, issuer_name)
+    logger.info("Generating a %s key pair for issuer '%s'",
+                key_type.name, issuer_name)
 
     kf = KeyFactory(key_type)
     priv_key_pem, pub_key_pem = kf.generate_keypair()
