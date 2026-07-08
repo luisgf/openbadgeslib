@@ -39,6 +39,15 @@ from .keys import KeyFactory, KeyRSA, KeyECC  # noqa: F401
 from .util import __version__  # noqa: F401
 
 
+# ── Issuance API ─────────────────────────────────────────────────────────────
+# "Issue badge X to Y per config" as a library call — the orchestration the CLI
+# wraps, returning a SignResult instead of writing files (openbadgeslib.issue).
+# Resolved lazily (PEP 562, below) because openbadgeslib.issue pulls in the
+# shared Badge model from the ob1 leaf module; a bare `import openbadgeslib`
+# must not drag that in. `from openbadgeslib.issue import ...` works directly.
+_ISSUE_API = ('IssuanceError', 'SignResult', 'issue_from_conf')
+
+
 # ── OpenBadges 1.0 (legacy) ──────────────────────────────────────────────────
 # The unprefixed OB1 names (Signer, Verifier, Badge, …) stay importable from
 # the top-level package for backward compatibility, but they are the legacy
@@ -55,6 +64,11 @@ _OB1_API = {
 
 
 def __getattr__(name: str) -> Any:
+    if name in _ISSUE_API:
+        # The modern issuance API — lazy so a bare import stays ob1-free, but
+        # warning-free (unlike the OB1 names below).
+        import importlib
+        return getattr(importlib.import_module('.issue', __name__), name)
     module = _OB1_API.get(name)
     if module is None:
         raise AttributeError(

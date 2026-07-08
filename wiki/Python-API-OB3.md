@@ -90,6 +90,36 @@ OB3Signer(privkey_pem, algorithm='RS256')
 
 The baking format matches OB 2.0, so existing badge viewers can extract the token regardless of version. See [[Signing and Verification]] for the shared baking concepts and [[Keys and Errors]] for generating compatible keys.
 
+## Issuing from a config file — `openbadgeslib.issue`
+
+`OB3Signer` signs a credential you built yourself. To go straight from a config section to a signed badge — the orchestration `openbadges-signer` performs — call the library API instead of copying the CLI:
+
+```python
+from openbadgeslib import issue_from_conf          # or: from openbadgeslib.issue import issue_from_conf
+from openbadgeslib.confparser import read_config_or_exit
+
+conf = read_config_or_exit('config.ini')
+result = issue_from_conf(conf, 'badge_1', 'learner@example.com', ob_version='3')
+
+with open(result.badge_filename, 'wb') as f:       # writing the badge is your call
+    f.write(result.badge_bytes)
+print(result.jti, result.proof_format, result.status_index)
+```
+
+`issue_from_conf(conf, badge, recipient, ob_version='3', *, evidence=None, expires=None, hosted=False, proof_format=None)` builds the credential from the `[badge]` section, allocates a status-list index for a revocable badge (persisting the registry **before** signing, so a delivered badge is always revocable), applies the Data Integrity `verificationMethod` policy, signs, and returns a `SignResult`. It performs **no** user-facing I/O — no prints, no `sys.exit`, no file write:
+
+| `SignResult` field | Notes |
+| --- | --- |
+| `ob_version` | `'2'` or `'3'`. |
+| `badge_bytes` | The signed badge image — **you** write it. |
+| `badge_filename` | Suggested basename `<badge>_<recipient>.<ext>`. |
+| `jti` / `status_index` / `proof_format` | OB3 credential id, status-list index (or `None`), `'vc-jwt'`/`'ldp'`. |
+| `credential` / `assertion` | The issued OB3 `OpenBadgeCredential` / OB2 `Assertion`. |
+| `assertion_id` / `hosted_json` | OB2 HostedBadge URL + the assertion JSON to publish. |
+| `notices` | Informational hints (e.g. the self-asserted did:key warning for a non-DID LDP issuer). |
+
+A bad config or a policy violation — an OB2 signed badge without `crypto_key`, an `ldp` proof on a non-Ed25519 key, a did:key issuer that is not the signing key — raises `IssuanceError` (no `sys.exit`, so a caller handles it). OpenBadges 1.0 issuance is CLI-only (it is deprecated). This is the seam batch signing (multiple recipients, one registry transaction) builds on.
+
 ## Verifying — `OB3Verifier`
 
 ```python

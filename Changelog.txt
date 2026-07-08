@@ -6,6 +6,23 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v3.10.0 - unreleased
 
+  - feat(api): extract the issuance orchestration from the CLI into a reusable
+    library API — the single biggest adoption gap. `openbadgeslib.issue` exposes
+    `issue_from_conf(conf, badge, recipient, ob_version, ...)` (also re-exported
+    as `openbadgeslib.issue_from_conf`), returning a `SignResult` dataclass with
+    the signed badge bytes and metadata and doing no user-facing I/O — no
+    prints, no sys.exit, no file write; a config or policy problem raises
+    `IssuanceError`. The ~230 lines of business logic that lived in
+    openbadges-signer (credential construction from config, salt generation, the
+    OB2 hosted-vs-signed decision, the OB3 status-registry→sign transactional
+    order and the Data Integrity verificationMethod policy — did:web trusted vs
+    a derived self-asserted did:key) now live there and are unit-tested
+    directly, not only reachable by driving the CLI. The signer entrypoints are
+    reduced to flag parsing, I/O and display over that API; behaviour — including
+    the historical per-version exit conventions — is unchanged. Prerequisite for
+    batch signing (#165) and any unified CLI. OpenBadges 1.0 issuance stays
+    CLI-only (it is deprecated). (Closes #160)
+
   - feat(ob3): complete the broadened OB 3.0 credential model started in
     v3.9.0 — closing the remaining data-model gap versus the spec. New `Result`
     (a measured outcome: value, status, achievedLevel and the linked

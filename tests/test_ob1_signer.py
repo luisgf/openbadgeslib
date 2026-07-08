@@ -6,7 +6,7 @@ from openbadgeslib import signer
 from openbadgeslib.signer import Signer
 from openbadgeslib.confparser import ConfParser
 from openbadgeslib.keys import KeyType
-from openbadgeslib.openbadges_signer import _safe_filename_component
+from openbadgeslib.issue import _safe_filename_component
 from openbadgeslib.badge import (Badge, BadgeType, BadgeImgType, Assertion,
                                  BadgeSigned, extract_svg_assertion,
                                  extract_png_assertion)

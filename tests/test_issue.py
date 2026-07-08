@@ -1,0 +1,195 @@
+"""Unit tests for the reusable issuance API (openbadgeslib.issue).
+
+Exercised directly — no CLI, no argv, no sys.exit — which is the point of
+#160: the credential-construction, the status-registry→sign transactional
+order and the Data Integrity verificationMethod policy are now callable and
+assertable as a library, not only reachable by driving openbadges-signer.
+"""
+import json
+from pathlib import Path
+
+import pytest
+
+from openbadgeslib.issue import (IssuanceError, SignResult, issue_from_conf,
+                                 output_basename)
+from openbadgeslib.ob1.badge import BadgeImgType
+
+TESTS_DIR = Path(__file__).parent
+
+
+def _write_conf(tmp_path, *, priv='test_sign_rsa.pem', pub='test_verify_rsa.pem',
+                key_type='RSA', base_key=None, status=False, hosted=False,
+                crypto=True, did=None, proof_format=None):
+    """A config parsed exactly as the CLI parses it (ExtendedInterpolation),
+    for the RSA test keys committed under tests/ unless overridden."""
+    base_key = str(base_key) if base_key is not None else str(TESTS_DIR)
+    logdir = tmp_path / 'log'
+    logdir.mkdir(exist_ok=True)
+    lines = [
+        "[paths]",
+        "base = %s" % tmp_path,
+        "base_log = %s" % logdir,
+        "base_image = %s" % (TESTS_DIR / 'images'),
+        "",
+        "[logs]", "general = general.log", "signer = signer.log", "",
+        "[issuer]",
+        "name = Test Issuer",
+        "url = https://example.com",
+        "publish_url = https://issuer.example/issuer/",
+    ]
+    if did:
+        lines.append("did = %s" % did)
+    lines += [
+        "",
+        "[badge_1]",
+        "name = Test Badge",
+        "description = Test",
+        "local_image = sample1.svg",
+        "image = https://example.com/badge.svg",
+        "criteria = https://example.com/criteria.html",
+        "verify_key = https://example.com/verify.pem",
+        "badge = https://example.com/badge.json",
+        "private_key = %s/%s" % (base_key, priv),
+        "public_key = %s/%s" % (base_key, pub),
+        "key_type = %s" % key_type,
+    ]
+    if crypto:
+        lines.append("crypto_key = https://example.com/key.json")
+    if hosted:
+        lines.append("hosted_assertions_base = https://example.com/assertions/")
+    if status:
+        lines.append("status_lists = revocation")
+    if proof_format:
+        lines.append("proof_format = %s" % proof_format)
+    cfg = tmp_path / 'cfg.ini'
+    cfg.write_text("\n".join(lines) + "\n")
+    from openbadgeslib.confparser import read_config_or_exit
+    return read_config_or_exit(str(cfg))
+
+
+class TestOutputBasename:
+    def test_svg_and_png(self):
+        assert output_basename('badge_1', 'a@e.com',
+                               BadgeImgType.SVG) == 'badge_1_a@e.com.svg'
+        assert output_basename('badge_1', 'a@e.com',
+                               BadgeImgType.PNG) == 'badge_1_a@e.com.png'
+
+    def test_rejects_path_separator(self):
+        with pytest.raises(ValueError):
+            output_basename('../evil', 'a@e.com', BadgeImgType.SVG)
+
+
+class TestIssueOb3:
+    def test_returns_signresult_and_writes_no_badge(self, tmp_path):
+        conf = _write_conf(tmp_path)
+        result = issue_from_conf(conf, 'badge_1', 'r@example.com', '3')
+        assert isinstance(result, SignResult)
+        assert result.ob_version == '3'
+        assert result.proof_format == 'vc-jwt'
+        assert result.badge_bytes and b'<svg' in result.badge_bytes
+        assert result.jti and result.jti.startswith('urn:uuid:')
+        assert result.credential is not None
+        assert result.status_index is None
+        assert result.badge_filename == 'badge_1_r@example.com.svg'
+        # No user-facing I/O: writing the badge is the caller's job.
+        assert not (tmp_path / result.badge_filename).exists()
+
+    def test_status_registry_persisted_before_signing(self, tmp_path):
+        # The registry→sign order is testable off the CLI: issue_from_conf
+        # allocates and persists the index (an orchestration side effect) even
+        # though it writes no badge, and the credential carries the matching
+        # credentialStatus. A signing failure would thus leave only a harmless
+        # orphan index, never a delivered-but-unrevocable badge.
+        conf = _write_conf(tmp_path, status=True)
+        result = issue_from_conf(conf, 'badge_1', 'r@example.com', '3')
+        # The index is randomised (privacy — it must not leak issuance order or
+        # count), so assert it is allocated and consistently stamped, not == 0.
+        assert result.status_index is not None
+        registry = tmp_path / 'status' / 'badge_1.json'
+        assert registry.is_file()
+        assert result.jti in registry.read_text()
+        assert result.credential.credential_status
+        assert result.credential.credential_status[0]['statusListIndex'] == \
+            str(result.status_index)
+        assert not (tmp_path / result.badge_filename).exists()
+
+    def test_invalid_proof_format_raises_issuance_error(self, tmp_path):
+        conf = _write_conf(tmp_path, proof_format='jwt')   # not vc-jwt/ldp
+        with pytest.raises(IssuanceError, match='proof_format'):
+            issue_from_conf(conf, 'badge_1', 'r@example.com', '3')
+
+
+class TestIssueOb2:
+    def test_signed_returns_bytes_and_assertion(self, tmp_path):
+        conf = _write_conf(tmp_path)
+        result = issue_from_conf(conf, 'badge_1', 'r@example.com', '2')
+        assert result.ob_version == '2'
+        assert result.assertion is not None
+        assert result.assertion_id is None       # signed, not hosted
+        assert result.hosted_json is None
+        assert result.badge_bytes
+
+    def test_signed_requires_crypto_key(self, tmp_path):
+        conf = _write_conf(tmp_path, crypto=False)
+        with pytest.raises(IssuanceError, match='crypto_key'):
+            issue_from_conf(conf, 'badge_1', 'r@example.com', '2')
+
+    def test_hosted_returns_assertion_json(self, tmp_path):
+        conf = _write_conf(tmp_path, hosted=True)
+        result = issue_from_conf(conf, 'badge_1', 'r@example.com', '2',
+                                 hosted=True)
+        assert result.hosted_json is not None
+        assert result.assertion_id and result.assertion_id.endswith('.json')
+        json.loads(result.hosted_json)           # valid JSON
+
+    def test_hosted_requires_base(self, tmp_path):
+        conf = _write_conf(tmp_path, hosted=False)
+        with pytest.raises(IssuanceError, match='hosted_assertions_base'):
+            issue_from_conf(conf, 'badge_1', 'r@example.com', '2', hosted=True)
+
+
+class TestUnsupportedVersion:
+    def test_ob1_is_cli_only(self, tmp_path):
+        conf = _write_conf(tmp_path)
+        with pytest.raises(IssuanceError, match='OpenBadges 1.0'):
+            issue_from_conf(conf, 'badge_1', 'r@example.com', '1')
+
+
+class TestVerificationMethodPolicy:
+    """did:web-trusted vs did:key-self-asserted, decided in the API and now
+    assertable without the CLI (#160)."""
+
+    @pytest.fixture()
+    def ed25519_dir(self, tmp_path, ed25519_keypair):
+        priv_pem, pub_pem = ed25519_keypair
+        (tmp_path / 'sign_ed25519.pem').write_bytes(priv_pem)
+        (tmp_path / 'verify_ed25519.pem').write_bytes(pub_pem)
+        return tmp_path
+
+    def test_did_web_issuer_names_published_vm(self, ed25519_dir, tmp_path):
+        pytest.importorskip('pyld')
+        conf = _write_conf(tmp_path, base_key=ed25519_dir,
+                           priv='sign_ed25519.pem', pub='verify_ed25519.pem',
+                           key_type='ED25519', did='auto')
+        result = issue_from_conf(conf, 'badge_1', 'r@example.com', '3',
+                                 proof_format='ldp')
+        from openbadgeslib.ob3 import OB3Verifier
+        doc = json.loads(OB3Verifier.extract_token_from_svg(result.badge_bytes))
+        assert doc['issuer']['id'] == 'did:web:issuer.example:issuer'
+        assert doc['proof']['verificationMethod'] == \
+            'did:web:issuer.example:issuer#badge_1'
+        assert not result.notices        # trusted did:web → no self-asserted hint
+
+    def test_non_did_issuer_warns_self_asserted(self, ed25519_dir, tmp_path):
+        pytest.importorskip('pyld')
+        conf = _write_conf(tmp_path, base_key=ed25519_dir,
+                           priv='sign_ed25519.pem', pub='verify_ed25519.pem',
+                           key_type='ED25519')   # plain URL issuer, no did
+        result = issue_from_conf(conf, 'badge_1', 'r@example.com', '3',
+                                 proof_format='ldp')
+        assert any('self-asserted' in n for n in result.notices)
+
+    def test_non_ed25519_key_with_ldp_raises(self, tmp_path):
+        conf = _write_conf(tmp_path, proof_format='ldp')   # RSA key + ldp
+        with pytest.raises(IssuanceError, match='Ed25519'):
+            issue_from_conf(conf, 'badge_1', 'r@example.com', '3')

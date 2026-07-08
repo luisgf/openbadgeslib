@@ -32,41 +32,31 @@
 import argparse
 import configparser
 import logging
-import ntpath
 import sys
 import os
 import os.path
 import time
 
-from datetime import datetime, timezone, timedelta
-from typing import Any, Optional, TYPE_CHECKING
+from datetime import datetime
+from typing import Any, Optional
 
-if TYPE_CHECKING:
-    from .ob3 import OpenBadgeCredential
-
-from .keys import KeyType, detect_key_type, alg_for_key_type
-from .errors import BadgeImgFormatUnsupported
+from .keys import KeyType
 from .confparser import read_config_or_exit, resolve_badge_section
 from .logs import enable_debug_logging
-# Badge (the config-driven badge model) and BadgeImgType are shared across all
-# OB versions here, so they import from the ob1 leaf module directly — reaching
-# them through the deprecated openbadgeslib.ob1 package surface would warn. The
-# genuinely OB1-only names (Signer, BadgeType) load lazily inside _sign_ob1.
-from .ob1.badge import Badge, BadgeImgType
+# Badge (the config-driven badge model) is shared across all OB versions here,
+# so it imports from the ob1 leaf module directly — reaching it through the
+# deprecated openbadgeslib.ob1 package surface would warn. The genuinely
+# OB1-only names (Signer, BadgeType) load lazily inside _sign_ob1.
+from .ob1.badge import Badge
 from .mail import BadgeMail
-from .util import __version__, emit_cli_json, normalize_recipient_id
+# Issuance orchestration lives in openbadgeslib.issue; this module is the CLI
+# front end (flag parsing, I/O and display) over it.
+from .issue import IssuanceError, issue_badge, output_basename
+from .util import __version__, emit_cli_json
 
 logger = logging.getLogger(__name__)
 
 # Entry Point
-
-
-def _safe_filename_component(value: str, field_name: str) -> str:
-    if not value or value in ('.', '..') or '\x00' in value:
-        raise ValueError('%s is not safe for use in an output filename' % field_name)
-    if os.path.basename(value) != value or ntpath.basename(value) != value:
-        raise ValueError('%s must not contain path separators' % field_name)
-    return value
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -116,7 +106,8 @@ def main() -> None:
 
 def _run_sign(args: argparse.Namespace) -> dict[str, Any]:
     """Sign one badge and return the machine-readable result (consumed by the
-    --json path); the human output is printed as a side effect."""
+    --json path); the human output is printed as a side effect. Orchestration
+    lives in openbadgeslib.issue — this is flag validation, I/O and display."""
     if bool(args.no_evidence) != (args.evidence is None):  # XOR
         sys.exit("Please, choose '-e' OR '-E'")
 
@@ -130,22 +121,16 @@ def _run_sign(args: argparse.Namespace) -> dict[str, Any]:
                  args.badge, args.receptor, args.ob_version, args.output)
     conf = read_config_or_exit(args.config)
     badge = resolve_badge_section(conf, args.badge)
+    badge_obj = Badge.create_from_conf(conf, badge)
+
+    # The output filename and the already-signed check are resolved here (I/O),
+    # before issuing, so a revocable OB3 badge does not burn a status-list index
+    # only to then refuse to overwrite an existing file.
     try:
-        safe_badge = _safe_filename_component(badge, 'badge')
-        safe_receptor = _safe_filename_component(args.receptor, 'receptor')
+        fbase = output_basename(badge, args.receptor, badge_obj.image_type)
     except ValueError as exc:
         print('ERROR: %s' % exc)
         sys.exit(-1)
-
-    badge_obj = Badge.create_from_conf(conf, badge)
-
-    if badge_obj.image_type is BadgeImgType.PNG:
-        fbase = '%s_%s.png' % (safe_badge, safe_receptor)
-    elif badge_obj.image_type is BadgeImgType.SVG:
-        fbase = '%s_%s.svg' % (safe_badge, safe_receptor)
-    else:
-        raise BadgeImgFormatUnsupported(
-            'Unsupported image type: %r' % (badge_obj.image_type,))
 
     badge_file_out = os.path.join(args.output, fbase)
 
@@ -160,69 +145,13 @@ def _run_sign(args: argparse.Namespace) -> dict[str, Any]:
     return _sign_ob1(args, conf, badge, badge_obj, badge_file_out, evidence)
 
 
-def _sign_ob2(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
-              badge_obj: Badge, badge_file_out: str,
-              evidence: Optional[str]) -> dict[str, Any]:
-    """Sign a badge using strict OpenBadges 2.0 (SignedBadge JWS or HostedBadge)."""
-    import json
-    import uuid
-    from urllib.parse import urljoin
-    from .ob2 import OB2Signer, Assertion, IdentityObject, Verification
-
-    badge_section = conf[badge]
-
-    # create_from_conf always populates these for a valid badge section.
-    assert (badge_obj.json_url is not None and badge_obj.key_type is not None
-            and badge_obj.image is not None and badge_obj.privkey_pem is not None)
-
-    # Recipient: hashed email + a fresh random salt.
-    salt = os.urandom(16).hex()
-    recipient = IdentityObject.create(args.receptor, salt=salt)
-
-    if args.hosted:
-        hosted_base = badge_section.get('hosted_assertions_base')
-        if not hosted_base:
-            sys.exit("[!] -V 2 -H (hosted) requires 'hosted_assertions_base' in the "
-                     "badge's config section.")
-        base = hosted_base if hosted_base.endswith('/') else hosted_base + '/'
-        assertion_id: Optional[str] = urljoin(base, '%s.json' % uuid.uuid4().hex)
-        verification = Verification(type='HostedBadge')
-    else:
-        creator = badge_section.get('crypto_key')
-        if not creator:
-            sys.exit("[!] -V 2 (signed) requires 'crypto_key' (the CryptographicKey URL) "
-                     "in the badge's config section.")
-        assertion_id = None   # auto-generated as urn:uuid:…
-        verification = Verification(type='SignedBadge', creator=creator)
-
-    issued_on = datetime.now(tz=timezone.utc)
-    expires = issued_on + timedelta(days=args.expires) if args.expires else None
-
-    assertion = Assertion(
-        recipient=recipient,
-        badge=badge_obj.json_url,
-        verification=verification,
-        id=assertion_id,
-        issued_on=issued_on,
-        expires=expires,
-        image=badge_obj.image_url,
-        evidence=evidence,
-    )
-
-    algorithm = alg_for_key_type(badge_obj.key_type)
-    logger.debug("OB2 sign: key_type=%s algorithm=%s hosted=%s image_type=%s",
-                 badge_obj.key_type, algorithm, args.hosted, badge_obj.image_type)
-
-    signer = OB2Signer(privkey_pem=badge_obj.privkey_pem, algorithm=algorithm)
-    if badge_obj.image_type is BadgeImgType.SVG:
-        signed_bytes = signer.sign_into_svg(assertion, badge_obj.image)
-    else:
-        signed_bytes = signer.sign_into_png(assertion, badge_obj.image)
-
+def _write_badge_and_log(conf: configparser.ConfigParser, badge_file_out: str,
+                         badge_bytes: bytes, msg: str) -> None:
+    """Persist the signed badge, append the audit line and print the location —
+    the shared tail of every successful OB2/OB3 signing. A log-write failure is
+    reported but does not lose the already-written badge."""
     with open(badge_file_out, 'wb') as f:
-        f.write(signed_bytes)
-
-    msg = '%s %s OB2 SIGNED for %s' % (datetime.today().isoformat(), badge, args.receptor)
+        f.write(badge_bytes)
     sign_log = os.path.join(conf['paths']['base_log'], conf['logs']['signer'])
     try:
         with open(sign_log, 'a') as file:
@@ -231,20 +160,39 @@ def _sign_ob2(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
         print('[!] Could not write sign log: %s' % err)
     print('%s at: %s' % (msg, badge_file_out))
 
-    if args.hosted:
+
+def _sign_ob2(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
+              badge_obj: Badge, badge_file_out: str,
+              evidence: Optional[str]) -> dict[str, Any]:
+    """Present a strict OpenBadges 2.0 signing: orchestrate via issue_badge,
+    then write the badge, append the audit line, publish the hosted assertion
+    JSON and report. Historical OB2 error convention: the message is the exit
+    argument (status 1)."""
+    try:
+        result = issue_badge(conf, badge, args.receptor, badge_obj, '2',
+                             evidence=evidence, expires=args.expires,
+                             hosted=args.hosted)
+    except IssuanceError as exc:
+        sys.exit('[!] %s' % exc)
+
+    msg = '%s %s OB2 SIGNED for %s' % (
+        datetime.today().isoformat(), badge, args.receptor)
+    _write_badge_and_log(conf, badge_file_out, result.badge_bytes, msg)
+
+    if args.hosted and result.hosted_json is not None:
         hosted_out = os.path.splitext(badge_file_out)[0] + '.assertion.json'
         with open(hosted_out, 'w', encoding='ascii') as f:
-            f.write(json.dumps(assertion.to_dict(), sort_keys=True, ensure_ascii=True))
-        print('[i] Publish the hosted assertion JSON %s on your web server so it is '
-              'retrievable at: %s' % (hosted_out, assertion.id))
+            f.write(result.hosted_json)
+        print('[i] Publish the hosted assertion JSON %s on your web server so it '
+              'is retrievable at: %s' % (hosted_out, result.assertion_id))
 
     if args.mail_badge:
         print('[i] --mail-badge is not supported for -V 2 yet; the badge was saved '
               'but not emailed.')
-    result: dict[str, Any] = {'ob_version': '2', 'badge_file': badge_file_out}
+    out: dict[str, Any] = {'ob_version': '2', 'badge_file': badge_file_out}
     if args.hosted:
-        result['assertion_id'] = assertion.id
-    return result
+        out['assertion_id'] = result.assertion_id
+    return out
 
 
 def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
@@ -326,174 +274,36 @@ def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
 def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
               badge_obj: Badge, badge_file_out: str,
               evidence: Optional[str]) -> dict[str, Any]:
-    """Sign a badge using OpenBadges 3.0 (JWT-VC or a Data Integrity proof)."""
-    from .ob3 import OB3Signer, Issuer, Achievement, OpenBadgeCredential
-    from .confparser import ob3_issuer_id, ob3_proof_format, ob3_status_config
-
-    issuer_section = conf['issuer']
+    """Present an OpenBadges 3.0 signing: orchestrate via issue_badge, then
+    write the badge, append the audit line and report. Historical OB3 error
+    convention: the message is printed and the status is -1."""
     try:
-        issuer_id = ob3_issuer_id(conf)
-        status_conf = ob3_status_config(conf, badge)
-        proof_format = args.proof_format or ob3_proof_format(conf, badge)
-    except ValueError as exc:
+        result = issue_badge(conf, badge, args.receptor, badge_obj, '3',
+                             evidence=evidence, expires=args.expires,
+                             proof_format=args.proof_format)
+    except IssuanceError as exc:
         print('[!] %s' % exc)
         sys.exit(-1)
 
-    issuer = Issuer(
-        id=issuer_id,
-        name=issuer_section['name'],
-        url=issuer_section.get('url'),
-        email=issuer_section.get('email'),
-    )
-
-    badge_section = conf[badge]
-    criteria_narrative = badge_section.get('criteria_narrative',
-                                           badge_section.get('criteria', ''))
-    achievement = Achievement(
-        id=badge_section['badge'],
-        name=badge_section['name'],
-        description=badge_section['description'],
-        criteria_narrative=criteria_narrative,
-        image_url=badge_section.get('image'),
-    )
-
-    recipient_id = normalize_recipient_id(args.receptor)
-
-    expiration_date = None
-    if args.expires:
-        expiration_date = datetime.now(tz=timezone.utc) + timedelta(days=args.expires)
-
-    credential = OpenBadgeCredential(
-        issuer=issuer,
-        recipient_id=recipient_id,
-        achievement=achievement,
-        evidence_url=evidence,
-        expiration_date=expiration_date,
-    )
-
-    status_index = None
-    if status_conf is not None:
-        from .errors import StatusError
-        from .ob3.status_list import status_entry
-        from .ob3.status_registry import StatusRegistry
-
-        # The registry is persisted BEFORE the badge is signed and written:
-        # a signing failure leaves a harmless orphan index, while a delivered
-        # badge missing from the registry could never be revoked. The whole
-        # load→allocate→save runs under an exclusive lock so a concurrent
-        # signer cannot clobber this allocation (see StatusRegistry.locked).
-        try:
-            with StatusRegistry.locked(status_conf.registry_path,
-                                       status_conf.size_bits) as registry:
-                assert credential.id is not None \
-                    and credential.issuance_date is not None
-                status_index = registry.allocate(credential.id, recipient_id,
-                                                 credential.issuance_date)
-                registry.save()
-        except (StatusError, OSError) as exc:
-            print('[!] Could not allocate a status list index: %s' % exc)
-            sys.exit(-1)
-        credential.credential_status = [
-            status_entry(status_conf.list_urls[p], p, status_index)
-            for p in status_conf.purposes]
-
-    # create_from_conf always populates these from the badge config section.
-    assert badge_obj.privkey_pem is not None and badge_obj.image is not None
-
-    key_type = detect_key_type(badge_obj.privkey_pem)
-
-    if proof_format == 'ldp':
-        signed_bytes = _sign_ob3_ldp(badge, badge_obj, credential, issuer_id,
-                                     key_type, recipient_id)
-    else:
-        algorithm = alg_for_key_type(key_type)
-        logger.debug("OB3 sign: key_type=%s algorithm=%s recipient=%s",
-                     key_type, algorithm, recipient_id)
-        signer = OB3Signer(privkey_pem=badge_obj.privkey_pem,
-                           algorithm=algorithm)
-        if badge_obj.image_type is BadgeImgType.SVG:
-            signed_bytes = signer.sign_into_svg(credential, badge_obj.image)
-        else:
-            signed_bytes = signer.sign_into_png(credential, badge_obj.image)
-
-    with open(badge_file_out, 'wb') as f:
-        f.write(signed_bytes)
+    # Informational hints (e.g. the self-asserted did:key warning for a non-DID
+    # LDP issuer) precede the SIGNED line, as they did when printed mid-signing.
+    for notice in result.notices:
+        print('[i] %s' % notice)
 
     msg = '%s %s OB3 SIGNED for %s JTI %s' % (
-        datetime.today().isoformat(), badge, args.receptor, credential.id)
-    if proof_format == 'ldp':
+        datetime.today().isoformat(), badge, args.receptor, result.jti)
+    if result.proof_format == 'ldp':
         msg += ' PROOF ldp'
-    if status_index is not None:
-        msg += ' STATUS %d' % status_index
-    sign_log = os.path.join(conf['paths']['base_log'], conf['logs']['signer'])
-    try:
-        with open(sign_log, 'a') as file:
-            file.write(msg + '\n')
-    except OSError as err:
-        print('[!] Could not write sign log: %s' % err)
-    print('%s at: %s' % (msg, badge_file_out))
+    if result.status_index is not None:
+        msg += ' STATUS %d' % result.status_index
+    _write_badge_and_log(conf, badge_file_out, result.badge_bytes, msg)
+
     if args.mail_badge:
         print('[i] --mail-badge is not supported for -V 3; the badge was saved '
               'but not emailed.')
     return {'ob_version': '3', 'badge_file': badge_file_out,
-            'jti': credential.id, 'status_index': status_index,
-            'proof_format': proof_format}
-
-
-def _sign_ob3_ldp(badge: str, badge_obj: Badge,
-                  credential: 'OpenBadgeCredential', issuer_id: str,
-                  key_type: KeyType, recipient_id: str) -> bytes:
-    """Sign an OB3 credential with a Data Integrity proof, baked into the
-    badge image. The proof's verificationMethod follows the issuer config:
-    a did:web issuer signs with the method id openbadges-publish publishes
-    (did:web:…#badge_section — trusted); anything else falls back to a
-    did:key derived from the signing key (self-asserted)."""
-    from .errors import ErrorSigningFile
-    from .ob3 import OB3LdpSigner
-
-    if key_type is not KeyType.ED25519:
-        print("[!] --proof-format ldp (eddsa-rdfc-2022) requires an Ed25519 "
-              "key; [%s] uses %s. Set 'key_type = ED25519' in that badge's "
-              "config section and regenerate its key with "
-              "openbadges-keygenerator -g" % (badge, key_type.value))
-        sys.exit(-1)
-
-    verification_method = None
-    if issuer_id.startswith('did:web:'):
-        verification_method = '%s#%s' % (issuer_id, badge)
-
-    assert badge_obj.privkey_pem is not None and badge_obj.image is not None
-    try:
-        signer = OB3LdpSigner(badge_obj.privkey_pem,
-                              verification_method=verification_method)
-    except ErrorSigningFile as exc:
-        print('[!] %s' % exc)
-        sys.exit(-1)
-
-    if issuer_id.startswith('did:key:'):
-        # A did:key issuer IS its key; signing with a different one would
-        # produce a credential no verifier accepts.
-        derived = signer.verification_method.partition('#')[0]
-        if derived != issuer_id:
-            print("[!] [issuer] did %s does not match the signing key's "
-                  "did:key (%s); a did:key issuer must be the signing key "
-                  "itself" % (issuer_id, derived))
-            sys.exit(-1)
-    elif not issuer_id.startswith('did:'):
-        print("[i] The issuer id is not a DID, so the proof carries a "
-              "self-asserted did:key verification method and verifiers must "
-              "pin the public key (-k/-l). Set [issuer] did = auto to "
-              "publish a trusted did:web instead.")
-
-    logger.debug("OB3 sign: proof_format=ldp vm=%s recipient=%s",
-                 signer.verification_method, recipient_id)
-    try:
-        if badge_obj.image_type is BadgeImgType.SVG:
-            return signer.sign_into_svg(credential, badge_obj.image)
-        return signer.sign_into_png(credential, badge_obj.image)
-    except ErrorSigningFile as exc:
-        print('[!] %s' % exc)
-        sys.exit(-1)
+            'jti': result.jti, 'status_index': result.status_index,
+            'proof_format': result.proof_format}
 
 
 if __name__ == '__main__':
