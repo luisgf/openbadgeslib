@@ -366,3 +366,107 @@ class TestPublishManagement:
         with patch.object(sys, 'argv', argv):
             with pytest.raises(SystemExit, match='--reason'):
                 openbadges_publish.main()
+
+
+# ── openbadges-publish -V 3 --list / --status (read-only audit) ───────────────
+
+def _query(tmp_path, cfg, extra):
+    """Run a query invocation — deliberately without -o, so these tests also
+    prove the read-only paths need no output directory."""
+    argv = ['openbadges-publish', '-c', str(cfg), '-V', '3'] + list(extra)
+    with patch.object(sys, 'argv', argv):
+        openbadges_publish.main()
+
+
+class TestPublishQuery:
+    def _issue(self, tmp_path, rsa_pub_pem, status_lists='revocation, suspension'):
+        cfg = _write_config(tmp_path, status_lists=status_lists)
+        badge_file = _sign(tmp_path, cfg)
+        credential = _credential_from(badge_file, rsa_pub_pem)
+        return cfg, credential
+
+    def test_list_tabulates_issued_credentials(self, tmp_path, rsa_pub_pem,
+                                               capsys):
+        cfg, credential = self._issue(tmp_path, rsa_pub_pem)
+        capsys.readouterr()                 # drop the signer output
+        _query(tmp_path, cfg, ['--list'])
+        out = capsys.readouterr().out
+        assert 'badge_1' in out
+        assert credential.id in out
+        assert 'mailto:' + RECIPIENT in out
+        assert 'active' in out
+        assert '1 credential total' in out
+
+    def test_list_needs_no_output_dir(self, tmp_path, rsa_pub_pem):
+        # No -o is passed by _query: a read-only query must not require one.
+        cfg, _credential = self._issue(tmp_path, rsa_pub_pem)
+        _query(tmp_path, cfg, ['--list'])   # must not raise SystemExit
+
+    def test_list_scoped_to_badge(self, tmp_path, rsa_pub_pem, capsys):
+        cfg, credential = self._issue(tmp_path, rsa_pub_pem)
+        capsys.readouterr()
+        _query(tmp_path, cfg, ['--list', '-b', '1'])
+        assert credential.id in capsys.readouterr().out
+
+    def test_list_reflects_revocation(self, tmp_path, rsa_pub_pem, capsys):
+        cfg, credential = self._issue(tmp_path, rsa_pub_pem)
+        _publish(tmp_path, cfg, ['--revoke', credential.id])
+        capsys.readouterr()
+        _query(tmp_path, cfg, ['--list'])
+        assert 'REVOKED' in capsys.readouterr().out
+
+    def test_status_by_jti_shows_full_detail(self, tmp_path, rsa_pub_pem,
+                                             capsys):
+        cfg, credential = self._issue(tmp_path, rsa_pub_pem)
+        capsys.readouterr()
+        _query(tmp_path, cfg, ['--status', credential.id])
+        out = capsys.readouterr().out
+        assert 'jti:' in out and credential.id in out
+        assert 'recipient:' in out and 'mailto:' + RECIPIENT in out
+        assert 'state:' in out and 'active' in out
+        assert 'index:' in out
+
+    def test_status_by_email(self, tmp_path, rsa_pub_pem, capsys):
+        cfg, credential = self._issue(tmp_path, rsa_pub_pem)
+        capsys.readouterr()
+        _query(tmp_path, cfg, ['--status', RECIPIENT])
+        assert credential.id in capsys.readouterr().out
+
+    def test_status_shows_revocation_reason(self, tmp_path, rsa_pub_pem,
+                                            capsys):
+        cfg, credential = self._issue(tmp_path, rsa_pub_pem)
+        _publish(tmp_path, cfg, ['--revoke', credential.id,
+                                 '--reason', 'cheating'])
+        capsys.readouterr()
+        _query(tmp_path, cfg, ['--status', credential.id])
+        out = capsys.readouterr().out
+        assert 'REVOKED' in out
+        assert 'revoked:' in out and 'cheating' in out
+
+    def test_status_unknown_exits_nonzero(self, tmp_path, rsa_pub_pem, capsys):
+        cfg, _credential = self._issue(tmp_path, rsa_pub_pem)
+        capsys.readouterr()
+        with pytest.raises(SystemExit) as exc:
+            _query(tmp_path, cfg, ['--status', 'urn:uuid:nope'])
+        assert exc.value.code == 1
+        assert 'No credential' in capsys.readouterr().out
+
+    def test_list_without_status_lists_exits(self, tmp_path):
+        cfg = _write_config(tmp_path)       # no status_lists configured
+        with pytest.raises(SystemExit, match='No badge'):
+            _query(tmp_path, cfg, ['--list'])
+
+    def test_query_requires_v3(self, tmp_path):
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        argv = ['openbadges-publish', '-c', str(cfg), '-V', '2', '--list']
+        with patch.object(sys, 'argv', argv):
+            with pytest.raises(SystemExit, match='-V 3'):
+                openbadges_publish.main()
+
+    def test_list_and_revoke_are_mutually_exclusive(self, tmp_path):
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        argv = ['openbadges-publish', '-c', str(cfg), '-V', '3',
+                '--list', '--revoke', 'x']
+        with patch.object(sys, 'argv', argv):
+            with pytest.raises(SystemExit):    # argparse: not allowed with
+                openbadges_publish.main()

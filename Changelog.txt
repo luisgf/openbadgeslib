@@ -4,6 +4,18 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.7.0 - unreleased
+
+  - feat(publish): `openbadges-publish -V 3` gains two read-only registry
+    query commands, closing the credential lifecycle from the CLI
+    (issue → revoke → audit). `--list [-b badge]` tabulates every issued
+    credential — jti, recipient, issue date and state (active / REVOKED /
+    SUSPENDED); `--status <jti|email>` prints the full record of the matching
+    credential(s), including the revocation or suspension date and reason.
+    Both read only the private status registries, so neither needs an output
+    directory (`-o`). (#157)
+
+
 * v3.6.0 - 2026-07-08
 
   - feat(ob3): the verifier now exposes the raw, already-validated VC document

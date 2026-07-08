@@ -209,21 +209,26 @@ The output directory is created with a `0o077` umask.
 ```sh
 openbadges-publish -o DIR [-c FILE] [-V {1,2,3}]
 openbadges-publish -o DIR -V 3 [--revoke ID | --suspend ID | --unsuspend ID] [--reason TEXT] [-b BADGE]
+openbadges-publish -V 3 (--list | --status ID) [-c FILE] [-b BADGE]
 ```
 
 | Short | Long | Meaning | Default |
 |-------|------|---------|---------|
 | `-c` | `--config` | Config file to use | `config.ini` |
-| `-o` | `--output` | Output directory for the public files (**required**) | required |
+| `-o` | `--output` | Output directory for the public files (required to publish; **not** needed for `--list`/`--status`) | required to publish |
 | `-V` | `--ob-version {1,2,3}` | `1`/`2` write hosted metadata (OB 2.0 adds `key.json`); `3` writes `did.json` + status lists | `3` |
 | — | `--revoke ID` | OB3 only: permanently revoke a credential. `ID` is its jti (`urn:uuid:...`, printed and logged by the signer) or the recipient email | — |
 | — | `--suspend ID` | OB3 only: suspend a credential (reversible) | — |
 | — | `--unsuspend ID` | OB3 only: lift a suspension | — |
+| — | `--list` | OB3 only: tabulate issued credentials — jti, recipient, issue date, state (read-only) | — |
+| — | `--status ID` | OB3 only: full status record of a credential by jti or recipient email, revocation/suspension reason included (read-only) | — |
 | — | `--reason TEXT` | Free-text reason recorded with `--revoke`/`--suspend` | — |
-| `-b` | `--badge NAME` | Scope the `ID` lookup to one badge's registry | all badges |
+| `-b` | `--badge NAME` | Scope the lookup/listing to one badge's registry | all badges |
 | `-v` | `--version` | Print version and exit | — |
 
-`--revoke`, `--suspend` and `--unsuspend` are mutually exclusive and update the badge's status registry **before** regenerating the lists. A recipient email that matches several issued credentials is rejected with the candidate jtis — re-run with the jti. Revocation is permanent (there is no `--unrevoke`); suspension of a revoked credential is likewise rejected.
+`--revoke`, `--suspend`, `--unsuspend`, `--list` and `--status` are mutually exclusive. The three state changes update the badge's status registry **before** regenerating the lists; a recipient email that matches several issued credentials is rejected with the candidate jtis — re-run with the jti. Revocation is permanent (there is no `--unrevoke`); suspension of a revoked credential is likewise rejected.
+
+`--list` and `--status` are read-only audits of the private status registries: they need **no** output directory and never touch the published files. `--list` prints one row per issued credential (state is `active`, `REVOKED` or `SUSPENDED`); `--status <jti|email>` prints the full record, including the revocation or suspension date and reason. Together with issue and revoke they close the credential lifecycle from the CLI: issue → revoke → **audit**.
 
 ### Example (OB2)
 
@@ -246,3 +251,27 @@ $ openbadges-publish -c ./config/config.ini -o ./public --revoke urn:uuid:7586fd
 ...
 [!] Re-upload ./public so the change takes effect
 ```
+
+### Example (OB3 audit — no output directory)
+
+```sh
+$ openbadges-publish -c ./config/config.ini -V 3 --list
+
+# badge_1 — 2 credentials
+JTI                                            RECIPIENT                 ISSUED                STATE
+urn:uuid:388b309b-...                          mailto:alice@example.com  2026-07-08T05:26:11Z  active
+urn:uuid:83e1c0de-...                          mailto:bob@example.com    2026-07-08T05:26:11Z  REVOKED
+
+2 credentials total across 1 badge
+
+$ openbadges-publish -c ./config/config.ini -V 3 --status bob@example.com
+badge:      badge_1
+jti:        urn:uuid:83e1c0de-...
+index:      53936
+recipient:  mailto:bob@example.com
+issued:     2026-07-08T05:26:11Z
+state:      REVOKED
+revoked:    2026-07-08T05:26:12Z  (reason: issued in error)
+```
+
+`--status` exits non-zero when the credential is not found, so it composes in scripts.

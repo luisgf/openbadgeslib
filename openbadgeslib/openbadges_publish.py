@@ -38,16 +38,22 @@ import shutil
 import sys
 import tempfile
 
-from typing import Any
+from typing import Any, List, TYPE_CHECKING, Tuple
 from urllib.parse import urljoin
 from .confparser import read_config_or_exit, resolve_badge_section
 from .util import __version__
+
+if TYPE_CHECKING:
+    from .ob3.status_registry import StatusEntry, StatusEvent, StatusRegistry
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Publisher Parameters')
     parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
-    parser.add_argument('-o', '--output', required=True, help='Specify the output directory to save the public files')
+    parser.add_argument('-o', '--output',
+                        help='Output directory for the published files '
+                             '(required to publish; not needed for '
+                             '--list/--status)')
     parser.add_argument('-V', '--ob-version', choices=['1', '2', '3'], default='3',
                         metavar='VERSION',
                         help='OpenBadges specification version: 1 (legacy hosted), '
@@ -61,6 +67,13 @@ def build_parser() -> argparse.ArgumentParser:
                        help='OB3 only: suspend a credential (reversible with --unsuspend)')
     group.add_argument('--unsuspend', metavar='ID',
                        help='OB3 only: lift a suspension')
+    group.add_argument('--list', action='store_true',
+                       help='OB3 only: tabulate issued credentials and their '
+                            'state (scope to one badge with -b); read-only')
+    group.add_argument('--status', metavar='ID',
+                       help='OB3 only: show the full status record of a '
+                            'credential by jti (urn:uuid:...) or recipient '
+                            'email, including revocation/suspension reason')
     parser.add_argument('--reason',
                         help='Free-text reason recorded with --revoke/--suspend')
     parser.add_argument('-b', '--badge',
@@ -74,7 +87,19 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
+    # Read-only registry queries need no output directory and never touch the
+    # published tree, so they route before the publish paths and the -o check.
+    if args.list or args.status is not None:
+        if args.ob_version != '3':
+            sys.exit('[!] --list/--status query the OpenBadges 3.0 status '
+                     'registries and need -V 3')
+        _query_ob3(args, parser)
+        return
+
     if args.ob_version == '3':
+        if args.output is None:
+            parser.error('-o/--output is required to publish '
+                         '(it is not needed for --list/--status)')
         _publish_ob3(args, parser)
         return
 
@@ -82,6 +107,9 @@ def main() -> None:
         sys.exit('[!] --revoke/--suspend/--unsuspend manage OpenBadges 3.0 status '
                  'lists and need -V 3 (OB %s revocation is edited by hand in the '
                  'published revocation list)' % args.ob_version)
+
+    if args.output is None:
+        parser.error('-o/--output is required to publish')
 
     if args.ob_version == '2':
         _publish_ob2(args, parser)
@@ -106,6 +134,135 @@ def _write_atomic(path: str, data: str) -> None:
     except BaseException:
         os.unlink(tmp_path)
         raise
+
+
+def _query_ob3(args: argparse.Namespace,
+               parser: argparse.ArgumentParser) -> None:
+    """Read-only inspection of the private OB3 status registries.
+
+    ``--list`` tabulates every issued credential (jti, recipient, issue date,
+    state) for one badge or all of them; ``--status <jti|email>`` prints the
+    full record of the matching credential(s), including the revocation or
+    suspension date and reason. Neither reads nor writes the published
+    artefacts, so no output directory is needed — this closes the credential
+    lifecycle from the CLI: issue -> revoke/suspend -> audit.
+    """
+    from .confparser import ob3_status_config
+    from .errors import StatusError
+    from .ob3.status_registry import StatusRegistry
+
+    conf = read_config_or_exit(args.config)
+
+    if args.reason:
+        sys.exit('[!] --reason needs --revoke or --suspend')
+
+    try:
+        if 'issuer' not in conf:
+            raise ValueError('config is missing the [issuer] section')
+        if not conf['issuer'].get('publish_url'):
+            raise ValueError("[issuer] is missing the 'publish_url' key")
+        if args.badge:
+            sections = [resolve_badge_section(conf, args.badge)]
+        else:
+            sections = [n for n in conf.sections() if n.startswith('badge_')]
+        status_confs = {name: ob3_status_config(conf, name)
+                        for name in sections}
+    except ValueError as exc:
+        print('[!] %s' % exc)
+        sys.exit(-1)
+
+    configured = [(name, sc) for name, sc in status_confs.items()
+                  if sc is not None]
+    if not configured:
+        if args.badge:
+            sys.exit('[!] badge_%s has no status_lists configured' % args.badge)
+        sys.exit('[!] No badge has status_lists configured in %s' % args.config)
+
+    # Load each badge's registry once; isolate a per-badge failure (corrupt or
+    # unreadable registry) so it does not mask the badges that read cleanly.
+    registries: List[Tuple[str, 'StatusRegistry']] = []
+    for name, status_conf in configured:
+        assert status_conf is not None
+        try:
+            registries.append((name, StatusRegistry.load(
+                status_conf.registry_path, status_conf.size_bits)))
+        except StatusError as exc:
+            print('[!] Skipping [%s] — %s' % (name, exc))
+
+    if not registries:
+        sys.exit(-1)
+
+    if args.status is not None:
+        _print_status_detail(registries, args.status)
+    else:
+        _print_registry_table(registries)
+
+
+def _state_label(entry: 'StatusEntry') -> str:
+    """One-word lifecycle state; revocation (permanent) dominates suspension."""
+    if entry.revoked is not None:
+        return 'REVOKED'
+    if entry.suspended is not None:
+        return 'SUSPENDED'
+    return 'active'
+
+
+def _event_detail(event: 'StatusEvent') -> str:
+    if event.reason:
+        return '%s  (reason: %s)' % (event.date, event.reason)
+    return event.date
+
+
+def _print_registry_table(
+        registries: List[Tuple[str, 'StatusRegistry']]) -> None:
+    header = ('JTI', 'RECIPIENT', 'ISSUED', 'STATE')
+    grand_total = 0
+    for name, registry in registries:
+        entries = sorted(registry.entries.values(),
+                         key=lambda e: (e.issued_on, e.jti))
+        grand_total += len(entries)
+        print('\n# %s — %d credential%s'
+              % (name, len(entries), '' if len(entries) == 1 else 's'))
+        if not entries:
+            continue
+        rows = [(e.jti, e.recipient, e.issued_on, _state_label(e))
+                for e in entries]
+        widths = [max(len(header[i]), max(len(row[i]) for row in rows))
+                  for i in range(len(header))]
+        for cells in (header, *rows):
+            print('  '.join(cells[i].ljust(widths[i])
+                            for i in range(len(header))).rstrip())
+    print('\n%d credential%s total across %d badge%s'
+          % (grand_total, '' if grand_total == 1 else 's',
+             len(registries), '' if len(registries) == 1 else 's'))
+
+
+def _print_status_detail(registries: List[Tuple[str, 'StatusRegistry']],
+                         ident: str) -> None:
+    matches = [(name, entry)
+               for name, registry in registries
+               for entry in registry.find(ident)]
+    if not matches:
+        print('[!] No credential %r in the status registries (searched: %s)'
+              % (ident, ', '.join(name for name, _ in registries)))
+        sys.exit(1)
+    for position, (name, entry) in enumerate(matches):
+        if position:
+            print()
+        _print_field('badge', name)
+        _print_field('jti', entry.jti)
+        _print_field('index', str(entry.index))
+        _print_field('recipient', entry.recipient)
+        _print_field('issued', entry.issued_on)
+        _print_field('state', _state_label(entry))
+        if entry.revoked is not None:
+            _print_field('revoked', _event_detail(entry.revoked))
+        if entry.suspended is not None:
+            _print_field('suspended', _event_detail(entry.suspended))
+
+
+def _print_field(label: str, value: str) -> None:
+    print('%-11s %s' % (label + ':', value))
 
 
 def _publish_ob3(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
