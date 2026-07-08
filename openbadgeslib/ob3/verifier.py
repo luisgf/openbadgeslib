@@ -26,7 +26,7 @@ from typing import Any, Optional, Union
 import jwt
 import jwt.exceptions
 
-from .credential import OpenBadgeCredential
+from .credential import OpenBadgeCredential, _parse_iso
 from ..errors import ErrorParsingFile, UnknownKeyType, LibOpenBadgesException
 from ..keys import KeyType, detect_key_type, key_to_pem
 from ..util import normalize_recipient_id, recipient_ids_match
@@ -383,6 +383,19 @@ class OB3Verifier:
     # ── token extraction ───────────────────────────────────────────────────────
 
     @staticmethod
+    def _decode_unverified(token: str) -> dict[str, Any]:
+        """Decode a JWT payload without checking the signature (to read the
+        issuer before the key is resolved). Raises OB3VerificationError on a
+        malformed token."""
+        try:
+            payload = jwt.decode(token, options={"verify_signature": False})
+        except jwt.exceptions.DecodeError as exc:
+            raise OB3VerificationError("malformed JWT: %s" % exc) from exc
+        if not isinstance(payload, dict):
+            raise OB3VerificationError("JWT payload is not an object")
+        return payload
+
+    @staticmethod
     def extract_token_from_svg(svg_bytes: bytes) -> str:
         """Extract the embedded credential from a baked SVG badge.
 
@@ -418,3 +431,88 @@ class OB3Verifier:
         if token is None:
             raise OB3VerificationError("No openbadgecredential iTXt chunk found in PNG")
         return token
+
+
+# ── endorsements (OB 3.0 endorsementJwt, errata v1.6) ────────────────────────
+
+def verify_endorsement_jwt(token: str, download: Any = None,
+                           endorser_pubkey_pem: Any = None) -> dict[str, Any]:
+    """Verify a compact EndorsementCredential JWT (OB 3.0 ``endorsementJwt``).
+
+    An endorsement is a Verifiable Credential a **third party** (the endorser,
+    not the badge issuer) signs to vouch for an achievement, issuer or
+    credential. This verifies its signature under the endorser's key — resolved
+    from the endorsement's own issuer DID (``did:web``/``did:key``), or
+    ``endorser_pubkey_pem`` when the endorser is not a DID — checks it is an
+    ``EndorsementCredential`` whose validFrom/validUntil window is current, and
+    returns ``{id, issuer, endorses, comment}``.
+
+    Raises :class:`OB3VerificationError` on any failure (malformed token, bad
+    signature, wrong type, expired, or an endorser that is neither a DID nor
+    covered by ``endorser_pubkey_pem``). The verifier machinery is reused, but
+    OB3Verifier.verify() cannot: an EndorsementCredential is not an
+    OpenBadgeCredential, so its type check would reject it.
+    """
+    if not isinstance(token, str) or token.lstrip().startswith('{'):
+        raise OB3VerificationError(
+            "endorsementJwt must be a compact JWT string")
+
+    unverified = OB3Verifier._decode_unverified(token)
+    endorser = _claim_object_id(unverified.get("issuer")) or unverified.get("iss")
+
+    if endorser_pubkey_pem is not None:
+        verifier = OB3Verifier(pubkey_pem=endorser_pubkey_pem)
+    elif isinstance(endorser, str) and endorser.startswith("did:"):
+        verifier = OB3Verifier.for_issuer_did(endorser, download=download)
+    else:
+        raise OB3VerificationError(
+            "cannot verify endorsement: its issuer %r is not a DID — pass "
+            "endorser_pubkey_pem" % (endorser,))
+
+    payload = verifier._decode_payload(token)     # signature + algorithm pin
+
+    types = payload.get("type", [])
+    if isinstance(types, str):
+        types = [types]
+    if "EndorsementCredential" not in (types if isinstance(types, list) else []):
+        raise OB3VerificationError(
+            "not an EndorsementCredential (type=%r)" % (payload.get("type"),))
+
+    _check_endorsement_window(payload)
+
+    subject = payload.get("credentialSubject")
+    if isinstance(subject, list):
+        subject = subject[0] if subject else {}
+    if not isinstance(subject, dict):
+        subject = {}
+    return {
+        "id": payload.get("id"),
+        "issuer": endorser,
+        "endorses": subject.get("id"),
+        "comment": subject.get("endorsementComment"),
+    }
+
+
+def _check_endorsement_window(vc: dict[str, Any]) -> None:
+    """Reject an endorsement whose validFrom/validUntil window is not current
+    (the JWT exp is also checked in _decode_payload, but a producer may set a
+    vc-level bound without the registered claim)."""
+    now = datetime.now(timezone.utc)
+    valid_until = vc.get("validUntil")
+    if isinstance(valid_until, str):
+        try:
+            expires = _parse_iso(valid_until)
+        except Exception:
+            expires = None
+        if expires is not None and expires < now:
+            raise OB3VerificationError(
+                "endorsement expired (validUntil %s)" % valid_until)
+    valid_from = vc.get("validFrom")
+    if isinstance(valid_from, str):
+        try:
+            starts = _parse_iso(valid_from)
+        except Exception:
+            starts = None
+        if starts is not None and starts > now:
+            raise OB3VerificationError(
+                "endorsement is not yet valid (validFrom %s)" % valid_from)

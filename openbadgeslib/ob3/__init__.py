@@ -22,7 +22,8 @@
 
 from .credential import Achievement, Issuer, OpenBadgeCredential
 from .signer import OB3Signer
-from .verifier import OB3VerificationError, OB3Verifier
+from .verifier import (OB3VerificationError, OB3Verifier,
+                       verify_endorsement_jwt)
 from .ldp import (OB3LdpSigner, OB3LdpVerifier, add_data_integrity_proof,
                   verify_data_integrity_proof)
 from .status import check_credential_status
@@ -55,4 +56,5 @@ __all__ = [
     'resolve_verification_method',
     'sign_status_list_credential',
     'status_entry',
+    'verify_endorsement_jwt',
 ]

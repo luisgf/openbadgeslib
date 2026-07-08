@@ -435,6 +435,11 @@ def _verify_ob3(args: argparse.Namespace) -> None:
     result['expires'] = (credential.expiration_date.isoformat()
                          if credential.expiration_date else None)
     result['evidence'] = credential.evidence_url
+    # Surface how many EndorsementCredential JWTs the credential carries (on
+    # itself, its issuer or its achievement) so they are no longer invisible.
+    # They are third-party VCs; verify each with ob3.verify_endorsement_jwt.
+    endorsement_jwts = credential.all_endorsement_jwts()
+    result['endorsements'] = len(endorsement_jwts)
 
     if args.show and not args.json:
         print('[+] Credential issuer  : %s' % credential.issuer.name)
@@ -445,6 +450,9 @@ def _verify_ob3(args: argparse.Namespace) -> None:
             print('[+] Expires            : %s' % credential.expiration_date.isoformat())
         if credential.evidence_url:
             print('[+] Evidence           : %s' % credential.evidence_url)
+        if endorsement_jwts:
+            print('[+] Endorsements       : %d (verify with '
+                  'ob3.verify_endorsement_jwt)' % len(endorsement_jwts))
 
     if result['trusted']:
         result['reason'] = None

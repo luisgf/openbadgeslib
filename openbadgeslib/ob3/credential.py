@@ -86,6 +86,10 @@ class Issuer:
     url: Optional[str] = None
     email: Optional[str] = None
     image_url: Optional[str] = None
+    # Compact EndorsementCredential JWTs vouching for this profile (OB 3.0
+    # `endorsementJwt`, added to context 3.0.3 by errata v1.6). Verifiable with
+    # verify_endorsement_jwt; the endorser is a third party, not this issuer.
+    endorsement_jwts: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"id": self.id, "type": ["Profile"], "name": self.name}
@@ -95,6 +99,8 @@ class Issuer:
             d["email"] = self.email
         if self.image_url:
             d["image"] = {"id": self.image_url, "type": "Image"}
+        if self.endorsement_jwts:
+            d["endorsementJwt"] = list(self.endorsement_jwts)
         return d
 
 
@@ -108,6 +114,9 @@ class Achievement:
     criteria_narrative: str
     image_url: Optional[str] = None
     tags: List[str] = field(default_factory=list)
+    # Compact EndorsementCredential JWTs vouching for this achievement
+    # (OB 3.0 `endorsementJwt`). See Issuer.endorsement_jwts.
+    endorsement_jwts: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -121,6 +130,8 @@ class Achievement:
             d["image"] = {"id": self.image_url, "type": "Image"}
         if self.tags:
             d["tag"] = self.tags
+        if self.endorsement_jwts:
+            d["endorsementJwt"] = list(self.endorsement_jwts)
         return d
 
 
@@ -142,6 +153,11 @@ class OpenBadgeCredential:
     # normalised to a list of objects. Consumed by ob3.status to check
     # revocation; empty when the credential carries no status.
     credential_status: List[dict[str, Any]] = field(default_factory=list)
+    # Compact EndorsementCredential JWTs vouching for the credential itself
+    # (top-level OB 3.0 `endorsementJwt`). Endorsements attached to the issuer
+    # or the achievement live on those objects; all_endorsement_jwts() gathers
+    # the three. Empty when the credential carries none.
+    endorsement_jwts: List[str] = field(default_factory=list)
     # A read-only view of the already-validated document this credential was
     # parsed from (set by the verifiers via _from_vc); None when built in-memory
     # to issue. Lets a caller read spec fields the model does not map —
@@ -201,7 +217,18 @@ class OpenBadgeCredential:
             vc["credentialStatus"] = (
                 self.credential_status[0] if len(self.credential_status) == 1
                 else self.credential_status)
+        if self.endorsement_jwts:
+            vc["endorsementJwt"] = list(self.endorsement_jwts)
         return vc
+
+    def all_endorsement_jwts(self) -> List[str]:
+        """Every compact EndorsementCredential JWT attached to this credential,
+        gathered from the credential itself and from its issuer and achievement
+        (OB 3.0 allows `endorsementJwt` at all three levels). Verify each with
+        :func:`openbadgeslib.ob3.verify_endorsement_jwt`."""
+        return [*self.endorsement_jwts,
+                *self.issuer.endorsement_jwts,
+                *self.achievement.endorsement_jwts]
 
     def to_jwt_payload(self) -> dict[str, Any]:
         """Return the JWT payload for a JWT-VC signed credential.
@@ -276,6 +303,7 @@ class OpenBadgeCredential:
                 url=issuer_data.get("url"),
                 email=issuer_data.get("email"),
                 image_url=_as_dict_or_empty(issuer_data.get("image")).get("id"),
+                endorsement_jwts=_string_list(issuer_data.get("endorsementJwt")),
             )
 
         # credentialSubject may be a single object or a (non-empty) array.
@@ -297,6 +325,7 @@ class OpenBadgeCredential:
             criteria_narrative=criteria.get("narrative", ""),
             image_url=image.get("id"),
             tags=ach_data.get("tag", []),
+            endorsement_jwts=_string_list(ach_data.get("endorsementJwt")),
         )
 
         # Accept both VC 2.0 (validFrom/validUntil) and VC 1.1
@@ -344,6 +373,7 @@ class OpenBadgeCredential:
             expiration_date=expiration_date,
             evidence_url=evidence_url,
             credential_status=credential_status,
+            endorsement_jwts=_string_list(vc.get("endorsementJwt")),
         )
         # Keep the validated document so the caller can read fields the model
         # does not map (see the ``raw`` field). This is the JWT-VC payload or
@@ -362,6 +392,17 @@ def _as_dict(value: Any, where: str) -> dict[str, Any]:
 def _as_dict_or_empty(value: Any) -> dict[str, Any]:
     """Return value if it is a dict, else an empty dict (optional sub-objects)."""
     return value if isinstance(value, dict) else {}
+
+
+def _string_list(value: Any) -> List[str]:
+    """Return the string members of *value* when it is a list, else an empty
+    list. `endorsementJwt` is an array of compact JWT strings; a single string
+    is also accepted (tolerant read of a producer that omitted the array)."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str)]
+    return []
 
 
 def _require(data: dict[str, Any], key: str, where: str) -> str:

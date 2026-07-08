@@ -4,6 +4,22 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.9.0 - unreleased
+
+  - feat(ob3): support OpenBadges 3.0 `endorsementJwt` (spec errata v1.6, added
+    to context 3.0.3). Third-party endorsement JWTs were passing through as
+    opaque, unmapped fields; the credential model now exposes them at the three
+    levels the spec allows — `credential.endorsement_jwts`,
+    `issuer.endorsement_jwts`, `achievement.endorsement_jwts`, gathered by
+    `credential.all_endorsement_jwts()` — and round-trips them through `to_vc`.
+    A new `ob3.verify_endorsement_jwt(token, download=None,
+    endorser_pubkey_pem=None)` verifies an EndorsementCredential JWT under the
+    *endorser's* key (resolved from its own issuer did:web/did:key, or an
+    explicit key when the endorser is not a DID), checking the
+    EndorsementCredential type and its validFrom/validUntil window.
+    `openbadges-verifier --json` now reports the `endorsements` count. (#161)
+
+
 * v3.8.0 - 2026-07-08
 
   - security(ob3): status lists gain replay protection and opt-in proof

@@ -100,6 +100,22 @@ Token extraction helpers are static methods:
 
 A missing assertion raises `OB3VerificationError`; unparseable XML raises `ErrorParsingFile`.
 
+### Endorsements (`endorsementJwt`)
+
+An **endorsement** is a Verifiable Credential a *third party* signs to vouch for an achievement, issuer or credential (OB 3.0 `endorsementJwt`, added to context 3.0.3 by errata v1.6). The model exposes them as compact JWT strings — `credential.endorsement_jwts`, `credential.issuer.endorsement_jwts`, `credential.achievement.endorsement_jwts`, and `credential.all_endorsement_jwts()` which gathers all three levels. `openbadges-verifier --json` reports the count as `endorsements`.
+
+Verify one with `verify_endorsement_jwt(token, download=None, endorser_pubkey_pem=None) -> dict`:
+
+```python
+from openbadgeslib.ob3 import verify_endorsement_jwt
+
+for token in credential.all_endorsement_jwts():
+    info = verify_endorsement_jwt(token)   # endorser resolved from its issuer DID
+    print(info['issuer'], 'endorses', info['endorses'], '—', info['comment'])
+```
+
+It checks the endorsement's signature under the **endorser's** key (resolved from its own issuer `did:web`/`did:key`, or `endorser_pubkey_pem` when the endorser is not a DID), that it is an `EndorsementCredential`, and that its `validFrom`/`validUntil` window is current — raising `OB3VerificationError` otherwise. (`OB3Verifier.verify()` cannot be used directly: an `EndorsementCredential` is not an `OpenBadgeCredential`.)
+
 ### Recipient normalization
 
 The signer and verifier share one normalization rule so they always agree: a bare email gains a `mailto:` scheme, while a value that already has a scheme — including a DID — is returned unchanged.
