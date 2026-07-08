@@ -640,3 +640,85 @@ class TestPublishVerifyList:
         with pytest.raises(OB3VerificationError, match='proof is invalid'):
             check_credential_status(credential, download=_served_from(pub),
                                     verify_list=True, list_pubkey_pem=ecc_pub_pem)
+
+
+# ── openbadges-publish -V 3 --check-live (#164) ──────────────────────────────
+
+_BASE = 'https://example.com/issuer/'
+
+
+class TestCheckLive:
+    """--check-live fetches each written artifact from publish_url and
+    byte-compares it against the local copy, so 're-upload' becomes verified."""
+
+    def _publish_check_live(self, tmp_path, download, extra=()):
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        _sign(tmp_path, cfg)
+        out = tmp_path / 'pub'
+        argv = ['openbadges-publish', '-c', str(cfg), '-o', str(out),
+                '-V', '3', '--check-live'] + list(extra)
+        with patch.object(sys, 'argv', argv), \
+                patch('openbadgeslib.util.download_file', side_effect=download):
+            try:
+                openbadges_publish.main()
+                code = 0
+            except SystemExit as exc:
+                code = exc.code
+        return out, code
+
+    def test_all_artifacts_current(self, tmp_path, capsys):
+        out_holder = {}
+
+        def live(url, *a, **k):
+            return (out_holder['out'] / url[len(_BASE):]).read_bytes()
+
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        _sign(tmp_path, cfg)
+        out = tmp_path / 'pub'
+        out_holder['out'] = out
+        argv = ['openbadges-publish', '-c', str(cfg), '-o', str(out),
+                '-V', '3', '--check-live']
+        with patch.object(sys, 'argv', argv), \
+                patch('openbadgeslib.util.download_file', side_effect=live):
+            openbadges_publish.main()          # exit 0: no SystemExit
+        out_text = capsys.readouterr().out
+        assert 'live and current' in out_text
+        assert 'STALE' not in out_text
+
+    def test_stale_artifact_flagged_json(self, tmp_path, capsys):
+        out = tmp_path / 'pub'
+
+        def live(url, *a, **k):
+            if url.endswith('did.json'):
+                return b'{"stale": true}'      # server serves an old copy
+            return (out / url[len(_BASE):]).read_bytes()
+
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        _sign(tmp_path, cfg)
+        capsys.readouterr()                    # discard the signer's output
+        argv = ['openbadges-publish', '-c', str(cfg), '-o', str(out),
+                '-V', '3', '--check-live', '--json']
+        with patch.object(sys, 'argv', argv), \
+                patch('openbadgeslib.util.download_file', side_effect=live), \
+                pytest.raises(SystemExit) as exc:
+            openbadges_publish.main()
+        result = json.loads(capsys.readouterr().out)
+        assert exc.value.code == 2             # partial success
+        assert 'did.json' in result['live_check']['stale']
+
+    def test_missing_artifact_exits_human(self, tmp_path, capsys):
+        out = tmp_path / 'pub'
+
+        def live(url, *a, **k):
+            raise OSError('HTTP 404')
+
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        _sign(tmp_path, cfg)
+        argv = ['openbadges-publish', '-c', str(cfg), '-o', str(out),
+                '-V', '3', '--check-live']
+        with patch.object(sys, 'argv', argv), \
+                patch('openbadgeslib.util.download_file', side_effect=live), \
+                pytest.raises(SystemExit) as exc:
+            openbadges_publish.main()
+        assert exc.value.code == 1             # human: stale/missing -> exit 1
+        assert 'stale or missing' in capsys.readouterr().out

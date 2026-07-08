@@ -86,6 +86,14 @@ def build_parser() -> argparse.ArgumentParser:
                              'and for --list/--status the queried records. Exit '
                              'status: 0 success, 2 partial (some badges '
                              'skipped), 1 any error.')
+    parser.add_argument('--check-live', action='store_true',
+                        help='OB3 only (-V 3): after publishing, download each '
+                             'written artifact (did.json, status lists, '
+                             'verify.pem) from publish_url and byte-compare it '
+                             'against the local copy — verifying the web server '
+                             'serves the freshly-regenerated versions, not a '
+                             'stale cache. Exit 2 if any artifact is stale or '
+                             'missing on the server.')
     parser.add_argument('-v', '--version', action='version', version=__version__)
     return parser
 
@@ -308,6 +316,32 @@ def _print_field(label: str, value: str) -> None:
     print('%-11s %s' % (label + ':', value))
 
 
+def _check_live_artifacts(output: str, publish_url: str,
+                          files_written: List[str]) -> List[str]:
+    """Download each freshly-written artifact from its published URL and
+    byte-compare it against the local copy, so the "re-upload" reminder becomes
+    a verifiable guarantee. Returns the artifacts that are missing or stale on
+    the live server (an empty list means the server is fully current)."""
+    from .util import download_file
+    stale: List[str] = []
+    for rel in files_written:
+        url = urljoin(publish_url, rel.replace(os.sep, '/'))
+        with open(os.path.join(output, rel), 'rb') as f:
+            local = f.read()
+        try:
+            live = download_file(url)
+        except Exception as exc:
+            print('[!] %s: no live copy at %s (%s)' % (rel, url, exc))
+            stale.append(rel)
+            continue
+        if live == local:
+            print('[+] %s matches the live copy' % rel)
+        else:
+            print('[!] %s is STALE at %s — re-upload needed' % (rel, url))
+            stale.append(rel)
+    return stale
+
+
 def _publish_ob3(args: argparse.Namespace,
                  parser: argparse.ArgumentParser) -> dict[str, Any]:
     """Publish OpenBadges 3.0 issuer artefacts and manage credential status.
@@ -519,15 +553,30 @@ def _publish_ob3(args: argparse.Namespace,
         if operation is not None:
             print('[!] Re-upload %s so the change takes effect' % args.output)
 
-    # A partial failure reports exit 2 in --json (a documented "some work
-    # skipped" outcome); the human path preserves its historical exit 1 (set in
-    # main). The internal sys.exit(1) used to live here.
+    # --check-live turns that "re-upload" reminder into a verified fact: fetch
+    # every written artifact from publish_url and byte-compare it.
+    live_check = None
+    if args.check_live:
+        print('[i] Verifying published artifacts against %s ...' % publish_url)
+        stale = _check_live_artifacts(args.output, publish_url, files_written)
+        live_check = {'checked': len(files_written), 'stale': stale}
+        if stale:
+            print('[!] %d of %d artifact(s) stale or missing on the server; '
+                  're-upload %s' % (len(stale), len(files_written), args.output))
+        else:
+            print('[+] All %d published artifact(s) are live and current.'
+                  % len(files_written))
+
+    # A partial failure (a skipped badge, or a stale live artifact) reports exit
+    # 2 in --json (a documented "some work skipped" outcome); the human path
+    # preserves its historical exit 1 (set in main) for skipped badges.
     return {
         'did': did,
         'files_written': sorted(files_written),
         'status_operation': operation_result,
         'skipped': failures,
-        '_exit': 2 if failures else 0,
+        'live_check': live_check,
+        '_exit': 2 if (failures or (live_check and live_check['stale'])) else 0,
     }
 
 

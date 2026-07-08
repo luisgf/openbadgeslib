@@ -6,6 +6,15 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v3.10.0 - unreleased
 
+  - feat(publish): `openbadges-publish -V 3 --check-live` completes #164. After
+    (re)publishing, it downloads each written artifact — `did.json`, the signed
+    status lists, `verify.pem` — from `publish_url` and byte-compares it against
+    the local copy, turning the "re-upload so the change takes effect" reminder
+    into a verifiable guarantee. Exit 2 (`--json`, listed in `live_check.stale`)
+    or 1 (human) if any artifact is stale or missing on the server. The rest of
+    #164 (status-list `validUntil` + opt-in list-proof verification + issuer
+    binding) shipped in v3.8.0. (Closes #164)
+
   - docs(examples): #168 library integration tutorial + runnable examples. New
     `examples/` scripts — issue+verify an OB 3.0 JWT-VC, issue with a Data
     Integrity (LDP) proof, and issue from a config section via the high-level API

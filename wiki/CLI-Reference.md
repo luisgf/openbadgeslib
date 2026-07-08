@@ -218,8 +218,8 @@ The output directory is created with a `0o077` umask.
 ### Synopsis
 
 ```sh
-openbadges-publish -o DIR [-c FILE] [-V {1,2,3}]
-openbadges-publish -o DIR -V 3 [--revoke ID | --suspend ID | --unsuspend ID] [--reason TEXT] [-b BADGE] [--json]
+openbadges-publish -o DIR [-c FILE] [-V {1,2,3}] [--check-live]
+openbadges-publish -o DIR -V 3 [--revoke ID | --suspend ID | --unsuspend ID] [--reason TEXT] [-b BADGE] [--check-live] [--json]
 openbadges-publish -V 3 (--list | --status ID) [-c FILE] [-b BADGE] [--json]
 ```
 
@@ -234,6 +234,7 @@ openbadges-publish -V 3 (--list | --status ID) [-c FILE] [-b BADGE] [--json]
 | — | `--list` | OB3 only: tabulate issued credentials — jti, recipient, issue date, state (read-only) | — |
 | — | `--status ID` | OB3 only: full status record of a credential by jti or recipient email, revocation/suspension reason included (read-only) | — |
 | — | `--reason TEXT` | Free-text reason recorded with `--revoke`/`--suspend` | — |
+| — | `--check-live` | OB3 only: after publishing, download each written artifact (`did.json`, status lists, `verify.pem`) from `publish_url` and byte-compare it against the local copy — verifying the web server serves the freshly-regenerated versions. Exit `2` (`--json`) / `1` (human) if any is stale or missing | off |
 | — | `--json` | OB3 only: emit a machine-readable JSON result instead of the human output — `{did, files_written, status_operation, skipped}` when publishing, the queried records for `--list`/`--status`. See [Machine-readable output](#machine-readable-output-and-exit-codes) | off |
 | `-b` | `--badge NAME` | Scope the lookup/listing to one badge's registry | all badges |
 | `-v` | `--version` | Print version and exit | — |
@@ -298,7 +299,7 @@ Success payloads:
 |---------|-----------------|
 | `openbadges-keygenerator` | `{key_type, private_key, public_key}` |
 | `openbadges-signer` | `{ob_version, badge_file, jti, status_index, proof_format}` (`jti`/`status_index`/`proof_format` are OB3; `null` where not applicable) |
-| `openbadges-publish -V 3` | `{did, files_written, status_operation, skipped}` |
+| `openbadges-publish -V 3` | `{did, files_written, status_operation, skipped, live_check}` (`live_check` is `null` unless `--check-live`) |
 | `openbadges-publish -V 3 --list` | `{badges: [{badge, credentials: [...]}], total}` |
 | `openbadges-publish -V 3 --status` | `{matches: [...]}` |
 | `openbadges-verifier` | the verification result (`valid`, `trusted`, `issuer`, `achievement`, …) |
