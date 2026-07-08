@@ -154,5 +154,6 @@ class TestCliNotices:
         with patch.object(openbadges_signer.Badge, 'urls_has_problems',
                           return_value=False):
             openbadges_signer._sign_ob1(args, conf, 'badge_1', svg_rsa_badge,
-                                        str(tmp_path / 'out.svg'), evidence=None)
+                                        str(tmp_path / 'out.svg'),
+                                        'user@example.com', evidence=None)
         assert _NOTICE in capsys.readouterr().out

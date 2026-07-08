@@ -118,7 +118,9 @@ print(result.jti, result.proof_format, result.status_index)
 | `assertion_id` / `hosted_json` | OB2 HostedBadge URL + the assertion JSON to publish. |
 | `notices` | Informational hints (e.g. the self-asserted did:key warning for a non-DID LDP issuer). |
 
-A bad config or a policy violation — an OB2 signed badge without `crypto_key`, an `ldp` proof on a non-Ed25519 key, a did:key issuer that is not the signing key — raises `IssuanceError` (no `sys.exit`, so a caller handles it). OpenBadges 1.0 issuance is CLI-only (it is deprecated). This is the seam batch signing (multiple recipients, one registry transaction) builds on.
+A bad config or a policy violation — an OB2 signed badge without `crypto_key`, an `ldp` proof on a non-Ed25519 key, a did:key issuer that is not the signing key — raises `IssuanceError` (no `sys.exit`, so a caller handles it). OpenBadges 1.0 issuance is CLI-only (it is deprecated).
+
+To issue to **many recipients at once**, call `issue_batch_from_conf(conf, badge, recipients, ob_version='3', ...)`. It returns one `BatchResult` per recipient (each carrying a `SignResult` or an `error`), and for a revocable OB3 badge allocates every status-list index in a **single registry transaction** (load once, save once) — the piece that makes thousands-scale issuance practical. A per-recipient signing failure is captured, not raised, so it never aborts the rest; a config-level problem (or a status list without room for the whole batch) raises `IssuanceError` and nothing is issued. This is what `openbadges-signer`'s batch mode (several `-r` / `--recipients-file`) is built on.
 
 ## Verifying — `OB3Verifier`
 

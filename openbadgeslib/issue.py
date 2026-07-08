@@ -50,7 +50,7 @@ import uuid
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
-from typing import Any, List, Optional
+from typing import Any, List, NamedTuple, Optional
 from urllib.parse import urljoin
 
 from .errors import BadgeImgFormatUnsupported, ErrorSigningFile, StatusError
@@ -89,6 +89,17 @@ class SignResult:
     # Informational hints the CLI prints (without the '[!]'/'[i]' prefix), e.g.
     # the self-asserted did:key warning for a non-DID LDP issuer.
     notices: List[str] = field(default_factory=list)
+
+
+@dataclass
+class BatchResult:
+    """One recipient's outcome in a batch issuance: exactly one of ``result``
+    (a :class:`SignResult`) or ``error`` (why it failed) is set. A failure is
+    captured here, not raised, so one bad recipient does not abort the batch."""
+
+    recipient: str
+    result: Optional[SignResult] = None
+    error: Optional[str] = None
 
 
 def _safe_filename_component(value: str, field_name: str) -> str:
@@ -149,6 +160,56 @@ def issue_badge(conf: configparser.ConfigParser, badge: str, recipient: str,
     raise IssuanceError(
         "issue_from_conf supports OpenBadges 2.0 and 3.0; OpenBadges 1.0 (-V 1) "
         "is deprecated and issued through the CLI only")
+
+
+def issue_batch_from_conf(conf: configparser.ConfigParser, badge: str,
+                          recipients: List[str], ob_version: str = '3', *,
+                          evidence: Optional[str] = None,
+                          expires: Optional[int] = None, hosted: bool = False,
+                          proof_format: Optional[str] = None
+                          ) -> List[BatchResult]:
+    """Issue ``badge`` to several ``recipients``, returning one
+    :class:`BatchResult` per recipient in order.
+
+    For OB3 revocable badges every status-list index is allocated in a SINGLE
+    registry transaction (load once, allocate all, save once) — the piece that
+    makes thousands-scale issuance practical — persisted before any badge is
+    signed. A per-recipient signing failure is captured as ``BatchResult.error``,
+    not raised, so it does not abort the rest. A config-level problem (a bad
+    section, or the status list lacking room for the whole batch) raises
+    :class:`IssuanceError` — the transaction is atomic, so nothing is issued.
+    OpenBadges 1.0 is single-recipient only (CLI)."""
+    badge_obj = Badge.create_from_conf(conf, badge)
+    return issue_batch(conf, badge, recipients, badge_obj, ob_version,
+                       evidence=evidence, expires=expires, hosted=hosted,
+                       proof_format=proof_format)
+
+
+def issue_batch(conf: configparser.ConfigParser, badge: str,
+                recipients: List[str], badge_obj: Badge, ob_version: str = '3',
+                *, evidence: Optional[str] = None, expires: Optional[int] = None,
+                hosted: bool = False,
+                proof_format: Optional[str] = None) -> List[BatchResult]:
+    """Like :func:`issue_batch_from_conf` for a caller that already built the
+    :class:`Badge` config model."""
+    if ob_version == '3':
+        return _issue_ob3_batch(conf, badge, list(recipients), badge_obj,
+                                evidence, expires, proof_format)
+    if ob_version == '2':
+        # OB2 has no status registry, so there is no shared transaction: issue
+        # each independently and isolate a per-recipient failure.
+        results: List[BatchResult] = []
+        for recipient in recipients:
+            try:
+                res = _issue_ob2(conf, badge, recipient, badge_obj, evidence,
+                                 expires, hosted)
+                results.append(BatchResult(recipient=recipient, result=res))
+            except IssuanceError as exc:
+                results.append(BatchResult(recipient=recipient, error=str(exc)))
+        return results
+    raise IssuanceError(
+        "batch issuance supports OpenBadges 2.0 and 3.0; OpenBadges 1.0 (-V 1) "
+        "is single-recipient only")
 
 
 def _issue_ob2(conf: configparser.ConfigParser, badge: str, recipient: str,
@@ -219,14 +280,26 @@ def _issue_ob2(conf: configparser.ConfigParser, badge: str, recipient: str,
         hosted_json=hosted_json)
 
 
-def _issue_ob3(conf: configparser.ConfigParser, badge: str, recipient: str,
-               badge_obj: Badge, evidence: Optional[str], expires: Optional[int],
-               proof_format: Optional[str]) -> SignResult:
-    """Issue an OpenBadges 3.0 credential (JWT-VC or a Data Integrity proof)."""
-    from .ob3 import OB3Signer, Issuer, Achievement, OpenBadgeCredential
+class _Ob3Context(NamedTuple):
+    """The per-badge OB3 config resolved once, shared by every recipient in a
+    batch (issuer/achievement are identical; only the subject differs)."""
+    issuer: Any
+    achievement: Any
+    issuer_id: str
+    status_conf: Any
+    proof_format: str
+    key_type: KeyType
+
+
+def _ob3_setup(conf: configparser.ConfigParser, badge: str, badge_obj: Badge,
+               proof_format: Optional[str]) -> _Ob3Context:
+    """Resolve the OB3 issuance config for a badge section once: the issuer and
+    achievement (recipient-independent), the issuer id, the optional status
+    config, the effective proof format and the signing key type. Raises
+    IssuanceError on any config problem."""
+    from .ob3 import Issuer, Achievement
     from .confparser import ob3_issuer_id, ob3_proof_format, ob3_status_config
 
-    issuer_section = conf['issuer']
     try:
         issuer_id = ob3_issuer_id(conf)
         status_conf = ob3_status_config(conf, badge)
@@ -234,6 +307,7 @@ def _issue_ob3(conf: configparser.ConfigParser, badge: str, recipient: str,
     except ValueError as exc:
         raise IssuanceError(str(exc)) from exc
 
+    issuer_section = conf['issuer']
     issuer = Issuer(
         id=issuer_id,
         name=issuer_section['name'],
@@ -252,83 +326,139 @@ def _issue_ob3(conf: configparser.ConfigParser, badge: str, recipient: str,
         image_url=badge_section.get('image'),
     )
 
-    recipient_id = normalize_recipient_id(recipient)
+    # create_from_conf always populates these from the badge config section.
+    assert badge_obj.privkey_pem is not None and badge_obj.image is not None
+    key_type = detect_key_type(badge_obj.privkey_pem)
 
+    return _Ob3Context(issuer, achievement, issuer_id, status_conf,
+                       proof_format, key_type)
+
+
+def _build_ob3_credential(ctx: _Ob3Context, recipient: str,
+                          evidence: Optional[str],
+                          expires: Optional[int]) -> Any:
+    """Build one OpenBadgeCredential from the shared context (no status yet)."""
+    from .ob3 import OpenBadgeCredential
     expiration_date = None
     if expires:
         expiration_date = datetime.now(tz=timezone.utc) + timedelta(days=expires)
-
-    credential = OpenBadgeCredential(
-        issuer=issuer,
-        recipient_id=recipient_id,
-        achievement=achievement,
+    return OpenBadgeCredential(
+        issuer=ctx.issuer,
+        recipient_id=normalize_recipient_id(recipient),
+        achievement=ctx.achievement,
         evidence_url=evidence,
         expiration_date=expiration_date,
     )
 
-    status_index = _allocate_status(credential, recipient_id, status_conf)
 
-    # create_from_conf always populates these from the badge config section.
+def _sign_ob3_credential(badge: str, credential: Any, badge_obj: Badge,
+                         ctx: _Ob3Context, notices: List[str]) -> bytes:
+    """Sign a built OB3 credential into the badge image — the Data Integrity
+    (LDP) or the compact JWT-VC path, per ``ctx.proof_format``."""
+    from .ob3 import OB3Signer
+    # create_from_conf always populates these for a valid badge section.
     assert badge_obj.privkey_pem is not None and badge_obj.image is not None
+    recipient_id = credential.recipient_id
+    if ctx.proof_format == 'ldp':
+        return _issue_ob3_ldp(badge, badge_obj, credential, ctx.issuer_id,
+                              ctx.key_type, recipient_id, notices)
+    algorithm = alg_for_key_type(ctx.key_type)
+    logger.debug("OB3 sign: key_type=%s algorithm=%s recipient=%s",
+                 ctx.key_type, algorithm, recipient_id)
+    signer = OB3Signer(privkey_pem=badge_obj.privkey_pem, algorithm=algorithm)
+    if badge_obj.image_type is BadgeImgType.SVG:
+        return signer.sign_into_svg(credential, badge_obj.image)
+    return signer.sign_into_png(credential, badge_obj.image)
 
-    key_type = detect_key_type(badge_obj.privkey_pem)
 
+def _issue_ob3(conf: configparser.ConfigParser, badge: str, recipient: str,
+               badge_obj: Badge, evidence: Optional[str], expires: Optional[int],
+               proof_format: Optional[str]) -> SignResult:
+    """Issue an OpenBadges 3.0 credential (JWT-VC or a Data Integrity proof)."""
+    ctx = _ob3_setup(conf, badge, badge_obj, proof_format)
+    credential = _build_ob3_credential(ctx, recipient, evidence, expires)
+    status_index = _allocate_status_batch(
+        [credential], ctx.status_conf)[0]
     notices: List[str] = []
-    if proof_format == 'ldp':
-        signed_bytes = _issue_ob3_ldp(badge, badge_obj, credential, issuer_id,
-                                      key_type, recipient_id, notices)
-    else:
-        algorithm = alg_for_key_type(key_type)
-        logger.debug("OB3 sign: key_type=%s algorithm=%s recipient=%s",
-                     key_type, algorithm, recipient_id)
-        signer = OB3Signer(privkey_pem=badge_obj.privkey_pem,
-                           algorithm=algorithm)
-        if badge_obj.image_type is BadgeImgType.SVG:
-            signed_bytes = signer.sign_into_svg(credential, badge_obj.image)
-        else:
-            signed_bytes = signer.sign_into_png(credential, badge_obj.image)
-
+    signed_bytes = _sign_ob3_credential(badge, credential, badge_obj, ctx, notices)
     return SignResult(
         ob_version='3', badge_bytes=signed_bytes,
         badge_filename=output_basename(badge, recipient, badge_obj.image_type),
         jti=credential.id, status_index=status_index,
-        proof_format=proof_format, credential=credential, notices=notices)
+        proof_format=ctx.proof_format, credential=credential, notices=notices)
 
 
-def _allocate_status(credential: Any, recipient_id: str,
-                     status_conf: Any) -> Optional[int]:
-    """Allocate this credential's status-list index and stamp its
-    credentialStatus, or return None when the badge is not revocable
-    (``status_conf`` is None). ``status_conf`` is passed in already resolved so
-    a config error surfaces in the caller's validated block, not here.
+def _issue_ob3_batch(conf: configparser.ConfigParser, badge: str,
+                     recipients: List[str], badge_obj: Badge,
+                     evidence: Optional[str], expires: Optional[int],
+                     proof_format: Optional[str]) -> List[BatchResult]:
+    """Issue OB3 to N recipients with a single status-registry transaction.
 
-    The registry is persisted BEFORE the badge is signed and written: a signing
-    failure leaves a harmless orphan index, while a delivered badge missing
-    from the registry could never be revoked. The whole load→allocate→save runs
-    under an exclusive lock so a concurrent signer cannot clobber this
-    allocation (see StatusRegistry.locked)."""
+    The issuer/achievement config is resolved once; every credential is built,
+    then all indices are allocated and stamped in one load→save cycle; then each
+    is signed with a per-recipient failure isolated into its BatchResult."""
+    ctx = _ob3_setup(conf, badge, badge_obj, proof_format)
+    credentials = [_build_ob3_credential(ctx, r, evidence, expires)
+                   for r in recipients]
+    indices = _allocate_status_batch(credentials, ctx.status_conf)
+
+    results: List[BatchResult] = []
+    for recipient, credential, status_index in zip(recipients, credentials, indices):
+        notices: List[str] = []
+        try:
+            signed_bytes = _sign_ob3_credential(badge, credential, badge_obj,
+                                                ctx, notices)
+        except IssuanceError as exc:
+            results.append(BatchResult(recipient=recipient, error=str(exc)))
+            continue
+        results.append(BatchResult(recipient=recipient, result=SignResult(
+            ob_version='3', badge_bytes=signed_bytes,
+            badge_filename=output_basename(badge, recipient,
+                                           badge_obj.image_type),
+            jti=credential.id, status_index=status_index,
+            proof_format=ctx.proof_format, credential=credential,
+            notices=notices)))
+    return results
+
+
+def _allocate_status_batch(credentials: List[Any],
+                           status_conf: Any) -> List[Optional[int]]:
+    """Allocate a status-list index for every credential in ONE registry
+    transaction — load once, allocate all, save once — stamping each
+    credential's credentialStatus, and return the indices aligned with
+    ``credentials`` (all None when the badge is not revocable). The single-badge
+    path is this with one credential.
+
+    The registry is persisted BEFORE any badge is signed and written: a signing
+    failure leaves harmless orphan indices, while a delivered badge missing from
+    the registry could never be revoked. The transaction is atomic (a capacity
+    failure allocates nothing) and runs under an exclusive lock, so a concurrent
+    signer cannot clobber the allocation (see StatusRegistry.locked)."""
     if status_conf is None:
-        return None
+        return [None] * len(credentials)
 
     from .ob3.status_list import status_entry
     from .ob3.status_registry import StatusRegistry
 
+    indices: List[Optional[int]] = []
     try:
         with StatusRegistry.locked(status_conf.registry_path,
                                    status_conf.size_bits) as registry:
-            assert credential.id is not None \
-                and credential.issuance_date is not None
-            status_index = registry.allocate(credential.id, recipient_id,
-                                             credential.issuance_date)
+            for credential in credentials:
+                assert credential.id is not None \
+                    and credential.issuance_date is not None
+                index = registry.allocate(credential.id,
+                                          credential.recipient_id,
+                                          credential.issuance_date)
+                credential.credential_status = [
+                    status_entry(status_conf.list_urls[p], p, index)
+                    for p in status_conf.purposes]
+                indices.append(index)
             registry.save()
     except (StatusError, OSError) as exc:
         raise IssuanceError(
             'Could not allocate a status list index: %s' % exc) from exc
-
-    credential.credential_status = [
-        status_entry(status_conf.list_urls[p], p, status_index)
-        for p in status_conf.purposes]
-    return status_index
+    return indices
 
 
 def _issue_ob3_ldp(badge: str, badge_obj: Badge, credential: Any, issuer_id: str,

@@ -51,7 +51,8 @@ from .ob1.badge import Badge
 from .mail import BadgeMail
 # Issuance orchestration lives in openbadgeslib.issue; this module is the CLI
 # front end (flag parsing, I/O and display) over it.
-from .issue import IssuanceError, issue_badge, output_basename
+from .issue import (IssuanceError, SignResult, issue_badge, issue_batch,
+                    output_basename)
 from .util import __version__, emit_cli_json
 
 logger = logging.getLogger(__name__)
@@ -63,9 +64,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Badge Signer Parameters')
     parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
     parser.add_argument('-b', '--badge', required=True, help='Specify the badge name for sign')
-    parser.add_argument('-r', '--receptor', required=True, help='Specify the receptor email of the badge')
+    parser.add_argument('-r', '--receptor', action='append', metavar='EMAIL',
+                        help='Recipient email. Repeat -r to issue to several '
+                             'recipients in one run (batch), or use '
+                             '--recipients-file.')
+    parser.add_argument('--recipients-file', metavar='FILE',
+                        help='Read recipient emails from FILE (one per line, or '
+                             'comma-separated; blank lines and lines starting '
+                             'with # are ignored), combined with any -r. Any '
+                             'file recipient triggers batch mode.')
     parser.add_argument('-o', '--output', default=os.path.curdir,
                         help='Specify the output directory to save the badge.')
+    parser.add_argument('--force', '--overwrite', action='store_true', dest='force',
+                        help='Overwrite an existing output badge file instead of '
+                             'skipping it (batch) or aborting (single badge).')
     parser.add_argument('-M', '--mail-badge', action='store_true', help='Send Badge to user mail')
     parser.add_argument('-H', '--hosted', action='store_true',
                         help="OB2 only (-V 2): use HostedBadge verification (publish the "
@@ -87,10 +99,12 @@ def build_parser() -> argparse.ArgumentParser:
                              "'proof_format' config key.")
     parser.add_argument('-d', '--debug', action='store_true', help='Show debug messages in runtime.')
     parser.add_argument('--json', action='store_true',
-                        help='Emit a machine-readable JSON result '
-                             '{ob_version, badge_file, jti, status_index, '
-                             'proof_format} instead of the human output. Exit '
-                             'status: 0 on success, 1 on any error.')
+                        help='Emit a machine-readable JSON result instead of the '
+                             'human output: a single-badge object {ob_version, '
+                             'badge_file, jti, status_index, proof_format}, or a '
+                             'batch summary {signed, skipped, failed}. Exit '
+                             'status: 0 ok, 2 partial (some skipped/failed), 1 '
+                             'error.')
     parser.add_argument('-v', '--version', action='version', version=__version__)
     return parser
 
@@ -105,9 +119,10 @@ def main() -> None:
 
 
 def _run_sign(args: argparse.Namespace) -> dict[str, Any]:
-    """Sign one badge and return the machine-readable result (consumed by the
-    --json path); the human output is printed as a side effect. Orchestration
-    lives in openbadgeslib.issue — this is flag validation, I/O and display."""
+    """Sign for one or more recipients and return the machine-readable result
+    (consumed by the --json path); the human output is printed as a side
+    effect. Orchestration lives in openbadgeslib.issue — this is flag
+    validation, I/O and display."""
     if bool(args.no_evidence) != (args.evidence is None):  # XOR
         sys.exit("Please, choose '-e' OR '-E'")
 
@@ -116,33 +131,75 @@ def _run_sign(args: argparse.Namespace) -> dict[str, Any]:
 
     evidence = args.evidence  # If no evidence, evidence=None
 
-    # -b/--badge is required=True, so args.badge is always set here.
-    logger.debug("Signing badge '%s' for %s (OB %s, output %s)",
-                 args.badge, args.receptor, args.ob_version, args.output)
+    recipients = _gather_recipients(args)
+    if not recipients:
+        sys.exit("Please provide a recipient: -r EMAIL (repeatable) or "
+                 "--recipients-file FILE")
+
+    logger.debug("Signing badge '%s' for %d recipient(s) (OB %s, output %s)",
+                 args.badge, len(recipients), args.ob_version, args.output)
     conf = read_config_or_exit(args.config)
     badge = resolve_badge_section(conf, args.badge)
     badge_obj = Badge.create_from_conf(conf, badge)
 
+    # A single -r keeps the historical single-badge behaviour (exit codes,
+    # output); several recipients or a --recipients-file switch to batch.
+    if len(recipients) > 1 or args.recipients_file:
+        return _sign_batch(args, conf, badge, badge_obj, recipients, evidence)
+    return _sign_single(args, conf, badge, badge_obj, recipients[0], evidence)
+
+
+def _gather_recipients(args: argparse.Namespace) -> list[str]:
+    """The de-duplicated recipient list from -r (repeatable) plus
+    --recipients-file (one email per line or comma-separated; blank lines and
+    '#'-comments ignored), preserving first-seen order."""
+    recipients = list(args.receptor or [])
+    if args.recipients_file:
+        try:
+            with open(args.recipients_file, encoding='utf-8') as f:
+                text = f.read()
+        except OSError as exc:
+            sys.exit("[!] Could not read --recipients-file %s: %s"
+                     % (args.recipients_file, exc))
+        for line in text.splitlines():
+            for cell in line.split(','):
+                email = cell.strip()
+                if email and not email.startswith('#'):
+                    recipients.append(email)
+    seen: set[str] = set()
+    unique = []
+    for recipient in recipients:
+        if recipient not in seen:
+            seen.add(recipient)
+            unique.append(recipient)
+    return unique
+
+
+def _sign_single(args: argparse.Namespace, conf: configparser.ConfigParser,
+                 badge: str, badge_obj: Badge, recipient: str,
+                 evidence: Optional[str]) -> dict[str, Any]:
+    """Issue one badge to one recipient — the historical single-badge path
+    (unchanged exit codes and output; --force now overwrites an existing file)."""
     # The output filename and the already-signed check are resolved here (I/O),
     # before issuing, so a revocable OB3 badge does not burn a status-list index
     # only to then refuse to overwrite an existing file.
     try:
-        fbase = output_basename(badge, args.receptor, badge_obj.image_type)
+        fbase = output_basename(badge, recipient, badge_obj.image_type)
     except ValueError as exc:
         print('ERROR: %s' % exc)
         sys.exit(-1)
 
     badge_file_out = os.path.join(args.output, fbase)
 
-    if os.path.isfile(badge_file_out):
-        print('A %s OpenBadge has already signed for %s in %s' % (args.badge, args.receptor, badge_file_out))
+    if os.path.isfile(badge_file_out) and not args.force:
+        print('A %s OpenBadge has already signed for %s in %s' % (args.badge, recipient, badge_file_out))
         sys.exit(-1)
 
     if args.ob_version == '3':
-        return _sign_ob3(args, conf, badge, badge_obj, badge_file_out, evidence)
+        return _sign_ob3(args, conf, badge, badge_obj, badge_file_out, recipient, evidence)
     if args.ob_version == '2':
-        return _sign_ob2(args, conf, badge, badge_obj, badge_file_out, evidence)
-    return _sign_ob1(args, conf, badge, badge_obj, badge_file_out, evidence)
+        return _sign_ob2(args, conf, badge, badge_obj, badge_file_out, recipient, evidence)
+    return _sign_ob1(args, conf, badge, badge_obj, badge_file_out, recipient, evidence)
 
 
 def _write_badge_and_log(conf: configparser.ConfigParser, badge_file_out: str,
@@ -161,30 +218,51 @@ def _write_badge_and_log(conf: configparser.ConfigParser, badge_file_out: str,
     print('%s at: %s' % (msg, badge_file_out))
 
 
+def _ob2_log_line(badge: str, recipient: str) -> str:
+    return '%s %s OB2 SIGNED for %s' % (
+        datetime.today().isoformat(), badge, recipient)
+
+
+def _ob3_log_line(badge: str, recipient: str, result: SignResult) -> str:
+    msg = '%s %s OB3 SIGNED for %s JTI %s' % (
+        datetime.today().isoformat(), badge, recipient, result.jti)
+    if result.proof_format == 'ldp':
+        msg += ' PROOF ldp'
+    if result.status_index is not None:
+        msg += ' STATUS %d' % result.status_index
+    return msg
+
+
+def _write_hosted_assertion(badge_file_out: str, result: SignResult) -> None:
+    """Write the OB2 HostedBadge assertion JSON next to the badge and print
+    where to publish it (only when `-H`/hosted produced one)."""
+    hosted_out = os.path.splitext(badge_file_out)[0] + '.assertion.json'
+    with open(hosted_out, 'w', encoding='ascii') as f:
+        assert result.hosted_json is not None
+        f.write(result.hosted_json)
+    print('[i] Publish the hosted assertion JSON %s on your web server so it '
+          'is retrievable at: %s' % (hosted_out, result.assertion_id))
+
+
 def _sign_ob2(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
-              badge_obj: Badge, badge_file_out: str,
+              badge_obj: Badge, badge_file_out: str, recipient: str,
               evidence: Optional[str]) -> dict[str, Any]:
     """Present a strict OpenBadges 2.0 signing: orchestrate via issue_badge,
     then write the badge, append the audit line, publish the hosted assertion
     JSON and report. Historical OB2 error convention: the message is the exit
     argument (status 1)."""
     try:
-        result = issue_badge(conf, badge, args.receptor, badge_obj, '2',
+        result = issue_badge(conf, badge, recipient, badge_obj, '2',
                              evidence=evidence, expires=args.expires,
                              hosted=args.hosted)
     except IssuanceError as exc:
         sys.exit('[!] %s' % exc)
 
-    msg = '%s %s OB2 SIGNED for %s' % (
-        datetime.today().isoformat(), badge, args.receptor)
-    _write_badge_and_log(conf, badge_file_out, result.badge_bytes, msg)
+    _write_badge_and_log(conf, badge_file_out, result.badge_bytes,
+                         _ob2_log_line(badge, recipient))
 
     if args.hosted and result.hosted_json is not None:
-        hosted_out = os.path.splitext(badge_file_out)[0] + '.assertion.json'
-        with open(hosted_out, 'w', encoding='ascii') as f:
-            f.write(result.hosted_json)
-        print('[i] Publish the hosted assertion JSON %s on your web server so it '
-              'is retrievable at: %s' % (hosted_out, result.assertion_id))
+        _write_hosted_assertion(badge_file_out, result)
 
     if args.mail_badge:
         print('[i] --mail-badge is not supported for -V 2 yet; the badge was saved '
@@ -196,7 +274,7 @@ def _sign_ob2(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
 
 
 def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
-              badge_obj: Badge, badge_file_out: str,
+              badge_obj: Badge, badge_file_out: str, recipient: str,
               evidence: Optional[str]) -> dict[str, Any]:
     """Sign a badge using OpenBadges 1.0 (legacy JWS)."""
     from .ob1.signer import Signer
@@ -222,7 +300,7 @@ def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
     if badge_obj.urls_has_problems():
         sys.exit(-1)
 
-    sf = Signer(identity=args.receptor.encode('utf-8'), evidence=evidence,
+    sf = Signer(identity=recipient.encode('utf-8'), evidence=evidence,
                 expiration=expiration, badge_type=BadgeType.SIGNED)
     badge_signed = sf.sign_badge(badge_obj)
 
@@ -272,13 +350,13 @@ def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
 
 
 def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: str,
-              badge_obj: Badge, badge_file_out: str,
+              badge_obj: Badge, badge_file_out: str, recipient: str,
               evidence: Optional[str]) -> dict[str, Any]:
     """Present an OpenBadges 3.0 signing: orchestrate via issue_badge, then
     write the badge, append the audit line and report. Historical OB3 error
     convention: the message is printed and the status is -1."""
     try:
-        result = issue_badge(conf, badge, args.receptor, badge_obj, '3',
+        result = issue_badge(conf, badge, recipient, badge_obj, '3',
                              evidence=evidence, expires=args.expires,
                              proof_format=args.proof_format)
     except IssuanceError as exc:
@@ -290,13 +368,8 @@ def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
     for notice in result.notices:
         print('[i] %s' % notice)
 
-    msg = '%s %s OB3 SIGNED for %s JTI %s' % (
-        datetime.today().isoformat(), badge, args.receptor, result.jti)
-    if result.proof_format == 'ldp':
-        msg += ' PROOF ldp'
-    if result.status_index is not None:
-        msg += ' STATUS %d' % result.status_index
-    _write_badge_and_log(conf, badge_file_out, result.badge_bytes, msg)
+    _write_badge_and_log(conf, badge_file_out, result.badge_bytes,
+                         _ob3_log_line(badge, recipient, result))
 
     if args.mail_badge:
         print('[i] --mail-badge is not supported for -V 3; the badge was saved '
@@ -304,6 +377,96 @@ def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
     return {'ob_version': '3', 'badge_file': badge_file_out,
             'jti': result.jti, 'status_index': result.status_index,
             'proof_format': result.proof_format}
+
+
+def _present_batch_item(args: argparse.Namespace,
+                        conf: configparser.ConfigParser, badge: str,
+                        recipient: str, path: str, result: SignResult) -> None:
+    """Write one successfully-issued batch badge: the image + audit line, the
+    OB2 hosted assertion JSON, and any informational notices."""
+    if result.ob_version == '2':
+        _write_badge_and_log(conf, path, result.badge_bytes,
+                             _ob2_log_line(badge, recipient))
+        if args.hosted and result.hosted_json is not None:
+            _write_hosted_assertion(path, result)
+    else:
+        _write_badge_and_log(conf, path, result.badge_bytes,
+                             _ob3_log_line(badge, recipient, result))
+    for notice in result.notices:
+        print('[i] %s' % notice)
+
+
+def _sign_batch(args: argparse.Namespace, conf: configparser.ConfigParser,
+                badge: str, badge_obj: Badge, recipients: list[str],
+                evidence: Optional[str]) -> dict[str, Any]:
+    """Issue one badge to several recipients: a single status-registry
+    transaction (OB3), per-recipient JSON summary, and failures/skips isolated.
+    Exit: 0 all signed, 2 some skipped or failed, 1 a batch-level error."""
+    if args.ob_version == '1':
+        sys.exit('[!] batch issuance (multiple -r / --recipients-file) needs '
+                 '-V 2 or -V 3; OpenBadges 1.0 is single-recipient only')
+
+    # Resolve output paths and drop already-existing files (unless --force)
+    # BEFORE issuing, so skipped badges never consume a status-list index.
+    to_issue: list[str] = []
+    paths: dict[str, str] = {}
+    skipped: list[dict[str, Any]] = []
+    for recipient in recipients:
+        try:
+            fbase = output_basename(badge, recipient, badge_obj.image_type)
+        except ValueError as exc:
+            skipped.append({'recipient': recipient, 'reason': str(exc)})
+            continue
+        path = os.path.join(args.output, fbase)
+        if os.path.isfile(path) and not args.force:
+            skipped.append({'recipient': recipient, 'reason': 'exists',
+                            'badge_file': path})
+            continue
+        to_issue.append(recipient)
+        paths[recipient] = path
+
+    signed: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+    if to_issue:
+        try:
+            results = issue_batch(conf, badge, to_issue, badge_obj,
+                                  args.ob_version, evidence=evidence,
+                                  expires=args.expires, hosted=args.hosted,
+                                  proof_format=args.proof_format)
+        except IssuanceError as exc:
+            # A batch-level failure (bad config, or the status list lacking room
+            # for the whole batch): the transaction is atomic, nothing issued.
+            print('[!] %s' % exc)
+            sys.exit(-1)
+        for item in results:
+            if item.result is None:
+                failed.append({'recipient': item.recipient, 'error': item.error})
+                print('[!] %s: %s' % (item.recipient, item.error))
+                continue
+            path = paths[item.recipient]
+            _present_batch_item(args, conf, badge, item.recipient, path,
+                                item.result)
+            entry: dict[str, Any] = {'recipient': item.recipient,
+                                     'badge_file': path}
+            if args.ob_version == '3':
+                entry.update(jti=item.result.jti,
+                             status_index=item.result.status_index,
+                             proof_format=item.result.proof_format)
+            elif item.result.assertion_id:
+                entry['assertion_id'] = item.result.assertion_id
+            signed.append(entry)
+
+    for skip in skipped:
+        detail = skip.get('badge_file', skip['reason'])
+        print('[i] skipped %s (%s)' % (skip['recipient'], detail))
+    if args.mail_badge:
+        print('[i] --mail-badge is not supported for batch issuance; the badges '
+              'were saved but not emailed.')
+    print('\n%d signed, %d skipped, %d failed' % (len(signed), len(skipped),
+                                                  len(failed)))
+    return {'ob_version': args.ob_version, 'badge': badge, 'signed': signed,
+            'skipped': skipped, 'failed': failed,
+            '_exit': 2 if (skipped or failed) else 0}
 
 
 if __name__ == '__main__':

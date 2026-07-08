@@ -359,7 +359,8 @@ def test_signer_ob1_missing_log_dir_still_saves_badge(tmp_path, svg_rsa_badge, c
     with patch.object(openbadges_signer.Badge, 'urls_has_problems',
                       return_value=False):
         openbadges_signer._sign_ob1(args, conf, 'badge_test_1', svg_rsa_badge,
-                                    badge_file_out, evidence=None)
+                                    badge_file_out, 'user@example.com',
+                                    evidence=None)
 
     out = capsys.readouterr().out
     # The signed badge is written despite the log failure ...

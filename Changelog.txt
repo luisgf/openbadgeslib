@@ -6,6 +6,20 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v3.10.0 - unreleased
 
+  - feat(cli): batch issuance — `openbadges-signer` now issues to many recipients
+    in one run. Repeat `-r EMAIL`, or pass `--recipients-file FILE` (one email per
+    line or comma-separated; blank lines and `#`-comments ignored); a single `-r`
+    keeps the historical single-badge behaviour byte-for-byte. For a revocable OB3
+    badge every status-list index is allocated in a SINGLE registry transaction
+    (load once, allocate N, save once) rather than N load/save cycles — the piece
+    that makes thousands-scale issuance practical. An already-existing output file
+    is skipped (batch) or aborts (single) unless the new `--force`/`--overwrite`
+    overwrites it, and one bad recipient does not abort the rest. `--json` emits a
+    per-recipient summary `{signed, skipped, failed}` under the shared exit
+    contract (0 all signed, 2 some skipped/failed, 1 a batch-level error). The
+    library entry point is `openbadgeslib.issue.issue_batch_from_conf`, returning
+    one `BatchResult` per recipient. (Closes #165)
+
   - feat(api): extract the issuance orchestration from the CLI into a reusable
     library API — the single biggest adoption gap. `openbadgeslib.issue` exposes
     `issue_from_conf(conf, badge, recipient, ob_version, ...)` (also re-exported

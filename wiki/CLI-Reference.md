@@ -62,22 +62,24 @@ The key algorithm comes from the badge's `key_type` field, not from a flag, so k
 
 ## openbadges-signer
 
-Signs a badge image (SVG or PNG) defined in `config.ini` for a recipient email and writes the baked file to the output directory. OB2 embeds a JWS assertion; OB3 embeds a JWT-VC token. The output filename is `<badge>_<receptor>.<ext>`; the script exits if that file already exists.
+Signs a badge image (SVG or PNG) defined in `config.ini` for one or more recipients and writes the baked file(s) to the output directory. OB2 embeds a JWS assertion; OB3 embeds a JWT-VC token. The output filename is `<badge>_<receptor>.<ext>`; an existing file is skipped (batch) or aborts (single badge) unless `--force` is given. Several `-r` flags or a `--recipients-file` issue to many recipients in one run — OB3 allocates all their revocation-list indices in a **single registry transaction** — and a per-recipient summary (`--json`: `{signed, skipped, failed}`) reports the outcome.
 
 You **must** choose exactly one of `-e / --evidence` or `-E / --no-evidence`. Supplying neither or both exits with `Please, choose '-e' OR '-E'`.
 
 ### Synopsis
 
 ```sh
-openbadges-signer -b BADGE -r RECEPTOR (-e URL | -E) [-c FILE] [-o DIR] [-M] [-H] [-x DAYS] [-V {1,2,3}] [-P {vc-jwt,ldp}] [--json] [-d]
+openbadges-signer -b BADGE (-r EMAIL [-r EMAIL ...] | --recipients-file FILE) (-e URL | -E) [-c FILE] [-o DIR] [--force] [-M] [-H] [-x DAYS] [-V {1,2,3}] [-P {vc-jwt,ldp}] [--json] [-d]
 ```
 
 | Short | Long | Meaning | Default |
 |-------|------|---------|---------|
 | `-c` | `--config` | Config file to use | `config.ini` |
 | `-b` | `--badge` | Badge name to sign (**required**) | required |
-| `-r` | `--receptor` | Recipient email of the badge (**required**) | required |
-| `-o` | `--output` | Output directory for the signed badge | current dir |
+| `-r` | `--receptor EMAIL` | Recipient email. Repeat `-r` to issue to several recipients in one run (batch mode); required unless `--recipients-file` is given | required |
+| — | `--recipients-file FILE` | Read recipient emails from `FILE` (one per line or comma-separated; blank lines and `#`-comments ignored), combined with any `-r`. Any file recipient triggers batch mode | none |
+| `-o` | `--output` | Output directory for the signed badge(s) | current dir |
+| — | `--force` / `--overwrite` | Overwrite an existing output badge file instead of skipping it (batch) or aborting (single badge) | off |
 | `-M` | `--mail-badge` | Email the signed badge to the recipient (OB 1.0 only) | off |
 | `-H` | `--hosted` | OB 2.0 only (`-V 2`): use HostedBadge verification (publish the assertion JSON at its own URL) instead of a SignedBadge JWS; requires `hosted_assertions_base` in the badge section | off |
 | `-e` | `--evidence URL` | URL to the recipient's evidence (mutually exclusive with `-E`) | none |
@@ -86,7 +88,7 @@ openbadges-signer -b BADGE -r RECEPTOR (-e URL | -E) [-c FILE] [-o DIR] [-M] [-H
 | `-V` | `--ob-version {1,2,3}` | `1` = legacy JWS (OB 1.0), `2` = strict OB 2.0 JWS, `3` = JWT-VC | `3` |
 | `-P` | `--proof-format {vc-jwt,ldp}` | OB 3.0 only (`-V 3`): `vc-jwt` = compact JWT-VC, `ldp` = embedded W3C Data Integrity proof (`eddsa-rdfc-2022`; needs an Ed25519 key and the `[ldp]` extra). Overrides the badge's `proof_format` config key | `vc-jwt` |
 | `-d` | `--debug` | Show debug messages at runtime | off |
-| — | `--json` | Emit a machine-readable JSON result (`{ob_version, badge_file, jti, status_index, proof_format}`) instead of the human output. See [Machine-readable output](#machine-readable-output-and-exit-codes) | off |
+| — | `--json` | Emit a machine-readable JSON result instead of the human output: a single-badge object (`{ob_version, badge_file, jti, status_index, proof_format}`) or, in batch mode, a summary (`{signed, skipped, failed}`). See [Machine-readable output](#machine-readable-output-and-exit-codes) | off |
 | `-v` | `--version` | Print version and exit | — |
 
 `-M / --mail-badge` requires an `[smtp]` section in `config.ini` (server, port, `use_ssl`, `mail_from`, optional `username`/`password`) and a `mail` entry in the badge section pointing to a text file (first line = subject, rest = body). See [[Configuration]].
@@ -122,6 +124,18 @@ $ openbadges-signer -c ./config/config.ini -b 1 \
 ```
 
 Data Integrity issuance requires an Ed25519 key (`key_type = ED25519`, see [[Keys and Errors]]) and the `[ldp]` extra. The proof's `verificationMethod` is the `did:web:…#badge_N` method that `openbadges-publish -V 3` publishes when `[issuer] did` is configured (trusted); without a DID it falls back to a self-asserted `did:key`, which verifiers must pin with `-k`/`-l`. A badge permanently issued as LDP can set `proof_format = ldp` in its config section instead of passing `-P`. See [[Signing and Verification]].
+
+### Example (batch, many recipients)
+
+```sh
+$ openbadges-signer -c ./config/config.ini -b 1 \
+    -r alice@example.com -r bob@example.com \
+    --recipients-file cohort.csv \
+    -E -o /tmp/ -V 3 --json
+{"ob_version": "3", "badge": "badge_1", "signed": [...], "skipped": [], "failed": []}
+```
+
+A single `-r` keeps the historical single-badge behaviour (same output and exit codes). Two or more recipients, or any `--recipients-file`, switch to **batch mode**: for a revocable OB3 badge every status-list index is allocated in one registry load/save (not one per recipient), an already-existing output file is **skipped** unless `--force` is passed, and one bad recipient does not abort the rest. Exit status: `0` all signed, `2` some skipped or failed, `1` a batch-level error. The library entry point is `openbadgeslib.issue.issue_batch_from_conf` (see [[Python API OB3]]).
 
 ## openbadges-verifier
 

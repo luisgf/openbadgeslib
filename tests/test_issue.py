@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from openbadgeslib.issue import (IssuanceError, SignResult, issue_from_conf,
+from openbadgeslib.issue import (BatchResult, IssuanceError, SignResult,
+                                 issue_batch_from_conf, issue_from_conf,
                                  output_basename)
 from openbadgeslib.ob1.badge import BadgeImgType
 
@@ -193,3 +194,59 @@ class TestVerificationMethodPolicy:
         conf = _write_conf(tmp_path, proof_format='ldp')   # RSA key + ldp
         with pytest.raises(IssuanceError, match='Ed25519'):
             issue_from_conf(conf, 'badge_1', 'r@example.com', '3')
+
+
+class TestIssueBatch:
+    """Batch issuance (#165): several recipients, one registry transaction,
+    per-recipient results, failures isolated."""
+
+    def test_ob3_batch_is_a_single_registry_transaction(self, tmp_path):
+        # The core win: N recipients get N indices allocated and stamped in ONE
+        # registry file — load once, save once — not N separate load/save cycles.
+        conf = _write_conf(tmp_path, status=True)
+        recipients = ['a@e.com', 'b@e.com', 'c@e.com']
+        results = issue_batch_from_conf(conf, 'badge_1', recipients, '3')
+        assert [r.recipient for r in results] == recipients
+        assert all(isinstance(r, BatchResult) and r.result is not None
+                   and r.error is None for r in results)
+        indices = [r.result.status_index for r in results]
+        assert len(set(indices)) == 3                 # distinct indices
+        registries = list((tmp_path / 'status').glob('*.json'))
+        assert len(registries) == 1                   # one file for the batch
+        registry_text = registries[0].read_text()
+        assert all(r.result.jti in registry_text for r in results)
+
+    def test_ob3_batch_without_status_has_no_indices(self, tmp_path):
+        conf = _write_conf(tmp_path)                  # no status_lists
+        results = issue_batch_from_conf(conf, 'badge_1',
+                                        ['a@e.com', 'b@e.com'], '3')
+        assert len(results) == 2
+        assert all(r.result.status_index is None for r in results)
+        assert not (tmp_path / 'status').exists()
+
+    def test_ob2_batch_returns_one_result_per_recipient(self, tmp_path):
+        conf = _write_conf(tmp_path)
+        results = issue_batch_from_conf(conf, 'badge_1',
+                                        ['a@e.com', 'b@e.com'], '2')
+        assert [r.recipient for r in results] == ['a@e.com', 'b@e.com']
+        assert all(r.result is not None and r.result.ob_version == '2'
+                   for r in results)
+
+    def test_ob2_batch_isolates_per_recipient_failures(self, tmp_path):
+        # A config that makes every OB2 signing fail (no crypto_key) surfaces as
+        # per-recipient errors, never a raised exception aborting the batch.
+        conf = _write_conf(tmp_path, crypto=False)
+        results = issue_batch_from_conf(conf, 'badge_1',
+                                        ['a@e.com', 'b@e.com'], '2')
+        assert len(results) == 2
+        assert all(r.result is None and 'crypto_key' in (r.error or '')
+                   for r in results)
+
+    def test_empty_recipients_returns_empty(self, tmp_path):
+        conf = _write_conf(tmp_path, status=True)
+        assert issue_batch_from_conf(conf, 'badge_1', [], '3') == []
+
+    def test_ob1_batch_rejected(self, tmp_path):
+        conf = _write_conf(tmp_path)
+        with pytest.raises(IssuanceError, match='single-recipient'):
+            issue_batch_from_conf(conf, 'badge_1', ['a@e.com', 'b@e.com'], '1')
