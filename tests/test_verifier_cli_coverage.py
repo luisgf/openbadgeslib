@@ -1,6 +1,7 @@
 """#169 — targeted coverage for openbadges_verifier.py: the error and display
 branches an adopter hits first when something fails (was the worst-covered
 module at 74%)."""
+import json
 import sys
 from unittest.mock import patch
 
@@ -116,6 +117,41 @@ class TestOb3CliBranches:
               '-V', '3', '-k', str(tmp_path / 'nope.pem')])
         assert 'NOT exists' in capsys.readouterr().out
 
+    def test_wrong_key_fails(self, tmp_path, rsa_priv_pem, ecc_pub_pem,
+                             svg_image, capsys):
+        badge = _ob3_svg(tmp_path, rsa_priv_pem, svg_image)
+        pub = tmp_path / 'k.pem'
+        pub.write_bytes(ecc_pub_pem)                   # wrong key family
+        _run(['openbadges-verifier', '-i', str(badge), '-r', 'r@example.com',
+              '-V', '3', '-k', str(pub)])
+        assert 'OB3 verification failed' in capsys.readouterr().out
+
+    def test_show_broadened_model_fields(self, tmp_path, rsa_priv_pem,
+                                         rsa_pub_pem, svg_image, capsys):
+        from openbadgeslib.ob3 import Alignment, Result
+        cred = OpenBadgeCredential(
+            issuer=Issuer(id='https://issuer.example', name='Issuer'),
+            recipient_id='mailto:r@example.com',
+            achievement=Achievement(
+                id='https://a.example/1', name='A', description='d',
+                criteria_narrative='c', achievement_type='Competency',
+                credits_available=3.0,
+                alignments=[Alignment(target_name='Skill',
+                                      target_url='https://f/x')]),
+            credits_earned=2.0,
+            results=[Result(value='A', status='Completed')])
+        badge = tmp_path / 'badge.svg'
+        badge.write_bytes(OB3Signer(privkey_pem=rsa_priv_pem, algorithm='RS256')
+                          .sign_into_svg(cred, svg_image))
+        pub = tmp_path / 'k.pem'
+        pub.write_bytes(rsa_pub_pem)
+        _run(['openbadges-verifier', '-i', str(badge), '-r', 'r@example.com',
+              '-V', '3', '-k', str(pub), '--show'])
+        out = capsys.readouterr().out
+        assert 'Achievement type' in out
+        assert 'Credits available' in out and 'Credits earned' in out
+        assert 'Alignments' in out and 'Results' in out
+
 
 class TestOb2CliBranches:
     def test_unsupported_extension_errors(self, tmp_path, rsa_pub_pem, capsys):
@@ -138,6 +174,95 @@ class TestOb2CliBranches:
 
 
 # ── --local resolves the key from the config (exercises _resolve_trusted…) ───
+
+def _ob2_signed(tmp_path, priv_pem, image, recipient='r@example.com', png=False):
+    from openbadgeslib.ob2 import (OB2Signer, Assertion, IdentityObject,
+                                   Verification)
+    assertion = Assertion(
+        recipient=IdentityObject.create(recipient, salt='abcd'),
+        badge='https://example.com/badge.json',
+        verification=Verification(type='SignedBadge',
+                                  creator='https://example.com/key.json'),
+        image='https://example.com/badge.svg')
+    signer = OB2Signer(privkey_pem=priv_pem, algorithm='RS256')
+    ext = 'png' if png else 'svg'
+    out = signer.sign_into_png(assertion, image) if png \
+        else signer.sign_into_svg(assertion, image)
+    badge = tmp_path / ('badge.%s' % ext)
+    badge.write_bytes(out)
+    return badge
+
+
+def _fake_dl(url, *a, **k):
+    """Stand in for ob2.verifier.download_file: BadgeClass -> issuer chain, no
+    revocation list — so OB2 SignedBadge verification runs fully offline."""
+    if url.endswith('badge.json'):
+        return json.dumps({'issuer': 'https://example.com/issuer.json'}).encode()
+    return json.dumps({}).encode()
+
+
+def _run_ob2(argv):
+    with patch('openbadgeslib.ob2.verifier.download_file', side_effect=_fake_dl):
+        _run(argv)
+
+
+class TestOb2VerifyBranches:
+    def test_signed_trusted_with_key_and_show(self, tmp_path, rsa_priv_pem,
+                                              rsa_pub_pem, svg_image, capsys):
+        badge = _ob2_signed(tmp_path, rsa_priv_pem, svg_image)
+        pub = tmp_path / 'k.pem'
+        pub.write_bytes(rsa_pub_pem)
+        _run_ob2(['openbadges-verifier', '-i', str(badge), '-r', 'r@example.com',
+                  '-V', '2', '-k', str(pub), '--show'])
+        out = capsys.readouterr().out
+        assert 'Assertion:' in out                    # --show branch
+        assert 'Signature is correct' in out          # trusted SignedBadge
+
+    def test_png_extraction(self, tmp_path, rsa_priv_pem, rsa_pub_pem,
+                            png_image, capsys):
+        badge = _ob2_signed(tmp_path, rsa_priv_pem, png_image, png=True)
+        pub = tmp_path / 'k.pem'
+        pub.write_bytes(rsa_pub_pem)
+        _run_ob2(['openbadges-verifier', '-i', str(badge), '-r', 'r@example.com',
+                  '-V', '2', '-k', str(pub)])
+        assert 'Signature is correct' in capsys.readouterr().out
+
+    def test_wrong_recipient_fails(self, tmp_path, rsa_priv_pem, rsa_pub_pem,
+                                   svg_image, capsys):
+        badge = _ob2_signed(tmp_path, rsa_priv_pem, svg_image)
+        pub = tmp_path / 'k.pem'
+        pub.write_bytes(rsa_pub_pem)
+        _run_ob2(['openbadges-verifier', '-i', str(badge),
+                  '-r', 'other@example.com', '-V', '2', '-k', str(pub)])
+        assert 'Recipient mismatch' in capsys.readouterr().out   # verify fails
+
+
+class TestOb1VerifyBranches:
+    def test_corrupt_badge_reports_clean_error(self, tmp_path, capsys):
+        # A file that is not a readable OB1 badge surfaces as a clean CLI error
+        # (LibOpenBadgesException handler), not an uncaught traceback — after the
+        # -V 1 legacy notice. Offline: it fails before any URL fetch.
+        badge = tmp_path / 'badge.svg'
+        badge.write_bytes(b'<svg>not an ob1 assertion</svg>')
+        _run(['openbadges-verifier', '-i', str(badge), '-r', 'test@example.com',
+              '-V', '1'])
+        out = capsys.readouterr().out
+        assert 'legacy' in out                         # -V 1 notice
+        assert '[-]' in out                            # clean error line
+
+
+class TestVerifierMiscBranches:
+    def test_missing_badge_file(self, tmp_path, capsys):
+        _run(['openbadges-verifier', '-i', str(tmp_path / 'nope.svg'),
+              '-r', 'r@example.com', '-V', '3'])
+        assert 'NOT exists' in capsys.readouterr().out
+
+    def test_issuer_did_token_vc_not_a_dict(self):
+        # iss absent and vc not an object → the vc={} fallback, then no DID.
+        token = jwt.encode({'vc': 'not-an-object'}, 'x' * 32, algorithm='HS256')
+        with pytest.raises(OB3VerificationError, match='not a DID'):
+            _issuer_did_from_token(token)
+
 
 def test_local_reads_key_from_config(tmp_path, rsa_priv_pem, rsa_pub_pem,
                                      svg_image, capsys):

@@ -100,6 +100,77 @@ def test_ob2_hosted_badge_is_valid(ob2_validator_url, serve_directory,
         % json.dumps(report.get('messages', body), indent=2))
 
 
+def _write_ob2_signed_graph(root: Path, base: str, priv_pem: bytes,
+                            pub_pem: bytes, svg_bytes: bytes) -> str:
+    """Publish a strict OB 2.0 **SignedBadge** graph under *root* and return the
+    URL of the baked (JWS-signed) SVG — the crypto-sensitive counterpart of the
+    hosted case (#169). Trust flows through the signature: the Profile lists a
+    CryptographicKey (``key.json``) whose ``owner`` links back to the issuer,
+    and the assertion's ``verification.creator`` points at that key.
+    """
+    from openbadgeslib.ob2 import OB2Signer
+    from openbadgeslib.ob2.models import (Assertion, BadgeClass,
+                                          CryptographicKey, IdentityObject,
+                                          Profile, RevocationList, Verification)
+
+    issuer_id = '%s/organization.json' % base
+    rev_url = '%s/revoked.json' % base
+    badge_id = '%s/badge_1/badge.json' % base
+    image_url = '%s/badge_1/badge.svg' % base
+    key_url = '%s/badge_1/key.json' % base
+    signed_url = '%s/badge_1/signed.svg' % base
+
+    (root / 'badge_1').mkdir(parents=True, exist_ok=True)
+
+    profile = Profile(id=issuer_id, name='Conformance Test Issuer', url=base,
+                      email='issuer@example.com', revocation_list=rev_url,
+                      public_key=[key_url])
+    (root / 'organization.json').write_text(json.dumps(profile.to_dict()))
+
+    key = CryptographicKey(id=key_url, owner=issuer_id,
+                           public_key_pem=pub_pem.decode('ascii'))
+    (root / 'badge_1' / 'key.json').write_text(json.dumps(key.to_dict()))
+
+    revocation = RevocationList(id=rev_url, issuer=issuer_id,
+                                revoked_assertions=[])
+    (root / 'revoked.json').write_text(json.dumps(revocation.to_dict()))
+
+    badge = BadgeClass(id=badge_id, name='Conformance Test Badge',
+                       description='Issued to exercise the official validator.',
+                       image=image_url, criteria='%s/criteria.html' % base,
+                       issuer=issuer_id)
+    (root / 'badge_1' / 'badge.json').write_text(json.dumps(badge.to_dict()))
+    (root / 'badge_1' / 'badge.svg').write_bytes(svg_bytes)
+
+    assertion = Assertion(
+        recipient=IdentityObject.create('recipient@example.com', 's4lt'),
+        badge=badge_id,
+        verification=Verification(type='SignedBadge', creator=key_url),
+        image=image_url)
+    signed = OB2Signer(privkey_pem=priv_pem,
+                       algorithm='RS256').sign_into_svg(assertion, svg_bytes)
+    (root / 'badge_1' / 'signed.svg').write_bytes(signed)
+    return signed_url
+
+
+def test_ob2_signed_badge_is_valid(ob2_validator_url, serve_directory,
+                                   tmp_path, rsa_priv_pem, rsa_pub_pem,
+                                   svg_image):
+    base = serve_directory(str(tmp_path))
+    signed_url = _write_ob2_signed_graph(
+        tmp_path, base, rsa_priv_pem, rsa_pub_pem, svg_image)
+
+    resp = requests.post('%s/results' % ob2_validator_url,
+                         data={'data': signed_url},
+                         headers={'Accept': 'application/json'}, timeout=60)
+    resp.raise_for_status()
+    body = resp.json()
+    report = body.get('report', {})
+    assert report.get('valid') is True, (
+        'official OB2 validator rejected our signed badge:\n%s'
+        % json.dumps(report.get('messages', body), indent=2))
+
+
 # ── Open Badges 3.0: self-contained credentials → official validator ─────────
 
 def _did_key_credential(ob3_credential, pub_pem):

@@ -6,6 +6,16 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v3.10.0 - unreleased
 
+  - test(coverage): #169 targeted-coverage round. New dedicated suites for the
+    shared token carrier (`test_baking.py` — embed/extract round-trips per
+    format, compression and malformed-iTXt edges), mail (`test_mail.py` — SMTP
+    mocked) and the key helpers (`test_keys.py`), plus error-branch coverage for
+    the OB2 signer/verifier, the OB3 Data Integrity (LDP) path and the verifier
+    CLI (`openbadges_verifier.py` 74% → 95%). Total coverage crosses 93% and the
+    enforced `fail_under` floor is raised from 91 to 93. An opt-in OB2
+    **SignedBadge** conformance case joins the existing hosted one (the
+    crypto-sensitive path, Docker-gated). (Closes #169)
+
   - docs(ob1): OpenBadges 1.0 is reclassified from "deprecated, removal in
     4.0.0" to a **supported legacy surface with no removal planned**. Removing a
     working, dependency-free legacy path (OB1 has carried no unique dependencies

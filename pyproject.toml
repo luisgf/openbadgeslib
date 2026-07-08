@@ -140,10 +140,11 @@ source = ["openbadgeslib"]
 [tool.coverage.report]
 show_missing = true
 # Freeze the coverage floor so a regression fails CI instead of slipping by in
-# the log. Current total is ~91.4% after the verifier-CLI coverage work (#169
-# took openbadges_verifier.py 74% -> 90%); 91 leaves a small buffer. pytest-cov
-# honours this on the CI `pytest --cov` run.
-fail_under = 91
+# the log. The #169 targeted-coverage work took the total past 93% (dedicated
+# baking/mail/keys tests, OB2 signer/verifier + OB3 LDP error branches, and
+# openbadges_verifier.py 74% -> 95%); the floor is raised to 93 accordingly.
+# pytest-cov honours this on the CI `pytest --cov` run.
+fail_under = 93
 exclude_lines = [
     "if __name__ == .__main__.:",
     "pass$",
