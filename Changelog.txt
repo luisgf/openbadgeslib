@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v3.10.0 - unreleased
+* v3.10.0 - 2026-07-08
 
   - feat(publish): `openbadges-publish -V 3 --check-live` completes #164. After
     (re)publishing, it downloads each written artifact — `did.json`, the signed
