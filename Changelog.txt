@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v3.7.0 - unreleased
+* v3.7.0 - 2026-07-08
 
   - security(deps): `keys.py` (and the OB1 key-loading path) are ported to
     `cryptography`, and both `pycryptodome` and `python-ecdsa` are dropped as
