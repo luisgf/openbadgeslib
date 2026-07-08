@@ -20,8 +20,8 @@
         License along with this library.
 """
 
-from .credential import (Achievement, Alignment, Evidence, Issuer,
-                         OpenBadgeCredential)
+from .credential import (Achievement, Alignment, Evidence, IdentityObject,
+                         Issuer, OpenBadgeCredential, Result, ResultDescription)
 from .signer import OB3Signer
 from .verifier import (OB3VerificationError, OB3Verifier,
                        verify_endorsement_jwt)
@@ -38,8 +38,11 @@ __all__ = [
     'Achievement',
     'Alignment',
     'Evidence',
+    'IdentityObject',
     'Issuer',
     'OpenBadgeCredential',
+    'Result',
+    'ResultDescription',
     'OB3LdpSigner',
     'OB3LdpVerifier',
     'OB3Signer',

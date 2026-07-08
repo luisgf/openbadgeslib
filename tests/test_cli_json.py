@@ -60,6 +60,41 @@ def test_ob3_valid_json(tmp_path, rsa_priv_pem, rsa_pub_pem, svg_image, capsys):
     assert result['reason'] is None
 
 
+def test_ob3_json_surfaces_broadened_model_fields(tmp_path, rsa_priv_pem,
+                                                  rsa_pub_pem, svg_image, capsys):
+    # #162: the broadened OB 3.0 model fields appear in --json output.
+    from openbadgeslib.ob3 import (OB3Signer, Issuer, Achievement,
+                                   OpenBadgeCredential, Alignment, Result,
+                                   ResultDescription)
+    signer = OB3Signer(privkey_pem=rsa_priv_pem, algorithm='RS256')
+    cred = OpenBadgeCredential(
+        issuer=Issuer(id='https://example.com/issuer', name='Issuer'),
+        recipient_id='mailto:recipient@example.com',
+        achievement=Achievement(
+            id='https://example.com/a', name='A', description='d',
+            criteria_narrative='c', achievement_type='Competency',
+            credits_available=3.0,
+            alignments=[Alignment(target_name='Skill', target_url='https://f/x')],
+            result_descriptions=[ResultDescription(
+                id='urn:uuid:rd-1', name='G', result_type='LetterGrade')]),
+        credits_earned=2.0,
+        results=[Result(value='A', result_description='urn:uuid:rd-1')])
+    badge = tmp_path / 'badge.svg'
+    badge.write_bytes(signer.sign_into_svg(cred, svg_image))
+    pub = tmp_path / 'verify.pem'
+    pub.write_bytes(rsa_pub_pem)
+    argv = ['openbadges-verifier', '-i', str(badge), '-r', 'recipient@example.com',
+            '-V', '3', '-k', str(pub), '--json']
+    code, result = _run(argv, capsys)
+    assert code == 0
+    assert result['achievement_type'] == 'Competency'
+    assert result['credits_available'] == 3.0
+    assert result['credits_earned'] == 2.0
+    assert result['alignments'] == 1
+    assert result['results'] == 1
+    assert result['identifiers'] == 0
+
+
 def test_ob3_wrong_receptor_json(tmp_path, rsa_priv_pem, rsa_pub_pem, svg_image, capsys):
     badge = _ob3_badge(tmp_path, rsa_priv_pem, svg_image)
     pub = tmp_path / 'verify.pem'

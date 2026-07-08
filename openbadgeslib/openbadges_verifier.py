@@ -435,6 +435,15 @@ def _verify_ob3(args: argparse.Namespace) -> None:
     result['expires'] = (credential.expiration_date.isoformat()
                          if credential.expiration_date else None)
     result['evidence'] = credential.evidence_url
+    # Broadened OB 3.0 model (#162): surface the expressive fields so an
+    # integrator reading --json sees them without re-parsing `raw`. Scalars go
+    # as-is (None when absent); the repeatable structures as counts.
+    result['achievement_type'] = credential.achievement.achievement_type
+    result['credits_available'] = credential.achievement.credits_available
+    result['credits_earned'] = credential.credits_earned
+    result['alignments'] = len(credential.achievement.alignments)
+    result['results'] = len(credential.results)
+    result['identifiers'] = len(credential.identifiers)
     # Surface how many EndorsementCredential JWTs the credential carries (on
     # itself, its issuer or its achievement) so they are no longer invisible.
     # They are third-party VCs; verify each with ob3.verify_endorsement_jwt.
@@ -450,6 +459,19 @@ def _verify_ob3(args: argparse.Namespace) -> None:
             print('[+] Expires            : %s' % credential.expiration_date.isoformat())
         if credential.evidence_url:
             print('[+] Evidence           : %s' % credential.evidence_url)
+        if credential.achievement.achievement_type:
+            print('[+] Achievement type   : %s'
+                  % credential.achievement.achievement_type)
+        if credential.achievement.credits_available is not None:
+            print('[+] Credits available  : %s'
+                  % credential.achievement.credits_available)
+        if credential.credits_earned is not None:
+            print('[+] Credits earned     : %s' % credential.credits_earned)
+        if credential.achievement.alignments:
+            print('[+] Alignments         : %d'
+                  % len(credential.achievement.alignments))
+        if credential.results:
+            print('[+] Results            : %d' % len(credential.results))
         if endorsement_jwts:
             print('[+] Endorsements       : %d (verify with '
                   'ob3.verify_endorsement_jwt)' % len(endorsement_jwts))

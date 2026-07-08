@@ -176,6 +176,133 @@ class Evidence:
 
 
 @dataclass
+class IdentityObject:
+    """A subject identity (OB 3.0 ``credentialSubject.identifier``): a hashed or
+    plaintext identifier such as a salted SHA-256 of the recipient's email. An
+    alternative or supplement to ``credentialSubject.id`` — a credential may
+    convey identity through either or both."""
+
+    identity_hash: str
+    identity_type: str   # IdentifierTypeEnum, e.g. 'emailAddress', or 'ext:…'
+    hashed: bool
+    salt: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        # This schema type sets additionalProperties:false — emit these keys only.
+        d: dict[str, Any] = {
+            "type": "IdentityObject",
+            "hashed": self.hashed,
+            "identityHash": self.identity_hash,
+            "identityType": self.identity_type,
+        }
+        if self.salt:
+            d["salt"] = self.salt
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "IdentityObject":
+        hashed = data.get("hashed")
+        if not isinstance(hashed, bool):
+            raise ValueError("field identifier.hashed must be a boolean")
+        return cls(
+            identity_hash=_require(data, "identityHash", "identifier"),
+            identity_type=_require(data, "identityType", "identifier"),
+            hashed=hashed,
+            salt=data.get("salt"),
+        )
+
+
+@dataclass
+class Result:
+    """A result achieved for an achievement (OB 3.0 ``credentialSubject.result``).
+    ``result_description`` is the ``id`` of the ResultDescription on the
+    achievement that this result instantiates."""
+
+    value: Optional[str] = None
+    status: Optional[str] = None            # ResultStatusEnum
+    achieved_level: Optional[str] = None    # id of a RubricCriterionLevel
+    result_description: Optional[str] = None  # id of the linked ResultDescription
+    alignments: List[Alignment] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"type": ["Result"]}
+        for key, value in (("status", self.status), ("value", self.value),
+                           ("achievedLevel", self.achieved_level),
+                           ("resultDescription", self.result_description)):
+            if value:
+                d[key] = value
+        if self.alignments:
+            d["alignment"] = [a.to_dict() for a in self.alignments]
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Result":
+        return cls(
+            value=data.get("value"),
+            status=data.get("status"),
+            achieved_level=data.get("achievedLevel"),
+            result_description=data.get("resultDescription"),
+            alignments=_alignment_list(data.get("alignment")),
+        )
+
+
+@dataclass
+class ResultDescription:
+    """A possible result an achievement can convey (OB 3.0
+    ``achievement.resultDescription``); a Result links back to it by ``id``."""
+
+    id: str
+    name: str
+    result_type: str     # ResultType enum, e.g. 'LetterGrade'/'Status', or 'ext:…'
+    allowed_values: List[str] = field(default_factory=list)
+    required_value: Optional[str] = None
+    required_level: Optional[str] = None
+    value_min: Optional[str] = None
+    value_max: Optional[str] = None
+    alignments: List[Alignment] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
+            "id": self.id,
+            "type": ["ResultDescription"],
+            "name": self.name,
+            "resultType": self.result_type,
+        }
+        if self.allowed_values:
+            d["allowedValue"] = list(self.allowed_values)
+        for key, value in (("requiredValue", self.required_value),
+                           ("requiredLevel", self.required_level),
+                           ("valueMin", self.value_min),
+                           ("valueMax", self.value_max)):
+            if value:
+                d[key] = value
+        if self.alignments:
+            d["alignment"] = [a.to_dict() for a in self.alignments]
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ResultDescription":
+        allowed = data.get("allowedValue")
+        if isinstance(allowed, str):
+            allowed_values = [allowed]
+        elif isinstance(allowed, list):
+            allowed_values = [v for v in allowed if isinstance(v, str)]
+        else:
+            allowed_values = []
+        return cls(
+            id=_require(data, "id", "resultDescription"),
+            name=_require(data, "name", "resultDescription"),
+            result_type=_require(data, "resultType", "resultDescription"),
+            allowed_values=allowed_values,
+            required_value=data.get("requiredValue"),
+            required_level=data.get("requiredLevel"),
+            value_min=data.get("valueMin"),
+            value_max=data.get("valueMax"),
+            alignments=_alignment_list(data.get("alignment")),
+        )
+
+
+@dataclass
 class Achievement:
     """A badge class / achievement definition."""
 
@@ -195,6 +322,9 @@ class Achievement:
     # Framework alignments (OB 3.0 `alignment`): the competency mappings LMSes
     # consume. Empty when the achievement declares none.
     alignments: List[Alignment] = field(default_factory=list)
+    # Possible results this achievement can convey (OB 3.0 `resultDescription`);
+    # a Result on the subject links to one of these by id. Empty when none.
+    result_descriptions: List["ResultDescription"] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -214,6 +344,9 @@ class Achievement:
             d["tag"] = self.tags
         if self.alignments:
             d["alignment"] = [a.to_dict() for a in self.alignments]
+        if self.result_descriptions:
+            d["resultDescription"] = [r.to_dict()
+                                      for r in self.result_descriptions]
         if self.endorsement_jwts:
             d["endorsementJwt"] = list(self.endorsement_jwts)
         return d
@@ -246,6 +379,14 @@ class OpenBadgeCredential:
     # or the achievement live on those objects; all_endorsement_jwts() gathers
     # the three. Empty when the credential carries none.
     endorsement_jwts: List[str] = field(default_factory=list)
+    # AchievementSubject-level fields (OB 3.0 credentialSubject.*): creditsEarned
+    # pairs with achievement.creditsAvailable; identifier carries hashed/plaintext
+    # subject identities (an alternative or supplement to credentialSubject.id);
+    # result records measured outcomes, each linking to an achievement
+    # resultDescription. None/empty when the credential conveys none.
+    credits_earned: Optional[float] = None
+    identifiers: List["IdentityObject"] = field(default_factory=list)
+    results: List["Result"] = field(default_factory=list)
     # A read-only view of the already-validated document this credential was
     # parsed from (set by the verifiers via _from_vc); None when built in-memory
     # to issue. Lets a caller read spec fields the model does not map —
@@ -281,6 +422,19 @@ class OpenBadgeCredential:
         """Return the Verifiable Credential JSON object (no JWT wrapper)."""
         # __post_init__ guarantees issuance_date is set.
         assert self.issuance_date is not None
+        subject: dict[str, Any] = {
+            "type": ["AchievementSubject"],
+            "achievement": self.achievement.to_dict(),
+        }
+        # credentialSubject.id is optional; emit it only when present.
+        if self.recipient_id is not None:
+            subject["id"] = self.recipient_id
+        if self.credits_earned is not None:
+            subject["creditsEarned"] = self.credits_earned
+        if self.identifiers:
+            subject["identifier"] = [i.to_dict() for i in self.identifiers]
+        if self.results:
+            subject["result"] = [r.to_dict() for r in self.results]
         vc: dict[str, Any] = {
             "@context": OB3_CONTEXT,
             "id": self.id,
@@ -288,15 +442,9 @@ class OpenBadgeCredential:
             "name": self.name,
             "issuer": self.issuer.to_dict(),
             "validFrom": _iso(self.issuance_date),
-            "credentialSubject": {
-                "type": ["AchievementSubject"],
-                "achievement": self.achievement.to_dict(),
-            },
+            "credentialSubject": subject,
             "credentialSchema": [dict(_OB3_CREDENTIAL_SCHEMA)],
         }
-        # credentialSubject.id is optional; emit it only when present.
-        if self.recipient_id is not None:
-            vc["credentialSubject"]["id"] = self.recipient_id
         if self.expiration_date:
             vc["validUntil"] = _iso(self.expiration_date)
         evidence_items = self.evidence or (
@@ -408,10 +556,10 @@ class OpenBadgeCredential:
                             "vc.credentialSubject.achievement")
         criteria = _as_dict_or_empty(ach_data.get("criteria"))
         image = _as_dict_or_empty(ach_data.get("image"))
-        alignment_raw = ach_data.get("alignment")
-        alignments = [Alignment.from_dict(a) for a in alignment_raw
-                      if isinstance(a, dict)] \
-            if isinstance(alignment_raw, list) else []
+        rd_raw = ach_data.get("resultDescription")
+        result_descriptions = [ResultDescription.from_dict(r) for r in rd_raw
+                               if isinstance(r, dict)] \
+            if isinstance(rd_raw, list) else []
         achievement = Achievement(
             id=_require(ach_data, "id", "vc.credentialSubject.achievement"),
             name=_require(ach_data, "name", "vc.credentialSubject.achievement"),
@@ -422,7 +570,8 @@ class OpenBadgeCredential:
             endorsement_jwts=_string_list(ach_data.get("endorsementJwt")),
             achievement_type=ach_data.get("achievementType"),
             credits_available=_float_or_none(ach_data.get("creditsAvailable")),
-            alignments=alignments,
+            alignments=_alignment_list(ach_data.get("alignment")),
+            result_descriptions=result_descriptions,
         )
 
         # Accept both VC 2.0 (validFrom/validUntil) and VC 1.1
@@ -453,6 +602,12 @@ class OpenBadgeCredential:
         else:
             credential_status = []
 
+        # credentialSubject.identifier: zero or more hashed/plaintext identities.
+        identifier_raw = subj.get("identifier")
+        identifiers = [IdentityObject.from_dict(i) for i in identifier_raw
+                       if isinstance(i, dict)] \
+            if isinstance(identifier_raw, list) else []
+
         # credentialSubject.id is optional (schema); identity may instead be
         # conveyed via one or more 'identifier' objects. Reject only when BOTH
         # are absent — a subject with no identity at all is non-conformant.
@@ -460,11 +615,17 @@ class OpenBadgeCredential:
         if recipient_id is not None and not isinstance(recipient_id, str):
             raise ValueError("field vc.credentialSubject.id must be a string")
         if not recipient_id:                        # None or empty string
-            identifiers = subj.get("identifier")
-            if not (isinstance(identifiers, list) and identifiers):
+            if not identifiers:
                 raise ValueError(
                     "vc.credentialSubject must have an 'id' or an 'identifier'")
             recipient_id = None
+
+        # credentialSubject.result: measured outcomes (each may link to an
+        # achievement resultDescription); creditsEarned pairs with creditsAvailable.
+        result_raw = subj.get("result")
+        results = [Result.from_dict(r) for r in result_raw
+                   if isinstance(r, dict)] if isinstance(result_raw, list) else []
+        credits_earned = _float_or_none(subj.get("creditsEarned"))
 
         credential = cls(
             id=_require(vc, "id", "vc"),
@@ -478,6 +639,9 @@ class OpenBadgeCredential:
             evidence=evidence_list,
             credential_status=credential_status,
             endorsement_jwts=_string_list(vc.get("endorsementJwt")),
+            credits_earned=credits_earned,
+            identifiers=identifiers,
+            results=results,
         )
         # Keep the validated document so the caller can read fields the model
         # does not map (see the ``raw`` field). This is the JWT-VC payload or
@@ -516,6 +680,16 @@ def _string_list(value: Any) -> List[str]:
         return [value]
     if isinstance(value, list):
         return [item for item in value if isinstance(item, str)]
+    return []
+
+
+def _alignment_list(value: Any) -> List["Alignment"]:
+    """Parse OB 3.0 ``alignment`` — the schema allows a single Alignment object
+    or an array of them — into a list; non-object members are skipped."""
+    if isinstance(value, dict):
+        return [Alignment.from_dict(value)]
+    if isinstance(value, list):
+        return [Alignment.from_dict(a) for a in value if isinstance(a, dict)]
     return []
 
 

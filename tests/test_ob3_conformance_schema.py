@@ -165,6 +165,37 @@ class TestIssuedCredentialConforms:
         revocable = dataclasses.replace(ob3_credential, credential_status=[status])
         _assert_conformant(credential_validator, revocable.to_vc())
 
+    def test_fully_populated_credential_conforms(self, credential_validator):
+        # #162: a credential exercising the whole broadened model — identifier
+        # (subject with no id), result + linked resultDescription, alignment,
+        # achievementType, creditsAvailable/creditsEarned, rich evidence — must
+        # still validate against the official AchievementCredential schema.
+        from openbadgeslib.ob3 import (OpenBadgeCredential, Issuer, Achievement,
+                                       Alignment, Evidence, IdentityObject,
+                                       Result, ResultDescription)
+        cred = OpenBadgeCredential(
+            issuer=Issuer(id='https://issuer.example', name='Issuer',
+                          url='https://issuer.example', email='i@example.com'),
+            recipient_id=None,
+            achievement=Achievement(
+                id='https://a.example/1', name='A', description='d',
+                criteria_narrative='c', achievement_type='Competency',
+                credits_available=3.0,
+                alignments=[Alignment(target_name='Skill',
+                                      target_url='https://f/x',
+                                      target_framework='F', target_code='X.1')],
+                result_descriptions=[ResultDescription(
+                    id='urn:uuid:rd-1', name='Grade', result_type='LetterGrade',
+                    allowed_values=['A', 'B', 'C'], required_value='B')]),
+            credits_earned=3.0,
+            evidence=[Evidence(id='https://ev.example/1', narrative='did it')],
+            identifiers=[IdentityObject(identity_hash='sha256$abc',
+                                        identity_type='emailAddress',
+                                        hashed=True, salt='NaCl')],
+            results=[Result(value='A', status='Completed',
+                            result_description='urn:uuid:rd-1')])
+        _assert_conformant(credential_validator, cred.to_vc())
+
 
 # ── negative control: the check actually discriminates ───────────────────────
 

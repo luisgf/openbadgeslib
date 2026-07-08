@@ -40,9 +40,12 @@ The badge class / achievement definition.
 | `achievement_type` | no | OB 3.0 `achievementType` (e.g. `'Badge'`, `'Certificate'`, `'Competency'`). |
 | `credits_available` | no | Academic credit (`creditsAvailable`, a float). |
 | `alignments` | no | List of `Alignment` — competency-framework mappings; serialised under `alignment`. Defaults to `[]`. |
+| `result_descriptions` | no | List of `ResultDescription` — the possible results this achievement can convey; serialised under `resultDescription`. Defaults to `[]`. |
 | `endorsement_jwts` | no | List of compact `endorsementJwt` strings (see Endorsements). |
 
 An **`Alignment`** (`from openbadgeslib.ob3 import Alignment`) aligns the achievement to a framework node: required `target_name`, `target_url`; optional `target_framework`, `target_code`, `target_description`. This is what an LMS reads to map a badge to a competency.
+
+A **`ResultDescription`** (`from openbadgeslib.ob3 import ResultDescription`) declares a result the achievement can convey: required `id`, `name`, `result_type` (a `ResultType` such as `'LetterGrade'`, `'Percent'`, `'Status'`, or an `ext:` value); optional `allowed_values`, `required_value`, `required_level`, `value_min`, `value_max`, `alignments`. A `Result` on the credential subject links back to it by `id`.
 
 ### `OpenBadgeCredential`
 
@@ -59,6 +62,11 @@ The credential itself. Several fields are auto-filled in `__post_init__`:
 | `expiration_date` | no | Sets `validUntil` / JWT `exp` when present. |
 | `evidence_url` | no | Convenience for a single-URL `Evidence`. |
 | `evidence` | no | List of `Evidence` (id, narrative, name, description, genre, audience) — the full OB 3.0 `evidence` array. When set it wins over `evidence_url`; parsing populates both. Defaults to `[]`. |
+| `credits_earned` | no | Academic credit the subject earned (`creditsEarned`, a float); pairs with `achievement.credits_available`. |
+| `identifiers` | no | List of `IdentityObject` — hashed/plaintext `credentialSubject.identifier`, an alternative or supplement to `recipient_id`. A credential must carry at least one of `recipient_id` or `identifiers`. Defaults to `[]`. |
+| `results` | no | List of `Result` — measured outcomes for the subject, each optionally linking to an achievement `ResultDescription`. Defaults to `[]`. |
+
+An **`IdentityObject`** (`from openbadgeslib.ob3 import IdentityObject`) is a subject identity: required `identity_hash`, `identity_type` (an `IdentifierType` such as `'emailAddress'`, or an `ext:` value) and `hashed` (bool); optional `salt`. A **`Result`** (`from openbadgeslib.ob3 import Result`) records a measured outcome: optional `value`, `status` (a `ResultStatus` such as `'Completed'`), `achieved_level`, `result_description` (the `id` of the linked `ResultDescription`) and `alignments`.
 
 Useful serialisation methods:
 

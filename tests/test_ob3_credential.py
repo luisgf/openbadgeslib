@@ -334,7 +334,8 @@ class TestNaiveDatetimeAssumedUtc:
 
 # ── #162: broadened model — Evidence, Alignment, achievementType, credits ────
 
-from openbadgeslib.ob3.credential import Alignment, Evidence  # noqa: E402
+from openbadgeslib.ob3.credential import (  # noqa: E402
+    Alignment, Evidence, IdentityObject, Result, ResultDescription)
 
 
 class TestBroadenedModel:
@@ -448,3 +449,106 @@ class TestBroadenedModel:
         verified = OB3Verifier(pubkey_pem=rsa_pub_pem).verify(token)
         assert verified.achievement.achievement_type == 'Competency'
         assert verified.achievement.alignments[0].target_name == 'Skill'
+
+    # ── Result / ResultDescription / IdentityObject / creditsEarned ─────────────
+
+    def test_identity_object_round_trip(self):
+        cred = OpenBadgeCredential(
+            issuer=Issuer(id='https://issuer.example', name='I'),
+            recipient_id='mailto:r@example.com',
+            achievement=Achievement(id='https://a.example/1', name='A',
+                                    description='d', criteria_narrative='c'),
+            identifiers=[IdentityObject(identity_hash='sha256$abc',
+                                        identity_type='emailAddress',
+                                        hashed=True, salt='NaCl')])
+        subject = cred.to_vc()['credentialSubject']
+        assert subject['identifier'] == [{
+            'type': 'IdentityObject', 'hashed': True,
+            'identityHash': 'sha256$abc', 'identityType': 'emailAddress',
+            'salt': 'NaCl'}]
+        again = OpenBadgeCredential.from_vc_document(cred.to_vc())
+        assert again.identifiers[0].identity_hash == 'sha256$abc'
+        assert again.identifiers[0].hashed is True
+        assert again.identifiers[0].salt == 'NaCl'
+
+    def test_identity_object_is_additional_properties_false(self):
+        # The schema forbids extra keys on IdentityObject; to_dict emits exactly
+        # the five allowed ones (no id, no stray members).
+        d = IdentityObject(identity_hash='sha256$x', identity_type='emailAddress',
+                           hashed=False).to_dict()
+        assert set(d) == {'type', 'hashed', 'identityHash', 'identityType'}
+
+    def test_identity_object_requires_boolean_hashed(self):
+        with pytest.raises(ValueError, match='hashed must be a boolean'):
+            IdentityObject.from_dict({'identityHash': 'x',
+                                      'identityType': 'emailAddress',
+                                      'hashed': 'true'})
+
+    def test_subject_with_only_identifier_round_trips(self):
+        # A subject conveying identity solely via `identifier` (no id) must
+        # re-serialise WITH that identifier — before #162 it parsed but the
+        # identifier was dropped, yielding a subject with neither id nor
+        # identifier (non-conformant).
+        cred = OpenBadgeCredential(
+            issuer=Issuer(id='https://issuer.example', name='I'),
+            recipient_id=None,
+            achievement=Achievement(id='https://a.example/1', name='A',
+                                    description='d', criteria_narrative='c'),
+            identifiers=[IdentityObject(identity_hash='sha256$abc',
+                                        identity_type='emailAddress',
+                                        hashed=True)])
+        again = OpenBadgeCredential.from_vc_document(cred.to_vc())
+        assert again.recipient_id is None
+        assert 'id' not in again.to_vc()['credentialSubject']
+        assert again.to_vc()['credentialSubject']['identifier']
+
+    def test_result_and_result_description_round_trip(self):
+        cred = OpenBadgeCredential(
+            issuer=Issuer(id='https://issuer.example', name='I'),
+            recipient_id='mailto:r@example.com',
+            achievement=Achievement(
+                id='https://a.example/1', name='A', description='d',
+                criteria_narrative='c',
+                result_descriptions=[ResultDescription(
+                    id='urn:uuid:rd-1', name='Final grade',
+                    result_type='LetterGrade',
+                    allowed_values=['A', 'B', 'C'], required_value='C',
+                    alignments=[Alignment(target_name='Grd',
+                                          target_url='https://f/g')])]),
+            results=[Result(value='A', status='Completed',
+                            result_description='urn:uuid:rd-1')])
+        vc = cred.to_vc()
+        assert vc['credentialSubject']['result'] == [{
+            'type': ['Result'], 'status': 'Completed', 'value': 'A',
+            'resultDescription': 'urn:uuid:rd-1'}]
+        rd = vc['credentialSubject']['achievement']['resultDescription'][0]
+        assert rd['id'] == 'urn:uuid:rd-1'
+        assert rd['type'] == ['ResultDescription']
+        assert rd['resultType'] == 'LetterGrade'
+        assert rd['allowedValue'] == ['A', 'B', 'C']
+        assert rd['requiredValue'] == 'C'
+        again = OpenBadgeCredential.from_vc_document(vc)
+        assert again.results[0].value == 'A'
+        assert again.results[0].result_description == 'urn:uuid:rd-1'
+        assert again.achievement.result_descriptions[0].result_type == 'LetterGrade'
+        assert again.achievement.result_descriptions[0].allowed_values == \
+            ['A', 'B', 'C']
+        assert again.achievement.result_descriptions[0].alignments[0].target_name \
+            == 'Grd'
+
+    def test_credits_earned_round_trip(self):
+        cred = self._credential()
+        cred.credits_earned = 3.5
+        assert cred.to_vc()['credentialSubject']['creditsEarned'] == 3.5
+        again = OpenBadgeCredential.from_vc_document(cred.to_vc())
+        assert again.credits_earned == 3.5
+
+    def test_single_alignment_object_is_parsed(self):
+        # The schema lets `alignment` be a single object, not only an array;
+        # _alignment_list handles both so a lone alignment is not dropped.
+        vc = self._credential().to_vc()
+        vc['credentialSubject']['achievement']['alignment'] = {
+            'type': ['Alignment'], 'targetName': 'Solo',
+            'targetUrl': 'https://f/solo'}
+        again = OpenBadgeCredential.from_vc_document(vc)
+        assert [a.target_name for a in again.achievement.alignments] == ['Solo']

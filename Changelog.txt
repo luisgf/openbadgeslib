@@ -4,6 +4,29 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.10.0 - unreleased
+
+  - feat(ob3): complete the broadened OB 3.0 credential model started in
+    v3.9.0 — closing the remaining data-model gap versus the spec. New `Result`
+    (a measured outcome: value, status, achievedLevel and the linked
+    resultDescription), `ResultDescription` (an achievement's possible results:
+    resultType, allowedValue, valueMin/valueMax, requiredValue/requiredLevel)
+    and `IdentityObject` (a hashed or plaintext `credentialSubject.identifier`,
+    the alternative to `credentialSubject.id`) dataclasses, plus `creditsEarned`
+    on the subject and a `resultDescription` list on `Achievement`. All follow
+    the house style (dataclasses + mypy, no Pydantic), parse from a verified
+    credential, round-trip through `to_vc`, and satisfy the offline conformance
+    schema — a fully-populated credential (identifier-only subject, result +
+    linked resultDescription, alignment, credits) validates against 1EdTech's
+    AchievementCredential schema. `openbadges-verifier` now surfaces the
+    broadened fields — achievementType, creditsAvailable/creditsEarned and the
+    alignment/result/identifier counts — in both `--json` and `--show`. Two
+    round-trip fixes fall out: a subject conveying identity solely through
+    `identifier` now re-serialises with it (the identifier was silently dropped
+    on parse before), and a lone `alignment` object not wrapped in an array is
+    no longer discarded. (Closes #162)
+
+
 * v3.9.0 - 2026-07-08
 
   - feat(ob3): broaden the credential data model toward the OB 3.0 spec — the
