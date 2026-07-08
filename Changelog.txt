@@ -6,6 +6,16 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v3.7.0 - unreleased
 
+  - feat(ob3): JWT-VC verification now honours the token's `kid` header for a
+    multi-key did:web issuer. `OB3Verifier.for_issuer_did` fetches the DID
+    document once and selects the exact `verificationMethod` the kid names (an
+    absolute `did:web:…#badge_N` URL, or a bare `#badge_N` resolved against the
+    issuer DID), so issuers that rotate keys or publish one key per badge now
+    verify without pinning `-k`/`-l` — closing the gap where only the first
+    listed key worked. Fails closed when the kid names a method of a *different*
+    DID (the header is attacker-controlled) or one absent from the document; a
+    token with no kid still falls back to the first method. (#163)
+
   - feat(ob1): OpenBadges 1.0 is now deprecated (removal scheduled for the
     grouped 4.0.0 release, #170). Reaching the legacy import surface — the
     `openbadgeslib.ob1` package, the top-level `openbadgeslib.badge` /

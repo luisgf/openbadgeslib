@@ -225,7 +225,7 @@ did = did_web_from_url('https://example.com/issuer/')   # did:web:example.com:is
 doc = build_did_document(did, [('badge_1', public_jwk_from_pem(pub_pem))])
 ```
 
-The document round-trips through `resolve_did`. Order the methods deliberately: resolvers (this library's included) typically read only `verificationMethod[0]`.
+The document round-trips through `resolve_did`. JWT verification picks the method the token's `kid` header names (multi-key issuers / key rotation), so a per-badge `did:web:…#badge_N` key is selected correctly; a token with no `kid` falls back to `verificationMethod[0]`, so order the method most kid-less interop tokens need first.
 
 ## EUDI SD-JWT VC (selective disclosure)
 

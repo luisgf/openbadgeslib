@@ -28,7 +28,9 @@
 #   did:key  — self-certifying: the public key IS encoded in the identifier
 #              (multibase base58btc of a multicodec-prefixed key). No network.
 #   did:web  — trusts DNS + TLS for the host: fetches the DID document over
-#              HTTPS and reads its first verification method.
+#              HTTPS. The bare-DID resolver reads the first verification method;
+#              JWT verification instead selects the method the token's 'kid'
+#              names (see OB3Verifier / pem_for_kid), for multi-key issuers.
 #
 # Trust note: did:key needs no external trust (the key is the identifier).
 # did:web is only as trustworthy as the host's DNS and TLS. Neither is a
@@ -36,7 +38,7 @@
 
 import json
 
-from typing import Any, Sequence, Tuple, cast
+from typing import Any, Optional, Sequence, Tuple, cast
 
 from cryptography.hazmat.primitives import serialization as _serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -217,6 +219,17 @@ def _fetch_did_web_document(did: str, fetch: Any) -> dict[str, Any]:
     return doc
 
 
+def fetch_did_web_document(did: str, download: Any = None) -> dict[str, Any]:
+    """Fetch and parse the DID document a did:web identifier resolves to.
+
+    Public wrapper over the internal fetch, used to read the document once and
+    then select a key from it (by JWT ``kid``, see :func:`pem_for_kid`).
+    ``download`` defaults to util.download_file; injectable for testing.
+    """
+    fetch = download if download is not None else download_file
+    return _fetch_did_web_document(did, fetch)
+
+
 def resolve_verification_method(vm_url: str, download: Any = None) -> bytes:
     """Resolve a proof ``verificationMethod`` URL to a PEM public key.
 
@@ -295,9 +308,11 @@ def build_did_document(did: str,
     """Build a DID document publishing *verification_methods*, given as
     ``(fragment, public JWK)`` pairs (see keys.public_jwk_from_pem).
 
-    Order matters: this resolver — like several others — only reads
-    ``verificationMethod[0]``, so the key most verifications need should
-    come first.
+    Order still matters for tokens that name no key: the bare-DID resolver and
+    a JWT with no ``kid`` both fall back to ``verificationMethod[0]``, so the
+    key most verifications need should come first. A JWT that carries a ``kid``
+    naming a specific method (``#fragment``) is verified against that method
+    regardless of position (see :func:`pem_for_kid`).
     """
     if not verification_methods:
         raise ValueError('a DID document needs at least one verification '
@@ -326,6 +341,44 @@ def _pem_from_did_document(doc: Any) -> bytes:
     if not isinstance(methods, list) or not methods:
         raise OB3VerificationError("DID document has no verificationMethod")
     return _pem_from_vm(methods[0])
+
+
+def pem_for_kid(document: dict[str, Any], issuer_did: str,
+                kid: Optional[str] = None) -> bytes:
+    """Select a verificationMethod's public key (PEM) from a fetched did:web
+    document, honouring a JWT ``kid`` header.
+
+    With no *kid* the first method is returned — the historical default, for a
+    token that names no key. With a *kid* the method whose ``id`` the kid names
+    is returned: either an absolute ``did:...#fragment`` URL or a bare
+    ``#fragment`` resolved against *issuer_did*.
+
+    The kid MUST name a method OF *issuer_did*. A kid pointing at another DID
+    fails closed — the token header is attacker-controlled, so without this it
+    could redirect trust to a different issuer's key (whose document the
+    attacker controls). A kid naming a method absent from the document also
+    fails closed rather than silently falling back to a different key.
+    """
+    methods = document.get('verificationMethod')
+    if not isinstance(methods, list) or not methods:
+        raise OB3VerificationError("DID document has no verificationMethod")
+    if kid is None:
+        return _pem_from_vm(methods[0])
+    if kid.startswith('#'):
+        vm_id = issuer_did + kid
+    else:
+        kid_did = kid.split('#', 1)[0]
+        if kid_did != issuer_did:
+            raise OB3VerificationError(
+                "JWT kid %r names a different DID than the anchored issuer %r"
+                % (kid, issuer_did))
+        vm_id = kid
+    for method in methods:
+        if isinstance(method, dict) and method.get('id') == vm_id:
+            return _pem_from_vm(method)
+    raise OB3VerificationError(
+        "DID document has no verificationMethod with id %r (JWT kid %r)"
+        % (vm_id, kid))
 
 
 def _pem_from_vm(vm: Any) -> bytes:

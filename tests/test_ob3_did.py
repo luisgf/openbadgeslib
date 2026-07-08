@@ -390,3 +390,108 @@ class TestForIssuerDid:
         token = OB3Signer(privkey_pem=ed25519_priv_pem, algorithm='EdDSA').sign(credential)
         cred = OB3Verifier(pubkey_pem=ed25519_pub_pem).verify(token)
         assert cred.issuer.id == 'did:web:anything.example'
+
+
+# ── #163: multi-key did:web issuers — JWT 'kid' selects the key ──────────────
+
+def _doc_download(doc):
+    """A download callable that serves *doc* as the did:web document."""
+    def download(url):
+        return json.dumps(doc).encode('utf-8')
+    return download
+
+
+class TestForIssuerDidKid:
+    """A did:web issuer may publish several verification keys (rotation, or a
+    key per badge). The JWT ``kid`` header selects which one validates the
+    token; no kid falls back to the first method (the prior behaviour)."""
+
+    def _two_key_doc(self, did, pub1_pem, pub2_pem):
+        from openbadgeslib.keys import public_jwk_from_pem
+        from openbadgeslib.ob3.did import build_did_document
+        return build_did_document(did, [
+            ('badge_1', public_jwk_from_pem(pub1_pem)),
+            ('badge_2', public_jwk_from_pem(pub2_pem)),
+        ])
+
+    def _setup(self, ed25519_keypair):
+        from openbadgeslib.keys import KeyEd25519
+        priv1, pub1 = ed25519_keypair
+        priv2, pub2 = KeyEd25519().generate_keypair()
+        did = 'did:web:issuer.example'
+        doc = self._two_key_doc(did, pub1, pub2)
+        return did, doc, priv1, priv2
+
+    def _token(self, priv_pem, issuer_did, kid=None):
+        from openbadgeslib.ob3 import (OB3Signer, Achievement, Issuer,
+                                       OpenBadgeCredential)
+        credential = OpenBadgeCredential(
+            id='urn:uuid:00000000-0000-0000-0000-0000000000e1',
+            issuer=Issuer(id=issuer_did, name='Issuer'),
+            recipient_id='mailto:r@example.com',
+            achievement=Achievement(id='https://a.example/1', name='A',
+                                    description='d', criteria_narrative='c'))
+        token = OB3Signer(privkey_pem=priv_pem, algorithm='EdDSA').sign(credential)
+        if kid is None:
+            return token
+        # Our signer embeds a 'jwk' header, not a 'kid'; re-header the same
+        # payload with the kid an interop issuer would emit.
+        import jwt as pyjwt
+        payload = pyjwt.decode(token, options={'verify_signature': False})
+        return pyjwt.encode(payload, priv_pem, algorithm='EdDSA',
+                            headers={'kid': kid})
+
+    def test_kid_selects_the_second_key(self, ed25519_keypair):
+        did, doc, _priv1, priv2 = self._setup(ed25519_keypair)
+        token = self._token(priv2, did, kid=did + '#badge_2')
+        cred = OB3Verifier.for_issuer_did(
+            did, download=_doc_download(doc)).verify(token)
+        assert cred.issuer.id == did
+
+    def test_bare_fragment_kid_resolves_against_issuer(self, ed25519_keypair):
+        did, doc, _priv1, priv2 = self._setup(ed25519_keypair)
+        token = self._token(priv2, did, kid='#badge_2')   # relative kid
+        cred = OB3Verifier.for_issuer_did(
+            did, download=_doc_download(doc)).verify(token)
+        assert cred.issuer.id == did
+
+    def test_no_kid_uses_the_first_method(self, ed25519_keypair):
+        did, doc, priv1, _priv2 = self._setup(ed25519_keypair)
+        token = self._token(priv1, did)          # no kid, signed by first key
+        cred = OB3Verifier.for_issuer_did(
+            did, download=_doc_download(doc)).verify(token)
+        assert cred.issuer.id == did
+
+    def test_no_kid_second_key_fails(self, ed25519_keypair):
+        # Without a kid the first method is assumed, so a token signed by the
+        # second key does not verify — exactly the gap #163 closes.
+        did, doc, _priv1, priv2 = self._setup(ed25519_keypair)
+        token = self._token(priv2, did)          # no kid, signed by second key
+        with pytest.raises(OB3VerificationError, match='signature'):
+            OB3Verifier.for_issuer_did(
+                did, download=_doc_download(doc)).verify(token)
+
+    def test_kid_with_wrong_signing_key_fails(self, ed25519_keypair):
+        # kid names badge_2 but the token is signed by badge_1's key.
+        did, doc, priv1, _priv2 = self._setup(ed25519_keypair)
+        token = self._token(priv1, did, kid=did + '#badge_2')
+        with pytest.raises(OB3VerificationError, match='signature'):
+            OB3Verifier.for_issuer_did(
+                did, download=_doc_download(doc)).verify(token)
+
+    def test_kid_names_missing_method_fails_closed(self, ed25519_keypair):
+        did, doc, priv1, _priv2 = self._setup(ed25519_keypair)
+        token = self._token(priv1, did, kid=did + '#badge_99')
+        with pytest.raises(OB3VerificationError, match='no verificationMethod'):
+            OB3Verifier.for_issuer_did(
+                did, download=_doc_download(doc)).verify(token)
+
+    def test_kid_pointing_at_another_did_fails_closed(self, ed25519_keypair):
+        # A kid naming a DIFFERENT DID must not redirect trust, even though the
+        # token is signed by a key present in our document.
+        did, doc, priv1, _priv2 = self._setup(ed25519_keypair)
+        token = self._token(priv1, did,
+                            kid='did:web:attacker.example#badge_1')
+        with pytest.raises(OB3VerificationError, match='different DID'):
+            OB3Verifier.for_issuer_did(
+                did, download=_doc_download(doc)).verify(token)

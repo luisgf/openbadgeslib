@@ -21,7 +21,7 @@
 """
 
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import jwt
 import jwt.exceptions
@@ -136,15 +136,26 @@ class OB3Verifier:
         # When the key was obtained by resolving a DID, remember that DID so
         # verify() can bind the credential's stated issuer to it (see verify()).
         self._anchored_did = issuer_did
+        # The full did:web document, when anchored to one: for_issuer_did stores
+        # it so verify() can select the exact key the token's 'kid' names (a
+        # multi-key / rotating issuer). None for a fixed key or a did:key, where
+        # pubkey_pem below is the single verification key.
+        self._did_document: Optional[dict[str, Any]] = None
         # Pin the accepted algorithms to this key's type so the token header
         # cannot dictate the algorithm (alg:none / HMAC downgrade / cross-type
         # confusion are all rejected up front rather than trusted).
+        self._allowed_algorithms = self._pin_algorithms(self.pubkey_pem)
+
+    @staticmethod
+    def _pin_algorithms(pubkey_pem: Union[str, bytes]) -> list[str]:
+        """Return the signature algorithms this key type may validate, so a
+        token header can never dictate the algorithm."""
         try:
-            key_type = detect_key_type(self.pubkey_pem)
+            key_type = detect_key_type(pubkey_pem)
         except UnknownKeyType as exc:
             raise OB3VerificationError(
                 "Unsupported verification key type: %s" % exc) from exc
-        self._allowed_algorithms = _ALGORITHMS_BY_KEY_TYPE[key_type]
+        return _ALGORITHMS_BY_KEY_TYPE[key_type]
 
     @classmethod
     def for_issuer_did(cls, did: str, download: Any = None) -> "OB3Verifier":
@@ -161,8 +172,20 @@ class OB3Verifier:
         rejected. For did:key this is implied by the key being the identifier;
         for did:web (not self-certifying) it is the check that stops an issuer
         from being spoofed once its document has been fetched.
+
+        A did:web issuer may publish several verification keys (rotation, or a
+        key per badge). Its document is fetched once here and remembered, so
+        verify() can select the exact key the JWT ``kid`` header names instead
+        of assuming the first one; a token with no kid still uses the first
+        method, the prior behaviour.
         """
-        from .did import resolve_did
+        from .did import fetch_did_web_document, pem_for_kid, resolve_did
+        if did.startswith('did:web:'):
+            document = fetch_did_web_document(did, download)
+            verifier = cls(pubkey_pem=pem_for_kid(document, did),
+                           issuer_did=did)
+            verifier._did_document = document
+            return verifier
         return cls(pubkey_pem=resolve_did(did, download=download), issuer_did=did)
 
     # ── verification ───────────────────────────────────────────────────────────
@@ -234,6 +257,29 @@ class OB3Verifier:
         from .status import check_credential_status
         check_credential_status(credential)
 
+    def _key_for_token(
+            self, header: dict[str, Any]) -> tuple[Union[str, bytes], list[str]]:
+        """Resolve the (public key PEM, allowed algorithms) to verify this
+        token with.
+
+        A verifier built from a fixed key (or a did:key) uses it unchanged. One
+        anchored to a did:web issuer selects the verificationMethod the JWT
+        ``kid`` header names — supporting multi-key issuers and key rotation —
+        and falls back to the first method when the token carries no kid. A kid
+        that names a missing method, or one of a different DID, fails closed
+        (see did.pem_for_kid). The algorithms are re-pinned to the selected
+        key's type so the header still cannot dictate the algorithm.
+        """
+        if self._did_document is None:
+            return self.pubkey_pem, self._allowed_algorithms
+        kid = header.get('kid')
+        if kid is None:
+            return self.pubkey_pem, self._allowed_algorithms
+        from .did import pem_for_kid
+        assert self._anchored_did is not None   # set whenever _did_document is
+        pubkey_pem = pem_for_kid(self._did_document, self._anchored_did, kid)
+        return pubkey_pem, self._pin_algorithms(pubkey_pem)
+
     def _decode_payload(self, token: str) -> dict[str, Any]:
         """Verify the signature (algorithm pinned to the key type) and return
         the decoded JWT payload."""
@@ -251,18 +297,20 @@ class OB3Verifier:
         except jwt.exceptions.DecodeError as exc:
             raise OB3VerificationError(f"Invalid JWT: {exc}") from exc
 
+        pubkey_pem, allowed_algorithms = self._key_for_token(header)
+
         alg = header.get('alg')
-        if alg not in self._allowed_algorithms:
+        if alg not in allowed_algorithms:
             raise OB3VerificationError(
                 "Algorithm %r in token header is not allowed for this key "
-                "(expected one of %s)" % (alg, self._allowed_algorithms)
+                "(expected one of %s)" % (alg, allowed_algorithms)
             )
 
         try:
             return jwt.decode(
                 token,
-                self.pubkey_pem,
-                algorithms=self._allowed_algorithms,
+                pubkey_pem,
+                algorithms=allowed_algorithms,
                 options={"verify_aud": False},
             )
         except jwt.exceptions.ExpiredSignatureError as exc:
