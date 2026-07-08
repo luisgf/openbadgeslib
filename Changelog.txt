@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v3.8.0 - unreleased
+* v3.8.0 - 2026-07-08
 
   - security(ob3): status lists gain replay protection and opt-in proof
     verification, closing two documented trust gaps. (1) A per-badge
