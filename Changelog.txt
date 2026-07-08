@@ -26,6 +26,13 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     on parse before), and a lone `alignment` object not wrapped in an array is
     no longer discarded. (Closes #162)
 
+  - fix(cli): `openbadges-publish -V 1/-V 2` now exits with a clear message when
+    the `[issuer]` section is missing `publish_url` or `revocationList`, instead
+    of raising a raw `KeyError` traceback partway through — after the output
+    directory had already been created. The OB3 path already validated this; the
+    hosted OB1/OB2 paths now share the same guard. Last item of the quick-fix
+    round. (Closes #156)
+
 
 * v3.9.0 - 2026-07-08
 

@@ -11,9 +11,15 @@ from openbadgeslib._jws import utils as jws_utils
 TESTS_DIR = Path(__file__).parent
 
 
-def _write_config(tmp_path, key='rsa', img='svg', with_crypto=True, with_hosted=True):
+def _write_config(tmp_path, key='rsa', img='svg', with_crypto=True, with_hosted=True,
+                  with_publish_url=True, with_revocation=True):
     logdir = tmp_path / 'log'
     logdir.mkdir()
+    issuer = ["[issuer]", "name = Test Issuer", "url = https://example.com"]
+    if with_publish_url:
+        issuer.append("publish_url = https://example.com/issuer/")
+    if with_revocation:
+        issuer.append("revocationList = revocation.json")
     lines = [
         "[paths]",
         "base = %s" % tmp_path,
@@ -22,11 +28,7 @@ def _write_config(tmp_path, key='rsa', img='svg', with_crypto=True, with_hosted=
         "base_image = %s" % (TESTS_DIR / 'images'),
         "",
         "[logs]", "general = general.log", "signer = signer.log", "",
-        "[issuer]",
-        "name = Test Issuer",
-        "url = https://example.com",
-        "publish_url = https://example.com/issuer/",
-        "revocationList = revocation.json",
+        *issuer,
         "",
         "[badge_1]",
         "name = Test Badge",
@@ -213,3 +215,41 @@ def test_publish_v2_creates_key_json_and_public_key(tmp_path):
     assert key['type'] == 'CryptographicKey'
     assert key['owner'] == issuer['id']
     assert 'BEGIN PUBLIC KEY' in key['publicKeyPem']
+
+
+# ── hosted-publish config guards (#156) ─────────────────────────────────────────
+# The OB1/OB2 publish paths dereference [issuer].publish_url / .revocationList
+# directly. A misconfigured [issuer] must exit with a clean message before any
+# output directory is created, not raise a raw KeyError mid-publish.
+
+def test_publish_v2_missing_publish_url_exits_cleanly(tmp_path):
+    from openbadgeslib import openbadges_publish
+    cfg = _write_config(tmp_path, with_publish_url=False)
+    out = tmp_path / 'published'
+    argv = ['openbadges-publish', '-c', str(cfg), '-o', str(out), '-V', '2']
+    with patch.object(sys, 'argv', argv), pytest.raises(SystemExit) as exc:
+        openbadges_publish.main()
+    assert 'publish_url' in str(exc.value)
+    assert not out.exists()
+
+
+def test_publish_v2_missing_revocation_list_exits_cleanly(tmp_path):
+    from openbadgeslib import openbadges_publish
+    cfg = _write_config(tmp_path, with_revocation=False)
+    out = tmp_path / 'published'
+    argv = ['openbadges-publish', '-c', str(cfg), '-o', str(out), '-V', '2']
+    with patch.object(sys, 'argv', argv), pytest.raises(SystemExit) as exc:
+        openbadges_publish.main()
+    assert 'revocationList' in str(exc.value)
+    assert not out.exists()
+
+
+def test_publish_v1_missing_publish_url_exits_cleanly(tmp_path, capsys):
+    from openbadgeslib import openbadges_publish
+    cfg = _write_config(tmp_path, with_publish_url=False)
+    out = tmp_path / 'published'
+    argv = ['openbadges-publish', '-c', str(cfg), '-o', str(out), '-V', '1']
+    with patch.object(sys, 'argv', argv), pytest.raises(SystemExit) as exc:
+        openbadges_publish.main()
+    assert 'publish_url' in str(exc.value)
+    assert not out.exists()

@@ -531,6 +531,21 @@ def _publish_ob3(args: argparse.Namespace,
     }
 
 
+def _require_issuer_publish_keys(conf: configparser.ConfigParser) -> None:
+    """Validate the ``[issuer]`` keys the OB1/OB2 hosted-publish paths
+    dereference directly (``publish_url`` and ``revocationList``), so a
+    misconfigured config exits with a clean CLI error instead of a raw
+    ``KeyError`` traceback thrown mid-publish — after the output directory
+    was already created. Mirrors the ``publish_url`` check the OB3 path and
+    ``_query_ob3`` already perform."""
+    if not conf.has_section('issuer'):
+        sys.exit('[!] config is missing the [issuer] section')
+    for key in ('publish_url', 'revocationList'):
+        if not conf['issuer'].get(key):
+            sys.exit("[!] [issuer] is missing the '%s' key, required to "
+                     "publish hosted OpenBadges metadata" % key)
+
+
 def _publish_ob2(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     """Publish strict OpenBadges 2.0 hosted metadata.
 
@@ -549,6 +564,8 @@ def _publish_ob2(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
 
     if os.path.lexists(args.output):
         sys.exit('[!] %s already exists' % args.output)
+
+    _require_issuer_publish_keys(conf)
 
     publish_url = conf['issuer']['publish_url']
     issuer_id = urljoin(publish_url, 'organization.json')
@@ -620,6 +637,8 @@ def _publish_ob1(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
     if args.output:
         if os.path.lexists(args.output):
             sys.exit('[!] %s already exists' % args.output)
+
+        _require_issuer_publish_keys(conf)
 
         umask = os.umask(0o077)  # rwx------
         try:
