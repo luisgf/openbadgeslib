@@ -249,9 +249,9 @@ def _verify_ob1(args: argparse.Namespace) -> None:
     from .ob1.badge import BadgeSigned, BadgeStatus
 
     if not args.json:
-        print('[!] OpenBadges 1.0 (-V 1) is deprecated and will be removed in '
-              'a future release; verify OB 2.0 (-V 2) or OB 3.0 (-V 3) badges '
-              'instead.')
+        print('[!] OpenBadges 1.0 (-V 1) is a legacy version, still supported; '
+              'new badges are better issued and verified as OB 2.0 (-V 2) or '
+              'OB 3.0 (-V 3).')
 
     result: Dict[str, Any] = {'ob_version': '1', 'recipient': args.receptor, '_exit': None}
     try:

@@ -50,11 +50,12 @@ _ISSUE_API = ('IssuanceError', 'SignResult', 'issue_from_conf')
 
 # ── OpenBadges 1.0 (legacy) ──────────────────────────────────────────────────
 # The unprefixed OB1 names (Signer, Verifier, Badge, …) stay importable from
-# the top-level package for backward compatibility, but they are the legacy
-# OpenBadges 1.0 surface: accessing one now emits a DeprecationWarning
-# (removal in 4.0.0). Modern code uses openbadgeslib.ob2 / openbadgeslib.ob3.
-# They are resolved lazily from the ob1 leaf modules (PEP 562), so a bare
-# `import openbadgeslib` neither warns nor drags in the ob1 package.
+# the top-level package for backward compatibility. They are the legacy
+# OpenBadges 1.0 surface: accessing one emits a DeprecationWarning steering new
+# work to openbadgeslib.ob2 / openbadgeslib.ob3. OB 1.0 itself remains supported
+# (no removal planned). They are resolved lazily from the ob1 leaf modules (PEP
+# 562), so a bare `import openbadgeslib` neither warns nor drags in the ob1
+# package.
 _OB1_API = {
     'Signer': 'signer', 'Verifier': 'verifier', 'VerifyInfo': 'verifier',
     'Badge': 'badge', 'BadgeSigned': 'badge', 'Assertion': 'badge',
@@ -76,9 +77,9 @@ def __getattr__(name: str) -> Any:
     import importlib
     import warnings
     warnings.warn(
-        'openbadgeslib.%s is the legacy OpenBadges 1.0 API and is deprecated; '
-        'it will be removed in openbadgeslib 4.0.0. Use openbadgeslib.ob2 '
-        '(strict OB 2.0) or openbadgeslib.ob3 (OB 3.0). See the "OpenBadges '
-        '1.0 lifecycle" wiki page.' % name,
+        'openbadgeslib.%s is the legacy OpenBadges 1.0 API; prefer '
+        'openbadgeslib.ob2 (strict OB 2.0) or openbadgeslib.ob3 (OB 3.0) for '
+        'new work. OpenBadges 1.0 remains supported (no removal planned). See '
+        'the "OpenBadges 1.0 lifecycle" wiki page.' % name,
         DeprecationWarning, stacklevel=2)
     return getattr(importlib.import_module('.ob1.' + module, __name__), name)

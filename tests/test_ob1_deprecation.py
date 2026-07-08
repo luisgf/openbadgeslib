@@ -1,12 +1,12 @@
-"""#159 — OpenBadges 1.0 deprecation.
+"""OpenBadges 1.0 legacy surface — its warnings and CLI notices.
 
-OB1 is a dead format (Mozilla Backpack shut down in 2019). Step 1 (this
-issue) marks the legacy import surface with a DeprecationWarning and prints a
-[!] notice on the -V 1 CLI paths; OB1 stays fully functional. Removal lands in
-the grouped 4.0.0 release (#170).
+OB1 is an old format (Mozilla Backpack shut down in 2019) but remains
+**supported** as a legacy surface — no removal is planned. Its import surface
+emits a DeprecationWarning and the -V 1 CLI paths print a [!] notice, both
+steering new work to OB 2.0/3.0; OB1 stays fully functional.
 
-The warning must fire on the *deprecated* surface only — the ob1 package, the
-three top-level compat shims, and the unprefixed re-exports — while a bare
+The warning must fire on the *legacy* surface only — the ob1 package, the three
+top-level compat shims, and the unprefixed re-exports — while a bare
 `import openbadgeslib` and the internal leaf imports (openbadgeslib.ob1.badge,
 which OB2/OB3 signing still uses for the shared badge model) stay silent.
 """
@@ -46,7 +46,7 @@ class TestImportSilence:
         assert result.returncode == 0, result.stderr
 
 
-# ── the deprecated surface warns ─────────────────────────────────────────────
+# ── the legacy surface warns ─────────────────────────────────────────────────
 
 class TestImportWarnings:
     @pytest.mark.parametrize('name', ['Signer', 'Verifier', 'VerifyInfo',
@@ -54,7 +54,7 @@ class TestImportWarnings:
                                       'extract_svg_assertion'])
     def test_unprefixed_reexport_warns(self, name):
         import openbadgeslib
-        with pytest.warns(DeprecationWarning, match='deprecated'):
+        with pytest.warns(DeprecationWarning, match='legacy'):
             obj = getattr(openbadgeslib, name)
         assert obj is not None
 
@@ -88,8 +88,8 @@ class TestImportWarnings:
             importlib.reload(mod)
 
     def test_warning_does_not_change_the_symbol(self):
-        """The deprecation is cosmetic: the unprefixed re-export still resolves
-        to the genuine ob1 class."""
+        """The legacy warning is cosmetic: the unprefixed re-export still
+        resolves to the genuine ob1 class."""
         import openbadgeslib
         from openbadgeslib.ob1.signer import Signer as LeafSigner
         with warnings.catch_warnings():
@@ -99,7 +99,7 @@ class TestImportWarnings:
 
 # ── the -V 1 CLI paths print a [!] notice ────────────────────────────────────
 
-_NOTICE = 'OpenBadges 1.0 (-V 1) is deprecated'
+_NOTICE = 'OpenBadges 1.0 (-V 1) is a legacy version, still supported'
 
 
 class TestCliNotices:

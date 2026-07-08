@@ -37,8 +37,8 @@
 # always in the registry, an unused index is a harmless orphan) is preserved
 # here rather than in the caller.
 #
-# OpenBadges 1.0 issuance stays in the CLI: it is deprecated (removal in 4.0.0)
-# and its signer writes the badge itself instead of returning bytes.
+# OpenBadges 1.0 issuance stays in the CLI: it is a legacy version (supported,
+# but its signer writes the badge itself instead of returning bytes).
 
 import configparser
 import json
@@ -159,7 +159,7 @@ def issue_badge(conf: configparser.ConfigParser, badge: str, recipient: str,
                           hosted)
     raise IssuanceError(
         "issue_from_conf supports OpenBadges 2.0 and 3.0; OpenBadges 1.0 (-V 1) "
-        "is deprecated and issued through the CLI only")
+        "is a legacy version, issued through the CLI only")
 
 
 def issue_batch_from_conf(conf: configparser.ConfigParser, badge: str,

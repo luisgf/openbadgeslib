@@ -4,10 +4,10 @@ import warnings
 from .ob1.signer import Signer
 
 warnings.warn(
-    'openbadgeslib.signer is a legacy OpenBadges 1.0 compatibility shim and is '
-    'deprecated; it will be removed in openbadgeslib 4.0.0. Use '
-    'openbadgeslib.ob2.OB2Signer or openbadgeslib.ob3.OB3Signer instead. See '
-    'the "OpenBadges 1.0 lifecycle" wiki page.',
+    'openbadgeslib.signer is a legacy OpenBadges 1.0 compatibility shim; prefer '
+    'openbadgeslib.ob2.OB2Signer or openbadgeslib.ob3.OB3Signer for new work. '
+    'OpenBadges 1.0 remains supported (no removal planned). See the '
+    '"OpenBadges 1.0 lifecycle" wiki page.',
     DeprecationWarning, stacklevel=2)
 
 __all__ = ['Signer']

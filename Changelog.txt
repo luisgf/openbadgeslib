@@ -6,6 +6,18 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v3.10.0 - unreleased
 
+  - docs(ob1): OpenBadges 1.0 is reclassified from "deprecated, removal in
+    4.0.0" to a **supported legacy surface with no removal planned**. Removing a
+    working, dependency-free legacy path (OB1 has carried no unique dependencies
+    since #167) was judged excessive; OB1 stays fully functional and maintained,
+    simply superseded by OB 2.0/3.0 for new work. The library
+    `DeprecationWarning`s and the `-V 1` CLI notices are reworded to steer new
+    work to OB2/OB3 without promising removal, and the "OpenBadges 1.0
+    lifecycle" wiki page records the policy — including why a `[legacy]`/`[ob1]`
+    install extra stays rejected: a Python extra gates *dependencies*, not code,
+    and OB1 has none to gate (it would install the same bytes). Reverses the
+    removal side of #159/#170.
+
   - feat(cli): batch issuance — `openbadges-signer` now issues to many recipients
     in one run. Repeat `-r EMAIL`, or pass `--recipients-file FILE` (one email per
     line or comma-separated; blank lines and `#`-comments ignored); a single `-r`

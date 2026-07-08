@@ -280,8 +280,8 @@ def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
     from .ob1.signer import Signer
     from .ob1.badge import BadgeType
 
-    print('[!] OpenBadges 1.0 (-V 1) is deprecated and will be removed in a '
-          'future release; issue OB 2.0 (-V 2) or OB 3.0 (-V 3) instead.')
+    print('[!] OpenBadges 1.0 (-V 1) is a legacy version, still supported; '
+          'prefer OB 2.0 (-V 2) or OB 3.0 (-V 3) for new badges.')
 
     if badge_obj.key_type not in (KeyType.RSA, KeyType.ECC):
         # The legacy JWS path predates Ed25519 support (RSA/ECC key objects).

@@ -8,10 +8,10 @@ from .ob1.badge import (
 )
 
 warnings.warn(
-    'openbadgeslib.badge is a legacy OpenBadges 1.0 compatibility shim and is '
-    'deprecated; it will be removed in openbadgeslib 4.0.0. Import from '
-    'openbadgeslib.ob2 (strict OB 2.0) or openbadgeslib.ob3 (OB 3.0) instead. '
-    'See the "OpenBadges 1.0 lifecycle" wiki page.',
+    'openbadgeslib.badge is a legacy OpenBadges 1.0 compatibility shim; prefer '
+    'openbadgeslib.ob2 (strict OB 2.0) or openbadgeslib.ob3 (OB 3.0) for new '
+    'work. OpenBadges 1.0 remains supported (no removal planned). See the '
+    '"OpenBadges 1.0 lifecycle" wiki page.',
     DeprecationWarning, stacklevel=2)
 
 __all__ = [
