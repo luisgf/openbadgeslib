@@ -197,6 +197,35 @@ class TestHosted:
             with pytest.raises(OB2VerificationError):
                 OB2Verifier().verify(token)
 
+    def test_hosted_expires_stripped_locally_rejected(self, rsa_priv_pem):
+        # A genuinely-hosted badge that has expired; the holder strips `expires`
+        # from the local baked copy (the JWS is non-gating for a hosted badge).
+        # The authoritative fetch still carries the past expires, so the expires
+        # must be reconciled and verification must fail -- otherwise the local
+        # _check_expiration sees no expiry and the expired badge verifies.
+        token, a = _hosted(rsa_priv_pem)                # local copy: no expires
+        hosted = a.to_dict()
+        hosted['expires'] = '2000-01-01T00:00:00+00:00'  # authoritative: expired
+        url_map = {a.id: hosted, BADGE: {'issuer': ISSUER}, ISSUER: {'id': ISSUER}}
+        with patch(PATCH_TARGET, side_effect=_dl(url_map)):
+            with pytest.raises(OB2VerificationError, match='expires'):
+                OB2Verifier().verify(token, expected_recipient=RECIPIENT)
+
+    def test_hosted_expires_matching_ok(self, rsa_priv_pem):
+        # Local and authoritative expires agree (same future instant): a valid,
+        # non-expired hosted badge must not be false-rejected.
+        a = Assertion(
+            id='https://example.com/assertions/x.json',
+            recipient=IdentityObject.create(RECIPIENT, salt='s4lt3d'),
+            badge=BADGE, verification=Verification(type='HostedBadge'),
+            issued_on=NOW, expires=NOW + timedelta(days=3650))
+        token = _sign(rsa_priv_pem, a)
+        url_map = {a.id: a.to_dict(), BADGE: {'issuer': ISSUER},
+                   ISSUER: {'id': ISSUER}}
+        with patch(PATCH_TARGET, side_effect=_dl(url_map)):
+            result = OB2Verifier().verify(token, expected_recipient=RECIPIENT)
+        assert result.verification.type == 'HostedBadge'
+
 
 # ── revocation ──────────────────────────────────────────────────────────────────
 

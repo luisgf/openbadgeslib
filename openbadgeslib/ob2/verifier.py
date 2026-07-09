@@ -198,6 +198,25 @@ class OB2Verifier:
                 "Hosted assertion at %s does not match the badge's local "
                 "claims (field 'issuedOn' differs)" % (assertion.id,))
 
+        # expires governs validity, so the authoritative hosted copy must agree
+        # with the local claim; otherwise a holder could strip or extend the
+        # local expires (the baked JWS is non-gating for a hosted badge) to
+        # defeat the expiration check. Compared as a timestamp like issuedOn;
+        # present on only one side is a mismatch.
+        fetched_expires = fetched.get("expires")
+        local_expires = local.get("expires")
+        expires_ok = (fetched_expires is None) == (local_expires is None)
+        if expires_ok and fetched_expires is not None:
+            try:
+                expires_ok = (_parse_iso(fetched_expires, "hosted expires")
+                              == _parse_iso(local_expires, "assertion.expires"))
+            except ValueError:
+                expires_ok = False
+        if not expires_ok:
+            raise OB2VerificationError(
+                "Hosted assertion at %s does not match the badge's local "
+                "claims (field 'expires' differs)" % (assertion.id,))
+
         issuer = self._fetch_issuer(assertion)
         self._check_hosted_scope(assertion.id, issuer)
 
