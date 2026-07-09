@@ -4,6 +4,44 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.14.0 - unreleased
+
+  A security & correctness hardening pass (audit-bot). Highlights:
+
+  - security(eudi): reject an X.509-anchored SD-JWT verification whose issuer
+    JWT carries no `x5c` chain, so openvc-core cannot fall back to DID /
+    issuer-URL key resolution and bypass the EU trust anchors (#186).
+  - security(ob3): reject a Data Integrity credential carrying the unsigned VC
+    1.1 aliases `expirationDate`/`issuanceDate` or a legacy `StatusList2021Entry`
+    status — the RDF-canonicalized proof cannot cover them, so a holder could
+    otherwise un-expire / un-revoke a signed credential (#205).
+  - security(ob2): reconcile a hosted badge's `expires` against the authoritative
+    fetched copy, so a stripped/extended local `expires` no longer defeats the
+    expiration check (#187).
+  - security(ob3): read `statusSize` from the BitstringStatusListEntry and fail
+    closed on a multi-bit entry, so a revoked/suspended multi-bit credential is
+    no longer misreported as valid (#188).
+  - security(mail): give `SMTP_SSL` a validating TLS context (check_hostname +
+    CERT_REQUIRED), so the badge-delivery client no longer exposes its SMTP AUTH
+    credentials to an on-path attacker (#203).
+  - fix(cli): `openbadges-verifier` exits non-zero in human mode when an OB1/OB2
+    badge is invalid (was exit 0), matching OB3 and `--json` (#189).
+  - fix(cli): `openbadges-signer` surfaces a partial-batch exit code in human
+    mode (#191); `-H/--hosted` is rejected outside `-V 2` (#206); a badge section
+    missing `private_key`/`public_key` yields a clean error (#210).
+  - fix(cli): `openbadges-init -h/--help` prints usage and exits 0 instead of
+    creating a directory named `--help` (#207).
+  - fix(issue): a baking failure surfaces as `IssuanceError` on the vc-jwt/OB2
+    paths (#190), and a missing `[issuer]`/config key does too (#208).
+  - fix(publish): isolate a per-badge key failure in status-list regeneration so
+    one bad badge no longer aborts the whole publish (#192).
+  - fix(ob3): a non-string Data Integrity `proof.created`/`expires` raises
+    `OB3VerificationError` instead of a raw `AttributeError` (#193).
+  - fix(ob2): accept an embedded `CryptographicKey` object in a Profile's
+    `publicKey` (#194).
+  - fix(confparser): reject a `status_size_bits` that is not a positive multiple
+    of 8 as a clean config error (#204).
+
 * v3.13.0 - 2026-07-09
 
   - feat(eudi): **opt-in X.509 / EU Trusted List trust for received SD-JWT
