@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v3.13.0 - unreleased
+* v3.13.0 - 2026-07-09
 
   - feat(eudi): **opt-in X.509 / EU Trusted List trust for received SD-JWT
     badges** (#178). `verify_badge_sd_jwt(..., x5c_trust_anchors=…)` verifies a
