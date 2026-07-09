@@ -61,6 +61,17 @@ self-contained (pulls its own JSON-LD processor), so it works with or without
 `[ldp]`; **issuing** `ecdsa-sd-2023` is out of scope. Without the extra,
 verifying such a credential fails closed with an install hint.
 
+```sh
+pip install "openbadgeslib[eudi]"
+```
+
+The `[eudi]` extra adds the **SD-JWT VC / EUDI** track, delegating the crypto to
+[`openvc-core`](https://pypi.org/project/openvc-core/). It enables issuing and
+verifying Open Badges as IETF SD-JWT VCs — the format the EU Digital Identity
+Wallet converges on — including eIDAS X.509 / EU Trusted List issuer trust for
+received badges. Without it, the SD-JWT VC helpers report the missing extra with
+an install hint.
+
 ## Development install
 
 Clone the repository and install in editable mode together with the test and lint dependencies:
