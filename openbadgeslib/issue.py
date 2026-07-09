@@ -265,10 +265,15 @@ def _issue_ob2(conf: configparser.ConfigParser, badge: str, recipient: str,
                  badge_obj.key_type, algorithm, hosted, badge_obj.image_type)
 
     signer = OB2Signer(privkey_pem=badge_obj.privkey_pem, algorithm=algorithm)
-    if badge_obj.image_type is BadgeImgType.SVG:
-        signed_bytes = signer.sign_into_svg(assertion, badge_obj.image)
-    else:
-        signed_bytes = signer.sign_into_png(assertion, badge_obj.image)
+    # Surface a baking failure (ErrorSigningFile) as an IssuanceError, as the
+    # OB3 paths do, so it is caught by the batch loop / CLI, not leaked raw.
+    try:
+        if badge_obj.image_type is BadgeImgType.SVG:
+            signed_bytes = signer.sign_into_svg(assertion, badge_obj.image)
+        else:
+            signed_bytes = signer.sign_into_png(assertion, badge_obj.image)
+    except ErrorSigningFile as exc:
+        raise IssuanceError(str(exc)) from exc
 
     hosted_json = (json.dumps(assertion.to_dict(), sort_keys=True,
                               ensure_ascii=True) if hosted else None)
@@ -366,9 +371,16 @@ def _sign_ob3_credential(badge: str, credential: Any, badge_obj: Badge,
     logger.debug("OB3 sign: key_type=%s algorithm=%s recipient=%s",
                  ctx.key_type, algorithm, recipient_id)
     signer = OB3Signer(privkey_pem=badge_obj.privkey_pem, algorithm=algorithm)
-    if badge_obj.image_type is BadgeImgType.SVG:
-        return signer.sign_into_svg(credential, badge_obj.image)
-    return signer.sign_into_png(credential, badge_obj.image)
+    # A baking failure (e.g. a malformed carrier image) raises ErrorSigningFile,
+    # which is not an IssuanceError; surface it as one so callers -- the batch
+    # loop and the CLI -- handle it like every other issuance error instead of
+    # leaking a raw traceback (mirrors the LDP branch).
+    try:
+        if badge_obj.image_type is BadgeImgType.SVG:
+            return signer.sign_into_svg(credential, badge_obj.image)
+        return signer.sign_into_png(credential, badge_obj.image)
+    except ErrorSigningFile as exc:
+        raise IssuanceError(str(exc)) from exc
 
 
 def _issue_ob3(conf: configparser.ConfigParser, badge: str, recipient: str,

@@ -7,9 +7,11 @@ assertable as a library, not only reachable by driving openbadges-signer.
 """
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
+from openbadgeslib.errors import ErrorSigningFile
 from openbadgeslib.issue import (BatchResult, IssuanceError, SignResult,
                                  issue_batch_from_conf, issue_from_conf,
                                  output_basename)
@@ -250,3 +252,34 @@ class TestIssueBatch:
         conf = _write_conf(tmp_path)
         with pytest.raises(IssuanceError, match='single-recipient'):
             issue_batch_from_conf(conf, 'badge_1', ['a@e.com', 'b@e.com'], '1')
+
+
+class TestSigningErrorIsWrapped:
+    """#190 -- a baking/signing failure raises ErrorSigningFile, which is not an
+    IssuanceError. The vc-jwt (OB3 default) and OB2 paths must surface it as an
+    IssuanceError (like the LDP path) so the batch loop / CLI handle it instead
+    of leaking a raw traceback; a status index was already allocated."""
+
+    def test_ob3_vcjwt_single_wraps_it(self, tmp_path):
+        conf = _write_conf(tmp_path)
+        with patch('openbadgeslib.ob3.signer.OB3Signer.sign_into_svg',
+                   side_effect=ErrorSigningFile('bad carrier image')):
+            with pytest.raises(IssuanceError, match='bad carrier image'):
+                issue_from_conf(conf, 'badge_1', 'r@example.com', '3')
+
+    def test_ob2_single_wraps_it(self, tmp_path):
+        conf = _write_conf(tmp_path)
+        with patch('openbadgeslib.ob2.signer.OB2Signer.sign_into_svg',
+                   side_effect=ErrorSigningFile('bad carrier image')):
+            with pytest.raises(IssuanceError, match='bad carrier image'):
+                issue_from_conf(conf, 'badge_1', 'r@example.com', '2')
+
+    def test_ob3_batch_isolates_it_per_recipient(self, tmp_path):
+        conf = _write_conf(tmp_path)
+        with patch('openbadgeslib.ob3.signer.OB3Signer.sign_into_svg',
+                   side_effect=ErrorSigningFile('bad carrier image')):
+            results = issue_batch_from_conf(conf, 'badge_1',
+                                            ['a@e.com', 'b@e.com'], '3')
+        assert len(results) == 2
+        assert all(r.result is None and 'bad carrier image' in (r.error or '')
+                   for r in results)
