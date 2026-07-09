@@ -170,3 +170,30 @@ class TestOb3ProofFormat:
         from openbadgeslib.confparser import ob3_proof_format
         with pytest.raises(ValueError, match=r'\[badge_1\] proof_format'):
             ob3_proof_format(self._conf('jwt'), 'badge_1')
+
+
+class TestOb3StatusConfigSizeBits:
+    def _conf(self, size_bits):
+        from configparser import ConfigParser
+        conf = ConfigParser()
+        conf['paths'] = {'base': '/tmp/x', 'base_status': '/tmp/x/status'}
+        conf['issuer'] = {'publish_url': 'https://issuer.example/'}
+        conf['badge_1'] = {'status_lists': 'revocation',
+                           'status_size_bits': str(size_bits)}
+        return conf
+
+    def test_multiple_of_8_accepted(self):
+        from openbadgeslib.confparser import ob3_status_config
+        assert ob3_status_config(self._conf(131072), 'badge_1').size_bits == 131072
+
+    def test_non_multiple_of_8_rejected(self):
+        # A latent bad size would otherwise crash publish's encode_bitstring with
+        # a raw ValueError (#204); reject it as a clean config error here.
+        from openbadgeslib.confparser import ob3_status_config
+        with pytest.raises(ValueError, match='positive multiple of 8'):
+            ob3_status_config(self._conf(131070), 'badge_1')
+
+    def test_zero_rejected(self):
+        from openbadgeslib.confparser import ob3_status_config
+        with pytest.raises(ValueError, match='positive multiple of 8'):
+            ob3_status_config(self._conf(0), 'badge_1')

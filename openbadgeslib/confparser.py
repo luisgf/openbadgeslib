@@ -140,6 +140,12 @@ def ob3_status_config(conf: ConfigParser,
     except ValueError:
         raise ValueError("[%s] status_size_bits must be an integer"
                          % badge_section) from None
+    # encode_bitstring requires a positive multiple of 8; validate here so a
+    # misconfiguration is a clean config error at issuance/publish load rather
+    # than a latent raw ValueError from encode_bitstring at publish time.
+    if size_bits <= 0 or size_bits % 8:
+        raise ValueError("[%s] status_size_bits must be a positive multiple "
+                         "of 8" % badge_section)
 
     # Optional validUntil horizon: when set, published status lists carry a
     # validUntil = now + N days, and a verifier rejects a stale copy (replay
