@@ -112,6 +112,37 @@ class TestX5cTrust:
         with pytest.raises(EudiError, match='pubkey_pem'):
             verify_badge_sd_jwt(_sd_jwt_with_x5c(leaf_key, x5c))
 
+    def test_no_x5c_header_rejected_even_with_anchors(self):
+        # An attacker omits the x5c header and self-certifies via did:jwk. The
+        # x5c anchors must NOT be bypassed by falling back to DID resolution:
+        # without this guard the forged badge would verify against its own key.
+        import json
+
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from openvc.keys import P256SigningKey
+        from openvc.proof._jws import sign_compact
+
+        _x5c, root, _leaf = _chain()
+
+        def b64u(b):
+            return base64.urlsafe_b64encode(b).rstrip(b'=').decode('ascii')
+
+        atk = ec.generate_private_key(ec.SECP256R1())
+        nums = atk.public_key().public_numbers()
+        jwk = {'kty': 'EC', 'crv': 'P-256',
+               'x': b64u(nums.x.to_bytes(32, 'big')),
+               'y': b64u(nums.y.to_bytes(32, 'big'))}
+        did = 'did:jwk:' + b64u(json.dumps(jwk, separators=(',', ':')).encode())
+        header = {'alg': 'ES256', 'typ': 'dc+sd-jwt', 'kid': did + '#0'}  # no x5c
+        payload = {'iss': did, 'vct': OB3_SD_JWT_VCT, 'iat': int(time.time()),
+                   'name': 'Forged',
+                   'achievement': {'id': 'https://ex/x', 'name': 'Forged'}}
+        forged = sign_compact(
+            header, payload,
+            signing_key=P256SigningKey(atk, kid=did + '#0')) + '~'
+        with pytest.raises(EudiError, match='x5c'):
+            verify_badge_sd_jwt(forged, x5c_trust_anchors=[root])
+
 
 def test_x5c_path_needs_the_extra(monkeypatch):
     for name in ('openvc', 'openvc.keys', 'openvc.proof.sd_jwt'):

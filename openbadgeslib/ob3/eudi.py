@@ -247,7 +247,9 @@ def verify_badge_sd_jwt(
       third-party badge whose issuer JWT carries an ``x5c`` chain is
       path-validated to those anchors and bound to ``iss`` before its leaf key
       is used — routed through openvc-core's ``verify_credential`` pipeline (the
-      JWK-pin suite path cannot do X.509 trust). Status is not checked here, as
+      JWK-pin suite path cannot do X.509 trust). A token that carries no ``x5c``
+      chain is rejected in this mode: the anchors are never bypassed by falling
+      back to DID / issuer-URL key resolution. Status is not checked here, as
       with the pinned path.
     """
     if x5c_trust_anchors is not None:
@@ -271,6 +273,23 @@ def verify_badge_sd_jwt(
         raise EudiError("SD-JWT VC badge verification failed: %s" % exc) from exc
 
 
+def _issuer_jwt_has_x5c(token: str) -> bool:
+    """True if the SD-JWT's issuer JWT carries a non-empty ``x5c`` header.
+
+    The issuer JWT is the segment before the first ``~``; its JOSE header is the
+    first ``.``-separated part, base64url-encoded JSON. A parse failure fails
+    closed (raises :class:`EudiError`), since we then cannot confirm an ``x5c``.
+    """
+    header_b64 = token.split("~", 1)[0].split(".", 1)[0]
+    try:
+        padded = header_b64 + "=" * (-len(header_b64) % 4)
+        header = json.loads(base64.urlsafe_b64decode(padded))
+    except (ValueError, TypeError) as exc:
+        raise EudiError(
+            "could not parse the SD-JWT issuer JWT header: %s" % exc) from exc
+    return bool(isinstance(header, dict) and header.get("x5c"))
+
+
 def _verify_sd_jwt_x5c(token: str, x5c_trust_anchors: Any, *,
                        expected_vct: Optional[str], audience: Optional[str],
                        nonce: Optional[str], require_key_binding: bool) -> Any:
@@ -282,6 +301,16 @@ def _verify_sd_jwt_x5c(token: str, x5c_trust_anchors: Any, *,
         from openvc import VerificationPolicy, verify_credential
     except ImportError as exc:
         raise EudiError(_INSTALL_HINT) from exc
+    # X.509 trust MUST anchor to the chain in the issuer JWT's x5c header.
+    # openvc-core silently falls back to DID / issuer-URL key resolution when the
+    # token carries no x5c, which would bypass x5c_trust_anchors entirely (a
+    # did:jwk / did:key issuer is self-certifying: it merely asserts its own
+    # key). Refuse that fallback here — fail closed.
+    if not _issuer_jwt_has_x5c(token):
+        raise EudiError(
+            "x5c_trust_anchors was supplied but the badge's issuer JWT carries "
+            "no x5c certificate chain; refusing to fall back to DID/issuer-URL "
+            "key resolution, which would bypass the X.509 trust anchors")
     policy = VerificationPolicy(
         expected_vct=expected_vct, audience=audience, nonce=nonce,
         require_key_binding=require_key_binding, require_status=False)
