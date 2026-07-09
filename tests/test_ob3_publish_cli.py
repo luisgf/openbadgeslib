@@ -15,7 +15,7 @@ RECIPIENT = 'recipient@example.com'
 
 
 def _write_config(tmp_path, key='rsa', status_lists=None, did=None,
-                  status_base=None):
+                  status_base=None, sd_jwt_vct=None):
     (tmp_path / 'log').mkdir(exist_ok=True)
     lines = [
         "[paths]",
@@ -35,6 +35,8 @@ def _write_config(tmp_path, key='rsa', status_lists=None, did=None,
     ]
     if did is not None:
         lines.append("did = %s" % did)
+    if sd_jwt_vct is not None:
+        lines.append("sd_jwt_vct = %s" % sd_jwt_vct)
     lines += [
         "",
         "[badge_1]",
@@ -722,3 +724,59 @@ class TestCheckLive:
             openbadges_publish.main()
         assert exc.value.code == 1             # human: stale/missing -> exit 1
         assert 'stale or missing' in capsys.readouterr().out
+
+
+class TestPublishTypeMetadata:
+    """`openbadges-publish -V 3` emits SD-JWT VC Type Metadata for a configured,
+    issuer-hosted vct — servable at that URL and consumable by openvc-core (#176).
+    """
+
+    VCT = 'https://example.com/issuer/vct/openbadge'
+
+    def test_emits_type_metadata_for_configured_vct(self, tmp_path):
+        from openbadgeslib.ob3.eudi import (badge_type_metadata,
+                                            type_metadata_document_bytes)
+        pub = _publish(tmp_path, _write_config(tmp_path, sd_jwt_vct=self.VCT))
+        served = (pub / 'vct' / 'openbadge').read_bytes()
+        assert served == type_metadata_document_bytes(
+            badge_type_metadata(self.VCT))
+
+    def test_unset_vct_emits_nothing(self, tmp_path):
+        pub = _publish(tmp_path, _write_config(tmp_path))
+        assert (pub / 'did.json').is_file()          # normal publish still ran
+        assert not (pub / 'vct').exists()
+
+    def test_vct_not_under_publish_url_is_skipped_with_notice(
+            self, tmp_path, capsys):
+        pub = _publish(tmp_path, _write_config(
+            tmp_path, sd_jwt_vct='https://elsewhere.example/vct/x'))
+        assert 'not under publish_url' in capsys.readouterr().out
+        assert not (pub / 'vct').exists()
+
+    def test_published_metadata_validates_a_pinned_badge(
+            self, tmp_path, ob3_credential, ed25519_priv_pem, ed25519_pub_pem):
+        pytest.importorskip('openvc')
+        from openvc.type_metadata import validate_type_metadata
+
+        from openbadgeslib.ob3.eudi import (badge_type_metadata,
+                                            issue_badge_sd_jwt,
+                                            type_metadata_integrity,
+                                            verify_badge_sd_jwt)
+        pub = _publish(tmp_path, _write_config(tmp_path, sd_jwt_vct=self.VCT))
+        served = (pub / 'vct' / 'openbadge').read_bytes()
+        integrity = type_metadata_integrity(badge_type_metadata(self.VCT))
+        token = issue_badge_sd_jwt(
+            ob3_credential, privkey_pem=ed25519_priv_pem, vct=self.VCT,
+            vct_integrity=integrity)
+        payload = verify_badge_sd_jwt(
+            token, pubkey_pem=ed25519_pub_pem, expected_vct=self.VCT).claims
+
+        def resolve(url):
+            if url == self.VCT:
+                return served
+            raise LookupError(url)
+
+        result = validate_type_metadata(
+            payload, vct=self.VCT, vct_integrity=payload['vct#integrity'],
+            resolve=resolve)
+        assert result.vct == self.VCT

@@ -335,6 +335,24 @@ assert result.key_bound
 
 The OID4VCI / OID4VP wallet-exchange protocol itself lives in `openvc-core`, not here: this module maps a badge to and from SD-JWT VC claims and runs the issuer/holder crypto through it.
 
+### Publishing Type Metadata for the badge type
+
+A HAIP wallet self-validates a credential by resolving the **SD-JWT VC Type Metadata** its `vct` points to (draft-ietf-oauth-sd-jwt-vc §4; openvc-core ≥1.2 does this fail-closed). To make a library-issued badge self-describing, build that document for the OB 3.0 badge claim set, pin it with `vct#integrity`, and serve it at an issuer-hosted `vct`:
+
+```python
+from openbadgeslib.ob3.eudi import (badge_type_metadata, issue_badge_sd_jwt,
+                                    type_metadata_document_bytes,
+                                    type_metadata_integrity)
+
+vct = 'https://issuer.example/vct/openbadge'     # a URL you host
+metadata = badge_type_metadata(vct)              # achievement/name/validFrom mandatory
+served = type_metadata_document_bytes(metadata)  # the exact bytes to serve at `vct`
+token = issue_badge_sd_jwt(credential, privkey_pem=priv_pem, vct=vct,
+                           vct_integrity=type_metadata_integrity(metadata))
+```
+
+The `vct#integrity` claim (a W3C SRI hash over the served bytes) pins the metadata, so a wallet fails closed on any tampering. `badge_type_metadata` / `type_metadata_document_bytes` / `type_metadata_integrity` are pure-Python (no `[eudi]` extra). For issuers who publish a did:web, `openbadges-publish -V 3` **emits this document for you**: set `[issuer] sd_jwt_vct` to a vct under `publish_url` and it is written into the webroot alongside `did.json` (byte-exact, `--check-live`-verified). The default `vct` stays the imsglobal purl, which ships no metadata.
+
 ## Presenting a Data Integrity badge over OpenID4VP (`ldp_vc`)
 
 A wallet presents an OB 3.0 **Data Integrity** badge to a relying party as an OpenID4VP 1.0 `ldp_vc` credential: a W3C **Verifiable Presentation** wrapping the badge, secured by a holder **`authentication`** proof bound to the request (`challenge` = the request `nonce`, `domain` = the full, prefixed `client_id`). Building and verifying that presentation is the wallet-exchange rail — it lives in [`openvc-core`](https://pypi.org/project/openvc-core/), not here: openbadgeslib issues the badge, openvc-core carries it. Needs the `[ldp-sd]` extra (see [[Installation]]).
