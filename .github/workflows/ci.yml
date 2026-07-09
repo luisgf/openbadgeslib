@@ -50,6 +50,56 @@ jobs:
       - name: Test (pytest + coverage)
         run: pytest --cov=openbadgeslib --cov-report=term-missing
 
+  eudi:
+    # Hardening for the optional [eudi] SD-JWT VC track, which delegates its
+    # crypto to openvc-core (a separate repo). The main `test` job installs the
+    # extra alongside everything else; this job adds two guarantees it can't:
+    #   * isolation — install ONLY [dev,eudi] (no ldp/pyld), proving the track
+    #     stands on openvc-core alone;
+    #   * version-drift — run against both the pinned floor and the latest
+    #     openvc-core release, so an upstream bump fails here, not in a user's
+    #     install.
+    # Not a publish gate: the `latest` leg is an early warning
+    # (continue-on-error); the `floor` leg — the version we ship against — is
+    # authoritative. See #172.
+    name: eudi extra (openvc-core ${{ matrix.openvc }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        openvc: [floor, latest]
+    continue-on-error: ${{ matrix.openvc == 'latest' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install the package with only the [eudi] extra
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,eudi]"
+
+      - name: Pin openvc-core to the declared floor
+        if: matrix.openvc == 'floor'
+        # Keep 1.13.* in sync with the [eudi] pin in pyproject.toml.
+        run: pip install "openvc-core==1.13.*"
+
+      - name: Take the latest openvc-core release
+        if: matrix.openvc == 'latest'
+        run: pip install -U "openvc-core<2"
+
+      - name: Record the resolved openvc-core version
+        run: pip show openvc-core | grep '^Version:'
+
+      - name: Test the EUDI SD-JWT VC track (isolated) and type-check it
+        run: |
+          pytest tests/test_ob3_eudi_sd_jwt.py -v
+          mypy openbadgeslib/ob3/eudi.py
+
   publish:
     name: Publish to PyPI
     # Fires when a vX.Y.Z tag is pushed, when a GitHub Release is published, or
