@@ -264,6 +264,62 @@ class TestVerifierMiscBranches:
             _issuer_did_from_token(token)
 
 
+class TestHumanModeExitCodes:
+    """#189 — in human (non-``--json``) mode the process exit code must reflect
+    the verdict for OB1/OB2 too: an invalid badge exits non-zero (it used to
+    exit 0, so `verifier … && grant` passed on a forged/expired/revoked badge),
+    a valid badge exits 0. Mirrors OB3 and the ``--json`` path."""
+
+    @staticmethod
+    def _code(argv):
+        with patch.object(sys, 'argv', argv):
+            try:
+                openbadges_verifier.main()
+            except SystemExit as exc:
+                c = exc.code
+                return c if isinstance(c, int) else (0 if c is None else 1)
+            return 0
+
+    def test_ob2_invalid_exits_nonzero(self, tmp_path, rsa_priv_pem, rsa_pub_pem,
+                                       svg_image):
+        badge = _ob2_signed(tmp_path, rsa_priv_pem, svg_image)
+        pub = tmp_path / 'k.pem'
+        pub.write_bytes(rsa_pub_pem)
+        with patch('openbadgeslib.ob2.verifier.download_file',
+                   side_effect=_fake_dl):
+            code = self._code(['openbadges-verifier', '-i', str(badge),
+                               '-r', 'other@example.com',   # recipient mismatch
+                               '-V', '2', '-k', str(pub)])
+        assert code != 0
+
+    def test_ob2_valid_exits_zero(self, tmp_path, rsa_priv_pem, rsa_pub_pem,
+                                  svg_image):
+        badge = _ob2_signed(tmp_path, rsa_priv_pem, svg_image)
+        pub = tmp_path / 'k.pem'
+        pub.write_bytes(rsa_pub_pem)
+        with patch('openbadgeslib.ob2.verifier.download_file',
+                   side_effect=_fake_dl):
+            code = self._code(['openbadges-verifier', '-i', str(badge),
+                               '-r', 'r@example.com', '-V', '2', '-k', str(pub)])
+        assert code == 0
+
+    def test_ob1_invalid_exits_nonzero(self, tmp_path, signed_svg_rsa,
+                                       rsa_pub_pem):
+        # A well-formed OB1 badge for test@example.com, verified for a different
+        # recipient -> INVALID verdict (the else branch), which must exit
+        # non-zero. read_from_file resolves the key via download_file (mocked).
+        badge = tmp_path / 'badge.svg'
+        badge.write_bytes(signed_svg_rsa.signed)
+        pub = tmp_path / 'k.pem'
+        pub.write_bytes(rsa_pub_pem)
+        with patch('openbadgeslib.ob1.badge.download_file',
+                   return_value=rsa_pub_pem):
+            code = self._code(['openbadges-verifier', '-i', str(badge),
+                               '-r', 'wrong@example.com', '-V', '1',
+                               '-k', str(pub)])
+        assert code != 0
+
+
 def test_local_reads_key_from_config(tmp_path, rsa_priv_pem, rsa_pub_pem,
                                      svg_image, capsys):
     badge = _ob3_svg(tmp_path, rsa_priv_pem, svg_image)

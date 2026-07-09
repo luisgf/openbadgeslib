@@ -166,8 +166,11 @@ def _verify_ob2(args: argparse.Namespace) -> None:
     from .ob2 import OB2Verifier, OB2VerificationError
     from .errors import ErrorParsingFile
 
+    # _exit starts non-zero and is cleared to None only on a valid verdict, so a
+    # failed OB2 verification exits non-zero in human mode too (mirrors OB3 and
+    # the --json path); a bare `None` init would exit 0 on an invalid badge.
     result: Dict[str, Any] = {'ob_version': '2', 'recipient': args.receptor,
-                              'trusted': True, 'valid': False, '_exit': None}
+                              'trusted': True, 'valid': False, '_exit': -1}
 
     pub_pem = _resolve_trusted_pubkey(args)
 
@@ -213,6 +216,7 @@ def _verify_ob2(args: argparse.Namespace) -> None:
     # a SignedBadge is only trusted when the operator supplied the key.
     trusted = True if verification_type == 'HostedBadge' else (pub_pem is not None)
     result['valid'] = True
+    result['_exit'] = None
     result['trusted'] = trusted
     result['status'] = 'VALID'
     result['verification_type'] = verification_type
@@ -253,7 +257,9 @@ def _verify_ob1(args: argparse.Namespace) -> None:
               'new badges are better issued and verified as OB 2.0 (-V 2) or '
               'OB 3.0 (-V 3).')
 
-    result: Dict[str, Any] = {'ob_version': '1', 'recipient': args.receptor, '_exit': None}
+    # _exit starts non-zero and is cleared only on a VALID verdict (mirrors OB2
+    # and OB3), so an invalid OB1 badge exits non-zero in human mode too.
+    result: Dict[str, Any] = {'ob_version': '1', 'recipient': args.receptor, '_exit': -1}
     try:
         badge = BadgeSigned.read_from_file(args.filein)
 
@@ -277,6 +283,7 @@ def _verify_ob1(args: argparse.Namespace) -> None:
 
         if check.status is BadgeStatus.VALID:
             result['valid'] = True
+            result['_exit'] = None
             if trusted:
                 result['reason'] = None
                 if not args.json:

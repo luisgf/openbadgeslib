@@ -231,6 +231,7 @@ def test_verifier_ob2_without_trusted_key_warns(tmp_path, svg_rsa_badge, rsa_pub
 
 
 def test_verifier_ob2_wrong_receptor_reports_mismatch(tmp_path, svg_rsa_badge, rsa_pub_pem, capsys):
+    import pytest
     from openbadgeslib import openbadges_verifier
     badge_file = _make_signed_ob2_svg(tmp_path, svg_rsa_badge)
     pub = tmp_path / 'verify.pem'
@@ -241,7 +242,10 @@ def test_verifier_ob2_wrong_receptor_reports_mismatch(tmp_path, svg_rsa_badge, r
     with patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem), \
             patch('openbadgeslib.ob1.verifier.download_file', side_effect=_fake_revocation_download), \
             patch.object(sys, 'argv', argv):
-        openbadges_verifier.main()
+        # A recipient mismatch is an invalid verdict; in human mode the CLI now
+        # exits non-zero (it used to exit 0 on an invalid OB1/OB2 badge, #189).
+        with pytest.raises(SystemExit):
+            openbadges_verifier.main()
     assert '[-]' in capsys.readouterr().out
 
 
