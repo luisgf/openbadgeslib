@@ -294,3 +294,24 @@ class TestExtraAbsent:
 def test_now_is_utc_everywhere():
     # Guard against naive-datetime regressions in proof expiry handling.
     assert datetime.now(timezone.utc).tzinfo is not None
+
+
+def test_validate_proof_rejects_non_string_created():
+    # #193 -- a non-string proof.created (JSON number/bool/array) is attacker-
+    # controlled input; it must raise OB3VerificationError, not a raw
+    # AttributeError out of _parse_iso(str).replace(...).
+    from openbadgeslib.ob3.ldp import _validate_proof
+    proof = {'proofPurpose': 'assertionMethod',
+             'verificationMethod': 'did:key:z6MkTest#z6MkTest',
+             'created': 12345}
+    with pytest.raises(OB3VerificationError, match='created'):
+        _validate_proof(proof, 'assertionMethod')
+
+
+def test_validate_proof_rejects_non_string_expires():
+    from openbadgeslib.ob3.ldp import _validate_proof
+    proof = {'proofPurpose': 'assertionMethod',
+             'verificationMethod': 'did:key:z6MkTest#z6MkTest',
+             'expires': [2025]}
+    with pytest.raises(OB3VerificationError, match='expires'):
+        _validate_proof(proof, 'assertionMethod')

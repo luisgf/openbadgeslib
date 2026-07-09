@@ -129,14 +129,14 @@ def _validate_proof(proof: dict[str, Any], expected_proof_purpose: str) -> None:
     if created is not None:
         try:
             _parse_iso(created)
-        except (ValueError, TypeError) as exc:
+        except (ValueError, TypeError, AttributeError) as exc:
             raise OB3VerificationError(
                 "invalid proof.created date: %r" % (created,)) from exc
     expires = proof.get('expires')
     if expires is not None:
         try:
             expires_dt = _parse_iso(expires)
-        except (ValueError, TypeError) as exc:
+        except (ValueError, TypeError, AttributeError) as exc:
             raise OB3VerificationError(
                 "invalid proof.expires date: %r" % (expires,)) from exc
         if expires_dt < datetime.now(timezone.utc):
