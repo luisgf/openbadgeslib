@@ -36,10 +36,15 @@ import shutil
 
 
 def main() -> None:
-    if (len(sys.argv) != 2) or (sys.argv[1] == '-h'):
-        sys.exit('%s DIRECTORY' % sys.argv[0])
+    argv = sys.argv[1:]
+    usage = '%s DIRECTORY' % sys.argv[0]
+    if argv in (['-h'], ['--help']):
+        print(usage)                       # help goes to stdout, exit 0
+        return
+    if len(argv) != 1 or argv[0].startswith('-'):
+        sys.exit(usage)                    # a flag-like arg is not a directory
 
-    directory = sys.argv[1]
+    directory = argv[0]
 
     if os.path.lexists(directory):
         sys.exit('[!] %s already exists' % directory)

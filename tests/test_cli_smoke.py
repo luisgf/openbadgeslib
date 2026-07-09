@@ -28,6 +28,18 @@ def test_init_existing_directory_exits_cleanly(tmp_path):
             openbadges_init.main()
 
 
+def test_init_help_prints_usage_and_creates_nothing(tmp_path, capsys, monkeypatch):
+    # `openbadges-init --help` / `-h` must print usage and exit 0, not create a
+    # directory literally named --help (#207).
+    from openbadgeslib import openbadges_init
+    monkeypatch.chdir(tmp_path)
+    for flag in ('--help', '-h'):
+        with patch.object(sys, 'argv', ['openbadges-init', flag]):
+            openbadges_init.main()          # returns (exit 0), no SystemExit
+        assert 'DIRECTORY' in capsys.readouterr().out
+        assert not (tmp_path / flag).exists()
+
+
 def test_init_creates_directories_with_restrictive_permissions(tmp_path):
     # The keys/ subdirectory will hold private key material; openbadges_init
     # applies a 0o077 umask around the mkdir calls so every created directory
