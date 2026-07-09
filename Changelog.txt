@@ -4,6 +4,22 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.13.0 - unreleased
+
+  - feat(eudi): **opt-in X.509 / EU Trusted List trust for received SD-JWT
+    badges** (#178). `verify_badge_sd_jwt(..., x5c_trust_anchors=…)` verifies a
+    third-party badge whose issuer JWT carries an `x5c` chain by routing through
+    openvc-core's `verify_credential` pipeline, which path-validates the chain
+    to the caller's X.509 roots and **binds it to `iss`** before using the leaf
+    key — the eIDAS trust root the JWK-pinned suite path cannot reach. Build the
+    anchors from an EU Trusted List with
+    `openvc.trustlist.walk_lotl(...).certificates` (LOTL → national TLs,
+    fail-closed, caller-pinned signers, XXE-hardened) or pass your own roots.
+    JWK-pinning stays the default — exactly one of `pubkey_pem` /
+    `x5c_trust_anchors` is required — and the return type is unchanged
+    (openvc-core's `VerifiedSdJwt`). Status is not checked on this path, as on
+    the pinned one. (Closes #178)
+
 * v3.12.0 - 2026-07-09
 
   - feat(eudi): publish SD-JWT VC **Type Metadata** for the badge `vct`, so a

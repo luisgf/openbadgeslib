@@ -353,6 +353,27 @@ token = issue_badge_sd_jwt(credential, privkey_pem=priv_pem, vct=vct,
 
 The `vct#integrity` claim (a W3C SRI hash over the served bytes) pins the metadata, so a wallet fails closed on any tampering. `badge_type_metadata` / `type_metadata_document_bytes` / `type_metadata_integrity` are pure-Python (no `[eudi]` extra). For issuers who publish a did:web, `openbadges-publish -V 3` **emits this document for you**: set `[issuer] sd_jwt_vct` to a vct under `publish_url` and it is written into the webroot alongside `did.json` (byte-exact, `--check-live`-verified). The default `vct` stays the imsglobal purl, which ships no metadata.
 
+### Verifying a third-party badge via eIDAS X.509 / EU Trusted Lists
+
+`verify_badge_sd_jwt` is **JWK-pinned** by default (`pubkey_pem=…`) — right when you hold the issuer's key. To verify a badge from an **unknown** issuer whose trust root is the eIDAS X.509 world, pass `x5c_trust_anchors` instead: a received badge whose issuer JWT carries an `x5c` chain is path-validated to those roots and **bound to `iss`** before its key is used (delegated to openvc-core's `verify_credential`; the JWK-pin path cannot do X.509 trust). Needs the `[eudi]` extra.
+
+```python
+from openbadgeslib.ob3.eudi import verify_badge_sd_jwt
+
+# Build the anchors from an EU Trusted List with openvc.trustlist (LOTL ->
+# national TLs; fail-closed, caller-pinned LOTL signers, XXE-hardened). See
+# openvc's docs for walk_lotl(); it returns a TrustAnchorSet whose
+# `.certificates` are the trusted roots — or pass your own x509 roots.
+from openvc.trustlist import walk_lotl
+anchors = walk_lotl(...)                          # -> TrustAnchorSet
+
+verified = verify_badge_sd_jwt(received_badge,
+                               x5c_trust_anchors=anchors.certificates)
+print('trusted issuer:', verified.issuer)         # bound to the x5c-validated chain
+```
+
+Exactly one of `pubkey_pem` / `x5c_trust_anchors` is required; the return value is the same `VerifiedSdJwt` either way. The trust-list walk is **fail-closed** (a Trusted List that can't be fetched or whose signature can't be verified contributes zero anchors) and **caller-pinned** (no implicit root); `walk_lotl`'s `select=` filters by qualified-service type. Status is not checked on either path — check it separately if you need it.
+
 ## Presenting a Data Integrity badge over OpenID4VP (`ldp_vc`)
 
 A wallet presents an OB 3.0 **Data Integrity** badge to a relying party as an OpenID4VP 1.0 `ldp_vc` credential: a W3C **Verifiable Presentation** wrapping the badge, secured by a holder **`authentication`** proof bound to the request (`challenge` = the request `nonce`, `domain` = the full, prefixed `client_id`). Building and verifying that presentation is the wallet-exchange rail — it lives in [`openvc-core`](https://pypi.org/project/openvc-core/), not here: openbadgeslib issues the badge, openvc-core carries it. Needs the `[ldp-sd]` extra (see [[Installation]]).

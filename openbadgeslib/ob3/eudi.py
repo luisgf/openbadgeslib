@@ -223,11 +223,12 @@ def issue_badge_sd_jwt(
 def verify_badge_sd_jwt(
     token: str,
     *,
-    pubkey_pem: Any,
+    pubkey_pem: Any = None,
     audience: Optional[str] = None,
     nonce: Optional[str] = None,
     require_key_binding: bool = False,
     expected_vct: Optional[str] = OB3_SD_JWT_VCT,
+    x5c_trust_anchors: Any = None,
 ) -> Any:
     """Verify a badge SD-JWT VC (issuer form or a holder presentation).
 
@@ -235,7 +236,29 @@ def verify_badge_sd_jwt(
     ``.key_bound``, ``.confirmation``). Raises :class:`EudiError` on any failure.
     Pass *audience*/*nonce* (and ``require_key_binding=True``) to check a Key
     Binding JWT from a holder presentation.
+
+    Trust comes from exactly one of two sources:
+
+    * *pubkey_pem* — pin the issuer's public key (the default; right for a known
+      issuer whose key you already hold).
+    * *x5c_trust_anchors* — a sequence of trusted X.509 root ``Certificate``
+      objects (e.g. an EU Trusted List's ``TrustAnchorSet.certificates`` from
+      ``openvc.trustlist``). Opts into eIDAS **X.509 issuer trust**: a received
+      third-party badge whose issuer JWT carries an ``x5c`` chain is
+      path-validated to those anchors and bound to ``iss`` before its leaf key
+      is used — routed through openvc-core's ``verify_credential`` pipeline (the
+      JWK-pin suite path cannot do X.509 trust). Status is not checked here, as
+      with the pinned path.
     """
+    if x5c_trust_anchors is not None:
+        return _verify_sd_jwt_x5c(
+            token, x5c_trust_anchors, expected_vct=expected_vct,
+            audience=audience, nonce=nonce,
+            require_key_binding=require_key_binding)
+    if pubkey_pem is None:
+        raise EudiError(
+            "verify_badge_sd_jwt needs either pubkey_pem (pin the issuer's key) "
+            "or x5c_trust_anchors (eIDAS X.509 / EU Trusted List trust)")
     _, _, _, SdJwtVcProofSuite = _require_openvc()
     try:
         public_key_jwk = public_jwk_from_pem(pubkey_pem)
@@ -246,3 +269,29 @@ def verify_badge_sd_jwt(
         raise
     except Exception as exc:
         raise EudiError("SD-JWT VC badge verification failed: %s" % exc) from exc
+
+
+def _verify_sd_jwt_x5c(token: str, x5c_trust_anchors: Any, *,
+                       expected_vct: Optional[str], audience: Optional[str],
+                       nonce: Optional[str], require_key_binding: bool) -> Any:
+    """Verify a badge SD-JWT whose issuer JWT carries an ``x5c`` chain against
+    *x5c_trust_anchors* (X.509 roots), via openvc-core's ``verify_credential``
+    pipeline — which path-validates the chain and binds it to ``iss`` before
+    using the leaf key. Returns the underlying ``VerifiedSdJwt``."""
+    try:
+        from openvc import VerificationPolicy, verify_credential
+    except ImportError as exc:
+        raise EudiError(_INSTALL_HINT) from exc
+    policy = VerificationPolicy(
+        expected_vct=expected_vct, audience=audience, nonce=nonce,
+        require_key_binding=require_key_binding, require_status=False)
+    try:
+        result = verify_credential(
+            token, policy=policy, x5c_trust_anchors=x5c_trust_anchors)
+    except EudiError:
+        raise
+    except Exception as exc:
+        raise EudiError(
+            "SD-JWT VC badge verification against the X.509 trust anchors "
+            "failed: %s" % exc) from exc
+    return result.raw
