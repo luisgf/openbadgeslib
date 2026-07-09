@@ -83,6 +83,26 @@ def check_credential_status(
                      verify_list=verify_list, list_pubkey_pem=list_pubkey_pem)
 
 
+def _reject_multibit_status_size(raw_size: Any, where: str) -> None:
+    """Fail closed unless statusSize is absent or exactly 1.
+
+    Only single-bit status entries are supported; a larger statusSize would
+    require multi-bit decoding, and silently treating it as one bit could
+    misreport a revoked/suspended credential as valid.
+    """
+    if raw_size is None:
+        return
+    try:
+        size = int(raw_size)
+    except (TypeError, ValueError):
+        raise OB3VerificationError(
+            "invalid statusSize in %s: %r" % (where, raw_size))
+    if size != 1:
+        raise OB3VerificationError(
+            "unsupported statusSize %d in %s: only single-bit status entries "
+            "are supported" % (size, where))
+
+
 def _check_entry(entry: dict[str, Any], download: Callable[[str], bytes],
                  *, badge_issuer: Optional[str] = None,
                  verify_list: bool = False,
@@ -99,6 +119,11 @@ def _check_entry(entry: dict[str, Any], download: Callable[[str], bytes],
             "credentialStatus is missing a statusListCredential URL")
     index = _parse_index(entry.get("statusListIndex"))
 
+    # statusSize (bits per entry) belongs on the BitstringStatusListEntry per
+    # Bitstring Status List v1.0, so read it from the entry (the list subject is
+    # also checked below as defence in depth). Fail closed on a multi-bit entry.
+    _reject_multibit_status_size(entry.get("statusSize"), "credentialStatus entry")
+
     try:
         raw = download(list_url)
     except Exception as exc:
@@ -109,20 +134,11 @@ def _check_entry(entry: dict[str, Any], download: Callable[[str], bytes],
     try:
         doc = _status_list_document(raw)
         subject = _subject_of(doc)
-        # Bitstring Status List v1.0 allows statusSize > 1 (multi-bit entries).
-        # _bit_set below assumes exactly one bit per entry, so honouring a
-        # larger statusSize would read the wrong bits and could misreport a
-        # revoked credential as valid. Fail closed on an unsupported size rather
-        # than silently returning the wrong verdict. Absent/1 keeps 1-bit logic.
-        status_size = subject.get("statusSize", 1)
-        try:
-            status_size = int(status_size)
-        except (TypeError, ValueError):
-            raise OB3VerificationError("invalid statusSize: %r" % (status_size,))
-        if status_size != 1:
-            raise OB3VerificationError(
-                "unsupported statusSize %d: only single-bit status entries are "
-                "supported" % status_size)
+        # _bit_set below assumes exactly one bit per entry; a multi-bit list
+        # would read the wrong bits and could misreport a revoked credential as
+        # valid. statusSize is authoritatively on the entry (checked above); a
+        # list subject may also carry a default, so fail closed on that too.
+        _reject_multibit_status_size(subject.get("statusSize"), "status list")
         encoded = subject.get("encodedList")
         if not isinstance(encoded, str) or not encoded:
             raise OB3VerificationError("status list credential has no encodedList")

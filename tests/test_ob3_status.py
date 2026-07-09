@@ -136,6 +136,18 @@ class TestCheckCredentialStatus:
         cred = _credential([_status_entry(94)])  # index 94 unset -> not revoked
         check_credential_status(cred, download=_downloader(doc))
 
+    def test_multibit_statussize_on_entry_is_rejected(self):
+        # statusSize belongs on the entry (BitstringStatusListEntry) per the
+        # spec; a conformant multi-bit issuer sets it there, not on the list
+        # subject. It must be honoured, else _bit_set reads the wrong bit and a
+        # revoked multi-bit entry could be misreported as valid.
+        doc = _status_list_doc(set_indices=[7])   # list subject: no statusSize
+        entry = _status_entry(94)
+        entry['statusSize'] = 2                   # multi-bit declared on the entry
+        cred = _credential([entry])
+        with pytest.raises(OB3VerificationError, match='statusSize'):
+            check_credential_status(cred, download=_downloader(doc))
+
     # ── fail-closed paths ────────────────────────────────────────────────────
 
     def test_fetch_error_fails_closed(self):
