@@ -305,31 +305,36 @@ def _ob3_setup(conf: configparser.ConfigParser, badge: str, badge_obj: Badge,
     from .ob3 import Issuer, Achievement
     from .confparser import ob3_issuer_id, ob3_proof_format, ob3_status_config
 
+    # A missing [issuer]/[badge] key raises KeyError and the confparser helpers
+    # raise ValueError; both are config problems, so surface them as the
+    # documented IssuanceError rather than a raw traceback out of the CLI/API.
     try:
         issuer_id = ob3_issuer_id(conf)
         status_conf = ob3_status_config(conf, badge)
         proof_format = proof_format or ob3_proof_format(conf, badge)
+
+        issuer_section = conf['issuer']
+        issuer = Issuer(
+            id=issuer_id,
+            name=issuer_section['name'],
+            url=issuer_section.get('url'),
+            email=issuer_section.get('email'),
+        )
+
+        badge_section = conf[badge]
+        criteria_narrative = badge_section.get('criteria_narrative',
+                                               badge_section.get('criteria', ''))
+        achievement = Achievement(
+            id=badge_section['badge'],
+            name=badge_section['name'],
+            description=badge_section['description'],
+            criteria_narrative=criteria_narrative,
+            image_url=badge_section.get('image'),
+        )
     except ValueError as exc:
         raise IssuanceError(str(exc)) from exc
-
-    issuer_section = conf['issuer']
-    issuer = Issuer(
-        id=issuer_id,
-        name=issuer_section['name'],
-        url=issuer_section.get('url'),
-        email=issuer_section.get('email'),
-    )
-
-    badge_section = conf[badge]
-    criteria_narrative = badge_section.get('criteria_narrative',
-                                           badge_section.get('criteria', ''))
-    achievement = Achievement(
-        id=badge_section['badge'],
-        name=badge_section['name'],
-        description=badge_section['description'],
-        criteria_narrative=criteria_narrative,
-        image_url=badge_section.get('image'),
-    )
+    except KeyError as exc:
+        raise IssuanceError("missing required config key %s" % exc) from exc
 
     # create_from_conf always populates these from the badge config section.
     assert badge_obj.privkey_pem is not None and badge_obj.image is not None

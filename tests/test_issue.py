@@ -121,6 +121,14 @@ class TestIssueOb3:
         with pytest.raises(IssuanceError, match='proof_format'):
             issue_from_conf(conf, 'badge_1', 'r@example.com', '3')
 
+    def test_missing_issuer_section_raises_issuance_error(self, tmp_path):
+        # A config problem (missing [issuer]) must surface as IssuanceError, not
+        # a raw KeyError escaping the documented contract (#208).
+        conf = _write_conf(tmp_path)
+        conf.remove_section('issuer')
+        with pytest.raises(IssuanceError):
+            issue_from_conf(conf, 'badge_1', 'r@example.com', '3')
+
 
 class TestIssueOb2:
     def test_signed_returns_bytes_and_assertion(self, tmp_path):
