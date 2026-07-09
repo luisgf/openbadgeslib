@@ -140,10 +140,26 @@ def test_batch_human_summary(tmp_path, capsys):
     argv = ['openbadges-signer', '-c', str(cfg), '-b', '1', '-o', str(out),
             '-V', '3', '-E', '-r', 'a@e.com', '-r', 'b@e.com']
     with patch.object(sys, 'argv', argv):
-        openbadges_signer.main()
+        openbadges_signer.main()   # full success -> no SystemExit (exit 0)
     text = capsys.readouterr().out
     assert text.count('OB3 SIGNED') == 2
     assert '2 signed, 0 skipped, 0 failed' in text
+
+
+def test_batch_partial_exits_nonzero_in_human_mode(tmp_path, capsys):
+    # #191 -- a partial batch (a recipient skipped/failed) must exit non-zero in
+    # human mode too, not silently exit 0; only --json used to surface exit 2.
+    cfg = _write_config(tmp_path)
+    out = _out_dir(tmp_path)
+    argv = ['openbadges-signer', '-c', str(cfg), '-b', '1', '-o', str(out),
+            '-V', '3', '-E', '-r', 'a@e.com', '-r', 'b@e.com']
+    with patch.object(sys, 'argv', argv):
+        openbadges_signer.main()               # first run signs both
+    capsys.readouterr()
+    with patch.object(sys, 'argv', argv):      # re-run: both files exist -> all
+        with pytest.raises(SystemExit) as exc:  # skipped -> _exit=2 -> non-zero
+            openbadges_signer.main()
+    assert exc.value.code not in (0, None)
 
 
 def test_ob2_batch(tmp_path, capsys):

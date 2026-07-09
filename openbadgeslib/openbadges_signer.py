@@ -115,7 +115,12 @@ def main() -> None:
     if args.json:
         emit_cli_json(lambda: _run_sign(args))
         return
-    _run_sign(args)
+    # Human mode: a partial batch (some recipients skipped or failed) returns
+    # _exit=2; surface it as a non-zero exit like openbadges-publish does, so a
+    # wrapper without --json can detect it instead of seeing a bare exit 0.
+    result = _run_sign(args)
+    if result.get('_exit') == 2:
+        sys.exit(1)
 
 
 def _run_sign(args: argparse.Namespace) -> dict[str, Any]:
