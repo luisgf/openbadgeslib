@@ -101,10 +101,18 @@ LibOpenBadgesException
 │   ├── AssertionFormatIncorrect
 │   ├── NotIdentityInAssertion
 │   └── ErrorParsingFile
-└── BadgeImgFormatUnsupported
+├── BadgeImgFormatUnsupported
+└── StatusError
+    ├── StatusListFull
+    ├── UnknownCredential
+    ├── AmbiguousCredential
+    ├── AlreadyRevoked
+    ├── AlreadySuspended
+    ├── NotSuspended
+    └── RegistryCorrupt
 ```
 
-`KeyGenExceptions`, `SignerExceptions`, and `VerifierExceptions` are intermediate base classes; the leaves under each are the concrete errors raised in practice. `BadgeImgFormatUnsupported` hangs directly off `LibOpenBadgesException` (it is neither key, signer, nor verifier specific).
+`KeyGenExceptions`, `SignerExceptions`, `VerifierExceptions`, and `StatusError` are intermediate base classes; the leaves under each are the concrete errors raised in practice. `StatusError` groups the issuer-side credential-status (revocation/suspension) errors. `BadgeImgFormatUnsupported` hangs directly off `LibOpenBadgesException` (it is neither key, signer, verifier, nor status specific).
 
 `UnknownKeyType` is the one you will see most when working with `openbadgeslib.keys` — `KeyFactory`, `alg_for_key_type`, `key_to_pem`, and `detect_key_type` all raise it.
 
