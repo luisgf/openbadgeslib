@@ -34,7 +34,11 @@
 # which pulls ``openvc-core``. SD-JWT allows only Ed25519 (EdDSA) and the NIST
 # curves P-256 (ES256) / P-384 (ES384) — RSA is not in its algorithm set.
 
-from typing import Any, Iterable, Optional, cast
+import base64
+import hashlib
+import json
+
+from typing import Any, Iterable, Mapping, Optional, cast
 
 from .credential import OpenBadgeCredential
 from ..errors import LibOpenBadgesException
@@ -116,6 +120,67 @@ def badge_to_sd_jwt_claims(credential: OpenBadgeCredential) -> dict[str, Any]:
     return claims
 
 
+# ── SD-JWT VC Type Metadata (draft-ietf-oauth-sd-jwt-vc §4) ──────────────────
+# A wallet/verifier resolves the Type Metadata a badge's ``vct`` points to and
+# validates the badge against it — fail-closed (openvc-core >=1.2 does this).
+# These build that document for the OB 3.0 badge claim set plus its
+# ``vct#integrity`` SRI pin: the issuer serves ``type_metadata_document_bytes``
+# at the ``vct`` URL and pins it via ``issue_badge_sd_jwt(vct_integrity=…)``.
+# Pure-Python — no ``[eudi]`` extra needed to build or hash the document.
+
+
+def badge_type_metadata(vct: str = OB3_SD_JWT_VCT, *, name: str = "Open Badge 3.0",
+                        description: Optional[str] = None) -> dict[str, Any]:
+    """Build the SD-JWT VC Type Metadata document for the OB 3.0 badge type.
+
+    Its ``claims`` describe the payload :func:`badge_to_sd_jwt_claims` emits:
+    ``name`` / ``achievement`` / ``validFrom`` are always disclosed (``mandatory``),
+    the recipient ``credentialSubject`` and ``validUntil`` are optional (selective
+    disclosure). ``vct`` is the type identifier a wallet resolves this from — it
+    must equal the issued badge's ``vct`` (openvc-core enforces that identity
+    check). Serve :func:`type_metadata_document_bytes` of this document at *vct*
+    and pin it with :func:`type_metadata_integrity`.
+    """
+    document: dict[str, Any] = {
+        "vct": vct,
+        "name": name,
+        "claims": [
+            {"path": ["name"], "mandatory": True},
+            {"path": ["achievement"], "mandatory": True},
+            {"path": ["achievement", "name"], "mandatory": True},
+            {"path": ["validFrom"], "mandatory": True},
+            {"path": ["credentialSubject"], "sd": "allowed"},
+            {"path": ["validUntil"], "sd": "allowed"},
+        ],
+    }
+    if description is not None:
+        document["description"] = description
+    return document
+
+
+def type_metadata_document_bytes(document: Mapping[str, Any]) -> bytes:
+    """The exact UTF-8 bytes to serve for a Type Metadata *document*.
+
+    SRI integrity is checked over the literal transferred bytes (the spec does
+    no canonicalization), so the issuer MUST serve these bytes verbatim — the
+    same ones :func:`type_metadata_integrity` hashes. Serialized deterministically
+    (sorted keys, compact, ASCII) so the served document and its integrity pin
+    cannot drift apart, and the bytes are ASCII like the other published
+    artifacts.
+    """
+    return json.dumps(dict(document), sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=True).encode("ascii")
+
+
+def type_metadata_integrity(document: Mapping[str, Any]) -> str:
+    """The ``vct#integrity`` value (W3C SRI, SHA-256) for a Type Metadata
+    *document*, hashed over :func:`type_metadata_document_bytes`. Pass it to
+    :func:`issue_badge_sd_jwt` (``vct_integrity=``) and serve those same bytes at
+    the ``vct`` URL."""
+    digest = hashlib.sha256(type_metadata_document_bytes(document)).digest()
+    return "sha256-" + base64.b64encode(digest).decode("ascii")
+
+
 def issue_badge_sd_jwt(
     credential: OpenBadgeCredential,
     *,
@@ -125,6 +190,7 @@ def issue_badge_sd_jwt(
     holder_jwk: Optional[dict[str, Any]] = None,
     expires_in_s: Optional[int] = None,
     vct: str = OB3_SD_JWT_VCT,
+    vct_integrity: Optional[str] = None,
 ) -> str:
     """Issue *credential* as an SD-JWT VC.
 
@@ -132,10 +198,17 @@ def issue_badge_sd_jwt(
     *disclosable* that are actually present are made selectively disclosable.
     Pass *holder_jwk* to bind the credential to a holder key (``cnf``) for a later
     Key-Binding presentation. Ed25519, P-256 or P-384 keys only.
+
+    Pass *vct_integrity* (from :func:`type_metadata_integrity`) to embed a
+    ``vct#integrity`` claim that pins the Type Metadata served at *vct*, so a
+    wallet resolving it fails closed on any tampering — always disclosed,
+    alongside ``vct``.
     """
     _, _, _, SdJwtVcProofSuite = _require_openvc()
     signing_key = _signing_key(privkey_pem, kid or ("%s#key-1" % credential.issuer.id))
     claims = badge_to_sd_jwt_claims(credential)
+    if vct_integrity is not None:
+        claims["vct#integrity"] = vct_integrity
     present = [name for name in disclosable if name in claims]
     try:
         return cast(str, SdJwtVcProofSuite().issue(

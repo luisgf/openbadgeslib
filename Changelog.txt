@@ -4,6 +4,25 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.12.0 - unreleased
+
+  - feat(eudi): publish SD-JWT VC **Type Metadata** for the badge `vct`, so a
+    library-issued SD-JWT badge is self-describing to EUDI wallets (#176). New
+    `openbadgeslib.ob3.eudi` helpers build the Type Metadata document for the
+    OB 3.0 badge claim set (`badge_type_metadata` — `achievement`/`name`/
+    `validFrom` mandatory, the recipient `credentialSubject` selectively
+    disclosable), serialize the exact bytes to serve
+    (`type_metadata_document_bytes`) and compute its `vct#integrity` W3C SRI pin
+    (`type_metadata_integrity`); `issue_badge_sd_jwt(vct_integrity=…)` embeds
+    that pin (always disclosed, alongside `vct`). Opt-in on the publish side:
+    set `[issuer] sd_jwt_vct` to an issuer-hosted vct URL and
+    `openbadges-publish -V 3` writes the document into the webroot at that path
+    (byte-exact, covered by `--check-live`) — the imsglobal purl stays the
+    default, so nothing changes for existing issuers. Validated end to end
+    against openvc-core ≥1.2's Type Metadata verifier (resolve → integrity →
+    mandatory-claim checks): openvc-core does the verifier side, this is the
+    issuer/publisher side. (Closes #176)
+
 * v3.11.0 - 2026-07-09
 
   - feat(ldp): verify OpenBadges 3.0 credentials secured with the

@@ -39,7 +39,7 @@ import sys
 import tempfile
 
 from typing import Any, List, Optional, TYPE_CHECKING, Tuple
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from .confparser import read_config_or_exit, resolve_badge_section
 from .util import __version__, emit_cli_json
 
@@ -165,6 +165,48 @@ def _write_atomic(path: str, data: str) -> None:
     except BaseException:
         os.unlink(tmp_path)
         raise
+
+
+def _sd_jwt_vct_relpath(vct: str, publish_url: str) -> Optional[str]:
+    """The output-relative path to write Type Metadata for *vct* so that serving
+    the output dir at *publish_url* resolves it there — or ``None`` if *vct* is
+    not hosted under *publish_url* (same scheme+host, path under it)."""
+    v, p = urlparse(vct), urlparse(publish_url)
+    if (v.scheme, v.netloc) != (p.scheme, p.netloc):
+        return None
+    base = p.path if p.path.endswith('/') else p.path + '/'
+    if not v.path.startswith(base):
+        return None
+    return v.path[len(base):] or None
+
+
+def _publish_type_metadata(vct: str, publish_url: str, output: str,
+                           files_written: List[str]) -> None:
+    """Opt-in (#176): write the SD-JWT VC Type Metadata for the ``[issuer]``
+    ``sd_jwt_vct`` into the webroot so a wallet can resolve and validate a
+    library-issued SD-JWT badge. The vct must be hosted under *publish_url*; the
+    printed ``vct#integrity`` is what an issuer pins with
+    ``issue_badge_sd_jwt(vct_integrity=…)``. The pure-Python builder needs no
+    ``[eudi]`` extra."""
+    from .ob3.eudi import (badge_type_metadata, type_metadata_document_bytes,
+                           type_metadata_integrity)
+    rel = _sd_jwt_vct_relpath(vct, publish_url)
+    if rel is None:
+        print('[!] [issuer] sd_jwt_vct %r is not under publish_url %r — not '
+              'publishing its Type Metadata (host it yourself).'
+              % (vct, publish_url))
+        return
+    document = badge_type_metadata(vct)
+    served = type_metadata_document_bytes(document)
+    path = os.path.join(output, rel.replace('/', os.sep))
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    _write_atomic(path, served.decode('ascii'))
+    files_written.append(rel)
+    print('[i] Wrote SD-JWT VC Type Metadata for %s' % vct)
+    print('    Pin it on issued badges: vct_integrity=%s'
+          % type_metadata_integrity(document))
 
 
 def _query_ob3(args: argparse.Namespace,
@@ -494,6 +536,13 @@ def _publish_ob3(args: argparse.Namespace,
         _write_atomic(os.path.join(args.output, 'did.json'),
                       _dump(build_did_document(did, methods)))
         files_written.append('did.json')
+
+        # Opt-in (#176): publish the SD-JWT VC Type Metadata if the issuer hosts
+        # a vct, so library-issued SD-JWT badges are self-describing to wallets.
+        sd_jwt_vct = conf['issuer'].get('sd_jwt_vct')
+        if sd_jwt_vct:
+            _publish_type_metadata(sd_jwt_vct, publish_url, args.output,
+                                   files_written)
 
         for name, status_conf in status_confs.items():
             if status_conf is None:
