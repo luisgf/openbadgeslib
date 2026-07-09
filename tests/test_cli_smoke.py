@@ -470,6 +470,30 @@ def test_publish_ob2_creates_full_tree(tmp_path):
         assert (out / name / 'verify.pem').is_file()
 
 
+def test_publish_ob2_missing_badge_key_exits_cleanly(tmp_path):
+    # A badge section missing a required key (here: criteria) must exit cleanly
+    # in the OB2 hosted-publish path, not leak a raw KeyError mid-publish (#212).
+    import pytest
+    from pathlib import Path
+    from openbadgeslib import openbadges_publish
+    tests_dir = Path(__file__).parent
+    cfg = tmp_path / 'cfg.ini'
+    cfg.write_text('\n'.join([
+        '[paths]', 'base = %s' % tmp_path,
+        '[issuer]', 'name = I', 'url = https://example.com',
+        'publish_url = https://example.com/issuer/',
+        'revocationList = revoked.json',
+        '[badge_1]', 'name = B', 'description = d', 'image = badge.svg',
+        'public_key = %s' % (tests_dir / 'test_verify_rsa.pem'),   # criteria omitted
+    ]) + '\n')
+    out = tmp_path / 'out'
+    argv = ['openbadges-publish', '-c', str(cfg), '-o', str(out), '-V', '2']
+    with patch.object(sys, 'argv', argv):
+        with pytest.raises(SystemExit) as exc:
+            openbadges_publish.main()
+    assert 'missing required config key' in str(exc.value)
+
+
 def test_publish_existing_output_exits_cleanly(tmp_path):
     # -o pointing at an existing path must exit cleanly (SystemExit) with an
     # operator-facing message, not a raw FileExistsError.

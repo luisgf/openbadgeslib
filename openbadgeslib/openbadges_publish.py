@@ -721,6 +721,11 @@ def _publish_ob2(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
 
             # Keep the raw PEM alongside for tools that fetch it directly.
             shutil.copyfile(conf[name]['public_key'], os.path.join(badge_path, 'verify.pem'))
+    except KeyError as exc:
+        # Any issuer/badge config key this path dereferences but the config
+        # omits: report it cleanly instead of a raw traceback mid-publish.
+        sys.exit("[!] missing required config key %s to publish hosted "
+                 "OpenBadges metadata" % exc)
     finally:
         os.umask(umask)
 
@@ -774,6 +779,9 @@ def _publish_ob1(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
                 source = conf[badge_name]['public_key']
                 destination = os.path.join(badge_path, 'verify.pem')
                 shutil.copyfile(source, destination)
+        except KeyError as exc:
+            sys.exit("[!] missing required config key %s to publish hosted "
+                     "OpenBadges metadata" % exc)
         finally:
             os.umask(umask)
 
