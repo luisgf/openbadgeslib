@@ -101,6 +101,19 @@ class TestSignedUntrusted:
             result = OB2Verifier().verify(token, expected_recipient=RECIPIENT)
         assert result.verification.creator == KEY
 
+    def test_embedded_cryptographickey_in_publickey_accepted(self, rsa_priv_pem,
+                                                             rsa_pub_pem):
+        # A Profile may embed the CryptographicKey object in publicKey (a
+        # conformant OB 2.0 shape), not only reference it by IRI; ownership must
+        # still resolve via the embedded object's id (#194).
+        token, _ = _signed(rsa_priv_pem)
+        url_map = {KEY: _key_doc(rsa_pub_pem), BADGE: {'issuer': ISSUER},
+                   ISSUER: {'id': ISSUER, 'name': 'I',
+                            'publicKey': [_key_doc(rsa_pub_pem)]}}  # embedded obj
+        with patch(PATCH_TARGET, side_effect=_dl(url_map)):
+            result = OB2Verifier().verify(token, expected_recipient=RECIPIENT)
+        assert result.verification.creator == KEY
+
     def test_broken_ownership_rejected(self, rsa_priv_pem, rsa_pub_pem):
         token, _ = _signed(rsa_priv_pem)
         url_map = {KEY: _key_doc(rsa_pub_pem), BADGE: {'issuer': ISSUER},

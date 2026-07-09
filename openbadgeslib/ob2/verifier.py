@@ -156,7 +156,7 @@ class OB2Verifier:
             raise OB2VerificationError(
                 "CryptographicKey owner %r does not match the issuer Profile id %r"
                 % (key.owner, issuer_id))
-        public_keys = _as_str_list(issuer.get("publicKey"))
+        public_keys = _public_key_ids(issuer.get("publicKey"))
         if key.id not in public_keys:
             raise OB2VerificationError(
                 "Issuer Profile %r does not list the CryptographicKey %r in its "
@@ -388,6 +388,22 @@ def _as_str_list(value: Any) -> List[str]:
     if isinstance(value, list):
         return [v for v in value if isinstance(v, str)]
     return []
+
+
+def _public_key_ids(value: Any) -> List[str]:
+    """The CryptographicKey ids declared in a Profile's ``publicKey``.
+
+    ``publicKey`` may be a single value or a list, and each entry may be a
+    string IRI or an embedded ``CryptographicKey`` object (both conformant OB
+    2.0). Returns the ids, taking an embedded object's ``id``.
+    """
+    ids: List[str] = []
+    for item in (value if isinstance(value, list) else [value]):
+        if isinstance(item, str):
+            ids.append(item)
+        elif isinstance(item, dict) and isinstance(item.get("id"), str):
+            ids.append(item["id"])
+    return ids
 
 
 def _same_origin(a: str, b: str) -> bool:
