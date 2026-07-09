@@ -331,8 +331,10 @@ def verify_data_integrity_proof(
     validation, trust binding, validity window, status and recipient checks.
 
     *extra_contexts* extends the bundled @context allowlist for this call
-    only (contexts are never fetched from the network). Raises
-    :class:`OB3VerificationError` on any failure.
+    only (contexts are never fetched from the network); it is ignored for the
+    ecdsa-sd-2023 cryptosuite, which is delegated to openvc-core with the
+    bundled pinned contexts only. Raises :class:`OB3VerificationError` on any
+    failure.
     """
     if not isinstance(document, dict):
         raise OB3VerificationError("credential document must be a JSON object")
