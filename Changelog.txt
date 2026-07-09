@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v3.11.0 - unreleased
+* v3.11.0 - 2026-07-09
 
   - feat(ldp): verify OpenBadges 3.0 credentials secured with the
     **ecdsa-sd-2023** (selective disclosure) Data Integrity cryptosuite — the

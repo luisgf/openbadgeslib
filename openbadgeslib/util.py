@@ -21,7 +21,7 @@
         License along with this library.
 """
 
-__version__ = '3.10.0'
+__version__ = '3.11.0'
 
 import contextlib
 import hashlib
