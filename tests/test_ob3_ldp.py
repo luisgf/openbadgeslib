@@ -136,6 +136,26 @@ class TestOB3LdpVerifier:
         with pytest.raises(OB3VerificationError):
             OB3LdpVerifier(pubkey_pem=ed25519_pub_pem).verify(doc)
 
+    def test_expirationdate_alias_rejected(self, ldp_signed_vc, ed25519_pub_pem):
+        # expirationDate is a VC 1.1 alias undefined in the pinned contexts, so
+        # the RDF-canonicalized proof cannot sign it while the model would read
+        # it -> a holder could un-expire the badge. Reject it in the LDP path.
+        doc = copy.deepcopy(ldp_signed_vc)
+        doc['expirationDate'] = '2999-01-01T00:00:00Z'
+        with pytest.raises(OB3VerificationError, match='expirationDate'):
+            OB3LdpVerifier(pubkey_pem=ed25519_pub_pem).verify(doc)
+
+    def test_statuslist2021entry_rejected(self, ldp_signed_vc, ed25519_pub_pem):
+        # The legacy StatusList2021Entry status pointer is likewise unsigned in
+        # the LDP path (would enable un-revoke); reject it.
+        doc = copy.deepcopy(ldp_signed_vc)
+        doc['credentialStatus'] = {
+            'type': 'StatusList2021Entry', 'statusPurpose': 'revocation',
+            'statusListIndex': '0',
+            'statusListCredential': 'https://issuer.example/status/1'}
+        with pytest.raises(OB3VerificationError, match='StatusList2021Entry'):
+            OB3LdpVerifier(pubkey_pem=ed25519_pub_pem).verify(doc)
+
     def test_recipient_mismatch_rejected(self, ldp_signed_vc, ed25519_pub_pem):
         with pytest.raises(OB3VerificationError, match='Recipient mismatch'):
             OB3LdpVerifier(pubkey_pem=ed25519_pub_pem).verify(

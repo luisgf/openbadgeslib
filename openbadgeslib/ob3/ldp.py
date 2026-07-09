@@ -420,6 +420,39 @@ def add_data_integrity_proof(
     return signed
 
 
+def _reject_unsigned_ldp_aliases(doc: dict[str, Any]) -> None:
+    """Reject VC 1.1 / legacy members the model or status checker reads but an
+    RDF-canonicalized Data Integrity proof cannot cover.
+
+    eddsa-rdfc-2022 (and the delegated ecdsa-sd-2023) sign the JSON-LD
+    canonicalization, which drops any term the bundled @contexts do not define.
+    The credential model still reads the VC 1.1 date aliases
+    (``expirationDate``/``issuanceDate``) and the status checker still accepts
+    the legacy ``StatusList2021Entry`` — none of which are in the pinned
+    contexts, so in the LDP path they are UNSIGNED: a holder could rewrite them
+    (un-expire / un-revoke) with the proof still verifying. Here a credential
+    must use the VC 2.0 terms (validUntil/validFrom, BitstringStatusListEntry);
+    fail closed on the legacy shapes.
+    """
+    for alias in ("expirationDate", "issuanceDate"):
+        if alias in doc:
+            raise OB3VerificationError(
+                "Data Integrity credential carries %r, which the RDF-"
+                "canonicalized proof does not sign; use validUntil/validFrom"
+                % alias)
+    status = doc.get("credentialStatus")
+    for entry in (status if isinstance(status, list) else [status]):
+        if not isinstance(entry, dict):
+            continue
+        types = entry.get("type")
+        types = types if isinstance(types, list) else [types]
+        if "StatusList2021Entry" in types:
+            raise OB3VerificationError(
+                "Data Integrity credential uses the legacy StatusList2021Entry "
+                "status type, whose pointer the RDF-canonicalized proof does "
+                "not sign; use BitstringStatusListEntry")
+
+
 class OB3LdpVerifier:
     """Verifies OpenBadges 3.0 credentials secured with a Data Integrity
     (Linked Data Proof) embedded proof — cryptosuites eddsa-rdfc-2022 and,
@@ -475,6 +508,10 @@ class OB3LdpVerifier:
         doc = self._parse_document(document)
 
         _check_vc_types(doc)
+        # Fields the RDF-canonicalized proof cannot cover (VC 1.1 date aliases,
+        # legacy StatusList2021Entry) are unsigned in this path — reject them so
+        # a holder cannot un-expire / un-revoke a signed credential (#205).
+        _reject_unsigned_ldp_aliases(doc)
         try:
             credential = OpenBadgeCredential.from_vc_document(doc)
         except (KeyError, ValueError, TypeError) as exc:
