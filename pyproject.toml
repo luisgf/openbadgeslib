@@ -56,7 +56,7 @@ ldp = [
 # the suite is tested against, ceiling at the next major.
 # See openbadgeslib/ob3/eudi.py.
 eudi = [
-    "openvc-core>=1.8,<2",
+    "openvc-core>=1.13,<2",
 ]
 dev = [
     "pytest>=8.0",
