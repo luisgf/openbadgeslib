@@ -2,7 +2,7 @@ This page covers installing **openbadgeslib** with pip or conda, including a dev
 
 ## Requirements
 
-* **Python >= 3.10** (tested in CI on 3.10, 3.11, 3.12 and 3.13)
+* **Python >= 3.10** (tested in CI on 3.10, 3.11, 3.12, 3.13 and 3.14)
 * A web server (Apache, Nginx, or IIS) and a valid TLS certificate if you intend to publish badge metadata online
 
 ### Runtime dependencies
