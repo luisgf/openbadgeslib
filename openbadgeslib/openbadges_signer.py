@@ -134,6 +134,11 @@ def _run_sign(args: argparse.Namespace) -> dict[str, Any]:
     if args.proof_format and args.ob_version != '3':
         sys.exit("[!] --proof-format applies to OpenBadges 3.0 only (-V 3)")
 
+    if args.hosted and args.ob_version != '2':
+        # -H is only consumed on the OB2 path; guard it (default is -V 3) so a
+        # hosted request is not silently discarded, mirroring --proof-format.
+        sys.exit("[!] -H/--hosted applies to OpenBadges 2.0 only (-V 2)")
+
     evidence = args.evidence  # If no evidence, evidence=None
 
     recipients = _gather_recipients(args)

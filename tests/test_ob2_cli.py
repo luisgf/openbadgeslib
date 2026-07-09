@@ -108,6 +108,20 @@ def test_sign_v2_hosted_writes_assertion_json(tmp_path, capsys):
     assert (tmp_path / 'badge_1_recipient@example.com.assertion.json').is_file()
 
 
+def test_sign_hosted_with_v3_is_rejected(tmp_path):
+    # -H is only consumed on the OB2 path; with -V 3 (or the default) it must be
+    # a clean error, not a silently ignored flag (#206).
+    from openbadgeslib import openbadges_signer
+    cfg = _write_config(tmp_path)
+    argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
+            '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '3',
+            '-H', '-E']
+    with patch.object(sys, 'argv', argv):
+        with pytest.raises(SystemExit) as exc:
+            openbadges_signer.main()
+    assert '-H/--hosted applies to OpenBadges 2.0' in str(exc.value)
+
+
 def test_sign_v2_hosted_requires_base(tmp_path):
     from openbadgeslib import openbadges_signer
     cfg = _write_config(tmp_path, with_hosted=False)
