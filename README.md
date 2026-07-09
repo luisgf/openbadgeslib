@@ -297,6 +297,16 @@ flake8 openbadgeslib tests      # lint
 mypy                            # type check (config in pyproject.toml)
 ```
 
+## Contributing
+
+Bug reports,
+[capability requests](https://github.com/luisgf/openbadgeslib/issues/new/choose)
+(the roadmap's demand signal), and pull requests are welcome — see
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow and the supported-Python
+policy, and [`GOVERNANCE.md`](GOVERNANCE.md) for maintenance and release
+governance. Security issues go through [`SECURITY.md`](SECURITY.md), never a
+public issue.
+
 ## Changelog
 
 See [`Changelog.txt`](Changelog.txt) for the full history, and the

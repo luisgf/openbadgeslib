@@ -1,0 +1,57 @@
+name: Bug report
+description: Something in openbadgeslib does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For a suspected **security vulnerability** do **not** use this
+        form — follow [SECURITY.md](https://github.com/luisgf/openbadgeslib/blob/master/SECURITY.md)
+        (private advisory or email).
+  - type: input
+    id: version
+    attributes:
+      label: openbadgeslib version
+      description: Output of `pip show openbadgeslib`. Please try the latest release first.
+      placeholder: "3.13.0"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.12"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you observed, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: >
+        The smallest code or CLI invocation (with inputs) that shows the problem.
+        Redact any private keys or personal data.
+      render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - OB 3.0 (VC-JWT)
+        - OB 3.0 Data Integrity / LDP
+        - OB 3.0 EUDI SD-JWT
+        - OB 2.0
+        - OB 1.0
+        - CLI / config
+        - Publishing / status lists
+        - Other / not sure
+    validations:
+      required: false
