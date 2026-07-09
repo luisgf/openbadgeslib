@@ -267,6 +267,30 @@ class TestPublishGeneration:
             ['badge_1']
         assert 'Skipping [badge_2]' in capsys.readouterr().out
 
+    def test_status_loop_isolates_unclassifiable_key(self, tmp_path, capsys):
+        # A per-badge key failure in the status-list regeneration loop
+        # (detect_key_type -> UnknownKeyType, or a missing private_key/public_key
+        # config key -> KeyError) must be isolated like the did.json skip:
+        # record it and continue, not crash the whole publish with a raw
+        # traceback after did.json (which could drop an urgent badge's
+        # revocation regeneration).
+        from openbadgeslib.errors import UnknownKeyType
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        _sign(tmp_path, cfg)                     # create the registry + an entry
+        out = tmp_path / 'pub'
+        argv = ['openbadges-publish', '-c', str(cfg), '-o', str(out), '-V', '3']
+        with patch('openbadgeslib.keys.detect_key_type',
+                   side_effect=UnknownKeyType('Unable to guess Key type')), \
+                patch.object(sys, 'argv', argv):
+            try:
+                openbadges_publish.main()        # graceful non-zero exit is fine;
+            except SystemExit:                   # a raw UnknownKeyType would fail
+                pass
+        text = capsys.readouterr().out
+        assert 'Skipping [badge_1]' in text
+        assert (out / 'did.json').is_file()      # publish proceeded past the loop
+        assert not (out / 'badge_1' / 'revocation.jwt').is_file()
+
     def test_republish_over_existing_directory(self, tmp_path):
         cfg = _write_config(tmp_path, status_lists='revocation')
         _sign(tmp_path, cfg)

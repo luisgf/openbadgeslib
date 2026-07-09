@@ -549,42 +549,44 @@ def _publish_ob3(args: argparse.Namespace,
                 print('[i] [%s] has no status_lists configured; publishing no '
                       'status list for it' % name)
                 continue
+            # Isolate a per-badge failure like the did.json skip above: don't
+            # abort the whole publish — a badge_2 mid-configuration must not make
+            # an urgent badge_1 revocation appear to fail after its list was
+            # already written. Covers a missing private_key/public_key config
+            # key (KeyError) and a garbage/unclassifiable key
+            # (UnknownKeyType/LibOpenBadgesException), not only StatusError/OSError.
             try:
                 registry = StatusRegistry.load(status_conf.registry_path,
                                                status_conf.size_bits)
                 with open(conf[name]['private_key'], 'rb') as key:
                     priv_pem = key.read()
-            except (StatusError, OSError) as exc:
-                # Isolate a per-badge failure (unreadable key, corrupt registry)
-                # like the did.json skip above: don't abort the whole publish —
-                # a badge_2 mid-configuration must not make an urgent badge_1
-                # revocation appear to fail after its list was already written.
+                algorithm = alg_for_key_type(detect_key_type(priv_pem))
+
+                valid_until = None
+                if status_conf.validity_days is not None:
+                    valid_until = (datetime.now(tz=timezone.utc)
+                                   + timedelta(days=status_conf.validity_days))
+
+                badge_dir = os.path.join(args.output, name)
+                os.makedirs(badge_dir, exist_ok=True)
+                for purpose in status_conf.purposes:
+                    indices = registry.revoked_indices() if purpose == 'revocation' \
+                        else registry.suspended_indices()
+                    vc = build_status_list_credential(
+                        issuer_id, status_conf.list_urls[purpose], purpose,
+                        indices, registry.size_bits, valid_until=valid_until)
+                    token = sign_status_list_credential(vc, priv_pem, algorithm)
+                    _write_atomic(os.path.join(badge_dir, purpose + '.jwt'), token)
+                    files_written.append(os.path.join(name, purpose + '.jwt'))
+
+                # Keep the raw PEM alongside for tools that fetch it directly.
+                shutil.copyfile(conf[name]['public_key'],
+                                os.path.join(badge_dir, 'verify.pem'))
+                files_written.append(os.path.join(name, 'verify.pem'))
+            except (StatusError, OSError, KeyError, LibOpenBadgesException) as exc:
                 print('[!] Skipping [%s] status lists — %s' % (name, exc))
                 failures.append(name)
                 continue
-            algorithm = alg_for_key_type(detect_key_type(priv_pem))
-
-            valid_until = None
-            if status_conf.validity_days is not None:
-                valid_until = (datetime.now(tz=timezone.utc)
-                               + timedelta(days=status_conf.validity_days))
-
-            badge_dir = os.path.join(args.output, name)
-            os.makedirs(badge_dir, exist_ok=True)
-            for purpose in status_conf.purposes:
-                indices = registry.revoked_indices() if purpose == 'revocation' \
-                    else registry.suspended_indices()
-                vc = build_status_list_credential(
-                    issuer_id, status_conf.list_urls[purpose], purpose,
-                    indices, registry.size_bits, valid_until=valid_until)
-                token = sign_status_list_credential(vc, priv_pem, algorithm)
-                _write_atomic(os.path.join(badge_dir, purpose + '.jwt'), token)
-                files_written.append(os.path.join(name, purpose + '.jwt'))
-
-            # Keep the raw PEM alongside for tools that fetch it directly.
-            shutil.copyfile(conf[name]['public_key'],
-                            os.path.join(badge_dir, 'verify.pem'))
-            files_written.append(os.path.join(name, 'verify.pem'))
     finally:
         os.umask(umask)
 
