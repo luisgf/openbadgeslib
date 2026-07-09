@@ -8,7 +8,7 @@ Create the config directory and a starter `config.ini`:
 openbadges-init ./config
 ```
 
-The example config ships with two badge sections (`[badge_1]`, `[badge_2]`), an `[issuer]` section, and `[paths]` pointing keys at `${base}/keys`. Edit the issuer details and at least one `[badge_*]` section before continuing. The default key type is RSA (`key_type = RSA`; `ECC` is the alternative).
+The example config ships with two badge sections (`[badge_1]`, `[badge_2]`), an `[issuer]` section, and `[paths]` pointing keys at `${base}/keys`. Edit the issuer details and at least one `[badge_*]` section before continuing. The default key type is RSA (`key_type = RSA`; `ECC` and `ED25519` are the alternatives — Ed25519 is required for the OB 3.0 Data Integrity / LDP proof format).
 
 ## 2. Generate a key pair
 
