@@ -130,6 +130,29 @@ def test_keygenerator_generates_rsa_by_default(tmp_path):
     assert detect_key_type(pub) is KeyType.RSA
 
 
+def test_keygenerator_missing_key_config_exits_cleanly(tmp_path):
+    # A badge section without private_key/public_key must exit cleanly, not
+    # leak a raw KeyError (#210).
+    import pytest
+    from openbadgeslib import openbadges_keygenerator
+    (tmp_path / 'log').mkdir()
+    cfg = tmp_path / 'config.ini'
+    cfg.write_text(
+        "[paths]\n"
+        f"base = {tmp_path}\n"
+        f"base_key = {tmp_path}/keys\n"
+        f"base_log = {tmp_path}/log\n"
+        f"base_image = {tmp_path}/images\n\n"
+        "[logs]\ngeneral = general.log\nsigner = signer.log\n\n"
+        "[issuer]\nname = Test Issuer\n\n"
+        "[badge_1]\nname = Badge 1\n")   # no private_key/public_key
+    with patch.object(sys, 'argv',
+                      ['openbadges-keygenerator', '-c', str(cfg), '-g', '1']):
+        with pytest.raises(SystemExit) as exc:
+            openbadges_keygenerator.main()
+    assert 'private_key' in str(exc.value)
+
+
 def test_keygenerator_json_success(tmp_path, capsys):
     import json
     import pytest
@@ -300,6 +323,20 @@ def test_verifier_local_missing_pubkey_file_exits_cleanly(tmp_path):
         '[paths]\nbase = .\n\n'
         '[badge_missing]\npublic_key = %s\n' % (tmp_path / 'nonexistent.pem'))
     args = argparse.Namespace(local='missing', pubkey=None, config=str(cfg))
+    with pytest.raises(SystemExit):
+        openbadges_verifier._resolve_trusted_pubkey(args)
+
+
+def test_verifier_local_missing_pubkey_config_key_exits_cleanly(tmp_path):
+    # A badge section that omits the public_key key entirely (not just a missing
+    # file) must exit cleanly, not leak a raw KeyError (#210).
+    import argparse
+    import pytest
+    from openbadgeslib import openbadges_verifier
+
+    cfg = tmp_path / 'config.ini'
+    cfg.write_text('[paths]\nbase = .\n\n[badge_nokey]\nname = B\n')  # no public_key
+    args = argparse.Namespace(local='nokey', pubkey=None, config=str(cfg))
     with pytest.raises(SystemExit):
         openbadges_verifier._resolve_trusted_pubkey(args)
 

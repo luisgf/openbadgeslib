@@ -98,6 +98,10 @@ def _generate(args: argparse.Namespace) -> dict[str, Any]:
     conf = read_config_or_exit(args.config)
     badge = resolve_badge_section(conf, args.genkey)
 
+    for key in ('private_key', 'public_key'):
+        if key not in conf[badge]:
+            sys.exit("[!] [%s] is missing the required '%s' config key"
+                     % (badge, key))
     private_key = conf[badge]['private_key']
     public_key = conf[badge]['public_key']
 

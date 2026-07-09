@@ -53,6 +53,10 @@ def _resolve_trusted_pubkey(args: argparse.Namespace) -> Optional[bytes]:
     if args.local:
         conf = read_config_or_exit(args.config)
         section = resolve_badge_section(conf, args.local)
+        if 'public_key' not in conf[section]:
+            print("[!] [%s] is missing the required 'public_key' config key"
+                  % section)
+            sys.exit(-1)
         key_path = conf[section]['public_key']
         if not os.path.isfile(key_path):
             print('[!] Public key file %s NOT exists.' % key_path)
