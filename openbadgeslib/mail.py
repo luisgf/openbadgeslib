@@ -21,6 +21,7 @@
         License along with this library.
 """
 
+import ssl
 from typing import Any, Optional, Tuple
 from smtplib import SMTP_SSL, SMTP, SMTPException
 from os.path import basename
@@ -75,7 +76,12 @@ class BadgeMail():
         try:
             smtp: Any
             if self.use_ssl:
-                smtp = SMTP_SSL(self.smtp_server, self.smtp_port)
+                # Validate the server certificate and hostname. SMTP_SSL's
+                # default context does neither (check_hostname=False,
+                # CERT_NONE), which would let an on-path attacker intercept the
+                # connection and capture the AUTH credentials sent below.
+                smtp = SMTP_SSL(self.smtp_server, self.smtp_port,
+                                context=ssl.create_default_context())
             else:
                 smtp = SMTP(self.smtp_server, self.smtp_port)
 

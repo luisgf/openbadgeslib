@@ -56,6 +56,19 @@ class TestSend:
         ssl.login.assert_called_once_with('u', 'p')
         ssl.sendmail.assert_called_once()
 
+    def test_ssl_uses_a_validating_tls_context(self):
+        # SMTP_SSL must be given a context that validates the server cert and
+        # hostname; its default context does neither, which would expose the
+        # AUTH credentials to an on-path attacker (#203).
+        import ssl as ssl_mod
+        mail = _ready_mail(use_ssl=True, username='u', password='p')
+        with patch('openbadgeslib.mail.SMTP_SSL') as ssl_cls:
+            mail.send(_badge())
+        ctx = ssl_cls.call_args.kwargs.get('context')
+        assert ctx is not None
+        assert ctx.check_hostname is True
+        assert ctx.verify_mode == ssl_mod.CERT_REQUIRED
+
     def test_smtp_error_is_reported_not_raised(self, capsys):
         from smtplib import SMTPException
         mail = _ready_mail()
