@@ -58,6 +58,16 @@ ldp = [
 eudi = [
     "openvc-core>=1.13,<2",
 ]
+# ecdsa-sd-2023 (selective disclosure) VERIFY for the OB 3.0 Data Integrity
+# track: credentials secured with the ecdsa-sd-2023 cryptosuite are verified by
+# delegating the large, security-sensitive selective-disclosure crypto to
+# openvc-core's audited EcdsaSdProofSuite — openbadgeslib keeps the OB3 model,
+# trust binding and lifecycle checks. Pulls openvc-core with its RDF
+# canonicalization (pyld). Native eddsa-rdfc-2022 stays under [ldp]; issuance of
+# ecdsa-sd-2023 is out of scope. See openbadgeslib/ob3/ldp.py.
+ldp-sd = [
+    "openvc-core[data-integrity]>=1.13,<2",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",

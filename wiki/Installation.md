@@ -49,6 +49,18 @@ Nothing else needs it: the default proof format stays JWT-VC, and without the
 extra the rest of the library works unchanged (attempting to sign or verify a
 Data Integrity credential reports the missing extra with an install hint).
 
+```sh
+pip install "openbadgeslib[ldp-sd]"
+```
+
+The `[ldp-sd]` extra adds **verify** support for the selective-disclosure
+cryptosuite `ecdsa-sd-2023` (W3C vc-di-ecdsa), delegating the crypto to
+[`openvc-core`](https://pypi.org/project/openvc-core/) — a Displayer must verify
+both Data Integrity suites to conform to the 1EdTech OB 3.0 certification. It is
+self-contained (pulls its own JSON-LD processor), so it works with or without
+`[ldp]`; **issuing** `ecdsa-sd-2023` is out of scope. Without the extra,
+verifying such a credential fails closed with an install hint.
+
 ## Development install
 
 Clone the repository and install in editable mode together with the test and lint dependencies:

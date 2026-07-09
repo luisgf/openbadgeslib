@@ -23,8 +23,17 @@
 # OpenBadges 3.0 credentials secured with a W3C Data Integrity proof (the
 # OB 3.0 "Linked Data Proof" format) — issuance and verification, the
 # counterpart of the JWT-VC signer/verifier for the other proof format the
-# spec allows. Supported cryptosuite: eddsa-rdfc-2022 (W3C Recommendation
-# vc-di-eddsa).
+# spec allows.
+#
+# Cryptosuites: eddsa-rdfc-2022 (W3C Recommendation vc-di-eddsa) is issued and
+# verified natively here. ecdsa-sd-2023 (selective disclosure, vc-di-ecdsa) is
+# VERIFY-only and delegated to openvc-core's audited EcdsaSdProofSuite — the
+# large, security-sensitive selective-disclosure machinery (CBOR base/derived
+# proofs, HMAC label maps, per-statement signatures) lives there rather than
+# duplicated here; it needs the optional [ldp-sd] extra. openbadgeslib keeps the
+# OB3 model, trust binding and lifecycle checks around it. Issuing ecdsa-sd-2023
+# stays out of scope until there is named demand (verify-only for Displayer
+# parity per the 1EdTech certification requirement).
 #
 # The algorithm, shared by both directions: RDFC-1.0-canonicalize the
 # document without its proof and the proof options without proofValue (with
@@ -49,7 +58,7 @@ from .. import baking
 from ..errors import ErrorSigningFile
 from ..keys import KeyType, detect_key_type, key_to_pem
 from ..util import __version__
-from .contexts import UnknownContextError, document_loader
+from .contexts import UnknownContextError, bundled_contexts, document_loader
 from .credential import OpenBadgeCredential, _iso, _parse_iso
 from .did import (_b58btc_decode, _b58btc_encode, _public_key_to_pem,
                   did_key_from_pem, resolve_verification_method)
@@ -226,11 +235,86 @@ def _verify_eddsa_rdfc_2022(document: dict[str, Any], proof: dict[str, Any], pub
             "could not verify the Data Integrity proof: %s" % exc) from exc
 
 
-#: Registry of supported cryptosuites. ecdsa-sd-2023 (selective disclosure)
-#: is deliberately absent — deferred until there is real interop demand; an
-#: unknown suite fails closed naming the supported ones.
+def _require_openvc_ecdsa_sd() -> tuple[Any, Any]:
+    """Import openvc-core's ecdsa-sd-2023 suite (and its error root), or fail
+    with an actionable hint. The selective-disclosure crypto is delegated, not
+    reimplemented — see the module docstring."""
+    try:
+        from openvc.proof.ecdsa_sd import EcdsaSdProofSuite
+        from openvc.proof.errors import ProofError
+    except ImportError as exc:
+        raise OB3VerificationError(
+            "verifying ecdsa-sd-2023 (selective-disclosure) Data Integrity "
+            "proofs requires the optional openvc-core dependency; install it "
+            "with: pip install openbadgeslib[ldp-sd]") from exc
+    return EcdsaSdProofSuite, ProofError
+
+
+def _p256_pem_to_jwk(pubkey_pem: bytes) -> dict[str, str]:
+    """A NIST P-256 public-key PEM as the JWK openvc-core's ecdsa-sd-2023
+    verifier takes. Rejects any non-P-256 key (the cryptosuite is P-256 only)
+    before it reaches the suite."""
+    import base64
+
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import load_pem_public_key
+    try:
+        pub = load_pem_public_key(pubkey_pem)
+    except Exception as exc:
+        raise OB3VerificationError(
+            "unusable verification key: %s" % exc) from exc
+    if not (isinstance(pub, ec.EllipticCurvePublicKey)
+            and isinstance(pub.curve, ec.SECP256R1)):
+        raise OB3VerificationError(
+            "ecdsa-sd-2023 requires a NIST P-256 verification key")
+    numbers = pub.public_numbers()
+
+    def _b64u(value: int) -> str:
+        return base64.urlsafe_b64encode(
+            value.to_bytes(32, 'big')).rstrip(b'=').decode('ascii')
+
+    return {'kty': 'EC', 'crv': 'P-256',
+            'x': _b64u(numbers.x), 'y': _b64u(numbers.y)}
+
+
+def _verify_ecdsa_sd_2023(document: dict[str, Any], proof: dict[str, Any],
+                          pubkey_pem: bytes, loader: Any) -> None:
+    """Verify one ecdsa-sd-2023 derived proof by delegating to openvc-core.
+
+    openvc-core owns the whole selective-disclosure verification — its own RDF
+    canonicalization plus the base and per-statement P-256 signatures;
+    openbadgeslib only resolves/pins the key and feeds its pinned OB3 @context
+    allowlist, so canonicalization is fail-closed and never touches the network.
+    *loader* (openbadgeslib's own pyld loader) is unused here — the delegate
+    canonicalizes with its engine.
+    """
+    del loader
+    EcdsaSdProofSuite, ProofError = _require_openvc_ecdsa_sd()
+    public_key_jwk = _p256_pem_to_jwk(pubkey_pem)
+    try:
+        EcdsaSdProofSuite().verify(
+            document,
+            public_key_jwk=public_key_jwk,
+            expected_proof_purpose=proof.get('proofPurpose'),
+            extra_contexts=bundled_contexts(),
+        )
+    except ProofError as exc:
+        raise OB3VerificationError(
+            "Invalid ecdsa-sd-2023 Data Integrity proof: %s" % exc) from exc
+    except OB3VerificationError:
+        raise
+    except Exception as exc:
+        raise OB3VerificationError(
+            "could not verify the ecdsa-sd-2023 proof: %s" % exc) from exc
+
+
+#: Registry of supported cryptosuites -> verify callback. eddsa-rdfc-2022 is
+#: verified natively; ecdsa-sd-2023 (selective disclosure) is VERIFY-only and
+#: delegated to openvc-core (needs the [ldp-sd] extra — see the module
+#: docstring). An unknown suite fails closed naming the supported ones.
 _CRYPTOSUITES: Dict[str, Callable[[dict[str, Any], dict[str, Any], bytes, Any], None]] = {
     'eddsa-rdfc-2022': _verify_eddsa_rdfc_2022,
+    'ecdsa-sd-2023': _verify_ecdsa_sd_2023,
 }
 
 
@@ -336,7 +420,11 @@ def add_data_integrity_proof(
 
 class OB3LdpVerifier:
     """Verifies OpenBadges 3.0 credentials secured with a Data Integrity
-    (Linked Data Proof) embedded proof — cryptosuite eddsa-rdfc-2022.
+    (Linked Data Proof) embedded proof — cryptosuites eddsa-rdfc-2022 and,
+    for selective-disclosure credentials, ecdsa-sd-2023 (verify delegated to
+    openvc-core). A derived ecdsa-sd-2023 proof reveals only the mandatory plus
+    holder-disclosed statements, so the reconstructed credential reflects just
+    what the holder chose to show.
 
     Mirrors :class:`OB3Verifier` (the JWT-VC verifier) in API and trust
     model, for the other proof format OB 3.0 allows:
@@ -348,8 +436,9 @@ class OB3LdpVerifier:
       proves internal consistency, not issuer identity — so callers should
       treat it as untrusted unless the DID itself is trusted.
 
-    Requires the optional ``[ldp]`` extra (``pip install openbadgeslib[ldp]``)
-    at verification time; constructing the verifier works without it.
+    eddsa-rdfc-2022 needs the optional ``[ldp]`` extra (pyld); ecdsa-sd-2023
+    needs ``[ldp-sd]`` (openvc-core). The required extra is imported lazily at
+    verification time; constructing the verifier works without either.
     """
 
     def __init__(self, pubkey_pem: Any = None,

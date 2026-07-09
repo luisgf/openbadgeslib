@@ -4,6 +4,24 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.11.0 - unreleased
+
+  - feat(ldp): verify OpenBadges 3.0 credentials secured with the
+    **ecdsa-sd-2023** (selective disclosure) Data Integrity cryptosuite — the
+    verify-only slice of #171. A derived proof is verified by delegating the
+    large, security-sensitive selective-disclosure crypto (CBOR base/derived
+    proofs, HMAC label maps, per-statement P-256 signatures) to openvc-core's
+    audited `EcdsaSdProofSuite`; openbadgeslib keeps the OB3 model, the trust
+    binding (proof `verificationMethod` ↔ credential issuer) and the lifecycle
+    checks around it, and hands the delegate its pinned OB3 `@context`
+    allowlist so canonicalization stays fail-closed and never touches the
+    network. It plugs into the `_CRYPTOSUITES` registry beside eddsa-rdfc-2022,
+    so `OB3LdpVerifier` accepts both transparently. Verify-only for Displayer
+    parity (1EdTech OB3 certification requires verifying both suites); issuing
+    ecdsa-sd-2023 stays out of scope. Needs the new `[ldp-sd]` extra
+    (`openvc-core[data-integrity]`, self-contained — pulls its own pyld); a
+    missing extra fails closed with an actionable install hint. (Closes #171)
+
 * v3.10.0 - 2026-07-08
 
   - feat(publish): `openbadges-publish -V 3 --check-live` completes #164. After
