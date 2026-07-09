@@ -179,10 +179,14 @@ class TestProofValidation:
         return copy.deepcopy(ldp_signed_vc)
 
     def test_unknown_cryptosuite_fails_closed(self, ldp_signed_vc):
+        # A real Data Integrity suite openbadgeslib does not implement (only the
+        # whole-document eddsa-rdfc-2022 and selective-disclosure ecdsa-sd-2023
+        # are supported); the failure names the supported set.
         doc = self._base(ldp_signed_vc)
-        doc['proof']['cryptosuite'] = 'ecdsa-sd-2023'
+        doc['proof']['cryptosuite'] = 'ecdsa-rdfc-2019'
         with pytest.raises(OB3VerificationError,
-                           match='supported cryptosuites: eddsa-rdfc-2022'):
+                           match='supported cryptosuites: ecdsa-sd-2023, '
+                                 'eddsa-rdfc-2022'):
             OB3LdpVerifier().verify(doc)
 
     def test_wrong_proof_type_fails_closed(self, ldp_signed_vc):

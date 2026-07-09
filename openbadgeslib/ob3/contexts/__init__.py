@@ -112,6 +112,17 @@ def load_context(url: str) -> dict[str, Any]:
     return document
 
 
+def bundled_contexts() -> Dict[str, dict[str, Any]]:
+    """The whole pinned allowlist as a ``{url: context document}`` map.
+
+    For handing openbadgeslib's fail-closed context set to another Data
+    Integrity engine that takes its own ``extra_contexts`` (e.g. openvc-core's
+    verifier for the delegated ecdsa-sd-2023 path), so it canonicalizes against
+    exactly these pinned documents and never the network.
+    """
+    return {url: load_context(url) for url in _URL_TO_RESOURCE}
+
+
 def document_loader(
         extra_contexts: Optional[Mapping[str, dict[str, Any]]] = None,
 ) -> Callable[[str, Any], dict[str, Any]]:
