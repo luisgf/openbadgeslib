@@ -178,9 +178,11 @@ So `expected_recipient='recipient@example.com'` and `expected_recipient='mailto:
 ## Verifying Data Integrity (LDP) credentials — `OB3LdpVerifier`
 
 OB 3.0 allows a second proof format besides VC-JWT: a JSON-LD credential with
-an embedded **W3C Data Integrity proof**. `OB3LdpVerifier` verifies those
-(cryptosuite `eddsa-rdfc-2022`; requires the `[ldp]` extra — see
-[[Installation]]) with the same API and trust model as `OB3Verifier`:
+an embedded **W3C Data Integrity proof**. `OB3LdpVerifier` verifies those with
+the same API and trust model as `OB3Verifier`, across two cryptosuites:
+`eddsa-rdfc-2022` (whole-document; the `[ldp]` extra) and, for selective
+disclosure, `ecdsa-sd-2023` (verify delegated to `openvc-core`; the `[ldp-sd]`
+extra) — see [[Installation]]:
 
 ```python
 from openbadgeslib.ob3 import OB3LdpVerifier
@@ -210,7 +212,9 @@ test vectors) the crypto core is exposed as
 which checks only the proof itself. `@context` documents are **never fetched
 from the network** — canonicalization uses the contexts bundled with the
 library (see [[Security Model]]); `extra_contexts` extends that allowlist per
-call. An unsupported cryptosuite (e.g. `ecdsa-sd-2023`) fails closed naming
+call. `ecdsa-sd-2023` (selective disclosure) is verified by delegating to
+`openvc-core` (the `[ldp-sd]` extra); a cryptosuite the library supports
+neither natively nor by delegation (e.g. `ecdsa-rdfc-2019`) fails closed naming
 the supported ones.
 
 ## Issuing Data Integrity (LDP) credentials — `OB3LdpSigner`
@@ -330,6 +334,36 @@ assert result.key_bound
 ```
 
 The OID4VCI / OID4VP wallet-exchange protocol itself lives in `openvc-core`, not here: this module maps a badge to and from SD-JWT VC claims and runs the issuer/holder crypto through it.
+
+## Presenting a Data Integrity badge over OpenID4VP (`ldp_vc`)
+
+A wallet presents an OB 3.0 **Data Integrity** badge to a relying party as an OpenID4VP 1.0 `ldp_vc` credential: a W3C **Verifiable Presentation** wrapping the badge, secured by a holder **`authentication`** proof bound to the request (`challenge` = the request `nonce`, `domain` = the full, prefixed `client_id`). Building and verifying that presentation is the wallet-exchange rail — it lives in [`openvc-core`](https://pypi.org/project/openvc-core/), not here: openbadgeslib issues the badge, openvc-core carries it. Needs the `[ldp-sd]` extra (see [[Installation]]).
+
+```python
+from openvc.proof.data_integrity import DataIntegrityProofSuite  # eddsa-rdfc-2022
+from openvc.openid4vp import verify_vp_token
+from openbadgeslib.ob3.contexts import bundled_contexts
+
+# openbadgeslib issued `secured_badge` (an OB3LdpSigner document). The holder
+# wraps it in a VP and signs an `authentication` proof bound to the request:
+vp = DataIntegrityProofSuite().add_proof(
+    {'@context': ['https://www.w3.org/ns/credentials/v2'],
+     'type': ['VerifiablePresentation'], 'holder': holder_did,
+     'verifiableCredential': [secured_badge]},
+    signing_key=holder_key, verification_method=holder_vm,
+    proof_purpose='authentication', challenge=nonce, domain=client_id,
+    extra_contexts=bundled_contexts())         # OB3 @context, fail-closed
+
+# The verifier checks the vp_token against its DCQL query and request binding:
+result = verify_vp_token(
+    {'c1': [vp]}, dcql_query={'credentials': [{'id': 'c1', 'format': 'ldp_vc'}]},
+    nonce=nonce, client_id=client_id, extra_contexts=bundled_contexts(),
+    require_holder_binding=True)                # embedded subject must be the holder
+(p,) = result.presentations
+assert p.format == 'ldp_vc' and p.holder == holder_did
+```
+
+Pass openbadgeslib's `bundled_contexts()` as `extra_contexts` so openvc-core canonicalizes the badge against the same pinned OB 3.0 `@context` set, never the network. The reported `holder` is the **authenticated** signer (never a self-asserted `holder` field); `require_holder_binding=True` additionally demands every embedded credential's `credentialSubject.id` equal that holder. Runnable end to end in [`examples/ob3_openid4vp_presentation.py`](https://github.com/luisgf/openbadgeslib/blob/master/examples/ob3_openid4vp_presentation.py).
 
 ## Errors
 
