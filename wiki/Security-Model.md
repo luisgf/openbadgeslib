@@ -2,17 +2,21 @@ This page explains what openbadgeslib actually proves when it verifies a badge, 
 
 ## Trust starts with a key you supply
 
-A cryptographic signature only proves that *whoever holds the matching private key* signed the badge. It says nothing about whether that key belongs to the issuer you trust. An OB2 badge can even point at its own verification key (`badge.source.pub_key`, downloaded from a URL baked inside the untrusted badge), so trusting that key blindly would let an attacker self-sign forgeries and have them "verify".
+A cryptographic signature only proves that *whoever holds the matching private key* signed the badge. It says nothing about whether that key belongs to the issuer you trust. An OB2 badge can even point at its own verification key (`verification.creator`, a URL baked inside the untrusted badge that resolves to a `CryptographicKey`), so trusting that key blindly would let an attacker self-sign forgeries and have them "verify".
 
 openbadgeslib therefore distinguishes a **trusted operator key** from the **badge-embedded key**:
 
 - When you pass a trusted public key (`--local` to resolve it from your config, or `--pubkey FILE` to point at a PEM directly), OB2 verification runs against that key. A success is a real positive verdict — `[+]`.
 - When you pass **no** trusted key, OB2 falls back to the key the badge itself points to. The signature can still be checked for internal consistency, but the verdict is downgraded to *internally consistent only* and reported with the `[~]` warning marker, because the embedded key proves nothing about issuer identity.
 
-In `ob2/verifier.py` this is the `Verifier.check_jws_signature` logic:
+In `ob2/verifier.py` this is the `OB2Verifier._verify_signed` logic — a trusted operator key is used directly, otherwise the key the badge declares (`verification.creator`) is resolved and the verdict is downgraded:
 
 ```python
-verify_key = self.verify_key if self.verify_key is not None else badge.source.pub_key
+if self.trusted_pubkey_pem is not None:
+    self._verify_jws(token, self.trusted_pubkey_pem)             # trusted -> [+]
+else:
+    key = self._resolve_creator(assertion.verification.creator)  # badge-declared -> [~]
+    self._verify_jws(token, key.public_key_pem.encode('utf-8'))
 ```
 
 For a verdict you can rely on, always supply your own key:
