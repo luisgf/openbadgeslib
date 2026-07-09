@@ -316,4 +316,4 @@ Exit-code contract (shared across the `--json` paths):
 
 `openbadges-publish -V 3 --json` is defined for OpenBadges 3.0 only (the OB1/OB2 hosted-metadata paths have no JSON contract); combining `--json` with `-V 1`/`-V 2` is rejected.
 
-> Note: without `--json`, the human-mode exit codes are **not** part of this contract and are inconsistent across versions for historical reasons (e.g. an invalid OB1/OB2 badge exits `0`, an OB3 one exits non-zero). Unifying them is a breaking change reserved for the 4.0.0 release. Gate automation on `--json`.
+> Note: without `--json`, an **invalid** badge exits non-zero and a valid one exits `0` across OB1/OB2/OB3. The trusted-vs-untrusted distinction (exit `2`) is only surfaced by `--json`, so gate automation that needs it on `--json`.
