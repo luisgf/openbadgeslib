@@ -1,0 +1,54 @@
+name: Capability request
+description: Request a feature or capability — and give the use case that justifies it.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Several roadmap items are built **when someone asks with a concrete use case** — this
+        form is that signal. The clearer the use case, the sooner it can land.
+  - type: textarea
+    id: capability
+    attributes:
+      label: What capability do you want?
+    validations:
+      required: true
+  - type: textarea
+    id: usecase
+    attributes:
+      label: Concrete use case
+      description: >
+        What are you building, and what does this unblock? This is the part that prioritises
+        the work.
+    validations:
+      required: true
+  - type: dropdown
+    id: track
+    attributes:
+      label: Which track / spec?
+      options:
+        - OB 3.0 (VC-JWT)
+        - OB 3.0 Data Integrity / LDP
+        - OB 3.0 EUDI SD-JWT / eIDAS
+        - OB 2.0
+        - CLI / tooling
+        - Other
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds
+      description: Anything you have tried, or existing tools that do part of this.
+    validations:
+      required: false
+  - type: dropdown
+    id: help
+    attributes:
+      label: Would you help?
+      options:
+        - I can test a prototype
+        - I can contribute a PR
+        - I am just requesting
+    validations:
+      required: false
