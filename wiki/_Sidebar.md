@@ -28,5 +28,6 @@
 **Project**
 - [[Contributing]]
 - [[Releasing]]
+- [[Upgrading to 4.0]]
 - [Changelog](https://github.com/luisgf/openbadgeslib/blob/master/Changelog.txt)
 - [[Authors License and FAQ]]

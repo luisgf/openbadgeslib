@@ -13,6 +13,8 @@ with W3C Bitstring Status Lists and `did:web`. It also ships strict
 **OpenBadges 2.0** (JWS / hosted assertions) and a frozen **OpenBadges 1.0**
 legacy format, selected with `-V {1,2,3}` (default `3`).
 
+> **Heads-up — 4.0.0 is coming.** Timed to Python 3.10's end of life (2026-10), the next major groups a few breaking changes: Python 3.10 is dropped (`requires-python >= 3.11`), the CLIs unify on one `0/1/2` exit-code contract, and the legacy pycryptodome/python-ecdsa compat shim is removed. OpenBadges 1.0 and the `openbadges-<command>` scripts stay. See **[Upgrading to 4.0](https://github.com/luisgf/openbadgeslib/wiki/Upgrading-to-4.0)** before pinning a major.
+
 ## Features
 
 - Sign badge images (SVG and PNG) as strict OB 2.0 JWS / hosted assertions (with a frozen OB 1.0 legacy format)

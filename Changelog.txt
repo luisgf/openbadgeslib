@@ -44,6 +44,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
   - fix(keygenerator): switch on debug logging at the start of the run, so `-d`
     also covers config reading and validation — not just the tail of key
     generation, where `enable_debug_logging` used to sit.
+  - docs: announce the 4.0.0 deprecation window ahead of the release — a new
+    "Upgrading to 4.0" wiki page (dropped Python 3.10, the unified 0/1/2
+    exit-code contract, the removed pycryptodome/python-ecdsa compat) linked
+    from the sidebar, plus a README heads-up.
 
 * v3.13.0 - 2026-07-09
 
