@@ -26,6 +26,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
+# Shared JSON helpers live in openbadgeslib._jsonmodel now (deduplicated with
+# ob2.models). Re-exported (X as X) so the ob3 modules and tests that do
+# `from .credential import _iso, _parse_iso` keep working.
+from .._jsonmodel import (
+    _iso as _iso, _parse_iso as _parse_iso,
+    _as_dict as _as_dict, _require as _require,
+)
+
 _VC2_CONTEXT = "https://www.w3.org/ns/credentials/v2"
 
 OB3_CONTEXT = [
@@ -63,18 +71,6 @@ def _validate_context(ctx: Any) -> None:
     if not (isinstance(ctx[1], str) and _OB_CONTEXT_RE.match(ctx[1])):
         raise ValueError(
             "@context[1] must be the OB v3p0 context URI, got %r" % (ctx[1],))
-
-
-def _iso(dt: datetime) -> str:
-    """Return a datetime as an ISO 8601 string with Z suffix.
-
-    A naive datetime is assumed to be UTC (matching status_registry._iso_z),
-    not local time — so validFrom/validUntil never silently shift by the host's
-    offset and stay consistent with the nbf/exp JWT claims.
-    """
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 @dataclass
@@ -650,13 +646,6 @@ class OpenBadgeCredential:
         return credential
 
 
-def _as_dict(value: Any, where: str) -> dict[str, Any]:
-    """Return value if it is a dict, else raise a clear ValueError."""
-    if not isinstance(value, dict):
-        raise ValueError("%s must be a JSON object" % where)
-    return value
-
-
 def _as_dict_or_empty(value: Any) -> dict[str, Any]:
     """Return value if it is a dict, else an empty dict (optional sub-objects)."""
     return value if isinstance(value, dict) else {}
@@ -693,19 +682,6 @@ def _alignment_list(value: Any) -> List["Alignment"]:
     return []
 
 
-def _require(data: dict[str, Any], key: str, where: str) -> str:
-    """Return data[key] as a string, raising a clear ValueError if missing,
-    empty, or not a string. All fields validated here (id/name) are identifiers
-    consumed as strings downstream (e.g. recipient binding calls .lower()), so a
-    non-string value must be rejected rather than crash later."""
-    value = data.get(key)
-    if value is None or value == "":
-        raise ValueError("missing required field %s.%s" % (where, key))
-    if not isinstance(value, str):
-        raise ValueError("field %s.%s must be a string" % (where, key))
-    return value
-
-
 def _parse_date(value: Any, where: str) -> datetime:
     """Parse an ISO 8601 date, raising a clear ValueError naming the field."""
     try:
@@ -713,14 +689,3 @@ def _parse_date(value: Any, where: str) -> datetime:
     except (ValueError, TypeError, AttributeError) as exc:
         raise ValueError(
             "invalid ISO 8601 date in %s: %r" % (where, value)) from exc
-
-
-def _parse_iso(s: str) -> datetime:
-    """Parse an ISO 8601 date string, handling trailing Z."""
-    dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-    if dt.tzinfo is None:
-        # A date-time with no UTC/offset suffix is valid ISO 8601, but verify()
-        # always compares against an aware datetime.now(timezone.utc) — accept
-        # only unambiguously-anchored timestamps.
-        raise ValueError("date is missing a UTC offset: %r" % s)
-    return dt

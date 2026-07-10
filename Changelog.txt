@@ -96,6 +96,13 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     `[logs]` section is reported instead of crashing with a traceback after the
     badge is already on disk. Adds singular aliases (`KeyGenException`,
     `SignerException`, `VerifierException`) for the plural base families (#224).
+  - refactor(ob2, ob3): deduplicate the shared JSON helpers (`_iso`,
+    `_parse_iso`, `_as_dict`, `_require`) into an internal
+    `openbadgeslib._jsonmodel`. The two copies had drifted: OB2's `_iso`
+    serialised a naive datetime as *local* time (`astimezone` on a naive value)
+    while OB3 anchored it to UTC, so the same timestamp emitted a different
+    instant in OB2 than in OB3; the single implementation keeps OB3's
+    naive=>UTC rule (#225).
 
 
 * v3.14.0 - 2026-07-10
