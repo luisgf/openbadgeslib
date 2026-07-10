@@ -38,8 +38,8 @@ import shutil
 import sys
 import tempfile
 
-from typing import Any, List, Optional, TYPE_CHECKING, Tuple
-from urllib.parse import urljoin, urlparse
+from typing import Any, List, TYPE_CHECKING, Tuple
+from urllib.parse import urljoin
 from .confparser import read_config_or_exit, resolve_badge_section
 from .util import __version__, emit_cli_json
 
@@ -165,48 +165,6 @@ def _write_atomic(path: str, data: str) -> None:
     except BaseException:
         os.unlink(tmp_path)
         raise
-
-
-def _sd_jwt_vct_relpath(vct: str, publish_url: str) -> Optional[str]:
-    """The output-relative path to write Type Metadata for *vct* so that serving
-    the output dir at *publish_url* resolves it there — or ``None`` if *vct* is
-    not hosted under *publish_url* (same scheme+host, path under it)."""
-    v, p = urlparse(vct), urlparse(publish_url)
-    if (v.scheme, v.netloc) != (p.scheme, p.netloc):
-        return None
-    base = p.path if p.path.endswith('/') else p.path + '/'
-    if not v.path.startswith(base):
-        return None
-    return v.path[len(base):] or None
-
-
-def _publish_type_metadata(vct: str, publish_url: str, output: str,
-                           files_written: List[str]) -> None:
-    """Opt-in (#176): write the SD-JWT VC Type Metadata for the ``[issuer]``
-    ``sd_jwt_vct`` into the webroot so a wallet can resolve and validate a
-    library-issued SD-JWT badge. The vct must be hosted under *publish_url*; the
-    printed ``vct#integrity`` is what an issuer pins with
-    ``issue_badge_sd_jwt(vct_integrity=…)``. The pure-Python builder needs no
-    ``[eudi]`` extra."""
-    from .ob3.eudi import (badge_type_metadata, type_metadata_document_bytes,
-                           type_metadata_integrity)
-    rel = _sd_jwt_vct_relpath(vct, publish_url)
-    if rel is None:
-        print('[!] [issuer] sd_jwt_vct %r is not under publish_url %r — not '
-              'publishing its Type Metadata (host it yourself).'
-              % (vct, publish_url))
-        return
-    document = badge_type_metadata(vct)
-    served = type_metadata_document_bytes(document)
-    path = os.path.join(output, rel.replace('/', os.sep))
-    parent = os.path.dirname(path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    _write_atomic(path, served.decode('ascii'))
-    files_written.append(rel)
-    print('[i] Wrote SD-JWT VC Type Metadata for %s' % vct)
-    print('    Pin it on issued badges: vct_integrity=%s'
-          % type_metadata_integrity(document))
 
 
 def _query_ob3(args: argparse.Namespace,
@@ -358,276 +316,119 @@ def _print_field(label: str, value: str) -> None:
     print('%-11s %s' % (label + ':', value))
 
 
-def _check_live_artifacts(output: str, publish_url: str,
-                          files_written: List[str]) -> List[str]:
-    """Download each freshly-written artifact from its published URL and
-    byte-compare it against the local copy, so the "re-upload" reminder becomes
-    a verifiable guarantee. Returns the artifacts that are missing or stale on
-    the live server (an empty list means the server is fully current)."""
-    from .util import download_file
-    stale: List[str] = []
-    for rel in files_written:
-        url = urljoin(publish_url, rel.replace(os.sep, '/'))
-        with open(os.path.join(output, rel), 'rb') as f:
-            local = f.read()
-        try:
-            live = download_file(url)
-        except Exception as exc:
-            print('[!] %s: no live copy at %s (%s)' % (rel, url, exc))
-            stale.append(rel)
-            continue
-        if live == local:
-            print('[+] %s matches the live copy' % rel)
-        else:
-            print('[!] %s is STALE at %s — re-upload needed' % (rel, url))
-            stale.append(rel)
-    return stale
-
-
 def _publish_ob3(args: argparse.Namespace,
                  parser: argparse.ArgumentParser) -> dict[str, Any]:
-    """Publish OpenBadges 3.0 issuer artefacts and manage credential status.
+    """Publish OpenBadges 3.0 issuer artefacts and manage credential status,
+    then present the outcome.
 
-    Always regenerates, from the per-badge status registries: the issuer's
-    did:web document (``did.json``) and, for every badge with ``status_lists``
-    configured, its signed Bitstring Status List credentials plus the raw
-    verification PEM. With --revoke/--suspend/--unsuspend the registry is
-    updated first, so the regenerated lists already carry the change.
-
-    Unlike -V 1/2 the output directory may exist: re-running publish after
-    every status change is the normal workflow, and the managed files are
-    replaced atomically.
+    The lifecycle logic (the revoke/suspend/unsuspend registry transaction and
+    the did:web/status-list/Type-Metadata regeneration) lives in
+    :func:`openbadgeslib.ob3.publish.publish_ob3`; this presents its
+    :class:`~openbadgeslib.ob3.publish.PublishResult` as the historical human
+    lines and the --json dict, preserving the exit status.
     """
-    from datetime import datetime, timedelta, timezone
-    from .confparser import ob3_issuer_id, ob3_status_config
-    from .errors import LibOpenBadgesException, StatusError
-    from .keys import alg_for_key_type, detect_key_type, public_jwk_from_pem
-    from .ob3.did import build_did_document, did_web_from_url
-    from .ob3.status_list import (build_status_list_credential,
-                                  sign_status_list_credential)
-    from .ob3.status_registry import StatusRegistry
+    from .ob3.publish import (AmbiguousCredential, PublishError, publish_ob3)
 
     conf = read_config_or_exit(args.config)
-
-    if args.reason and not (args.revoke or args.suspend):
-        sys.exit('[!] --reason needs --revoke or --suspend')
-
     try:
-        # publish_url is required for OB3 publication (it anchors the did:web
-        # id, the status-list URLs and the served-folder instruction). Check
-        # it here so a config carrying only [issuer] url — which ob3_issuer_id
-        # tolerantly falls back to — fails cleanly instead of dying later with
-        # a raw KeyError('publish_url') at conf['issuer']['publish_url'].
-        if 'issuer' not in conf:
-            raise ValueError('config is missing the [issuer] section')
-        if not conf['issuer'].get('publish_url'):
-            raise ValueError("[issuer] is missing the 'publish_url' key")
-        issuer_id = ob3_issuer_id(conf)
-        status_confs = {
-            name: ob3_status_config(conf, name)
-            for name in conf.sections() if name.startswith('badge_')
-        }
-    except ValueError as exc:
+        result = publish_ob3(
+            conf, args.output, revoke=args.revoke, suspend=args.suspend,
+            unsuspend=args.unsuspend, reason=args.reason, badge=args.badge,
+            check_live=args.check_live)
+    except AmbiguousCredential as exc:
+        print('[!] %s:' % exc)
+        for name, jti, issued in exc.matches:
+            print('    %s  %s  (issued %s)' % (name, jti, issued))
+        sys.exit(-1)
+    except PublishError as exc:
+        # Config-level problems historically exited 1 (sys.exit(str)); operation
+        # / key problems exited 255 (print + sys.exit(-1)). Preserve both until
+        # the 0/1/2 contract (#233); exc.cli_exit carries which.
+        if exc.cli_exit == 1:
+            sys.exit('[!] %s' % exc)
         print('[!] %s' % exc)
         sys.exit(-1)
-    if not status_confs:
-        sys.exit('[!] No badge_* sections in %s' % args.config)
 
-    # ── status management (before regeneration, so the lists pick it up) ────
-    operation = None
-    operation_result: Optional[dict[str, Any]] = None
-    if args.revoke:
-        operation = ('revoke', 'REVOKED', args.revoke)
-    elif args.suspend:
-        operation = ('suspend', 'SUSPENDED', args.suspend)
-    elif args.unsuspend:
-        operation = ('unsuspend', 'UNSUSPENDED', args.unsuspend)
+    # ── present the result, in the historical order ─────────────────────────
+    op = result.status_operation
+    if op is not None:
+        print('[+] %s %s %s (index %d)' % (op.verb, op.badge, op.jti, op.index))
 
-    if operation is not None:
-        op, verb, ident = operation
-        if args.badge:
-            scoped = resolve_badge_section(conf, args.badge)
-            if status_confs.get(scoped) is None:
-                sys.exit('[!] [%s] has no status_lists configured' % scoped)
-            sections = [scoped]
+    for name, detail in result.did_skipped:
+        print('[!] Skipping [%s] in did.json — could not read its public key: %s'
+              % (name, detail))
+
+    tm = result.type_metadata
+    if tm is not None:
+        if tm.rel_path is None:
+            print('[!] [issuer] sd_jwt_vct %r is not under publish_url %r — not '
+                  'publishing its Type Metadata (host it yourself).'
+                  % (tm.vct, result.publish_url))
         else:
-            sections = [n for n, sc in status_confs.items() if sc is not None]
+            print('[i] Wrote SD-JWT VC Type Metadata for %s' % tm.vct)
+            print('    Pin it on issued badges: vct_integrity=%s' % tm.integrity)
 
-        matches = []
-        for name in sections:
-            status_conf = status_confs[name]
-            assert status_conf is not None
-            try:
-                registry = StatusRegistry.load(status_conf.registry_path,
-                                               status_conf.size_bits)
-            except StatusError as exc:
-                print('[!] %s' % exc)
-                sys.exit(-1)
-            matches += [(name, registry, entry)
-                        for entry in registry.find(ident)]
+    for name in result.no_status_config:
+        print('[i] [%s] has no status_lists configured; publishing no '
+              'status list for it' % name)
+    for name, detail in result.status_skipped:
+        print('[!] Skipping [%s] status lists — %s' % (name, detail))
 
-        if not matches:
-            print('[!] No credential %r in the status registries (searched: %s)'
-                  % (ident, ', '.join(sections)))
-            sys.exit(-1)
-        if len(matches) > 1:
-            print('[!] %r matches several credentials; re-run with the jti:'
-                  % ident)
-            for name, _registry, entry in matches:
-                print('    %s  %s  (issued %s)'
-                      % (name, entry.jti, entry.issued_on))
-            sys.exit(-1)
-
-        name, registry, entry = matches[0]
-        jti = entry.jti
-        now = datetime.now(tz=timezone.utc)
-        # The search above is an unlocked best-effort locator; the mutation
-        # reloads the winning registry under an exclusive lock so it is atomic
-        # against a concurrent signer or revoke (see StatusRegistry.locked).
-        try:
-            with StatusRegistry.locked(registry.path,
-                                       registry.size_bits) as registry:
-                if op == 'revoke':
-                    registry.revoke(jti, now, args.reason)
-                elif op == 'suspend':
-                    registry.suspend(jti, now, args.reason)
-                else:
-                    registry.unsuspend(jti)
-                registry.save()
-        except (StatusError, OSError) as exc:
-            print('[!] %s' % exc)
-            sys.exit(-1)
-        print('[+] %s %s %s (index %d)' % (verb, name, jti, entry.index))
-        operation_result = {'operation': op, 'badge': name, 'jti': jti,
-                            'index': entry.index, 'reason': args.reason}
-
-    # ── regenerate every managed artefact from the registries ───────────────
-    publish_url = conf['issuer']['publish_url']
-    if issuer_id.startswith('did:web:'):
-        did = issuer_id
-    else:
-        try:
-            did = did_web_from_url(publish_url)
-        except ValueError as exc:
-            print('[!] Cannot derive a did:web identifier: %s' % exc)
-            sys.exit(-1)
-
-    failures = []                 # badges skipped (unreadable key / registry)
-    files_written: List[str] = []  # output-relative paths, for --json
-    umask = os.umask(0o077)  # rwx------
-    try:
-        os.makedirs(args.output, exist_ok=True)
-
-        methods = []
-        for name in status_confs:
-            # A badge whose keys were never generated must not block the
-            # publication of the others' — skip it in did.json with a notice.
-            # (Its own status lists, if configured, still fail hard below:
-            # they cannot be signed without the private key.)
-            try:
-                with open(conf[name]['public_key'], 'rb') as key:
-                    methods.append((name, public_jwk_from_pem(key.read())))
-            except (OSError, KeyError, LibOpenBadgesException) as exc:
-                print('[!] Skipping [%s] in did.json — could not read its '
-                      'public key: %s' % (name, exc))
-        if not methods:
-            sys.exit('[!] No badge public key could be read; generate key '
-                     'pairs with openbadges-keygenerator first')
-        _write_atomic(os.path.join(args.output, 'did.json'),
-                      _dump(build_did_document(did, methods)))
-        files_written.append('did.json')
-
-        # Opt-in (#176): publish the SD-JWT VC Type Metadata if the issuer hosts
-        # a vct, so library-issued SD-JWT badges are self-describing to wallets.
-        sd_jwt_vct = conf['issuer'].get('sd_jwt_vct')
-        if sd_jwt_vct:
-            _publish_type_metadata(sd_jwt_vct, publish_url, args.output,
-                                   files_written)
-
-        for name, status_conf in status_confs.items():
-            if status_conf is None:
-                print('[i] [%s] has no status_lists configured; publishing no '
-                      'status list for it' % name)
-                continue
-            # Isolate a per-badge failure like the did.json skip above: don't
-            # abort the whole publish — a badge_2 mid-configuration must not make
-            # an urgent badge_1 revocation appear to fail after its list was
-            # already written. Covers a missing private_key/public_key config
-            # key (KeyError) and a garbage/unclassifiable key
-            # (UnknownKeyType/LibOpenBadgesException), not only StatusError/OSError.
-            try:
-                registry = StatusRegistry.load(status_conf.registry_path,
-                                               status_conf.size_bits)
-                with open(conf[name]['private_key'], 'rb') as key:
-                    priv_pem = key.read()
-                algorithm = alg_for_key_type(detect_key_type(priv_pem))
-
-                valid_until = None
-                if status_conf.validity_days is not None:
-                    valid_until = (datetime.now(tz=timezone.utc)
-                                   + timedelta(days=status_conf.validity_days))
-
-                badge_dir = os.path.join(args.output, name)
-                os.makedirs(badge_dir, exist_ok=True)
-                for purpose in status_conf.purposes:
-                    indices = registry.revoked_indices() if purpose == 'revocation' \
-                        else registry.suspended_indices()
-                    vc = build_status_list_credential(
-                        issuer_id, status_conf.list_urls[purpose], purpose,
-                        indices, registry.size_bits, valid_until=valid_until)
-                    token = sign_status_list_credential(vc, priv_pem, algorithm)
-                    _write_atomic(os.path.join(badge_dir, purpose + '.jwt'), token)
-                    files_written.append(os.path.join(name, purpose + '.jwt'))
-
-                # Keep the raw PEM alongside for tools that fetch it directly.
-                shutil.copyfile(conf[name]['public_key'],
-                                os.path.join(badge_dir, 'verify.pem'))
-                files_written.append(os.path.join(name, 'verify.pem'))
-            except (StatusError, OSError, KeyError, LibOpenBadgesException) as exc:
-                print('[!] Skipping [%s] status lists — %s' % (name, exc))
-                failures.append(name)
-                continue
-    finally:
-        os.umask(umask)
-
-    if failures:
+    if result.status_skipped:
+        skipped_names = [n for n, _ in result.status_skipped]
         print('[!] %d badge(s) skipped (see above): %s — their status lists '
-              'were NOT regenerated' % (len(failures), ', '.join(failures)))
+              'were NOT regenerated'
+              % (len(skipped_names), ', '.join(skipped_names)))
     print('Please configure your Web server to publish the folder %s as %s' %
-          (args.output, publish_url))
-    if not failures:
-        print('[i] Issuer DID: %s' % did)
-        if ':' not in did[len('did:web:'):]:
+          (args.output, result.publish_url))
+    if not result.status_skipped:
+        print('[i] Issuer DID: %s' % result.did)
+        if result.bare_host_did:
             print('[i] A bare-host did:web resolves at '
                   'https://%s/.well-known/did.json — serve did.json there.'
-                  % did[len('did:web:'):])
-        if operation is not None:
+                  % result.did[len('did:web:'):])
+        if op is not None:
             print('[!] Re-upload %s so the change takes effect' % args.output)
 
-    # --check-live turns that "re-upload" reminder into a verified fact: fetch
-    # every written artifact from publish_url and byte-compare it.
-    live_check = None
-    if args.check_live:
-        print('[i] Verifying published artifacts against %s ...' % publish_url)
-        stale = _check_live_artifacts(args.output, publish_url, files_written)
-        live_check = {'checked': len(files_written), 'stale': stale}
+    stale: List[str] = []
+    if result.live_check is not None:
+        print('[i] Verifying published artifacts against %s ...' % result.publish_url)
+        for art in result.live_check:
+            if art.ok:
+                print('[+] %s matches the live copy' % art.rel)
+            elif art.detail:
+                print('[!] %s: no live copy at %s (%s)'
+                      % (art.rel, art.url, art.detail))
+                stale.append(art.rel)
+            else:
+                print('[!] %s is STALE at %s — re-upload needed'
+                      % (art.rel, art.url))
+                stale.append(art.rel)
         if stale:
             print('[!] %d of %d artifact(s) stale or missing on the server; '
-                  're-upload %s' % (len(stale), len(files_written), args.output))
+                  're-upload %s'
+                  % (len(stale), len(result.live_check), args.output))
         else:
             print('[+] All %d published artifact(s) are live and current.'
-                  % len(files_written))
+                  % len(result.live_check))
+
+    operation_result = None
+    if op is not None:
+        operation_result = {'operation': op.operation, 'badge': op.badge,
+                            'jti': op.jti, 'index': op.index, 'reason': op.reason}
+    live_check_json = None
+    if result.live_check is not None:
+        live_check_json = {'checked': len(result.live_check), 'stale': stale}
 
     # A partial failure (a skipped badge, or a stale live artifact) reports exit
-    # 2 in --json (a documented "some work skipped" outcome); the human path
-    # preserves its historical exit 1 (set in main) for skipped badges.
+    # 2 in --json; the human path preserves its historical exit 1 (set in main).
     return {
-        'did': did,
-        'files_written': sorted(files_written),
+        'did': result.did,
+        'files_written': sorted(result.files_written),
         'status_operation': operation_result,
-        'skipped': failures,
-        'live_check': live_check,
-        '_exit': 2 if (failures or (live_check and live_check['stale'])) else 0,
+        'skipped': [n for n, _ in result.status_skipped],
+        'live_check': live_check_json,
+        '_exit': 2 if result.partial else 0,
     }
 
 

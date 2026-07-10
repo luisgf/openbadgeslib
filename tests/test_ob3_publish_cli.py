@@ -804,3 +804,61 @@ class TestPublishTypeMetadata:
             payload, vct=self.VCT, vct_integrity=payload['vct#integrity'],
             resolve=resolve)
         assert result.vct == self.VCT
+
+
+# ── programmatic publish facade (#222) ───────────────────────────────────────
+
+class TestPublishFacade:
+    """Direct tests of publish_ob3 — the CLI (tested above) is a thin presenter
+    over it. The facade writes artefacts (its purpose) but does no printing and
+    raises PublishError instead of sys.exit."""
+
+    def _conf(self, cfg):
+        from openbadgeslib.confparser import read_config_or_exit
+        return read_config_or_exit(str(cfg))
+
+    def test_full_publish_writes_artifacts(self, tmp_path):
+        from openbadgeslib.ob3.publish import PublishResult, publish_ob3
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        out = tmp_path / 'pub'
+        res = publish_ob3(self._conf(cfg), str(out))
+        assert isinstance(res, PublishResult)
+        assert res.did.startswith('did:web:')
+        assert res.status_operation is None
+        assert 'did.json' in res.files_written
+        assert (out / 'did.json').is_file()
+        assert (out / 'badge_1' / 'revocation.jwt').is_file()
+        assert (out / 'badge_1' / 'verify.pem').is_file()
+
+    def test_revoke_returns_operation(self, tmp_path, rsa_pub_pem):
+        from openbadgeslib.ob3.publish import publish_ob3
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        badge_file = _sign(tmp_path, cfg)          # issues + allocates an index
+        cred = _credential_from(badge_file, rsa_pub_pem)
+        res = publish_ob3(self._conf(cfg), str(tmp_path / 'pub'), revoke=cred.id)
+        assert res.status_operation is not None
+        assert res.status_operation.operation == 'revoke'
+        assert res.status_operation.verb == 'REVOKED'
+        assert res.status_operation.jti == cred.id
+
+    def test_credential_not_found_raises(self, tmp_path):
+        from openbadgeslib.ob3.publish import CredentialNotFound, publish_ob3
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        with pytest.raises(CredentialNotFound):
+            publish_ob3(self._conf(cfg), str(tmp_path / 'pub'),
+                        revoke='urn:uuid:does-not-exist')
+
+    def test_reason_without_revoke_raises(self, tmp_path):
+        from openbadgeslib.ob3.publish import PublishError, publish_ob3
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        with pytest.raises(PublishError, match='--reason needs'):
+            publish_ob3(self._conf(cfg), str(tmp_path / 'pub'), reason='oops')
+
+    def test_missing_issuer_section_raises(self, tmp_path):
+        import configparser
+
+        from openbadgeslib.ob3.publish import PublishError, publish_ob3
+        conf = configparser.ConfigParser()
+        conf.read_string('[badge_1]\nname = X\n')
+        with pytest.raises(PublishError, match='issuer'):
+            publish_ob3(conf, str(tmp_path / 'pub'))

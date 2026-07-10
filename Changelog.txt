@@ -66,6 +66,16 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     resolution, trust classification, signature/status — doing no I/O; an
     invalid badge is a result, not an exception. `openbadges-verifier` is now a
     thin presenter over it (byte-identical output). Part of #222.
+  - feat: extract a programmatic publication facade —
+    `openbadgeslib.ob3.publish_ob3(conf, output, *, revoke | suspend |
+    unsuspend, reason, badge, check_live) -> PublishResult`. It runs the OB3
+    issuer-artefact regeneration (the did:web document, the signed Bitstring
+    Status List credentials, the opt-in SD-JWT VC Type Metadata) and the
+    status-registry revoke/suspend/unsuspend transaction — writing the
+    artefacts but doing no printing — and raises `PublishError` /
+    `CredentialNotFound` / `AmbiguousCredential` instead of exiting.
+    `openbadges-publish -V 3` is now a thin presenter over it (byte-identical
+    output). Completes #222.
 
 
 * v3.14.0 - 2026-07-10

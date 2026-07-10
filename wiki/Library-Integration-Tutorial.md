@@ -81,7 +81,7 @@ Issuing a *revocable* OB 3.0 badge (a badge section with `status_lists = revocat
 - the issuer **did:web document** (`did.json`) — run `openbadges-publish -V 3 -o <webroot>`, which also writes each badge's `verify.pem` and the signed **status lists** (`revocation.jwt`);
 - to **revoke** later: `openbadges-publish -V 3 --revoke <jti|email>` flips the bit and re-signs the list.
 
-The publish/revoke lifecycle is CLI-driven today (`openbadges-publish`, see [[CLI Reference]]); the status-list internals are in [[Signing and Verification]] and [[Security Model]]. A verifier then checks revocation with `OB3Verifier(...).verify(token, check_status=True)` (or `--check-status` on the CLI), which fetches the published list and verifies **its own signature** by default (bound to the badge issuer), so a compromised status host cannot silently un-revoke a badge.
+The publish/revoke lifecycle runs on the CLI (`openbadges-publish`, see [[CLI Reference]]) and programmatically via `openbadgeslib.ob3.publish_ob3(conf, output, revoke=jti_or_email) -> PublishResult` — it regenerates `did.json` and the signed status lists, applying a revoke/suspend/unsuspend first, and returns what changed without printing. The status-list internals are in [[Signing and Verification]] and [[Security Model]]. A verifier then checks revocation with `OB3Verifier(...).verify(token, check_status=True)` (or `--check-status` on the CLI), which fetches the published list and verifies **its own signature** by default (bound to the badge issuer), so a compromised status host cannot silently un-revoke a badge.
 
 ### Verifying a batch efficiently
 
