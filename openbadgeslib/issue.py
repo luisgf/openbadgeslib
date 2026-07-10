@@ -50,7 +50,7 @@ import uuid
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
-from typing import Any, List, NamedTuple, Optional
+from typing import Any, List, NamedTuple, Optional, TYPE_CHECKING
 from urllib.parse import urljoin
 
 from .errors import (BadgeImgFormatUnsupported, ErrorSigningFile,
@@ -61,6 +61,14 @@ from .errors import IssuanceError as IssuanceError
 from .keys import KeyType, alg_for_key_type, detect_key_type
 from .badge_model import Badge, BadgeImgType
 from .util import normalize_recipient_id
+
+if TYPE_CHECKING:
+    # Boundary types for SignResult / _Ob3Context. Imported only for typing
+    # (zero runtime cost, correct autocompletion and pdoc) — the modules are
+    # otherwise resolved lazily inside the issuance functions.
+    from .ob2 import Assertion
+    from .ob3 import Achievement, Issuer, OpenBadgeCredential
+    from .confparser import OB3StatusConfig
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +91,8 @@ class SignResult:
     jti: Optional[str] = None           # OB3 credential id
     status_index: Optional[int] = None  # OB3 status-list index (revocable badges)
     proof_format: Optional[str] = None  # OB3: 'vc-jwt' | 'ldp'
-    credential: Optional[Any] = None    # OB3 OpenBadgeCredential
-    assertion: Optional[Any] = None     # OB2 Assertion
+    credential: Optional['OpenBadgeCredential'] = None    # OB3
+    assertion: Optional['Assertion'] = None               # OB2
     assertion_id: Optional[str] = None  # OB2 hosted assertion URL
     hosted_json: Optional[str] = None   # OB2 hosted: assertion JSON to publish
     # Informational hints the CLI prints (without the '[!]'/'[i]' prefix), e.g.
@@ -303,10 +311,10 @@ def _issue_ob2(conf: configparser.ConfigParser, badge: str, recipient: str,
 class _Ob3Context(NamedTuple):
     """The per-badge OB3 config resolved once, shared by every recipient in a
     batch (issuer/achievement are identical; only the subject differs)."""
-    issuer: Any
-    achievement: Any
+    issuer: 'Issuer'
+    achievement: 'Achievement'
     issuer_id: str
-    status_conf: Any
+    status_conf: Optional['OB3StatusConfig']
     proof_format: str
     key_type: KeyType
 

@@ -15,6 +15,7 @@
 
 **Reference**
 - [[CLI Reference]]
+- [[Stable API]]
 - [[Python API OB1]]
 - [[Python API OB2]]
 - [[Python API OB3]]

@@ -36,8 +36,13 @@ from .did import (build_did_document, did_key_from_pem, did_web_from_url,
 from .publish import (AmbiguousCredential, CredentialNotFound, PublishError,
                       PublishResult, StatusOperation, publish_ob3)
 from ..util import CachingDownloader
+# The EUDI SD-JWT VC track (openvc-core, the [eudi] extra). Re-exported as a
+# submodule — its heavy imports are lazy (_require_openvc), so this stays cheap —
+# so `openbadgeslib.ob3.eudi` is reachable without a deep import path.
+from . import eudi  # noqa: F401
 
 __all__ = [
+    'eudi',
     'Achievement',
     'AmbiguousCredential',
     'CachingDownloader',

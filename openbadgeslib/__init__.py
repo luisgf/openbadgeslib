@@ -23,6 +23,13 @@
 
 from typing import Any
 
+# ── Submodule entry points ───────────────────────────────────────────────────
+# Bind ob2 / ob3 / errors as attributes so they are part of the explicit public
+# surface (and `from openbadgeslib import *`): ob2 (strict OB 2.0), ob3 (OB 3.0,
+# incl. ob3.eudi and ob3.OB3Ldp*), and the errors hierarchy rooted at
+# LibOpenBadgesException.
+from . import ob2, ob3, errors  # noqa: F401
+
 # ── OpenBadges 2.0 (strict) ──────────────────────────────────────────────────
 from .ob2 import (  # noqa: F401
     OB2Signer, OB2Verifier, OB2VerificationError,
@@ -35,17 +42,21 @@ from .ob3 import (  # noqa: F401
 )
 
 # ── Shared utilities ────────────────────────────────────────────────────────────
-from .keys import KeyFactory, KeyRSA, KeyECC  # noqa: F401
+# KeyEd25519 is the recommended key type for OB 3.0 / LDP (eddsa-rdfc-2022).
+from .keys import KeyFactory, KeyRSA, KeyECC, KeyEd25519  # noqa: F401
 from .util import __version__  # noqa: F401
 
 
-# ── Issuance API ─────────────────────────────────────────────────────────────
-# "Issue badge X to Y per config" as a library call — the orchestration the CLI
-# wraps, returning a SignResult instead of writing files (openbadgeslib.issue).
-# Resolved lazily (PEP 562, below) because openbadgeslib.issue pulls in the
-# shared Badge model from the ob1 leaf module; a bare `import openbadgeslib`
-# must not drag that in. `from openbadgeslib.issue import ...` works directly.
-_ISSUE_API = ('IssuanceError', 'SignResult', 'issue_from_conf')
+# ── Issuance / verification API ──────────────────────────────────────────────
+# "Issue badge X to Y per config" / "verify this badge" as library calls — the
+# orchestration the CLIs wrap, returning a SignResult / VerifyResult instead of
+# doing I/O (openbadgeslib.issue, openbadgeslib.verify). Resolved lazily (PEP
+# 562, below) so a bare `import openbadgeslib` stays lightweight;
+# `from openbadgeslib.issue import ...` / `.verify import ...` work directly.
+_ISSUE_API = {
+    'IssuanceError': 'issue', 'SignResult': 'issue', 'issue_from_conf': 'issue',
+    'verify_badge': 'verify',
+}
 
 
 # ── OpenBadges 1.0 (legacy) ──────────────────────────────────────────────────
@@ -66,10 +77,11 @@ _OB1_API = {
 
 def __getattr__(name: str) -> Any:
     if name in _ISSUE_API:
-        # The modern issuance API — lazy so a bare import stays ob1-free, but
-        # warning-free (unlike the OB1 names below).
+        # The modern issuance / verification API — lazy so a bare import stays
+        # lightweight, but warning-free (unlike the OB1 names below).
         import importlib
-        return getattr(importlib.import_module('.issue', __name__), name)
+        return getattr(
+            importlib.import_module('.' + _ISSUE_API[name], __name__), name)
     module = _OB1_API.get(name)
     if module is None:
         raise AttributeError(
@@ -83,3 +95,24 @@ def __getattr__(name: str) -> Any:
         'the "OpenBadges 1.0 lifecycle" wiki page.' % name,
         DeprecationWarning, stacklevel=2)
     return getattr(importlib.import_module('.ob1.' + module, __name__), name)
+
+
+# The stable, supported top-level surface (the "public contract" — see the
+# "Stable API vs internals" wiki/doc page). Everything else (the ob1.* legacy
+# names resolved lazily above, and any underscore-prefixed name) is internal.
+# The issuance/verification facades are resolved lazily by __getattr__ but are
+# part of the contract, so they are listed here for pdoc and `import *`.
+__all__ = [
+    '__version__',
+    # Subpackage entry points.
+    'ob2', 'ob3', 'errors',
+    # OpenBadges 2.0 (strict).
+    'OB2Signer', 'OB2Verifier', 'OB2VerificationError',
+    # OpenBadges 3.0.
+    'OB3Signer', 'OB3Verifier', 'OB3VerificationError',
+    'OpenBadgeCredential', 'Achievement', 'Issuer',
+    # Keys (KeyEd25519 is the recommended OB 3.0 / LDP key type).
+    'KeyFactory', 'KeyRSA', 'KeyECC', 'KeyEd25519',
+    # Programmatic issue / verify facades (resolved lazily).
+    'issue_from_conf', 'verify_badge', 'IssuanceError', 'SignResult',
+]
