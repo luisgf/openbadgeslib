@@ -129,6 +129,16 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     hashed recipient identities), so a badge whose subject travelled via
     `identifier` (no `id`) keeps a checkable recipient. The irrevocability is
     documented prominently on the issue/verify docstrings (#226).
+  - security(util): pin the SSRF-validated IP on the HTTPS connection to defeat
+    DNS rebinding. `_assert_public_host` validated the resolved IPs, but
+    `opener.open` then re-resolved on its own, so a hostile DNS (TTL 0) could
+    answer public during the check and internal (169.254.169.254 / loopback /
+    RFC1918) at the real connect. A new `_PinnedHTTPSConnection` re-resolves,
+    re-validates and dials the validated IP in one step (keeping the hostname
+    for TLS SNI / certificate verification and the Host header) — for the initial
+    request and every redirect. Also adds a wall-clock download budget
+    (`MAX_DOWNLOAD_SECONDS`, 60 s), since the per-socket `timeout=30` bounds each
+    read but not a slow-drip response's total time (#231).
 
 
 * v3.14.0 - 2026-07-10
