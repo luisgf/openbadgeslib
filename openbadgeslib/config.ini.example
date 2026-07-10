@@ -73,6 +73,14 @@ key_type    = RSA
 ; Public base URL of this badge's status lists (<status_base><purpose>.jwt).
 ; Default: ${issuer:publish_url}badge_1/
 ;status_base      = https://openbadges.issuer.badge/issuer/badge_1/
+; STRONGLY RECOMMENDED for revocable badges: freshness window (in days) stamped
+; on each published list as validUntil. Without it a list has NO anti-replay
+; protection — a verifier can't tell a replayed older copy (with fewer
+; revocations) from the current one, so a revoked badge could be resurrected.
+; You MUST republish the lists (openbadges-publish -V 3) before the window
+; lapses; pick a cadence you can sustain (e.g. 7 => weekly). Unset = no bound
+; (offline-friendly, but publishes a loud warning).
+;status_validity_days = 7
 ;alignement  =
 ;tags        =
 ;mail        = ${paths:base}/badge_1_mail.txt

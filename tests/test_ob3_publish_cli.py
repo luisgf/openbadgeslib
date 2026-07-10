@@ -15,7 +15,7 @@ RECIPIENT = 'recipient@example.com'
 
 
 def _write_config(tmp_path, key='rsa', status_lists=None, did=None,
-                  status_base=None, sd_jwt_vct=None):
+                  status_base=None, sd_jwt_vct=None, status_validity_days=None):
     (tmp_path / 'log').mkdir(exist_ok=True)
     lines = [
         "[paths]",
@@ -56,6 +56,8 @@ def _write_config(tmp_path, key='rsa', status_lists=None, did=None,
         lines.append("status_lists = %s" % status_lists)
     if status_base is not None:
         lines.append("status_base = %s" % status_base)
+    if status_validity_days is not None:
+        lines.append("status_validity_days = %s" % status_validity_days)
     cfg = tmp_path / 'cfg.ini'
     cfg.write_text("\n".join(lines) + "\n")
     return cfg
@@ -297,6 +299,21 @@ class TestPublishGeneration:
         pub = _publish(tmp_path, cfg)
         _publish(tmp_path, cfg)   # unlike -V 1/2 this must not exit
         assert (pub / 'badge_1' / 'revocation.jwt').is_file()
+
+    def test_cli_warns_when_no_validity_bound(self, tmp_path, capsys):
+        # #227: publishing a revocable badge with no status_validity_days warns
+        # loudly (no anti-replay freshness on the list).
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        _sign(tmp_path, cfg)
+        _publish(tmp_path, cfg)
+        assert 'WITHOUT a validUntil bound' in capsys.readouterr().out
+
+    def test_cli_no_warning_when_validity_days_set(self, tmp_path, capsys):
+        cfg = _write_config(tmp_path, status_lists='revocation',
+                            status_validity_days=7)
+        _sign(tmp_path, cfg)
+        _publish(tmp_path, cfg)
+        assert 'WITHOUT a validUntil bound' not in capsys.readouterr().out
 
     @pytest.mark.parametrize('key,alg', [('rsa', 'RS256'), ('ecc', 'ES256')])
     def test_lists_are_signed_with_the_badge_key(self, tmp_path, key, alg):
@@ -847,6 +864,28 @@ class TestPublishFacade:
         with pytest.raises(CredentialNotFound):
             publish_ob3(self._conf(cfg), str(tmp_path / 'pub'),
                         revoke='urn:uuid:does-not-exist')
+
+    def test_no_validity_bound_flagged_when_days_unset(self, tmp_path):
+        # #227: a revocable badge published without status_validity_days has no
+        # validUntil, hence no anti-replay freshness — the facade flags it.
+        from openbadgeslib.ob3.publish import publish_ob3
+        cfg = _write_config(tmp_path, status_lists='revocation')
+        res = publish_ob3(self._conf(cfg), str(tmp_path / 'pub'))
+        assert res.no_validity_bound == ['badge_1']
+
+    def test_validity_days_stamps_validuntil_and_clears_flag(self, tmp_path):
+        # #227: with status_validity_days set, the published list carries a
+        # validUntil and the badge is not flagged.
+        import jwt as pyjwt
+        from openbadgeslib.ob3.publish import publish_ob3
+        cfg = _write_config(tmp_path, status_lists='revocation',
+                            status_validity_days=7)
+        out = tmp_path / 'pub'
+        res = publish_ob3(self._conf(cfg), str(out))
+        assert res.no_validity_bound == []
+        token = (out / 'badge_1' / 'revocation.jwt').read_text()
+        payload = pyjwt.decode(token, options={'verify_signature': False})
+        assert 'validUntil' in payload
 
     def test_reason_without_revoke_raises(self, tmp_path):
         from openbadgeslib.ob3.publish import PublishError, publish_ob3

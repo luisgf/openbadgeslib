@@ -112,6 +112,13 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     `criteria_narrative`->`criteria` fallback, hosted-assertions base), and a
     single `DEFAULT_KEY_TYPE` + `resolve_key_type()` centralises the key_type
     name->KeyType mapping the keygenerator used to inline (#225).
+  - security(ob3): warn loudly when `openbadges-publish -V 3` regenerates a
+    revocable badge's status lists without a `validUntil` bound (no
+    `status_validity_days` set). An unbounded list has no anti-replay freshness —
+    an authentic older copy with fewer revocations passes the window unchecked,
+    so a revoked credential could be silently resurrected. `PublishResult` gains
+    a `no_validity_bound` list (surfaced in the CLI's human output and `--json`),
+    and the config example documents the republication cadence (#227).
 
 
 * v3.14.0 - 2026-07-10
