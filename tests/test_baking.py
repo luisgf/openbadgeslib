@@ -63,6 +63,35 @@ def _png_with_itxt(png_bytes, itxt_data):
     return baking._serialize_png(chunks)
 
 
+def _tag(tag):
+    return tag.decode('ascii') if isinstance(tag, bytes) else tag
+
+
+def _png_with_many_small_idat(png_bytes, chunk_size=16):
+    """Re-chunk a PNG's IDAT stream into many small IDAT chunks in place.
+
+    A PNG's compressed image data is a single byte stream that may be split
+    across any number of IDAT chunks at arbitrary boundaries; libpng and
+    Photoshop routinely emit hundreds of small (~8 KB) ones. That is the
+    pathological input for the old O(n^2) ``out += chunk`` serializer (#216), so
+    this splits the image data into ``chunk_size``-byte IDATs (13 584 bytes / 16
+    -> ~849 chunks, in the ballpark of the issue's 832) while leaving every
+    other chunk untouched, producing a still-valid PNG."""
+    chunks = list(Reader(bytes=png_bytes).chunks())
+    idat = b''.join(data for tag, data in chunks if _tag(tag) == 'IDAT')
+    rebuilt = []
+    inserted = False
+    for tag, data in chunks:
+        if _tag(tag) == 'IDAT':
+            if not inserted:      # replace the run of IDATs with many small ones
+                rebuilt.extend(('IDAT', idat[i:i + chunk_size])
+                               for i in range(0, len(idat), chunk_size))
+                inserted = True
+            continue
+        rebuilt.append((_tag(tag), data))
+    return baking._serialize_png(rebuilt)
+
+
 class TestPng:
     def test_round_trip(self, png_image):
         assert not has_png(png_image)
@@ -102,3 +131,30 @@ class TestPng:
         baked = _png_with_itxt(png_image, itxt)
         assert extract_png(baked) is None
         assert not has_png(baked)
+
+    def test_many_small_idat_chunks_round_trip(self, png_image):
+        # #216: _serialize_png must stay correct (and O(n)) when the image data
+        # is spread over hundreds of small IDAT chunks. Bake into such a PNG and
+        # extract the token back — the O(n^2) regression this guards against was
+        # a performance one, so correctness under the pathological shape is the
+        # invariant to lock.
+        many = _png_with_many_small_idat(png_image, chunk_size=16)
+        n_idat = sum(1 for tag, _ in Reader(bytes=many).chunks() if _tag(tag) == 'IDAT')
+        assert n_idat > 500                               # genuinely many chunks
+
+        # The re-chunked PNG is still a valid image: pypng decodes it and the
+        # pixels are identical to the original (splitting IDATs at arbitrary
+        # byte offsets must not corrupt the compressed stream).
+        w0, h0, rows0, _ = Reader(bytes=png_image).read()
+        w1, h1, rows1, _ = Reader(bytes=many).read()
+        assert (w0, h0) == (w1, h1)
+        assert [list(r) for r in rows0] == [list(r) for r in rows1]
+
+        # Round-trip: the token bakes in and comes back out unchanged, and the
+        # many-IDAT structure survives baking.
+        assert not has_png(many)
+        baked = bake_png(many, TOKEN)
+        assert has_png(baked)
+        assert extract_png(baked) == TOKEN
+        assert sum(1 for tag, _ in Reader(bytes=baked).chunks()
+                   if _tag(tag) == 'IDAT') == n_idat

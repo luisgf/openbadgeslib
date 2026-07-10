@@ -107,6 +107,65 @@ class TestOB3SignerSign:
             signer.sign(ob3_credential)
 
 
+# ── private-key caching (#215) ─────────────────────────────────────────────────
+
+class TestOB3SignerKeyCaching:
+    """#215: a signer parses its private-key PEM once and reuses the loaded
+    object. The old path re-parsed it twice per credential — once in
+    _public_jwk() and once inside jwt.encode() — which dominated batch signing
+    (~86 ms/badge for RSA)."""
+
+    def _count_pem_loads(self, monkeypatch):
+        import cryptography.hazmat.primitives.serialization as ser
+        calls = {'n': 0}
+        orig = ser.load_pem_private_key
+
+        def counting(*args, **kwargs):
+            calls['n'] += 1
+            return orig(*args, **kwargs)
+
+        monkeypatch.setattr(ser, 'load_pem_private_key', counting)
+        return calls
+
+    def test_rsa_key_parsed_once_across_many_signs(self, rsa_priv_pem, ob3_credential, monkeypatch):
+        calls = self._count_pem_loads(monkeypatch)
+        signer = OB3Signer(privkey_pem=rsa_priv_pem, algorithm='RS256')  # PEM bytes: no load yet
+        tokens = [signer.sign(ob3_credential) for _ in range(4)]
+        assert calls['n'] == 1                             # loaded once, not 8 times
+        assert all(len(t.split('.')) == 3 for t in tokens)
+
+    def test_ed25519_key_parsed_once_across_many_signs(self, ed25519_priv_pem, ob3_credential, monkeypatch):
+        calls = self._count_pem_loads(monkeypatch)
+        signer = OB3Signer(privkey_pem=ed25519_priv_pem, algorithm='EdDSA')
+        for _ in range(3):
+            signer.sign(ob3_credential)
+        assert calls['n'] == 1
+
+    def test_batch_of_rsa_signatures_all_verify(self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential):
+        # RS256 is deterministic, but the point is that reusing the cached key
+        # yields signatures that still verify against the matching public key.
+        tokens = [ob3_rsa_signer.sign(ob3_credential) for _ in range(5)]
+        for token in tokens:
+            assert ob3_rsa_verifier.verify(token).recipient_id == ob3_credential.recipient_id
+
+    def test_batch_of_ecc_signatures_all_verify(self, ob3_ecc_signer, ob3_ecc_verifier, ob3_credential):
+        # ES256 uses a random nonce, so each token differs; every one must still
+        # verify with the memoised key.
+        tokens = [ob3_ecc_signer.sign(ob3_credential) for _ in range(5)]
+        assert len(set(tokens)) == 5
+        for token in tokens:
+            assert ob3_ecc_verifier.verify(token).recipient_id == ob3_credential.recipient_id
+
+    def test_public_jwk_unchanged_by_caching(self, ob3_rsa_signer, ob3_credential):
+        # The cached public JWK must be the same object/content across signs and
+        # still carry only public parameters.
+        import jwt
+        h1 = jwt.get_unverified_header(ob3_rsa_signer.sign(ob3_credential))
+        h2 = jwt.get_unverified_header(ob3_rsa_signer.sign(ob3_credential))
+        assert h1['jwk'] == h2['jwk']
+        assert h1['jwk']['kty'] == 'RSA' and 'd' not in h1['jwk']
+
+
 # ── sign_into_svg() ────────────────────────────────────────────────────────────
 
 class TestSignIntoSVG:

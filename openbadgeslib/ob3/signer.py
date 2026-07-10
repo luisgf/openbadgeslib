@@ -22,7 +22,7 @@
 
 import json
 
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 import jwt
 
@@ -53,8 +53,30 @@ class OB3Signer:
             )
         self.privkey_pem = key_to_pem(privkey_pem)
         self.algorithm = algorithm
+        # Parse the PEM into a cryptography key object once per signer and reuse
+        # it for every signature. ``load_pem_private_key`` on an RSA-2048 PEM
+        # costs ~45 ms, and the old path paid it twice per badge — once in
+        # ``_public_jwk()`` and once inside ``jwt.encode()`` — which dominated
+        # batch signing (86 ms/badge for RSA). Both the key object and the
+        # derived public JWK are memoised lazily on first use (#215).
+        self._privkey_obj: Any = None
+        self._public_jwk_cache: Optional[dict[str, Any]] = None
 
     # ── core signing ───────────────────────────────────────────────────────────
+
+    def _load_privkey(self) -> Any:
+        """Load and memoise the ``cryptography`` private-key object.
+
+        Parsed once from ``self.privkey_pem`` and shared by ``sign_payload``
+        (handed straight to ``jwt.encode``, which accepts a key object) and
+        ``_public_jwk`` — so a signer parses its PEM a single time regardless of
+        how many credentials it signs (#215)."""
+        if self._privkey_obj is None:
+            from cryptography.hazmat.primitives import serialization as _ser
+            pem = self.privkey_pem.encode('utf-8') \
+                if isinstance(self.privkey_pem, str) else self.privkey_pem
+            self._privkey_obj = _ser.load_pem_private_key(pem, password=None)
+        return self._privkey_obj
 
     def sign(self, credential: OpenBadgeCredential) -> str:
         """Sign a credential and return a compact JWT-VC string.
@@ -71,7 +93,7 @@ class OB3Signer:
         VCs — e.g. a BitstringStatusListCredential — with one key setup."""
         headers = {"jwk": self._public_jwk()}
         try:
-            return jwt.encode(payload, self.privkey_pem, algorithm=self.algorithm,
+            return jwt.encode(payload, self._load_privkey(), algorithm=self.algorithm,
                               headers=headers)
         except jwt.exceptions.PyJWTError as exc:
             raise ErrorSigningFile(
@@ -79,17 +101,18 @@ class OB3Signer:
 
     def _public_jwk(self) -> dict[str, Any]:
         """Return the public JWK for the JOSE header, derived from the signing
-        key. Loaded via ``cryptography`` (which reads the RSA/EC/Ed25519 PEMs
-        this library produces) and serialised with PyJWT's algorithm; only
-        public parameters are included."""
-        from cryptography.hazmat.primitives import serialization as _ser
+        key. Derived from the memoised private-key object (which reads the
+        RSA/EC/Ed25519 PEMs this library produces) and serialised with PyJWT's
+        algorithm; only public parameters are included. Computed once and cached
+        per signer (#215)."""
+        cached = self._public_jwk_cache
+        if cached is not None:
+            return cached
         from jwt.algorithms import RSAAlgorithm, ECAlgorithm, OKPAlgorithm
-        pem = self.privkey_pem.encode('utf-8') if isinstance(self.privkey_pem, str) \
-            else self.privkey_pem
         try:
             # public_key() is a broad union; we dispatch on self.algorithm, so
             # the concrete type matches the chosen to_jwk. Treat as Any for mypy.
-            pub: Any = _ser.load_pem_private_key(pem, password=None).public_key()
+            pub: Any = self._load_privkey().public_key()
             if self.algorithm.startswith('RS'):
                 jwk_json = RSAAlgorithm.to_jwk(pub)
             elif self.algorithm.startswith('ES'):
@@ -98,7 +121,9 @@ class OB3Signer:
                 jwk_json = OKPAlgorithm.to_jwk(pub)
         except Exception as exc:
             raise ErrorSigningFile("Could not derive the public JWK: %s" % exc) from exc
-        return cast(dict[str, Any], json.loads(jwk_json))
+        jwk = cast(dict[str, Any], json.loads(jwk_json))
+        self._public_jwk_cache = jwk
+        return jwk
 
     # ── image baking ───────────────────────────────────────────────────────────
 

@@ -287,3 +287,46 @@ class TestSignEdgeCases:
         k.read_public_key(ecc_pub_pem)
         with pytest.raises((SignatureError, Exception)):
             sign({'alg': 'RS256'}, PAYLOAD, key=k.get_pub_key())
+
+
+# ── key-object reuse (#215) ────────────────────────────────────────────────────
+
+class TestKeyObjectReuse:
+    """#215: an already-loaded cryptography key object is handed straight to
+    PyJWT's prepare_key instead of being re-serialised to PEM and re-parsed on
+    every sign. The OB1 path passes ``Badge.priv_key`` (loaded once at Badge
+    construction), so the old ``prepare_key(key_to_pem(key))`` round-trip paid a
+    ``load_pem_private_key`` per badge for nothing."""
+
+    def test_prepare_key_arg_passes_objects_and_pems_through(self, rsa_priv_pem, rsa_pub_pem):
+        from openbadgeslib._jws import _prepare_key_arg
+        priv, pub = _load_rsa_keys(rsa_priv_pem, rsa_pub_pem)
+        assert _prepare_key_arg(priv) is priv              # object reused as-is
+        assert _prepare_key_arg(pub) is pub
+        assert _prepare_key_arg(rsa_priv_pem) is rsa_priv_pem   # PEM bytes untouched
+
+    def test_sign_with_key_object_does_not_re_serialise(self, rsa_priv_pem, rsa_pub_pem, monkeypatch):
+        import openbadgeslib._jws as jws_mod
+        priv, pub = _load_rsa_keys(rsa_priv_pem, rsa_pub_pem)
+        calls = {'n': 0}
+        orig = jws_mod.key_to_pem
+
+        def counting(key):
+            calls['n'] += 1
+            return orig(key)
+
+        monkeypatch.setattr(jws_mod, 'key_to_pem', counting)
+        raw = sign({'alg': 'RS256'}, PAYLOAD, key=priv)
+        assert calls['n'] == 0                             # no PEM round-trip for an object
+        # …and the resulting signature is still valid.
+        jws = _build_jws({'alg': 'RS256'}, PAYLOAD, raw)
+        assert verify_block(jws, key=pub) is True
+
+    def test_repeated_signing_with_object_stays_valid(self, ecc_priv_pem, ecc_pub_pem):
+        # Sign several times with the same key object (ES256 → distinct tokens);
+        # every signature must verify.
+        priv, pub = _load_ecc_keys(ecc_priv_pem, ecc_pub_pem)
+        for _ in range(4):
+            raw = sign({'alg': 'ES256'}, PAYLOAD, key=priv)
+            jws = _build_jws({'alg': 'ES256'}, PAYLOAD, raw)
+            assert verify_block(jws, key=pub) is True

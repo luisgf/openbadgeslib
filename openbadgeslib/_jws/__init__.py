@@ -8,8 +8,42 @@ from .exceptions import SignatureError, MissingKey, MissingSigner, MissingVerifi
 from jwt.algorithms import RSAAlgorithm, ECAlgorithm, OKPAlgorithm
 from jwt.exceptions import InvalidKeyError
 
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey, Ed25519PublicKey)
+
 from ..keys import KeyType, detect_key_type, key_to_pem
 from ..errors import UnknownKeyType
+
+# Key objects PyJWT's ``prepare_key`` accepts as-is (its own supported backends).
+# A live one of these can be handed straight to prepare_key, skipping a PEM
+# round-trip; anything else (legacy pycryptodome / python-ecdsa) still needs
+# key_to_pem first — PyJWT does not recognise those objects.
+_CRYPTOGRAPHY_KEY_TYPES = (
+    rsa.RSAPrivateKey, rsa.RSAPublicKey,
+    ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey,
+    Ed25519PrivateKey, Ed25519PublicKey,
+)
+
+
+def _prepare_key_arg(key: Any) -> Any:
+    """Return the value to feed a PyJWT algorithm's ``prepare_key``.
+
+    ``prepare_key`` accepts a PEM (str/bytes) *and* a live ``cryptography`` key
+    object directly, returning the latter untouched. Passing an already-loaded
+    object straight through skips a ``key_to_pem`` re-serialisation plus a
+    ``load_pem_private_key`` re-parse on every sign: the OB1 path hands in
+    ``Badge.priv_key`` — a cryptography object loaded once at construction — so
+    round-tripping it back to a PEM here only to re-parse it wasted ~45 ms per
+    RSA badge (#215). Only legacy pycryptodome / python-ecdsa objects, which
+    PyJWT does not recognise, still go through ``key_to_pem``.
+    """
+    if isinstance(key, (bytes, str)):
+        return key
+    if isinstance(key, _CRYPTOGRAPHY_KEY_TYPES):
+        return key
+    return key_to_pem(key)
+
 
 # Each entry is (algorithm class, hash id). EdDSA's OKPAlgorithm takes no hash
 # argument — its hash id is None and _algo_for constructs it with no args.
@@ -65,7 +99,7 @@ def sign(header_dict: Dict[str, Any], payload_dict: Dict[str, Any], key: Any) ->
     signing_input = utils.encode(header_dict) + b'.' + utils.encode(payload_dict)
     algo = _algo_for(alg_name)
     try:
-        prepared = algo.prepare_key(key_to_pem(key))
+        prepared = algo.prepare_key(_prepare_key_arg(key))
         return cast(bytes, algo.sign(signing_input, prepared))
     except (InvalidKeyError, ValueError) as exc:
         raise SignatureError(str(exc)) from exc
@@ -121,7 +155,7 @@ def verify_block(msg: Union[str, bytes], key: Optional[Any] = None) -> bool:
 
     algo = _algo_for(alg_name)
     try:
-        prepared = algo.prepare_key(key_to_pem(key))
+        prepared = algo.prepare_key(_prepare_key_arg(key))
         valid = algo.verify(signing_input, prepared, raw_sig)
     except (InvalidKeyError, ValueError, AttributeError, TypeError) as exc:
         # A private key served where a public key is expected reaches

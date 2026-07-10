@@ -149,16 +149,22 @@ def extract_svg(image_bytes: bytes, *, element: str = SVG_ELEMENT,
 # ── PNG ─────────────────────────────────────────────────────────────────────
 
 def _serialize_png(chunks: List[Tuple[Union[str, bytes], bytes]]) -> bytes:
-    out = _png_signature
+    # Accumulate the pieces in a list and join once at the end. Building the
+    # result with ``out += piece`` is O(n^2) in the number of chunks: a PNG
+    # whose image data is split across hundreds of small IDAT chunks (8 KB, as
+    # libpng and Photoshop emit) reallocated and recopied the whole growing
+    # buffer on every chunk — 101 ms for 6.6 MB / 832 chunks, versus 0.49 ms
+    # with a single ``b''.join`` (#216). The emitted bytes are byte-identical.
+    parts: List[bytes] = [_png_signature]
     for tag, data in chunks:
-        out += pack("!I", len(data))
         if isinstance(tag, str):
             tag = tag.encode('iso8859-1')
-        out += tag + data
         checksum = crc32(tag)
         checksum = crc32(data, checksum) & 0xFFFFFFFF
-        out += pack("!I", checksum)
-    return cast(bytes, out)
+        parts.append(pack("!I", len(data)))
+        parts.append(tag + data)
+        parts.append(pack("!I", checksum))
+    return b''.join(parts)
 
 
 def bake_png(image_bytes: bytes, token: str, text_comment: Optional[str] = None, *,
