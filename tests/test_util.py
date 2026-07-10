@@ -255,13 +255,15 @@ class TestHTTPSOnlyRedirectHandler:
             self._get_request(), None, 302, 'Found', {}, 'https://example.com/key.pem')
         assert req is not None
 
-    def test_download_file_uses_https_only_redirect_handler(self):
-        from openbadgeslib.util import _HTTPSOnlyRedirectHandler
+    def test_download_file_uses_pinned_and_redirect_handlers(self):
+        from openbadgeslib.util import (_HTTPSOnlyRedirectHandler,
+                                        _PinnedHTTPSHandler)
         mock_opener = _mock_opener()
         with patch('openbadgeslib.util.request.build_opener', return_value=mock_opener) as m:
             download_file('https://example.com/file.pem')
-        (handler,), _ = m.call_args
-        assert isinstance(handler, _HTTPSOnlyRedirectHandler)
+        handlers, _ = m.call_args
+        assert any(isinstance(h, _PinnedHTTPSHandler) for h in handlers)
+        assert any(isinstance(h, _HTTPSOnlyRedirectHandler) for h in handlers)
 
 
 class TestSSRFProtection:
@@ -323,6 +325,69 @@ class TestSSRFProtection:
             with pytest.raises(ValueError):
                 _HTTPSOnlyRedirectHandler(allow_insecure=False).redirect_request(
                     req, None, 302, 'Found', {}, 'https://evil.example/x')
+
+
+class TestDNSRebindingPinning:
+    """_PinnedHTTPSConnection resolves + validates at connect time and dials the
+    validated IP, so a name that answers public at the pre-check but private at
+    connect (DNS rebinding) is caught, and the socket never re-resolves (#231)."""
+
+    def _conn(self):
+        from openbadgeslib.util import _PinnedHTTPSConnection
+        return _PinnedHTTPSConnection('example.com')
+
+    def test_connect_rejects_private_ip(self):
+        # The rebind case: the pre-check saw a public IP, but at connect the name
+        # now resolves to loopback/metadata — connect() must refuse.
+        conn = self._conn()
+        with patch('openbadgeslib.util._resolve_host', return_value=['127.0.0.1']):
+            with pytest.raises(ValueError, match='SSRF / DNS rebinding'):
+                conn.connect()
+
+    def test_connect_dials_validated_ip_with_hostname_sni(self):
+        conn = self._conn()
+        fake_sock = MagicMock()
+        conn._create_connection = MagicMock(return_value=fake_sock)
+        conn._context = MagicMock()
+        with patch('openbadgeslib.util._resolve_host', return_value=['93.184.216.34']):
+            conn.connect()
+        # Dialed the validated IP, not the hostname (no second resolution).
+        (address, *_), _ = conn._create_connection.call_args
+        assert address == ('93.184.216.34', 443)
+        # TLS SNI / cert verification still use the hostname.
+        _, kwargs = conn._context.wrap_socket.call_args
+        assert kwargs['server_hostname'] == 'example.com'
+
+    def test_connect_allows_private_when_opted_in(self):
+        from openbadgeslib.util import _PinnedHTTPSConnection
+        conn = _PinnedHTTPSConnection('localhost', allow_private=True)
+        conn._create_connection = MagicMock(return_value=MagicMock())
+        conn._context = MagicMock()
+        with patch('openbadgeslib.util._resolve_host', return_value=['127.0.0.1']):
+            conn.connect()   # must not raise
+        (address, *_), _ = conn._create_connection.call_args
+        assert address == ('127.0.0.1', 443)
+
+
+class TestDownloadWallClockDeadline:
+    """A per-socket timeout does not bound total time; download_file enforces a
+    wall-clock budget so a slow-drip server cannot hold the connection (#231)."""
+
+    def test_slow_drip_hits_deadline(self):
+        from openbadgeslib.util import MAX_DOWNLOAD_SECONDS
+        resp = MagicMock()
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = MagicMock(return_value=False)
+        resp.read.return_value = b'x' * 16          # never signals EOF (drip)
+        opener = MagicMock()
+        opener.open.return_value = resp
+        # monotonic(): deadline anchor, then one ok tick, then past the budget.
+        times = iter([0.0, 1.0, MAX_DOWNLOAD_SECONDS + 1.0])
+        with patch('openbadgeslib.util._resolve_host', return_value=['93.184.216.34']), \
+                patch('openbadgeslib.util.request.build_opener', return_value=opener), \
+                patch('openbadgeslib.util.time.monotonic', side_effect=lambda: next(times)):
+            with pytest.raises(ValueError, match='time budget'):
+                download_file('https://example.com/drip')
 
 
 class TestMisc:

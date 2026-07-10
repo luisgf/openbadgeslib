@@ -25,6 +25,7 @@ __version__ = '3.14.0'
 
 import contextlib
 import hashlib
+import http.client
 import io
 import ipaddress
 import json
@@ -168,9 +169,10 @@ def _assert_public_host(url: str) -> None:
     is checked, and the check is re-applied to redirect targets in
     _HTTPSOnlyRedirectHandler (a public host can 30x to an internal address).
 
-    This is a pre-connection check; it does not on its own defeat DNS rebinding
-    (a name that resolves public here but private at connect time), which would
-    require pinning the socket to the validated address.
+    This is the early pre-connection check. DNS rebinding (a name that resolves
+    public here but private at connect time) is defeated separately by
+    :class:`_PinnedHTTPSConnection`, which re-resolves, re-validates and dials
+    the validated IP in one step for the actual HTTPS connection.
     """
     parts = urlparse(url)
     host = parts.hostname
@@ -218,10 +220,83 @@ class _HTTPSOnlyRedirectHandler(request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """An HTTPSConnection that resolves and SSRF-validates the host *at connect
+    time* and dials the validated IP, while still presenting the original
+    hostname for TLS SNI, certificate validation and the ``Host`` header.
+
+    ``_assert_public_host`` runs before the connection, but ``opener.open`` would
+    otherwise re-resolve on its own — a hostile DNS with TTL 0 can answer public
+    during the pre-check and internal (169.254.169.254, 127.0.0.1, RFC1918) on
+    the real connect (DNS rebinding). Resolving and connecting in the same breath
+    here closes that window: the IP that is validated is the exact IP dialed.
+    ``allow_private`` skips the classification for a private deployment.
+    """
+
+    def __init__(self, host: str, *args: Any,
+                 allow_private: bool = False, **kwargs: Any) -> None:
+        super().__init__(host, *args, **kwargs)
+        self._allow_private = allow_private
+
+    def connect(self) -> None:
+        port = self.port or 443
+        try:
+            addrs = _resolve_host(self.host, port)
+        except OSError as exc:
+            raise ValueError('Could not resolve host %r: %s'
+                             % (self.host, exc)) from exc
+        if not addrs:
+            raise ValueError('Could not resolve host %r' % self.host)
+        if not self._allow_private:
+            for ip_str in addrs:
+                if _ip_is_blocked(ip_str):
+                    raise ValueError(
+                        'Refusing to connect to %r: resolves to non-public '
+                        'address %s (possible SSRF / DNS rebinding).'
+                        % (self.host, ip_str))
+        # Dial the validated IP directly (no second resolution) by pointing the
+        # connection's socket factory at it, then delegate to the parent connect
+        # — which still uses self.host for TLS SNI, certificate verification and
+        # the Host header. urllib exposes _create_connection as an instance
+        # attribute precisely so it can be swapped like this.
+        pinned = addrs[0]
+        original = self._create_connection  # type: ignore[has-type]
+
+        def _dial_pinned(address: Any, *a: Any, **k: Any) -> Any:
+            return original((pinned, address[1]), *a, **k)
+
+        self._create_connection = _dial_pinned
+        try:
+            super().connect()
+        finally:
+            self._create_connection = original
+
+
+class _PinnedHTTPSHandler(request.HTTPSHandler):
+    """Route every HTTPS connection — the initial request and any redirect —
+    through :class:`_PinnedHTTPSConnection`, so the SSRF host check and the
+    socket connect share one DNS resolution (no rebinding window). TLS still
+    uses urllib's default verifying context (verify + hostname check)."""
+
+    def __init__(self, allow_private: bool = False) -> None:
+        super().__init__()
+        self._allow_private = allow_private
+
+    def https_open(self, req: Any) -> Any:
+        return self.do_open(
+            _PinnedHTTPSConnection, req, allow_private=self._allow_private)
+
+
 #: Verify keys, issuer documents, and revocation lists are all small JSON/PEM
 #: payloads; cap reads well above any legitimate size to bound memory use
 #: against an attacker-influenced URL serving an oversized/streamed response.
 MAX_DOWNLOAD_SIZE = 5 * 1024 * 1024  # 5 MiB
+
+#: Global wall-clock budget for a single download. ``timeout=30`` on the socket
+#: is per-operation, so a server that drips one byte per 29 s would hold the
+#: connection open far longer than any legitimate small fetch needs; the size
+#: cap bounds bytes but not time. This bounds the total read wall-clock.
+MAX_DOWNLOAD_SECONDS = 60
 
 
 def download_file(url: str, allow_insecure: bool = False,
@@ -255,12 +330,23 @@ def download_file(url: str, allow_insecure: bool = False,
     if not allow_private:
         _assert_public_host(url)
 
+    # _PinnedHTTPSHandler pins the connection to the validated IP (defeats DNS
+    # rebinding); the redirect handler re-applies the scheme/host checks to any
+    # 30x target (which then also connects through the pinned handler).
     opener = request.build_opener(
+        _PinnedHTTPSHandler(allow_private),
         _HTTPSOnlyRedirectHandler(allow_insecure, allow_private))
+    deadline = time.monotonic() + MAX_DOWNLOAD_SECONDS
     with opener.open(url, timeout=30) as response:
         chunks = []
         total = 0
         while True:
+            # A per-socket timeout does not bound total time: a slow-drip server
+            # can keep resetting it. Enforce a wall-clock budget too.
+            if time.monotonic() > deadline:
+                raise ValueError(
+                    'Refusing to download %s: exceeded the %d-second time budget '
+                    '(slow-drip response)' % (url, MAX_DOWNLOAD_SECONDS))
             chunk = response.read(65536)
             if not chunk:
                 break
