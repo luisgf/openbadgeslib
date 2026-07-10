@@ -120,8 +120,10 @@ class PublishResult:
     ``<purpose>.jwt`` and ``verify.pem``, optional Type Metadata). ``did_skipped``
     / ``status_skipped`` are ``(badge, reason)`` for badges left out of did.json
     or whose status lists could not be regenerated; ``no_status_config`` lists
-    badges without ``status_lists``. ``status_operation`` is set when a
-    revoke/suspend/unsuspend was applied.
+    badges without ``status_lists``. ``no_validity_bound`` lists revocable badges
+    whose status lists were published with no ``validUntil`` (no anti-replay
+    freshness — set ``status_validity_days`` and republish regularly).
+    ``status_operation`` is set when a revoke/suspend/unsuspend was applied.
     """
     did: str
     publish_url: str
@@ -131,6 +133,7 @@ class PublishResult:
     did_skipped: List[Tuple[str, str]] = field(default_factory=list)
     status_skipped: List[Tuple[str, str]] = field(default_factory=list)
     no_status_config: List[str] = field(default_factory=list)
+    no_validity_bound: List[str] = field(default_factory=list)
     type_metadata: Optional[TypeMetadata] = None
     live_check: Optional[List[LiveArtifact]] = None
 
@@ -362,6 +365,7 @@ def publish_ob3(conf: configparser.ConfigParser, output: str, *,
     did_skipped: List[Tuple[str, str]] = []
     status_skipped: List[Tuple[str, str]] = []
     no_status_config: List[str] = []
+    no_validity_bound: List[str] = []
     files_written: List[str] = []
     type_metadata: Optional[TypeMetadata] = None
 
@@ -410,6 +414,12 @@ def publish_ob3(conf: configparser.ConfigParser, output: str, *,
                 if status_conf.validity_days is not None:
                     valid_until = (datetime.now(tz=timezone.utc)
                                    + timedelta(days=status_conf.validity_days))
+                else:
+                    # No validUntil => the published list has no anti-replay
+                    # freshness: a verifier can't tell a stale/replayed copy
+                    # (with fewer revocations) from the current one. Flag it
+                    # loudly so the issuer sets status_validity_days.
+                    no_validity_bound.append(name)
 
                 badge_dir = os.path.join(output, name)
                 os.makedirs(badge_dir, exist_ok=True)
@@ -440,5 +450,6 @@ def publish_ob3(conf: configparser.ConfigParser, output: str, *,
         did=did, publish_url=publish_url, output=output,
         files_written=files_written, status_operation=status_operation,
         did_skipped=did_skipped, status_skipped=status_skipped,
-        no_status_config=no_status_config, type_metadata=type_metadata,
+        no_status_config=no_status_config,
+        no_validity_bound=no_validity_bound, type_metadata=type_metadata,
         live_check=live_check)

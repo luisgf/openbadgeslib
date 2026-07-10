@@ -371,6 +371,11 @@ def _publish_ob3(args: argparse.Namespace,
     for name in result.no_status_config:
         print('[i] [%s] has no status_lists configured; publishing no '
               'status list for it' % name)
+    for name in result.no_validity_bound:
+        print('[!] [%s] status list(s) published WITHOUT a validUntil bound — '
+              'no anti-replay freshness: a replayed older copy (with fewer '
+              'revocations) would pass. Set status_validity_days in the badge '
+              'section and republish before it lapses (see the wiki).' % name)
     for name, detail in result.status_skipped:
         print('[!] Skipping [%s] status lists — %s' % (name, detail))
 
@@ -427,6 +432,7 @@ def _publish_ob3(args: argparse.Namespace,
         'files_written': sorted(result.files_written),
         'status_operation': operation_result,
         'skipped': [n for n, _ in result.status_skipped],
+        'no_validity_bound': sorted(result.no_validity_bound),
         'live_check': live_check_json,
         '_exit': 2 if result.partial else 0,
     }

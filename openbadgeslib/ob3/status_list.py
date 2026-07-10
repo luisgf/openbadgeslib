@@ -91,6 +91,11 @@ def build_status_list_credential(issuer_id: str, url: str, purpose: str,
     (ob3.status) then rejects a stale copy served past that instant, so a
     replayed old ``revocation.jwt`` cannot silently resurrect a revoked badge.
     The issuer must republish the list before it lapses (see the wiki).
+
+    Omitting *valid_until* publishes a list with NO anti-replay freshness — an
+    authentic older copy (with fewer revocations) passes the window unchecked.
+    openbadges-publish warns loudly when it does this; issuers of revocable
+    badges should set ``status_validity_days`` and republish on that cadence.
     """
     if purpose not in STATUS_PURPOSES:
         raise ValueError("statusPurpose must be one of %r, got %r"
