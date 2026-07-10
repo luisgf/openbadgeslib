@@ -100,9 +100,15 @@ def badge_to_sd_jwt_claims(credential: OpenBadgeCredential) -> dict[str, Any]:
     """Map an OpenBadgeCredential to a flat SD-JWT VC claim set.
 
     The ``achievement`` (the badge itself) is always disclosed; the recipient's
-    identity is kept under ``credentialSubject`` so it can be made selectively
-    disclosable (``DEFAULT_DISCLOSABLE``). ``iss``/``vct``/``iat`` are set by the
-    suite at issuance.
+    identity is kept under ``credentialSubject`` — both ``id`` and the hashed
+    ``identifier`` entries — so it can be made selectively disclosable
+    (``DEFAULT_DISCLOSABLE`` covers the whole ``credentialSubject``).
+    ``iss``/``vct``/``iat`` are set by the suite at issuance.
+
+    ``credentialStatus`` is NOT mapped: SD-JWT VC status carriage/checking is not
+    wired yet, so an SD-JWT VC badge is currently irrevocable. A credential that
+    carries a status is rejected at issuance by :func:`issue_badge_sd_jwt` rather
+    than silently dropped here.
     """
     vc = credential.to_vc()
     subject = vc.get("credentialSubject", {})
@@ -112,9 +118,18 @@ def badge_to_sd_jwt_claims(credential: OpenBadgeCredential) -> dict[str, Any]:
         "achievement": subject.get("achievement"),
         "validFrom": vc.get("validFrom"),
     }
+    # Keep the recipient's identity: credentialSubject.id AND the hashed
+    # identifier entries — a badge whose subject travelled via identifier (no id)
+    # would otherwise end up with no checkable recipient.
+    subject_claims: dict[str, Any] = {}
     recipient = subject.get("id")
     if recipient is not None:
-        claims["credentialSubject"] = {"id": recipient}
+        subject_claims["id"] = recipient
+    identifier = subject.get("identifier")
+    if identifier:
+        subject_claims["identifier"] = identifier
+    if subject_claims:
+        claims["credentialSubject"] = subject_claims
     if "validUntil" in vc:
         claims["validUntil"] = vc["validUntil"]
     return claims
@@ -211,7 +226,21 @@ def issue_badge_sd_jwt(
     Trusted List trust). The leaf's key must be *privkey_pem* and the issuer id
     must be in the leaf SAN, or verification fails closed. Needs openvc-core
     >=1.18. This closes the loop with the verify-side x5c support (#178).
+
+    IRREVOCABLE: SD-JWT VC status carriage/checking is not wired yet, so an
+    SD-JWT VC badge cannot be revoked. Rather than silently drop a credential's
+    ``credentialStatus`` (which would issue a badge the issuer believes is
+    revocable), this raises :class:`EudiError` if the credential carries one.
+    Issue a revocable OB 3.0 credential with the JWT-VC or LDP proof format
+    instead (#226).
     """
+    if credential.credential_status:
+        raise EudiError(
+            "this credential carries a credentialStatus (revocation/suspension) "
+            "but SD-JWT VC issuance cannot carry status yet, so the badge would "
+            "be irrevocable. Refusing to silently drop it — issue it without a "
+            "status list, or use the JWT-VC / LDP proof format for a revocable "
+            "OB 3.0 credential.")
     _, _, _, SdJwtVcProofSuite = _require_openvc()
     signing_key = _signing_key(privkey_pem, kid or ("%s#key-1" % credential.issuer.id))
     claims = badge_to_sd_jwt_claims(credential)
@@ -244,6 +273,11 @@ def verify_badge_sd_jwt(
     ``.key_bound``, ``.confirmation``). Raises :class:`EudiError` on any failure.
     Pass *audience*/*nonce* (and ``require_key_binding=True``) to check a Key
     Binding JWT from a holder presentation.
+
+    NOTE: revocation status is NOT checked (``require_status=False`` on both
+    paths). SD-JWT VC badges are issued without a ``credentialStatus``
+    (:func:`issue_badge_sd_jwt` rejects one), so there is nothing to check — an
+    SD-JWT VC badge is currently irrevocable (#226).
 
     Trust comes from exactly one of two sources:
 
