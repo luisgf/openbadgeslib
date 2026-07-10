@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v3.14.0 - unreleased
+* v3.14.0 - 2026-07-10
 
   A security & correctness hardening pass (audit-bot). Highlights:
 
