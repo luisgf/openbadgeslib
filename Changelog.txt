@@ -4,6 +4,52 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v3.15.0 - unreleased
+
+  Round-2 roadmap, short-term milestone: close the revocation/trust gaps the
+  deep-logic analysis surfaced, test the fail-closed guards, and take the cheap
+  batch-performance wins.
+
+  - security(ob3): with `--check-status`, verify the status list's OWN JWT-VC
+    signature by default and bind its issuer to the badge's, so a compromised
+    status host can no longer silently un-revoke a credential. The badge's
+    verification key is reused (publish signs the list with it), or the issuer
+    DID is resolved. `verify(check_status=True)` gains `verify_status_list=True`
+    by default; the verifier CLI gains `--no-verify-status-list` to opt out for
+    issuers that serve an unsigned list (#213).
+  - security(ob3): `OB3LdpVerifier` fails closed when it has no pinned key and
+    the credential's issuer is not a DID — the proof's `verificationMethod`
+    cannot be bound to a non-DID issuer, so resolving and trusting it would
+    prove internal consistency, not identity (#214).
+  - security(ob3): the endorsement validity window fails closed on a malformed
+    `validFrom`/`validUntil` (it previously swallowed the parse error and
+    accepted the endorsement, unlike every other window) (#218).
+  - fix(ob2, ob3): apply a 60-second clock-skew leeway to every validity window
+    (vc `validFrom`/`validUntil`, the status list window, OB2 `issuedOn`/
+    `expires`), so a slightly-fast issuer clock no longer false-rejects a
+    freshly issued credential (#217).
+  - perf(ob3, ob1): load the private-key object once per signer instead of
+    re-parsing the PEM on every signature (twice per badge on the JWT-VC path).
+    An RSA batch of 1000 badges drops from ~86 s to ~1.5 s; the OB1/OB2 JWS
+    path reuses the already-loaded key too (#215).
+  - perf(baking): build the baked PNG with a single `b''.join` instead of
+    quadratic `bytes` concatenation — ~200x faster on images written with many
+    small IDAT chunks (Photoshop/libpng), e.g. ~100 ms -> ~0.5 ms for 6.6 MB
+    (#216).
+  - test: add negative tests for the fail-closed rejection guards that had none
+    — OB2 hosted `startsWith`/`allowedOrigins` reject sides, the OB3 status
+    anti-gzip-bomb cap and negative index, the LDP verificationMethod binding,
+    and a future JWT `nbf` (#219).
+  - ci: the nightly conformance job now fails if a 1EdTech validator does not
+    come up or if no conformance test actually ran (all-skipped), instead of
+    reporting green, and files (or updates) an issue on a scheduled failure
+    (#220).
+  - ci: install the `[ldp-sd]` extra explicitly and turn the ecdsa-sd-2023
+    selective-disclosure test skip into a hard failure under CI, so an
+    openvc-core packaging change can no longer silently disable that suite
+    (#221).
+
+
 * v3.14.0 - 2026-07-10
 
   A security & correctness hardening pass (audit-bot). Highlights:
