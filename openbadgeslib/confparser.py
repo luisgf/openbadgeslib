@@ -23,34 +23,48 @@
 
 from configparser import ConfigParser, ExtendedInterpolation, Error as ConfigParserError
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 import os
 import sys
 import logging
 
 from .errors import ConfigError
 
+if TYPE_CHECKING:
+    from .keys import KeyType
+
 logger = logging.getLogger(__name__)
 
 
+def load_config(config_file: str) -> ConfigParser:
+    """Load a config file as a library call: return the parsed ConfigParser, or
+    raise :class:`ConfigError` if the file is missing, empty, or malformed.
+
+    This is the programmatic entry point — no printing, no ``sys.exit`` — so an
+    integrator can trap the error. CLI tools use :func:`read_config_or_exit`,
+    which presents the message and exits. ``read_conf`` already raises a typed
+    ConfigError for a malformed config (bad INI syntax, an unresolvable
+    ``${...}`` reference, an encoding mismatch, or a missing/empty [paths]
+    base); a missing/empty file returns None, mapped to ConfigError here.
+    """
+    conf = ConfParser(config_file).read_conf()
+    if conf is None:
+        raise ConfigError(
+            'The config file %s does not exist or is empty' % config_file)
+    return conf
+
+
 def read_config_or_exit(config_file: str) -> ConfigParser:
-    """Read a config file for a CLI tool, exiting with a clear message if it is
-    missing, empty, or malformed. Shared by all the console-script entrypoints."""
+    """CLI wrapper over :func:`load_config`: read a config file for a console
+    tool, presenting a clear message and exiting if it is missing, empty, or
+    malformed. Shared by all the console-script entrypoints."""
     try:
-        conf = ConfParser(config_file).read_conf()
+        return load_config(config_file)
     except ConfigError as exc:
-        # read_conf() raises a clean, typed ConfigError for a malformed config
-        # (bad INI syntax, an unresolvable ${...} reference, an encoding
-        # mismatch, or a missing/empty [paths] base). Present it as a controlled
-        # CLI error rather than letting it escape as a raw traceback.
         # ConfigError is a ValueError too, so pre-existing `except ValueError`
         # callers keep working.
         print('[!] %s' % exc)
         sys.exit(-1)
-    if not conf:
-        print('[!] The config file %s does not exist or is empty' % config_file)
-        sys.exit(-1)
-    return conf
 
 
 def resolve_badge_section(conf: ConfigParser, name: str) -> str:
@@ -181,6 +195,91 @@ def ob3_status_config(conf: ConfigParser,
     return OB3StatusConfig(purposes=purposes, size_bits=size_bits,
                            registry_path=registry_path, list_urls=list_urls,
                            validity_days=validity_days)
+
+
+# ── centralized config defaults ──────────────────────────────────────────────
+# One inventory for the accepted-key defaults, so each lives in a single place
+# rather than being re-spelled at every read site. (The status-list defaults —
+# base_status, status_base, validity horizon — are resolved in
+# ob3_status_config / OB3StatusConfig above.)
+DEFAULT_KEY_TYPE = 'RSA'
+
+
+def resolve_key_type(name: Optional[str]) -> 'KeyType':
+    """Map a config ``key_type`` name to a :class:`~openbadgeslib.keys.KeyType`,
+    defaulting to RSA when unset. Accepts RSA / ECC / ED25519 (with EDDSA as an
+    alias), case-insensitively. Raises :class:`ConfigError` for an unknown name.
+
+    The single home for the mapping the keygenerator used to inline.
+    """
+    from .keys import KeyType
+    key = (name or DEFAULT_KEY_TYPE).strip().upper()
+    mapping = {'RSA': KeyType.RSA, 'ECC': KeyType.ECC,
+               'ED25519': KeyType.ED25519, 'EDDSA': KeyType.ED25519}
+    try:
+        return mapping[key]
+    except KeyError:
+        raise ConfigError(
+            "Unknown key_type %r (use RSA, ECC, or ED25519)" % key) from None
+
+
+@dataclass
+class IssuerConfig:
+    """Resolved [issuer] section: the identity fields OB2/OB3 issuance needs,
+    with the OB3 issuer id (did / publish_url / url) resolved once — one home
+    for the [issuer] reads each CLI used to re-spell."""
+    name: str
+    id: str
+    url: Optional[str] = None
+    email: Optional[str] = None
+    publish_url: Optional[str] = None
+    image: Optional[str] = None
+
+
+def issuer_config(conf: ConfigParser) -> IssuerConfig:
+    """Resolve and validate the [issuer] section into a typed IssuerConfig,
+    raising :class:`ConfigError` if the section or its required ``name`` is
+    missing."""
+    if not conf.has_section('issuer'):
+        raise ConfigError("Configuration is missing the [issuer] section")
+    section = conf['issuer']
+    name = (section.get('name') or '').strip()
+    if not name:
+        raise ConfigError("[issuer] is missing the required 'name' key")
+    return IssuerConfig(
+        name=name,
+        id=ob3_issuer_id(conf),
+        url=section.get('url'),
+        email=section.get('email'),
+        publish_url=section.get('publish_url'),
+        image=section.get('image'),
+    )
+
+
+@dataclass
+class BadgeSectionConfig:
+    """Resolved optional badge-section fields with the centralized
+    defaults/fallbacks applied: the criteria narrative (``criteria_narrative``
+    falling back to the OpenBadges 1.0 ``criteria``) and the hosted-assertions
+    base URL. Required keys (name, description, badge) stay direct reads so a
+    missing one still raises ``KeyError`` — the "missing required config key"
+    IssuanceError contract."""
+    section: str
+    criteria_narrative: str
+    hosted_assertions_base: Optional[str] = None
+
+
+def badge_section_config(conf: ConfigParser,
+                         badge_section: str) -> BadgeSectionConfig:
+    """Resolve the optional fields of a badge section with centralized
+    fallbacks."""
+    section = conf[badge_section]
+    return BadgeSectionConfig(
+        section=badge_section,
+        criteria_narrative=section.get('criteria_narrative',
+                                       section.get('criteria', '')),
+        hosted_assertions_base=section.get('hosted_assertions_base'),
+    )
 
 
 class ConfParser():
