@@ -78,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    enable_debug_logging(args.debug)
 
     if args.json:
         emit_cli_json(lambda: _generate(args))
@@ -125,8 +126,6 @@ def _generate(args: argparse.Namespace) -> dict[str, Any]:
     # Key generation must not require [paths]/[logs]/[issuer]: the legacy Logger
     # opened general.log/signer.log (KeyError/FileNotFoundError on an incomplete
     # config) just to emit these console lines. The module logger needs none.
-    enable_debug_logging(args.debug)
-
     logger.debug("key_type=%s private=%s public=%s",
                  key_type.name, private_key, public_key)
     issuer_name = (conf['issuer'].get('name', '?')

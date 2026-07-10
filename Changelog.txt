@@ -41,6 +41,9 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     `publicKey` (#194).
   - fix(confparser): reject a `status_size_bits` that is not a positive multiple
     of 8 as a clean config error (#204).
+  - fix(keygenerator): switch on debug logging at the start of the run, so `-d`
+    also covers config reading and validation — not just the tail of key
+    generation, where `enable_debug_logging` used to sit.
 
 * v3.13.0 - 2026-07-09
 
