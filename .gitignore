@@ -32,3 +32,6 @@ htmlcov/
 
 # macOS
 .DS_Store
+
+# pytest --junitxml output from the nightly conformance workflow
+conformance-results.xml

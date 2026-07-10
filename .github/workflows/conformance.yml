@@ -17,6 +17,12 @@ permissions:
 jobs:
   conformance:
     runs-on: ubuntu-latest
+    # Least-privilege for this job: read to check out, plus issues:write so a
+    # scheduled failure can file a tracking issue (see the last step). Overrides
+    # the top-level contents:read default for the conformance job only.
+    permissions:
+      contents: read
+      issues: write
     timeout-minutes: 45       # the OB3 Maven+Docker build is the long pole
     steps:
       - uses: actions/checkout@v7
@@ -36,26 +42,77 @@ jobs:
         run: docker compose -f tests/conformance/docker-compose.yml up -d --build
 
       - name: Wait for the validators to answer
+        # A validator that never answers must FAIL the job, not just warn: with
+        # the services down every conformance test SKIPs and pytest still exits
+        # 0, so the nightly would go green having validated nothing (#220).
         run: |
+          set -uo pipefail
+          missing=0
           for target in "OB2 http://localhost:8000/" "OB3 http://localhost:8080/v3/api-docs"; do
             name=${target%% *}; url=${target#* }
             echo "waiting for $name at $url"
+            up=0
             for i in $(seq 1 60); do
-              if curl -fsS -o /dev/null "$url"; then echo "$name up"; break; fi
-              if [ "$i" = 60 ]; then echo "::warning::$name did not come up in time"; fi
+              if curl -fsS -o /dev/null "$url"; then echo "$name up"; up=1; break; fi
               sleep 5
             done
+            if [ "$up" -eq 0 ]; then echo "::error::$name did not come up in time"; missing=1; fi
           done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::one or more official validators never answered — failing the nightly instead of validating nothing (#220)"
+            exit 1
+          fi
 
       - name: Run the conformance suite
         env:
           OB2_VALIDATOR_URL: http://localhost:8000
           OB3_VALIDATOR_URL: http://localhost:8080
-        run: pytest -m conformance_docker -v
+        run: pytest -m conformance_docker -v --junitxml=conformance-results.xml
+
+      - name: Assert the suite actually validated something
+        # #220 backstop: even with the validators up, a suite where every test
+        # SKIPs (or the marker selects nothing) still exits 0 — a green nightly
+        # that validated nothing. Require at least one test to have executed.
+        run: |
+          python - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          suites = list(ET.parse('conformance-results.xml').getroot().iter('testsuite'))
+          tests = sum(int(x.get('tests', 0)) for x in suites)
+          skipped = sum(int(x.get('skipped', 0)) for x in suites)
+          print(f'conformance: {tests} tests, {skipped} skipped, {tests - skipped} executed')
+          sys.exit(0 if tests - skipped >= 1 else '::error::no conformance test executed — nothing was validated (#220)')
+          PY
 
       - name: Validator logs (on failure)
         if: failure()
         run: docker compose -f tests/conformance/docker-compose.yml logs --no-color
+
+      - name: Open a tracking issue if the nightly failed
+        # Make the scheduled run a reliable signal: any nightly failure (a
+        # validator down, a fidelity regression, or nothing validated) surfaces
+        # as an issue. Scheduled only, so manual/dispatch runs stay quiet.
+        # Reuses the single open tracking issue to avoid a nightly pile-up.
+        # Mirrors the gh-CLI + GITHUB_TOKEN pattern in wiki-sync.yml.
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          body="The scheduled 1EdTech conformance run failed — a validator may not have come up, the issued badges may no longer pass the official validators, or the suite validated nothing (#220). Logs: $run_url"
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --state open --label 'category: ci-test' \
+            --search 'Nightly conformance run failed in:title' \
+            --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            echo "Commenting on existing tracking issue #$existing"
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            echo "Opening a new tracking issue"
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title 'Nightly conformance run failed' \
+              --label 'category: ci-test' --body "$body"
+          fi
 
       - name: Tear down
         if: always()

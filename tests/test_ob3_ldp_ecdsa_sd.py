@@ -7,10 +7,13 @@ holder presentation, then verify it through OB3LdpVerifier / the low-level
 entry, so they exercise openbadgeslib's wiring (P-256 key -> JWK, the pinned
 OB3 @context set handed to the delegate, exception mapping, the cryptosuite
 registry) rather than re-testing openvc's crypto internals. They need the
-[ldp-sd] extra (openvc-core + pyld) and skip without it; the "extra absent"
-test at the bottom runs always.
+[ldp-sd] extra (openvc-core + pyld): missing it SKIPs locally but FAILs under
+CI, where the extra is installed on purpose (#221). The "extra absent" test at
+the bottom runs always.
 """
 import copy
+import importlib
+import os
 import sys
 
 import pytest
@@ -73,11 +76,29 @@ def _issue_and_derive(ob3_credential, *, selective):
     return derived, pub_pem, did
 
 
+def _require_ldp_sd() -> None:
+    """Ensure the [ldp-sd] delegate stack (openvc-core + pyld) is importable.
+
+    Missing it SKIPs locally, but FAILs under CI (``CI=true``): CI installs the
+    extra on purpose, so an import that stops resolving there — e.g. an
+    openvc-core packaging change — must turn the whole ecdsa-sd-2023 suite red
+    instead of letting it pass by skipping in silence (#221).
+    """
+    for mod in ('openvc', 'pyld'):
+        try:
+            importlib.import_module(mod)
+        except ImportError as exc:
+            reason = ('the [ldp-sd] extra is required for the ecdsa-sd-2023 '
+                      'tests but %r is not importable: %s' % (mod, exc))
+            if os.environ.get('CI') == 'true':
+                pytest.fail(reason, pytrace=False)
+            pytest.skip(reason)
+
+
 @pytest.fixture(scope='session')
 def sd_credential(ob3_credential):
     """A holder presentation revealing the core fields + credentialSchema."""
-    pytest.importorskip('openvc')
-    pytest.importorskip('pyld')
+    _require_ldp_sd()
     return _issue_and_derive(ob3_credential, selective=['/credentialSchema'])
 
 
