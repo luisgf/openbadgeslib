@@ -119,6 +119,16 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     so a revoked credential could be silently resurrected. `PublishResult` gains
     a `no_validity_bound` list (surfaced in the CLI's human output and `--json`),
     and the config example documents the republication cadence (#227).
+  - security(ob3): SD-JWT VC (EUDI) issuance no longer silently drops a
+    credential's `credentialStatus`. Because SD-JWT VC status carriage/checking
+    is not wired yet (both verify paths hard-set `require_status=False`), an
+    SD-JWT VC badge is irrevocable; `issue_badge_sd_jwt` now rejects a credential
+    that carries a `credentialStatus` with a clear `EudiError` (before requiring
+    the [eudi] extra) rather than issue a badge the issuer believes is revocable.
+    `badge_to_sd_jwt_claims` also carries `credentialSubject.identifier` (the
+    hashed recipient identities), so a badge whose subject travelled via
+    `identifier` (no `id`) keeps a checkable recipient. The irrevocability is
+    documented prominently on the issue/verify docstrings (#226).
 
 
 * v3.14.0 - 2026-07-10

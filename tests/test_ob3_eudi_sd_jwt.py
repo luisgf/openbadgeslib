@@ -141,3 +141,66 @@ class TestExtraAbsent:
             monkeypatch.setitem(sys.modules, name, None)
         with pytest.raises(EudiError, match=r"openbadgeslib\[eudi\]"):
             issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem)
+
+
+# ── #226: irrevocability + identifier carriage (pure-Python, no [eudi]) ───────
+
+class TestSdJwtStatusAndIdentifier:
+    """SD-JWT VC badges are irrevocable, so a credentialStatus is rejected at
+    issuance (not silently dropped), and the recipient's hashed identifier is
+    carried under credentialSubject. These paths need no openvc.
+
+    ``ob3_credential`` is a session fixture — never mutate it; derive a variant
+    with ``dataclasses.replace`` so other tests keep the pristine credential.
+    """
+
+    _STATUS = [{
+        "id": "https://issuer.example/status/badge_1#5",
+        "type": "BitstringStatusListEntry",
+        "statusPurpose": "revocation",
+        "statusListIndex": "5",
+        "statusListCredential": "https://issuer.example/status/badge_1.jwt",
+    }]
+
+    def _identifier(self, ihash="sha256$abc"):
+        from openbadgeslib.ob3.credential import IdentityObject
+        return IdentityObject(identity_hash=ihash, identity_type="emailAddress",
+                              hashed=True)
+
+    def test_issue_rejects_credential_with_status(self, ob3_credential,
+                                                  ed25519_priv_pem):
+        from dataclasses import replace
+        cred = replace(ob3_credential, credential_status=list(self._STATUS))
+        with pytest.raises(EudiError, match="irrevocable"):
+            issue_badge_sd_jwt(cred, privkey_pem=ed25519_priv_pem)
+
+    def test_rejection_precedes_the_openvc_requirement(self, ob3_credential):
+        # The clear error fires even with a bogus key (before _require_openvc),
+        # so an issuer without the [eudi] extra still gets it, not ImportError.
+        from dataclasses import replace
+        cred = replace(ob3_credential, credential_status=list(self._STATUS))
+        with pytest.raises(EudiError, match="credentialStatus"):
+            issue_badge_sd_jwt(cred, privkey_pem=b"not-a-key")
+
+    def test_identifier_carried_alongside_id(self, ob3_credential):
+        from dataclasses import replace
+        cred = replace(ob3_credential, identifiers=[self._identifier()])
+        subject = badge_to_sd_jwt_claims(cred)["credentialSubject"]
+        assert subject["id"] == cred.recipient_id
+        assert subject["identifier"] == [{
+            "type": "IdentityObject", "hashed": True,
+            "identityHash": "sha256$abc", "identityType": "emailAddress"}]
+
+    def test_identifier_only_subject_has_no_id(self, ob3_credential):
+        from dataclasses import replace
+        cred = replace(ob3_credential, recipient_id=None,
+                       identifiers=[self._identifier("sha256$xyz")])
+        subject = badge_to_sd_jwt_claims(cred)["credentialSubject"]
+        assert "id" not in subject
+        assert subject["identifier"][0]["identityHash"] == "sha256$xyz"
+
+    def test_no_status_credential_still_issues_claims(self, ob3_credential):
+        # The common case (no status) is unaffected: claims build fine.
+        claims = badge_to_sd_jwt_claims(ob3_credential)
+        assert "credentialStatus" not in claims
+        assert claims["credentialSubject"]["id"] == ob3_credential.recipient_id
