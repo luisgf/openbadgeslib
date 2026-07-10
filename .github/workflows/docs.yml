@@ -34,7 +34,9 @@ jobs:
           pip install -e ".[dev]"
       - name: Build API reference (pdoc)
         run: pdoc openbadgeslib -o site -d google
-      - uses: actions/upload-pages-artifact@v5
+      # SHA-pinned: the Pages pipeline runs under the workflow's id-token: write.
+      # Dependabot (.github/dependabot.yml) bumps the pin.
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5
         with:
           path: site
 
@@ -46,4 +48,5 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v5
+        # SHA-pinned (runs with id-token: write). Dependabot bumps the pin.
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128  # v5

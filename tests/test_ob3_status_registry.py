@@ -87,6 +87,33 @@ class TestLocked:
         assert len({e.index for e in registry.entries.values()}) == n
 
 
+class TestNoFcntlFallback:
+    """Where fcntl is unavailable (Windows, the "OS Independent" classifier's
+    other side) the advisory lock degrades to a no-op — load/allocate/save must
+    still work. Monkeypatch fcntl=None so the fallback is exercised on POSIX too,
+    the path only a windows-latest CI leg would otherwise reach (#230)."""
+
+    def test_exclusive_file_lock_is_a_noop_without_fcntl(self, tmp_path, monkeypatch):
+        from openbadgeslib.ob3 import status_registry
+        monkeypatch.setattr(status_registry, 'fcntl', None)
+        lock_path = str(tmp_path / 'badge_1.json.lock')
+        # No flock is called, but the block still runs and the fd is created and
+        # closed cleanly (no leak, no raise).
+        with status_registry._exclusive_file_lock(lock_path):
+            pass
+        assert os.path.exists(lock_path)
+
+    def test_locked_registry_roundtrip_without_fcntl(self, tmp_path, monkeypatch):
+        from openbadgeslib.ob3 import status_registry
+        monkeypatch.setattr(status_registry, 'fcntl', None)
+        path = str(tmp_path / 'badge_1.json')
+        with status_registry.StatusRegistry.locked(path, 131072) as registry:
+            registry.allocate(JTI, 'mailto:a@example.org', NOW)
+            registry.save()
+        assert os.path.exists(path + '.lock')
+        assert JTI in StatusRegistry.load(path, 131072).entries
+
+
 # ── allocation ───────────────────────────────────────────────────────────────
 
 class TestAllocate:
