@@ -103,6 +103,15 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     while OB3 anchored it to UTC, so the same timestamp emitted a different
     instant in OB2 than in OB3; the single implementation keeps OB3's
     naive=>UTC rule (#225).
+  - feat(confparser): resolve config through typed dataclasses with centralized
+    defaults. `load_config(path) -> ConfigParser` is the library entry point
+    (raises `ConfigError`); `read_config_or_exit` is now a thin CLI wrapper over
+    it (and the flagship example uses `load_config`). New `IssuerConfig` /
+    `BadgeSectionConfig` dataclasses (extending the `OB3StatusConfig` pattern)
+    resolve the `[issuer]` and badge sections and their defaults once (issuer id,
+    `criteria_narrative`->`criteria` fallback, hosted-assertions base), and a
+    single `DEFAULT_KEY_TYPE` + `resolve_key_type()` centralises the key_type
+    name->KeyType mapping the keygenerator used to inline (#225).
 
 
 * v3.14.0 - 2026-07-10

@@ -14,7 +14,7 @@ See the "Library Integration Tutorial" wiki page for the narrative and the
 import tempfile
 from pathlib import Path
 
-from openbadgeslib.confparser import read_config_or_exit
+from openbadgeslib.confparser import load_config
 from openbadgeslib.issue import issue_batch_from_conf, issue_from_conf
 from openbadgeslib.keys import KeyFactory, KeyType
 from openbadgeslib.ob3 import OB3Verifier
@@ -62,7 +62,10 @@ def _write_project(root: Path) -> Path:
 def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        conf = read_config_or_exit(str(_write_project(root)))
+        # load_config is the library entry point: it raises ConfigError (which a
+        # real app would catch) instead of printing and exiting like the CLI
+        # helper read_config_or_exit.
+        conf = load_config(str(_write_project(root)))
 
         # The badge is named by its config *section*: '[badge_python_101]' →
         # 'badge_python_101' (the CLI's -b takes the short 'python_101' and

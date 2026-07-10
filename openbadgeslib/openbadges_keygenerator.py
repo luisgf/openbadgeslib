@@ -37,8 +37,9 @@ import sys
 from typing import Any
 
 from .logs import enable_debug_logging
-from .keys import KeyFactory, KeyType
-from .confparser import read_config_or_exit, resolve_badge_section
+from .keys import KeyFactory
+from .confparser import read_config_or_exit, resolve_badge_section, resolve_key_type
+from .errors import ConfigError
 from .util import __version__, emit_cli_json
 
 logger = logging.getLogger(__name__)
@@ -106,17 +107,12 @@ def _generate(args: argparse.Namespace) -> dict[str, Any]:
     private_key = conf[badge]['private_key']
     public_key = conf[badge]['public_key']
 
-    # Key type comes from the badge profile (default RSA).
-    key_type_name = conf[badge].get('key_type', 'RSA').strip().upper()
-    if key_type_name == 'ECC':
-        key_type = KeyType.ECC
-    elif key_type_name == 'RSA':
-        key_type = KeyType.RSA
-    elif key_type_name in ('ED25519', 'EDDSA'):
-        key_type = KeyType.ED25519
-    else:
-        sys.exit("Unknown key_type %r for badge '%s' (use RSA, ECC, or ED25519)"
-                 % (key_type_name, args.genkey))
+    # Key type comes from the badge profile (default RSA); resolve_key_type is
+    # the single home for the name->KeyType mapping and the default.
+    try:
+        key_type = resolve_key_type(conf[badge].get('key_type'))
+    except ConfigError as exc:
+        sys.exit("%s for badge '%s'" % (exc, args.genkey))
 
     for i in (private_key, public_key):
         if os.path.exists(i):

@@ -197,3 +197,115 @@ class TestOb3StatusConfigSizeBits:
         from openbadgeslib.confparser import ob3_status_config
         with pytest.raises(ValueError, match='positive multiple of 8'):
             ob3_status_config(self._conf(0), 'badge_1')
+
+
+class TestLoadConfig:
+    """load_config is the library entry point (raises ConfigError);
+    read_config_or_exit is the thin CLI wrapper over it (prints + exits)."""
+
+    def test_returns_configparser_for_valid_file(self, tmp_path):
+        from openbadgeslib.confparser import load_config
+        conf = load_config(_write(tmp_path, '[paths]\nbase = .\n'))
+        assert conf['paths']['base'] == str(tmp_path)
+
+    def test_missing_file_raises_config_error(self, tmp_path):
+        from openbadgeslib.confparser import load_config
+        from openbadgeslib.errors import ConfigError
+        with pytest.raises(ConfigError, match='does not exist or is empty'):
+            load_config(str(tmp_path / 'missing.ini'))
+
+    def test_malformed_raises_config_error(self, tmp_path):
+        from openbadgeslib.confparser import load_config
+        from openbadgeslib.errors import ConfigError
+        path = _write(tmp_path, '[logs]\ngeneral = general.log\n')  # no [paths]
+        with pytest.raises(ConfigError):
+            load_config(path)
+
+    def test_config_error_is_still_a_value_error(self, tmp_path):
+        # Backward compat: an integrator catching ValueError keeps working.
+        from openbadgeslib.confparser import load_config
+        with pytest.raises(ValueError):
+            load_config(str(tmp_path / 'missing.ini'))
+
+
+class TestResolveKeyType:
+    def test_defaults_to_rsa(self):
+        from openbadgeslib.confparser import resolve_key_type
+        from openbadgeslib.keys import KeyType
+        assert resolve_key_type(None) is KeyType.RSA
+        assert resolve_key_type('') is KeyType.RSA
+
+    def test_maps_names_case_insensitively(self):
+        from openbadgeslib.confparser import resolve_key_type
+        from openbadgeslib.keys import KeyType
+        assert resolve_key_type('ecc') is KeyType.ECC
+        assert resolve_key_type(' ED25519 ') is KeyType.ED25519
+        assert resolve_key_type('eddsa') is KeyType.ED25519   # alias
+
+    def test_unknown_name_raises_config_error(self):
+        from openbadgeslib.confparser import resolve_key_type
+        from openbadgeslib.errors import ConfigError
+        with pytest.raises(ConfigError, match='Unknown key_type'):
+            resolve_key_type('dsa')
+
+
+class TestIssuerConfig:
+    def _conf(self, **issuer):
+        from configparser import ConfigParser
+        conf = ConfigParser()
+        if issuer:
+            conf['issuer'] = {k: v for k, v in issuer.items() if v is not None}
+        return conf
+
+    def test_resolves_fields_and_id(self):
+        from openbadgeslib.confparser import issuer_config
+        cfg = issuer_config(self._conf(
+            name='Acme', url='https://acme.example',
+            publish_url='https://acme.example/', email='a@acme.example'))
+        assert cfg.name == 'Acme'
+        assert cfg.id == 'https://acme.example/'   # publish_url is the OB3 id
+        assert cfg.url == 'https://acme.example'
+        assert cfg.email == 'a@acme.example'
+
+    def test_missing_section_raises_config_error(self):
+        from openbadgeslib.confparser import issuer_config
+        from openbadgeslib.errors import ConfigError
+        with pytest.raises(ConfigError, match=r'\[issuer\] section'):
+            issuer_config(self._conf())
+
+    def test_missing_name_raises_config_error(self):
+        from openbadgeslib.confparser import issuer_config
+        from openbadgeslib.errors import ConfigError
+        with pytest.raises(ConfigError, match="required 'name'"):
+            issuer_config(self._conf(url='https://acme.example'))
+
+
+class TestBadgeSectionConfig:
+    def _conf(self, **badge):
+        from configparser import ConfigParser
+        conf = ConfigParser()
+        conf['badge_1'] = {k: v for k, v in badge.items() if v is not None}
+        return conf
+
+    def test_criteria_narrative_used_when_present(self):
+        from openbadgeslib.confparser import badge_section_config
+        bsc = badge_section_config(
+            self._conf(criteria_narrative='Do the thing',
+                       criteria='https://x/c.html'), 'badge_1')
+        assert bsc.criteria_narrative == 'Do the thing'
+
+    def test_falls_back_to_ob1_criteria(self):
+        from openbadgeslib.confparser import badge_section_config
+        bsc = badge_section_config(
+            self._conf(criteria='https://x/c.html'), 'badge_1')
+        assert bsc.criteria_narrative == 'https://x/c.html'
+
+    def test_empty_when_neither_present(self):
+        from openbadgeslib.confparser import badge_section_config
+        assert badge_section_config(self._conf(), 'badge_1').criteria_narrative == ''
+
+    def test_hosted_assertions_base(self):
+        from openbadgeslib.confparser import badge_section_config
+        bsc = badge_section_config(
+            self._conf(hosted_assertions_base='https://x/a/'), 'badge_1')
+        assert bsc.hosted_assertions_base == 'https://x/a/'

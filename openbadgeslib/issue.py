@@ -243,7 +243,8 @@ def _issue_ob2(conf: configparser.ConfigParser, badge: str, recipient: str,
     recipient_obj = IdentityObject.create(recipient, salt=salt)
 
     if hosted:
-        hosted_base = badge_section.get('hosted_assertions_base')
+        from .confparser import badge_section_config
+        hosted_base = badge_section_config(conf, badge).hosted_assertions_base
         if not hosted_base:
             raise IssuanceError(
                 "-V 2 -H (hosted) requires 'hosted_assertions_base' in the "
@@ -317,32 +318,34 @@ def _ob3_setup(conf: configparser.ConfigParser, badge: str, badge_obj: Badge,
     config, the effective proof format and the signing key type. Raises
     IssuanceError on any config problem."""
     from .ob3 import Issuer, Achievement
-    from .confparser import ob3_issuer_id, ob3_proof_format, ob3_status_config
+    from .confparser import (ob3_proof_format, ob3_status_config,
+                             issuer_config, badge_section_config)
 
     # A missing [issuer]/[badge] key raises KeyError and the confparser helpers
-    # raise ValueError; both are config problems, so surface them as the
-    # documented IssuanceError rather than a raw traceback out of the CLI/API.
+    # raise ConfigError (a ValueError); both are config problems, so surface them
+    # as the documented IssuanceError rather than a raw traceback out of the
+    # CLI/API. IssuerConfig / BadgeSectionConfig resolve the sections and their
+    # defaults once (issuer id, criteria_narrative->criteria fallback).
     try:
-        issuer_id = ob3_issuer_id(conf)
         status_conf = ob3_status_config(conf, badge)
         proof_format = proof_format or ob3_proof_format(conf, badge)
 
-        issuer_section = conf['issuer']
+        issuer_cfg = issuer_config(conf)
+        issuer_id = issuer_cfg.id
         issuer = Issuer(
-            id=issuer_id,
-            name=issuer_section['name'],
-            url=issuer_section.get('url'),
-            email=issuer_section.get('email'),
+            id=issuer_cfg.id,
+            name=issuer_cfg.name,
+            url=issuer_cfg.url,
+            email=issuer_cfg.email,
         )
 
         badge_section = conf[badge]
-        criteria_narrative = badge_section.get('criteria_narrative',
-                                               badge_section.get('criteria', ''))
+        bsc = badge_section_config(conf, badge)
         achievement = Achievement(
             id=badge_section['badge'],
             name=badge_section['name'],
             description=badge_section['description'],
-            criteria_narrative=criteria_narrative,
+            criteria_narrative=bsc.criteria_narrative,
             image_url=badge_section.get('image'),
         )
     except ValueError as exc:
