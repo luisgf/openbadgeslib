@@ -30,6 +30,8 @@ import ipaddress
 import json
 import socket
 import sys
+import time
+from collections import OrderedDict
 from datetime import timedelta
 from typing import Any, Callable, List, Optional, Union, overload
 from urllib import request
@@ -269,6 +271,64 @@ def download_file(url: str, allow_insecure: bool = False,
                     % (url, MAX_DOWNLOAD_SIZE))
             chunks.append(chunk)
         return b''.join(chunks)
+
+
+class CachingDownloader:
+    """A memoizing wrapper around a downloader, for verifying many credentials
+    from the same issuer without re-fetching identical URLs.
+
+    Verification is one-shot by default: verifying N badges re-fetches the same
+    did:web ``did.json`` and status list(s) N times. Construct one instance and
+    pass it as the ``download=`` argument to the resolution/verification entry
+    points that accept one — ``OB3Verifier.for_issuer_did`` / ``.verify``,
+    ``OB3LdpVerifier.verify``, ``check_credential_status``,
+    ``verify_endorsement_jwt`` — to serve repeated URLs from an in-process cache
+    with a short time-to-live::
+
+        dl = CachingDownloader(ttl_seconds=300)
+        verifier = OB3Verifier.for_issuer_did(issuer_did, download=dl)
+        for token in batch:
+            verifier.verify(token, check_status=True, download=dl)
+
+    Each entry is the raw bytes the wrapped downloader returned, so every
+    ``download_file`` protection (HTTPS-only, the SSRF guard, the size cap) runs
+    on the first fetch, before anything is cached. Entries expire after
+    ``ttl_seconds`` on a monotonic clock (immune to wall-clock jumps);
+    ``max_entries`` bounds memory with LRU eviction. **Not thread-safe** — use
+    one per verifying thread, or guard it. For real-time revocation keep the TTL
+    short, or omit the cache and pay the fetch.
+    """
+
+    def __init__(self, download: Optional[Callable[[str], bytes]] = None, *,
+                 ttl_seconds: float = 300.0, max_entries: int = 256) -> None:
+        if ttl_seconds <= 0:
+            raise ValueError("ttl_seconds must be positive, got %r" % (ttl_seconds,))
+        if max_entries <= 0:
+            raise ValueError("max_entries must be positive, got %r" % (max_entries,))
+        self._download = download if download is not None else download_file
+        self._ttl = float(ttl_seconds)
+        self._max_entries = max_entries
+        self._cache: OrderedDict[str, tuple[float, bytes]] = OrderedDict()
+
+    def __call__(self, url: str) -> bytes:
+        now = time.monotonic()
+        entry = self._cache.get(url)
+        if entry is not None:
+            expiry, data = entry
+            if expiry > now:
+                self._cache.move_to_end(url)
+                return data
+            del self._cache[url]                 # expired: fall through to refetch
+        data = self._download(url)               # protections run here, pre-cache
+        self._cache[url] = (now + self._ttl, data)
+        self._cache.move_to_end(url)
+        while len(self._cache) > self._max_entries:
+            self._cache.popitem(last=False)      # evict least-recently-used
+        return data
+
+    def clear(self) -> None:
+        """Drop all cached entries (e.g. to force a fresh revocation check)."""
+        self._cache.clear()
 
 
 def _last_nonempty_line(text: str) -> Optional[str]:

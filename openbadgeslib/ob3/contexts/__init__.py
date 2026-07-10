@@ -136,7 +136,20 @@ def document_loader(
     extras: Dict[str, dict[str, Any]] = dict(extra_contexts) if extra_contexts else {}
 
     def _loader(url: str, options: Any = None) -> dict[str, Any]:
-        document = extras[url] if url in extras else load_context(url)
-        return {'contextUrl': None, 'documentUrl': url, 'document': document}
+        if url in extras:
+            # extra_contexts vary per loader instance (a test's examples
+            # context, openvc's delegated set). pyld caches resolved contexts
+            # in a *process-global* map keyed by URL, so tagging one 'static'
+            # would let a later call with different content for the same URL
+            # be served this call's stale term definitions. Leave extras
+            # untagged — pyld re-resolves them on every normalize.
+            return {'contextUrl': None, 'documentUrl': url,
+                    'document': extras[url]}
+        # A bundled allowlist entry is immutable for the life of the process
+        # (pinned in the wheel), so tag it 'static': this primes pyld's global
+        # resolved-context cache and skips re-creating ~101 term definitions on
+        # every normalize (~1.6x faster LDP sign/verify).
+        return {'contextUrl': None, 'documentUrl': url,
+                'document': load_context(url), 'tag': 'static'}
 
     return _loader

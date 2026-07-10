@@ -366,3 +366,28 @@ def test_validate_proof_rejects_non_string_expires():
              'expires': [2025]}
     with pytest.raises(OB3VerificationError, match='expires'):
         _validate_proof(proof, 'assertionMethod')
+
+
+def test_ldp_verifier_memoizes_vm_resolution(ed25519_keypair):
+    # #228: resolving the same did:web verificationMethod twice (verifying a
+    # batch from one issuer) fetches did.json once, then serves it from the
+    # per-instance cache.
+    from openbadgeslib.ob3.did import multikey_from_pem
+    _priv, pub = ed25519_keypair
+    vm = 'did:web:issuer.example#key-1'
+    did_doc = json.dumps({
+        'id': 'did:web:issuer.example',
+        'verificationMethod': [{
+            'id': vm, 'type': 'Multikey',
+            'controller': 'did:web:issuer.example',
+            'publicKeyMultibase': multikey_from_pem(pub)}],
+    }).encode()
+    calls = {'n': 0}
+
+    def dl(url):
+        calls['n'] += 1
+        return did_doc
+
+    v = OB3LdpVerifier()
+    assert v._resolve_vm(vm, dl) == v._resolve_vm(vm, dl)
+    assert calls['n'] == 1

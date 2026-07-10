@@ -481,6 +481,10 @@ class OB3LdpVerifier:
         self.pubkey_pem: Optional[Union[str, bytes]] = \
             key_to_pem(pubkey_pem) if pubkey_pem is not None else None
         self._anchored_did = issuer_did
+        # verificationMethod -> resolved PEM, memoized per instance so verifying
+        # many credentials from the same issuer does not re-fetch the did:web
+        # document each time (the JWT verifier already memoizes its did doc).
+        self._vm_pem_cache: Dict[str, bytes] = {}
 
     @classmethod
     def for_issuer_did(cls, did: str, download: Any = None) -> "OB3LdpVerifier":
@@ -560,7 +564,7 @@ class OB3LdpVerifier:
                 raise OB3VerificationError(
                     "proof verificationMethod %r does not belong to the "
                     "credential issuer %r" % (vm, issuer_id))
-            pem = resolve_verification_method(vm, download=download)
+            pem = self._resolve_vm(vm, download)
 
         verify_data_integrity_proof(doc, pem)
 
@@ -578,6 +582,20 @@ class OB3LdpVerifier:
         _check_recipient(credential, expected_recipient)
 
         return credential
+
+    def _resolve_vm(self, vm: str, download: Any) -> bytes:
+        """Resolve a verificationMethod to a PEM key, memoized per instance.
+
+        Keyed by the exact vm id. The vm↔issuer binding is checked by the
+        caller before this runs, so only methods already authorised for this
+        credential's issuer are ever resolved or cached — a verifier reused
+        across issuers keeps a separate entry per method."""
+        cached = self._vm_pem_cache.get(vm)
+        if cached is not None:
+            return cached
+        pem = resolve_verification_method(vm, download=download)
+        self._vm_pem_cache[vm] = pem
+        return pem
 
     @staticmethod
     def _parse_document(document: Union[str, bytes, dict[str, Any]]) -> dict[str, Any]:

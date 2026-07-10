@@ -81,7 +81,22 @@ Issuing a *revocable* OB 3.0 badge (a badge section with `status_lists = revocat
 - the issuer **did:web document** (`did.json`) — run `openbadges-publish -V 3 -o <webroot>`, which also writes each badge's `verify.pem` and the signed **status lists** (`revocation.jwt`);
 - to **revoke** later: `openbadges-publish -V 3 --revoke <jti|email>` flips the bit and re-signs the list.
 
-The publish/revoke lifecycle is CLI-driven today (`openbadges-publish`, see [[CLI Reference]]); the status-list internals are in [[Signing and Verification]] and [[Security Model]]. A verifier then checks revocation with `OB3Verifier(...).verify(token, check_status=True)` (or `--check-status` on the CLI), which fetches the published list.
+The publish/revoke lifecycle is CLI-driven today (`openbadges-publish`, see [[CLI Reference]]); the status-list internals are in [[Signing and Verification]] and [[Security Model]]. A verifier then checks revocation with `OB3Verifier(...).verify(token, check_status=True)` (or `--check-status` on the CLI), which fetches the published list and verifies **its own signature** by default (bound to the badge issuer), so a compromised status host cannot silently un-revoke a badge.
+
+### Verifying a batch efficiently
+
+Verification is one-shot by default, so verifying many credentials from the same issuer re-fetches the same `did.json` and status list each time. Pass a shared `CachingDownloader` as `download=` to fetch each URL once for the whole batch (a short TTL keeps revocation fresh):
+
+```python
+from openbadgeslib.ob3 import OB3Verifier, CachingDownloader
+
+dl = CachingDownloader(ttl_seconds=300)
+verifier = OB3Verifier.for_issuer_did(issuer_did, download=dl)
+for token in batch:
+    verifier.verify(token, check_status=True, download=dl)
+```
+
+`OB3LdpVerifier` additionally memoizes each resolved `verificationMethod` per instance, so a reused verifier does not re-resolve the issuer DID per credential.
 
 ## OpenBadges 2.0 and 1.0
 

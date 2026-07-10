@@ -66,6 +66,17 @@ class TestDocumentLoader:
         with pytest.raises(UnknownContextError):
             document_loader()('https://evil.example/ctx', {})
 
+    def test_bundled_tagged_static_extra_untagged(self):
+        # A bundled allowlist URL is immutable per process, so the loader tags
+        # it 'static' to prime pyld's process-global resolved-context cache.
+        extra_url = 'https://www.w3.org/ns/credentials/examples/v2'
+        extra_doc = {'@context': {'@vocab': 'https://example.org/#'}}
+        loader = document_loader({extra_url: extra_doc})
+        assert loader(CREDS_V2, {})['tag'] == 'static'
+        # An extra context varies per loader instance; tagging it 'static'
+        # would poison that global cache, so it must be served untagged.
+        assert 'tag' not in loader(extra_url, {})
+
 
 def test_contexts_ship_as_package_data():
     # The JSON files must be reachable via importlib.resources (i.e. packaged

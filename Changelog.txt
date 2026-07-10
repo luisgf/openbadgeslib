@@ -6,9 +6,9 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v3.15.0 - unreleased
 
-  Round-2 roadmap, short-term milestone: close the revocation/trust gaps the
-  deep-logic analysis surfaced, test the fail-closed guards, and take the cheap
-  batch-performance wins.
+  Round-2 roadmap: close the revocation/trust gaps the deep-logic analysis
+  surfaced, test the fail-closed guards, and speed up batch issuance and
+  verification.
 
   - security(ob3): with `--check-status`, verify the status list's OWN JWT-VC
     signature by default and bind its issuer to the badge's, so a compromised
@@ -48,6 +48,16 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     selective-disclosure test skip into a hard failure under CI, so an
     openvc-core packaging change can no longer silently disable that suite
     (#221).
+  - perf(ob3): add an opt-in `CachingDownloader` so verifying a batch of
+    credentials from one issuer fetches each did:web document and status list
+    once rather than per credential. `OB3LdpVerifier` also memoizes each
+    resolved `verificationMethod` per instance, and `OB3Verifier.verify` /
+    `check_status` accept a `download=` fetcher to thread it through (#228).
+  - perf(ob3): tag the bundled JSON-LD `@context`s `static` in the pyld
+    document loader, priming pyld's process-global resolved-context cache so
+    term definitions are not rebuilt on every canonicalization (~1.6x faster
+    Data Integrity sign/verify); per-call `extra_contexts` stay untagged so a
+    changing context is never served stale (#229).
 
 
 * v3.14.0 - 2026-07-10

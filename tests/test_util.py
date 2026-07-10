@@ -383,3 +383,75 @@ class TestRecipientIdsMatch:
 
     def test_different_recipients_do_not_match(self):
         assert not recipient_ids_match('mailto:a@b.com', 'mailto:c@d.com')
+
+
+class TestCachingDownloader:
+    """#228: an opt-in TTL cache so verifying a batch does not re-fetch the
+    same did.json / status list."""
+
+    @staticmethod
+    def _counting():
+        calls = []
+        return calls, (lambda url: calls.append(url) or b'data-%s' % url.encode())
+
+    def test_repeated_url_fetched_once(self):
+        from openbadgeslib.util import CachingDownloader
+        calls, base = self._counting()
+        dl = CachingDownloader(base, ttl_seconds=60)
+        assert dl('https://a/x') == b'data-https://a/x'
+        assert dl('https://a/x') == b'data-https://a/x'
+        assert calls == ['https://a/x']
+
+    def test_distinct_urls_each_fetched(self):
+        from openbadgeslib.util import CachingDownloader
+        calls, base = self._counting()
+        dl = CachingDownloader(base, ttl_seconds=60)
+        dl('https://a/x')
+        dl('https://a/y')
+        assert calls == ['https://a/x', 'https://a/y']
+
+    def test_entry_expires_after_ttl(self):
+        from openbadgeslib import util
+        calls, base = self._counting()
+        clock = {'t': 1000.0}
+        with patch.object(util.time, 'monotonic', lambda: clock['t']):
+            dl = util.CachingDownloader(base, ttl_seconds=30)
+            dl('https://a/x')
+            clock['t'] += 10           # within TTL -> served from cache
+            dl('https://a/x')
+            assert len(calls) == 1
+            clock['t'] += 40           # past TTL -> refetched
+            dl('https://a/x')
+            assert len(calls) == 2
+
+    def test_lru_eviction(self):
+        from openbadgeslib.util import CachingDownloader
+        calls, base = self._counting()
+        dl = CachingDownloader(base, ttl_seconds=600, max_entries=2)
+        dl('u1')
+        dl('u2')
+        dl('u1')                       # u1 becomes most-recently-used
+        dl('u3')                       # evicts the LRU entry, u2
+        dl('u1')                       # still cached
+        dl('u2')                       # was evicted -> refetched
+        assert calls == ['u1', 'u2', 'u3', 'u2']
+
+    def test_clear_drops_entries(self):
+        from openbadgeslib.util import CachingDownloader
+        calls, base = self._counting()
+        dl = CachingDownloader(base, ttl_seconds=60)
+        dl('u1')
+        dl.clear()
+        dl('u1')
+        assert len(calls) == 2
+
+    def test_rejects_non_positive_config(self):
+        from openbadgeslib.util import CachingDownloader
+        with pytest.raises(ValueError):
+            CachingDownloader(ttl_seconds=0)
+        with pytest.raises(ValueError):
+            CachingDownloader(max_entries=0)
+
+    def test_defaults_to_download_file(self):
+        from openbadgeslib import util
+        assert util.CachingDownloader()._download is util.download_file

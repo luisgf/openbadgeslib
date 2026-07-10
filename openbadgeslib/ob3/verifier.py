@@ -196,7 +196,8 @@ class OB3Verifier:
     def verify(self, token: str,
                expected_recipient: Optional[str] = None,
                check_status: bool = False, *,
-               verify_status_list: bool = True) -> OpenBadgeCredential:
+               verify_status_list: bool = True,
+               download: Any = None) -> OpenBadgeCredential:
         """Verify a JWT-VC token.
 
         Returns the decoded :class:`OpenBadgeCredential` on success.
@@ -229,6 +230,12 @@ class OB3Verifier:
         verifier reuses. Set ``verify_status_list=False`` only to interoperate
         with an issuer that serves an unsigned status list, accepting that its
         revocation bit is then trusted on the host's word alone.
+
+        ``download`` overrides the fetcher for the status list (and the status
+        list issuer's DID) — pass a shared
+        :class:`~openbadgeslib.util.CachingDownloader` to verify a batch without
+        re-fetching the same list each time. This verifier's own key is already
+        fetched once (in :meth:`for_issuer_did`) and reused.
         """
         payload = self._decode_payload(token)
         credential = self._build_credential(payload)
@@ -251,14 +258,16 @@ class OB3Verifier:
         _check_validity_window(credential)
 
         if check_status:
-            self.check_status(credential, verify_list=verify_status_list)
+            self.check_status(credential, verify_list=verify_status_list,
+                              download=download)
 
         _check_recipient(credential, expected_recipient)
 
         return credential
 
     def check_status(self, credential: OpenBadgeCredential,
-                     *, verify_list: bool = False) -> None:
+                     *, verify_list: bool = False,
+                     download: Any = None) -> None:
         """Check the credential's ``credentialStatus`` (revocation) over the
         network, raising :class:`OB3VerificationError` if it is revoked/
         suspended or if the status cannot be determined (fail-closed). A
@@ -275,7 +284,7 @@ class OB3Verifier:
         """
         from .status import check_credential_status
         check_credential_status(
-            credential, verify_list=verify_list,
+            credential, download=download, verify_list=verify_list,
             list_pubkey_pem=self.pubkey_pem if verify_list else None)
 
     def _key_for_token(

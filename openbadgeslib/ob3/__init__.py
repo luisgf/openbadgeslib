@@ -33,9 +33,11 @@ from .status_list import (build_status_list_credential, encode_bitstring,
 from .status_registry import StatusRegistry
 from .did import (build_did_document, did_key_from_pem, did_web_from_url,
                   multikey_from_pem, resolve_did, resolve_verification_method)
+from ..util import CachingDownloader
 
 __all__ = [
     'Achievement',
+    'CachingDownloader',
     'Alignment',
     'Evidence',
     'IdentityObject',

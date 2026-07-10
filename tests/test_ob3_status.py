@@ -337,6 +337,38 @@ class TestVerifyWithStatus:
         token = self._sign(ob3_rsa_signer, [_status_entry(94)])
         assert ob3_rsa_verifier.verify(token) is not None
 
+    def test_injected_download_used_for_status(self, ob3_rsa_signer,
+                                               ob3_rsa_verifier, rsa_priv_pem):
+        # #228: verify(download=...) threads the fetcher to the status list, so
+        # no global monkeypatch is needed and a CachingDownloader can be passed.
+        served = self._signed_list(rsa_priv_pem, [])
+        calls = {'n': 0}
+
+        def dl(url):
+            calls['n'] += 1
+            return served.encode('utf-8')
+        token = self._sign(ob3_rsa_signer, [_status_entry(94)])
+        assert ob3_rsa_verifier.verify(token, check_status=True, download=dl)
+        assert calls['n'] == 1
+
+    def test_caching_downloader_batches_status_fetch(self, ob3_rsa_signer,
+                                                     ob3_rsa_verifier, rsa_priv_pem):
+        # #228 end-to-end: two badges pointing at the same status list URL are
+        # verified through one CachingDownloader -> the list is fetched once.
+        from openbadgeslib.util import CachingDownloader
+        served = self._signed_list(rsa_priv_pem, [])
+        calls = {'n': 0}
+
+        def base(url):
+            calls['n'] += 1
+            return served.encode('utf-8')
+        dl = CachingDownloader(base, ttl_seconds=60)
+        t1 = self._sign(ob3_rsa_signer, [_status_entry(94)])
+        t2 = self._sign(ob3_rsa_signer, [_status_entry(95)])
+        ob3_rsa_verifier.verify(t1, check_status=True, download=dl)
+        ob3_rsa_verifier.verify(t2, check_status=True, download=dl)
+        assert calls['n'] == 1
+
 
 # ── #164: validFrom/validUntil window + opt-in proof verification ────────────
 
