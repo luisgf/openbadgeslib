@@ -169,27 +169,58 @@ class TestOB3LdpVerifier:
                                                   ed25519_keypair):
         pytest.importorskip('pyld')
         priv_pem, pub_pem = ed25519_keypair
+        issuer_did = _did_key(pub_pem)
         doc = ob3_credential.to_vc()
-        doc['issuer'] = {'id': _did_key(pub_pem), 'type': ['Profile'], 'name': 'I'}
+        doc['issuer'] = {'id': issuer_did, 'type': ['Profile'], 'name': 'I'}
         doc['credentialStatus'] = {
             'type': 'BitstringStatusListEntry', 'statusPurpose': 'revocation',
             'statusListIndex': '3',
             'statusListCredential': 'https://issuer.example/status.jwt'}
         signed = _sign_ldp(doc, priv_pem, pub_pem)
-        from openbadgeslib.ob3.status_list import build_status_list_credential
+        # #213: the status list is a JWT-VC signed by the SAME issuer key (as
+        # openbadges-publish does), so its signature verifies and its issuer
+        # binds to the badge. A plain-JSON list would now be rejected.
+        from openbadgeslib.ob3.status_list import (
+            build_status_list_credential, sign_status_list_credential)
         status_vc = build_status_list_credential(
-            'https://issuer.example/', 'https://issuer.example/status.jwt',
-            'revocation', [3])
+            issuer_did, 'https://issuer.example/status.jwt', 'revocation', [3])
+        status_token = sign_status_list_credential(status_vc, priv_pem, 'EdDSA')
         import openbadgeslib.ob3.status as status_mod
         v = OB3LdpVerifier(pubkey_pem=pub_pem)
         assert v.verify(signed)                     # without status: passes
         orig = status_mod.download_file
-        status_mod.download_file = lambda url: json.dumps(status_vc).encode()
+        status_mod.download_file = lambda url: status_token.encode('utf-8')
         try:
             with pytest.raises(OB3VerificationError, match='revocation'):
                 v.verify(signed, check_status=True)
         finally:
             status_mod.download_file = orig
+
+    def test_non_did_issuer_unpinned_fails_closed(self, ob3_credential,
+                                                  ed25519_keypair):
+        # #214: with no pinned key and a NON-DID (https:) issuer, the proof's
+        # verificationMethod cannot be bound to the issuer — verifying against
+        # whatever key it names would prove internal consistency, not identity.
+        # Fail closed instead of resolving an attacker-chosen key.
+        pytest.importorskip('pyld')
+        priv_pem, pub_pem = ed25519_keypair
+        doc = ob3_credential.to_vc()
+        doc['issuer'] = {'id': 'https://legit-university.example',
+                         'type': ['Profile'], 'name': 'Legit U'}
+        signed = _sign_ldp(doc, priv_pem, pub_pem)
+        with pytest.raises(OB3VerificationError, match='is not a DID'):
+            OB3LdpVerifier().verify(signed)
+
+    def test_anchored_did_rejects_foreign_vm(self, ldp_signed_vc):
+        # The credential issuer IS the anchored DID, but the proof's
+        # verificationMethod belongs to a DIFFERENT DID — the vm↔anchored-DID
+        # binding (distinct from the issuer↔anchored check) must reject it.
+        did = ldp_signed_vc['issuer']['id']
+        doc = copy.deepcopy(ldp_signed_vc)
+        doc['proof']['verificationMethod'] = 'did:key:z6MkFakeOtherDid#z6MkFakeOtherDid'
+        with pytest.raises(OB3VerificationError,
+                           match='does not belong to the anchored DID'):
+            OB3LdpVerifier.for_issuer_did(did).verify(doc)
 
 
 # ── proof validation edge cases ──────────────────────────────────────────────

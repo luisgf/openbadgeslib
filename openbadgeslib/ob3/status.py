@@ -44,7 +44,7 @@ from typing import Any, Callable, List, Optional, Union
 
 from .credential import OpenBadgeCredential, _parse_iso
 from .verifier import OB3VerificationError
-from ..util import download_file
+from ..util import CLOCK_SKEW_LEEWAY, download_file
 
 _SUPPORTED_ENTRY_TYPES = {"BitstringStatusListEntry", "StatusList2021Entry"}
 
@@ -252,7 +252,7 @@ def _check_list_window(doc: dict[str, Any], list_url: str) -> None:
             raise OB3VerificationError(
                 "status list %s has an invalid validUntil %r: %s"
                 % (list_url, valid_until, exc)) from exc
-        if expires < now:
+        if expires < now - CLOCK_SKEW_LEEWAY:
             raise OB3VerificationError(
                 "status list %s expired (validUntil %s); the issuer must "
                 "republish it" % (list_url, valid_until))
@@ -264,7 +264,7 @@ def _check_list_window(doc: dict[str, Any], list_url: str) -> None:
             raise OB3VerificationError(
                 "status list %s has an invalid validFrom %r: %s"
                 % (list_url, valid_from, exc)) from exc
-        if starts > now:
+        if starts > now + CLOCK_SKEW_LEEWAY:
             raise OB3VerificationError(
                 "status list %s is not yet valid (validFrom %s)"
                 % (list_url, valid_from))

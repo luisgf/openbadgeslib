@@ -494,16 +494,20 @@ class OB3LdpVerifier:
     def verify(self, document: Union[str, bytes, dict[str, Any]],
                expected_recipient: Optional[str] = None,
                check_status: bool = False,
-               download: Any = None) -> OpenBadgeCredential:
+               download: Any = None, *,
+               verify_status_list: bool = True) -> OpenBadgeCredential:
         """Verify a Data Integrity OB3 credential document.
 
         *document* is the credential as a JSON string/bytes (e.g. extracted
         from a baked image) or an already-parsed dict. Returns the
         reconstructed :class:`OpenBadgeCredential`; raises
-        :class:`OB3VerificationError` on any failure. ``expected_recipient``
-        and ``check_status`` behave exactly as in :meth:`OB3Verifier.verify`.
-        ``download`` is used only to resolve a did:web verificationMethod
-        (injectable for testing).
+        :class:`OB3VerificationError` on any failure. ``expected_recipient``,
+        ``check_status`` and ``verify_status_list`` behave exactly as in
+        :meth:`OB3Verifier.verify` — when status is checked the status list's
+        own signature is verified too (reusing a pinned key, or resolving the
+        issuer DID), unless ``verify_status_list=False``. ``download`` resolves
+        a did:web verificationMethod and status list issuer DID (injectable for
+        testing).
         """
         doc = self._parse_document(document)
 
@@ -537,14 +541,25 @@ class OB3LdpVerifier:
         if self.pubkey_pem is not None:
             pem: Union[str, bytes] = self.pubkey_pem
         else:
-            # No pinned key: the proof's verificationMethod is the key source.
-            # If the credential names a DID issuer, the method must belong to
-            # it — otherwise any keyholder could re-sign someone's credential.
-            if credential.issuer.id.startswith('did:') \
-                    and vm_did != credential.issuer.id:
+            # No pinned key: the proof's verificationMethod is the key source,
+            # so it must be bound to the credential's issuer — otherwise any
+            # keyholder could re-sign someone else's credential and it would
+            # verify. A DID issuer must own the method. A non-DID issuer (an
+            # https:/urn: id) offers nothing to bind the method to, so there is
+            # no trust anchor at all: resolving and trusting whatever key the
+            # proof names would prove internal consistency, not who issued the
+            # credential. Fail closed — the caller must pin a key or use a DID.
+            issuer_id = credential.issuer.id
+            if not issuer_id.startswith('did:'):
+                raise OB3VerificationError(
+                    "cannot verify a Data Integrity credential whose issuer %r "
+                    "is not a DID without a pinned key: the proof's "
+                    "verificationMethod %r cannot be bound to the issuer — pass "
+                    "pubkey_pem or use a DID issuer" % (issuer_id, vm))
+            if vm_did != issuer_id:
                 raise OB3VerificationError(
                     "proof verificationMethod %r does not belong to the "
-                    "credential issuer %r" % (vm, credential.issuer.id))
+                    "credential issuer %r" % (vm, issuer_id))
             pem = resolve_verification_method(vm, download=download)
 
         verify_data_integrity_proof(doc, pem)
@@ -553,7 +568,12 @@ class OB3LdpVerifier:
 
         if check_status:
             from .status import check_credential_status
-            check_credential_status(credential)
+            # Verify the status list's own signature by default, binding it to
+            # the badge issuer. A pinned key is reused (publish signs the list
+            # with the same key); otherwise the list issuer DID is resolved.
+            check_credential_status(
+                credential, download=download, verify_list=verify_status_list,
+                list_pubkey_pem=self.pubkey_pem)
 
         _check_recipient(credential, expected_recipient)
 

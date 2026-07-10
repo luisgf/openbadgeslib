@@ -175,6 +175,30 @@ class TestHosted:
         with patch(PATCH_TARGET, side_effect=_dl(url_map)):
             assert OB2Verifier().verify(token).verification.type == 'HostedBadge'
 
+    def test_starts_with_scope_rejects_outside_prefix(self, rsa_priv_pem):
+        # Reject-side of startsWith: the assertion id matches no declared
+        # prefix, so it is outside the issuer's hosted scope (the accept-side
+        # is tested above; this guard is the one an id-spoofing badge trips).
+        token, a = _hosted(rsa_priv_pem)
+        issuer = {'id': 'https://other.test/org.json',
+                  'verification': {'startsWith': ['https://example.com/OTHER/']}}
+        url_map = {a.id: a.to_dict(), BADGE: {'issuer': 'https://other.test/org.json'},
+                   'https://other.test/org.json': issuer}
+        with patch(PATCH_TARGET, side_effect=_dl(url_map)):
+            with pytest.raises(OB2VerificationError, match='startsWith'):
+                OB2Verifier().verify(token)
+
+    def test_allowed_origins_scope_rejects_foreign_origin(self, rsa_priv_pem):
+        # Reject-side of allowedOrigins: the assertion host is not listed.
+        token, a = _hosted(rsa_priv_pem)
+        issuer = {'id': 'https://other.test/org.json',
+                  'verification': {'allowedOrigins': ['not-example.test']}}
+        url_map = {a.id: a.to_dict(), BADGE: {'issuer': 'https://other.test/org.json'},
+                   'https://other.test/org.json': issuer}
+        with patch(PATCH_TARGET, side_effect=_dl(url_map)):
+            with pytest.raises(OB2VerificationError, match='allowedOrigins'):
+                OB2Verifier().verify(token)
+
     def test_fetched_mismatch_rejected(self, rsa_priv_pem):
         token, a = _hosted(rsa_priv_pem)
         tampered = a.to_dict()

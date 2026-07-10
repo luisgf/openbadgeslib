@@ -148,7 +148,7 @@ For OB3 the baked payload's format is **autodetected**: a compact JWT-VC is veri
 ### Synopsis
 
 ```sh
-openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [--check-status] [--resolve-did] [--json] [-V {1,2,3}] [-d]
+openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [--check-status] [--no-verify-status-list] [--resolve-did] [--json] [-V {1,2,3}] [-d]
 ```
 
 | Short | Long | Meaning | Default |
@@ -159,7 +159,8 @@ openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [--c
 | `-l` | `--local BADGE` | Verify against the public key from this badge section in `config.ini` | none |
 | `-k` | `--pubkey FILE` | Verify against this trusted PEM public key file (OB2 and OB3) | none |
 | `-s` | `--show` | Print the assertion/credential before the result | off |
-| | `--check-status` | OB3 only: fetch the `credentialStatus` list and reject a revoked/suspended credential (requires network) | off |
+| | `--check-status` | OB3 only: fetch the `credentialStatus` list and reject a revoked/suspended credential (requires network). The status list's own signature is verified by default, bound to the badge issuer | off |
+| | `--no-verify-status-list` | OB3 only: with `--check-status`, do **not** verify the status list's own signature — trust the revocation bit on the serving host's word. Only for issuers that serve an unsigned list; insecure otherwise | off |
 | | `--resolve-did` | OB3 only: when no trusted key is given, resolve the issuer DID (did:key/did:web) from the token to obtain the verification key | off |
 | | `--json` | Emit a machine-readable JSON result instead of the human output (exit `0` = valid and issuer-trusted, `2` = valid signature but issuer untrusted, `1` = failure) | off |
 | `-V` | `--ob-version {1,2,3}` | `1` = legacy JWS (OB 1.0), `2` = strict OB 2.0 JWS, `3` = JWT-VC | `3` |

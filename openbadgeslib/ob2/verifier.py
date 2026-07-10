@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 from .models import Assertion, CryptographicKey, hash_identity, _parse_iso
 from ..errors import ErrorParsingFile, UnknownKeyType, LibOpenBadgesException
 from ..keys import detect_key_type, key_to_pem
-from ..util import download_file
+from ..util import CLOCK_SKEW_LEEWAY, download_file
 from .._jws import utils as jws_utils
 from .._jws import verify_block as jws_verify_block
 from .._jws.exceptions import JWSException
@@ -265,10 +265,12 @@ class OB2Verifier:
 
     def _check_expiration(self, assertion: Assertion) -> None:
         now = datetime.now(timezone.utc)
-        if assertion.expires is not None and assertion.expires < now:
+        if assertion.expires is not None \
+                and assertion.expires < now - CLOCK_SKEW_LEEWAY:
             raise OB2VerificationError(
                 "Assertion has expired (expires %s)" % assertion.expires.isoformat())
-        if assertion.issued_on is not None and assertion.issued_on > now:
+        if assertion.issued_on is not None \
+                and assertion.issued_on > now + CLOCK_SKEW_LEEWAY:
             raise OB2VerificationError(
                 "Assertion is not yet valid (issuedOn %s)" % assertion.issued_on.isoformat())
 

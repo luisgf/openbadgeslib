@@ -316,10 +316,48 @@ class TestOB3VerifierVerify:
         with pytest.raises(OB3VerificationError, match="nbf"):
             ob3_rsa_verifier.verify(token)
 
+    def test_future_nbf_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        # A registered nbf claim well in the future makes PyJWT raise
+        # ImmatureSignatureError (an InvalidTokenError) — it must surface as an
+        # OB3VerificationError, not leak. One hour ahead is beyond any leeway.
+        import time
+        token = self._signed_with_vc(
+            rsa_priv_pem, ob3_credential,
+            lambda p: p.__setitem__('nbf', int(time.time()) + 3600))
+        with pytest.raises(OB3VerificationError):
+            ob3_rsa_verifier.verify(token)
+
     def test_missing_sub_when_subject_has_id_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
         token = self._signed_with_vc(rsa_priv_pem, ob3_credential,
                                      lambda p: p.pop('sub'))
         with pytest.raises(OB3VerificationError, match="sub"):
+            ob3_rsa_verifier.verify(token)
+
+    def test_validfrom_within_clock_skew_accepted(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        # #217: a validFrom a few seconds ahead (issuer clock slightly fast)
+        # must not false-reject a freshly issued credential — CLOCK_SKEW_LEEWAY
+        # absorbs it. nbf is kept in the past so PyJWT's own (leeway-0) nbf
+        # check does not trip first.
+        from datetime import timedelta
+
+        def mutate(p):
+            now = datetime.now(timezone.utc)
+            p['validFrom'] = (now + timedelta(seconds=20)).isoformat().replace('+00:00', 'Z')
+            p['nbf'] = int((now - timedelta(seconds=1)).timestamp())
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential, mutate)
+        assert ob3_rsa_verifier.verify(token) is not None
+
+    def test_validfrom_beyond_clock_skew_rejected(self, rsa_priv_pem, ob3_rsa_verifier, ob3_credential):
+        # #217: a validFrom an hour ahead is genuinely not-yet-valid — the
+        # leeway must not swallow a real future-dating.
+        from datetime import timedelta
+
+        def mutate(p):
+            now = datetime.now(timezone.utc)
+            p['validFrom'] = (now + timedelta(hours=1)).isoformat().replace('+00:00', 'Z')
+            p['nbf'] = int((now - timedelta(seconds=1)).timestamp())
+        token = self._signed_with_vc(rsa_priv_pem, ob3_credential, mutate)
+        with pytest.raises(OB3VerificationError, match='not yet valid'):
             ob3_rsa_verifier.verify(token)
 
     # ── a non-string id/name field (consumed downstream as a string, e.g.

@@ -29,7 +29,8 @@ import jwt.exceptions
 from .credential import OpenBadgeCredential, _parse_iso
 from ..errors import ErrorParsingFile, UnknownKeyType, LibOpenBadgesException
 from ..keys import KeyType, detect_key_type, key_to_pem
-from ..util import normalize_recipient_id, recipient_ids_match
+from ..util import (CLOCK_SKEW_LEEWAY, normalize_recipient_id,
+                    recipient_ids_match)
 from .. import baking
 
 # Signature algorithms accepted per key family. The signer only ever emits the
@@ -100,10 +101,12 @@ def _check_validity_window(credential: OpenBadgeCredential) -> None:
     both enforce the same window semantics on the credential body itself.
     """
     now = datetime.now(timezone.utc)
-    if credential.expiration_date is not None and credential.expiration_date < now:
+    if credential.expiration_date is not None \
+            and credential.expiration_date < now - CLOCK_SKEW_LEEWAY:
         raise OB3VerificationError(
             "Credential has expired (validUntil %s)" % credential.expiration_date.isoformat())
-    if credential.issuance_date is not None and credential.issuance_date > now:
+    if credential.issuance_date is not None \
+            and credential.issuance_date > now + CLOCK_SKEW_LEEWAY:
         raise OB3VerificationError(
             "Credential is not yet valid (validFrom %s)" % credential.issuance_date.isoformat())
 
@@ -192,7 +195,8 @@ class OB3Verifier:
 
     def verify(self, token: str,
                expected_recipient: Optional[str] = None,
-               check_status: bool = False) -> OpenBadgeCredential:
+               check_status: bool = False, *,
+               verify_status_list: bool = True) -> OpenBadgeCredential:
         """Verify a JWT-VC token.
 
         Returns the decoded :class:`OpenBadgeCredential` on success.
@@ -217,6 +221,14 @@ class OB3Verifier:
         referenced status list and fails closed if the credential is revoked or
         its status cannot be determined. It is off by default because
         verification is otherwise offline.
+
+        When status is checked, the status list's own JWT-VC signature is
+        verified too (bound to this credential's issuer), so a compromised
+        status host cannot silently un-revoke a badge — ``openbadges-publish``
+        signs the list with the same key that signed the credential, which this
+        verifier reuses. Set ``verify_status_list=False`` only to interoperate
+        with an issuer that serves an unsigned status list, accepting that its
+        revocation bit is then trusted on the host's word alone.
         """
         payload = self._decode_payload(token)
         credential = self._build_credential(payload)
@@ -239,7 +251,7 @@ class OB3Verifier:
         _check_validity_window(credential)
 
         if check_status:
-            self.check_status(credential)
+            self.check_status(credential, verify_list=verify_status_list)
 
         _check_recipient(credential, expected_recipient)
 
@@ -494,25 +506,33 @@ def verify_endorsement_jwt(token: str, download: Any = None,
 
 
 def _check_endorsement_window(vc: dict[str, Any]) -> None:
-    """Reject an endorsement whose validFrom/validUntil window is not current
-    (the JWT exp is also checked in _decode_payload, but a producer may set a
-    vc-level bound without the registered claim)."""
+    """Reject an endorsement whose validFrom/validUntil window is not current.
+
+    Fails closed on a malformed date, mirroring the credential body and status
+    list windows — treating an unparseable bound as "no bound" would let a
+    corrupt date silently widen the window (the JWT exp is also checked in
+    _decode_payload, but a producer may set a vc-level bound without the
+    registered claim)."""
     now = datetime.now(timezone.utc)
     valid_until = vc.get("validUntil")
     if isinstance(valid_until, str):
         try:
             expires = _parse_iso(valid_until)
-        except Exception:
-            expires = None
-        if expires is not None and expires < now:
+        except Exception as exc:
+            raise OB3VerificationError(
+                "endorsement has an invalid validUntil %r: %s"
+                % (valid_until, exc)) from exc
+        if expires < now - CLOCK_SKEW_LEEWAY:
             raise OB3VerificationError(
                 "endorsement expired (validUntil %s)" % valid_until)
     valid_from = vc.get("validFrom")
     if isinstance(valid_from, str):
         try:
             starts = _parse_iso(valid_from)
-        except Exception:
-            starts = None
-        if starts is not None and starts > now:
+        except Exception as exc:
+            raise OB3VerificationError(
+                "endorsement has an invalid validFrom %r: %s"
+                % (valid_from, exc)) from exc
+        if starts > now + CLOCK_SKEW_LEEWAY:
             raise OB3VerificationError(
                 "endorsement is not yet valid (validFrom %s)" % valid_from)

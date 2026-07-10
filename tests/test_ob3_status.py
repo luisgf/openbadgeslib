@@ -182,6 +182,27 @@ class TestCheckCredentialStatus:
         with pytest.raises(OB3VerificationError, match='invalid statusListIndex'):
             check_credential_status(_credential([entry]), download=_downloader(_status_list_doc([])))
 
+    def test_negative_index_fails_closed(self):
+        # A negative statusListIndex parses as an int but _bit_set must reject
+        # it rather than index backwards into the bitstring.
+        entry = _status_entry(1)
+        entry['statusListIndex'] = '-1'
+        with pytest.raises(OB3VerificationError, match='negative'):
+            check_credential_status(_credential([entry]),
+                                    download=_downloader(_status_list_doc([])))
+
+    def test_gzip_bomb_list_fails_closed(self):
+        # A crafted encodedList that inflates past the 5 MiB cap must be refused
+        # (bounded inflate), not decompressed into memory. The list is fetched
+        # from an attacker-influenced URL, so this is the anti-bomb guard.
+        bomb = gzip.compress(b'\x00' * (6 * 1024 * 1024))       # 6 MiB inflated
+        encoded = 'u' + base64.urlsafe_b64encode(bomb).decode('ascii').rstrip('=')
+        doc = _status_list_doc([])
+        doc['credentialSubject']['encodedList'] = encoded
+        with pytest.raises(OB3VerificationError, match='exceeds'):
+            check_credential_status(_credential([_status_entry(5)]),
+                                    download=_downloader(doc))
+
 
 # ── bit ordering ─────────────────────────────────────────────────────────────
 
@@ -232,24 +253,78 @@ class TestCredentialStatusParsing:
 # ── integration through verify(check_status=True) ────────────────────────────
 
 class TestVerifyWithStatus:
+    """verify(check_status=True) checks revocation AND, by default, the status
+    list's own signature — bound to the badge issuer (#213). openbadges-publish
+    signs the list with the same key that signed the badge, so the badge's own
+    verification key (reused here) validates it."""
+
     def _sign(self, signer, entries):
         return signer.sign(_credential(entries))
 
-    def test_verify_rejects_revoked(self, ob3_rsa_signer, ob3_rsa_verifier, monkeypatch):
+    @staticmethod
+    def _signed_list(priv_pem, indices, issuer='https://issuer.example'):
+        from openbadgeslib.keys import alg_for_key_type, detect_key_type
+        from openbadgeslib.ob3.status_list import (
+            build_status_list_credential, sign_status_list_credential)
+        vc = build_status_list_credential(issuer, LIST_URL, 'revocation', indices)
+        alg = alg_for_key_type(detect_key_type(priv_pem))
+        return sign_status_list_credential(vc, priv_pem, alg)
+
+    def test_verify_rejects_revoked(self, ob3_rsa_signer, ob3_rsa_verifier,
+                                    rsa_priv_pem, monkeypatch):
         import openbadgeslib.ob3.status as status_mod
         monkeypatch.setattr(status_mod, 'download_file',
-                            _downloader(_status_list_doc(set_indices=[94])))
+                            _served_token(self._signed_list(rsa_priv_pem, [94])))
         token = self._sign(ob3_rsa_signer, [_status_entry(94)])
-        with pytest.raises(OB3VerificationError):
+        with pytest.raises(OB3VerificationError, match='revocation'):
             ob3_rsa_verifier.verify(token, check_status=True)
 
-    def test_verify_passes_unrevoked(self, ob3_rsa_signer, ob3_rsa_verifier, monkeypatch):
+    def test_verify_passes_unrevoked(self, ob3_rsa_signer, ob3_rsa_verifier,
+                                     rsa_priv_pem, monkeypatch):
         import openbadgeslib.ob3.status as status_mod
         monkeypatch.setattr(status_mod, 'download_file',
-                            _downloader(_status_list_doc(set_indices=[])))
+                            _served_token(self._signed_list(rsa_priv_pem, [])))
         token = self._sign(ob3_rsa_signer, [_status_entry(94)])
         cred = ob3_rsa_verifier.verify(token, check_status=True)
         assert cred.recipient_id == 'mailto:r@example.com'
+
+    def test_unsigned_list_rejected_by_default(self, ob3_rsa_signer,
+                                               ob3_rsa_verifier, monkeypatch):
+        # #213: an unsigned (plain JSON) status list is refused by default —
+        # its revocation bit would otherwise be trusted on the host's word.
+        import openbadgeslib.ob3.status as status_mod
+        doc = _status_list_doc(set_indices=[])
+        doc['issuer'] = 'https://issuer.example'
+        monkeypatch.setattr(status_mod, 'download_file', _downloader(doc))
+        token = self._sign(ob3_rsa_signer, [_status_entry(94)])
+        with pytest.raises(OB3VerificationError, match='not a signed JWT-VC'):
+            ob3_rsa_verifier.verify(token, check_status=True)
+
+    def test_list_signed_by_wrong_key_rejected(self, ob3_rsa_signer,
+                                               ob3_rsa_verifier,
+                                               ed25519_priv_pem, monkeypatch):
+        # #213 core: a status list whose issuer matches but which is signed by a
+        # DIFFERENT key than the badge's (a compromised/rogue host serving its
+        # own un-revoking list) fails the signature bound to the badge key.
+        import openbadgeslib.ob3.status as status_mod
+        wrong = self._signed_list(ed25519_priv_pem, [])   # empty => not revoked
+        monkeypatch.setattr(status_mod, 'download_file', _served_token(wrong))
+        token = self._sign(ob3_rsa_signer, [_status_entry(94)])
+        with pytest.raises(OB3VerificationError, match='proof is invalid'):
+            ob3_rsa_verifier.verify(token, check_status=True)
+
+    def test_verify_status_list_optout_accepts_unsigned(self, ob3_rsa_signer,
+                                                        ob3_rsa_verifier, monkeypatch):
+        # verify_status_list=False restores the lenient path for an issuer that
+        # serves an unsigned list (the revocation bit is then trusted as-is).
+        import openbadgeslib.ob3.status as status_mod
+        doc = _status_list_doc(set_indices=[])
+        doc['issuer'] = 'https://issuer.example'
+        monkeypatch.setattr(status_mod, 'download_file', _downloader(doc))
+        token = self._sign(ob3_rsa_signer, [_status_entry(94)])
+        cred = ob3_rsa_verifier.verify(token, check_status=True,
+                                       verify_status_list=False)
+        assert cred is not None
 
     def test_check_status_off_by_default(self, ob3_rsa_signer, ob3_rsa_verifier, monkeypatch):
         # With check_status=False (default) no network call happens even when a
@@ -384,3 +459,14 @@ class TestVerifyListProof:
                 self._cred('https://issuer.example', [_status_entry(5)]),
                 download=_downloader(doc), verify_list=True,
                 list_pubkey_pem=b'unused')
+
+    def test_non_did_issuer_without_pubkey_fails(self, ed25519_keypair):
+        # verify_list=True with a signed list whose issuer is NOT a DID and no
+        # list_pubkey_pem: there is no key to resolve, so fail closed rather
+        # than skip the signature check.
+        priv, _pub = ed25519_keypair
+        token = self._signed(priv, 'https://issuer.example')
+        with pytest.raises(OB3VerificationError, match='is not a DID'):
+            check_credential_status(
+                self._cred('https://issuer.example', [_status_entry(5)]),
+                download=_served_token(token), verify_list=True)

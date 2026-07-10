@@ -30,12 +30,20 @@ import ipaddress
 import json
 import socket
 import sys
+from datetime import timedelta
 from typing import Any, Callable, List, Optional, Union, overload
 from urllib import request
 from urllib.parse import urlparse
 
 # A value that is accepted as either text or raw bytes (encoded to UTF-8).
 StrOrBytes = Union[str, bytes]
+
+#: Wall-clock leeway applied to every validity window (vc validFrom/validUntil,
+#: the status list's own window, and endorsements) so a small clock offset
+#: between the issuing and verifying hosts does not reject a credential the
+#: instant it is issued. 60 s matches the common JWT ``leeway`` default; the
+#: JWT registered claims (nbf/exp) already get their own leeway from PyJWT.
+CLOCK_SKEW_LEEWAY = timedelta(seconds=60)
 
 
 def _hash_string(hash_name: str, string: StrOrBytes) -> bytes:

@@ -93,6 +93,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--check-status', action='store_true',
                         help='OB3 only: fetch the credentialStatus list and reject a '
                              'revoked/suspended credential (requires network access).')
+    parser.add_argument('--no-verify-status-list', action='store_true',
+                        help='OB3 only: with --check-status, do NOT verify the status '
+                             "list's own signature — trust the revocation bit on the "
+                             'serving host\'s word alone. Only for issuers that serve an '
+                             'unsigned status list; insecure otherwise.')
     parser.add_argument('--resolve-did', action='store_true',
                         help='OB3 only: when no trusted key is supplied, resolve the '
                              'issuer DID (did:key/did:web) from the token to obtain the '
@@ -430,7 +435,8 @@ def _verify_ob3(args: argparse.Namespace) -> None:
             verifier = (OB3LdpVerifier.for_issuer_did(issuer_did) if is_ldp
                         else OB3Verifier.for_issuer_did(issuer_did))
         credential = verifier.verify(token, expected_recipient=args.receptor,
-                                     check_status=args.check_status)
+                                     check_status=args.check_status,
+                                     verify_status_list=not args.no_verify_status_list)
     except OB3VerificationError as exc:
         result['reason'] = 'OB3 verification failed: %s' % exc
         if not args.json:

@@ -10,7 +10,7 @@ from openbadgeslib.ob3.did import did_key_from_pem
 
 
 def _endorsement_jwt(priv_pem, endorser, endorses_id, comment='Great work',
-                     valid_until=None, endorsement_type=True):
+                     valid_until=None, endorsement_type=True, valid_from=None):
     """Sign a compact EndorsementCredential JWT as a third-party endorser."""
     from openbadgeslib.ob3 import OB3Signer
     vc = {
@@ -19,7 +19,7 @@ def _endorsement_jwt(priv_pem, endorser, endorses_id, comment='Great work',
         "type": (["VerifiableCredential", "EndorsementCredential"]
                  if endorsement_type else ["VerifiableCredential"]),
         "issuer": endorser,
-        "validFrom": "2020-01-01T00:00:00Z",
+        "validFrom": valid_from or "2020-01-01T00:00:00Z",
         "credentialSubject": {
             "id": endorses_id,
             "type": ["EndorsementSubject"],
@@ -148,6 +148,27 @@ class TestVerifyEndorsement:
                                  'https://a.example/1',
                                  valid_until='2020-06-01T00:00:00Z')
         with pytest.raises(OB3VerificationError, match='expired'):
+            verify_endorsement_jwt(token)
+
+    def test_malformed_validuntil_fails_closed(self, ed25519_keypair):
+        # #218: a malformed validUntil must fail closed, like every other
+        # window — previously it was swallowed and the endorsement accepted.
+        priv, pub = ed25519_keypair
+        token = _endorsement_jwt(priv, did_key_from_pem(pub),
+                                 'https://a.example/1', valid_until='not-a-date')
+        with pytest.raises(OB3VerificationError, match='invalid validUntil'):
+            verify_endorsement_jwt(token)
+
+    def test_future_endorsement_fails(self, ed25519_keypair):
+        # #218: a validFrom in the future is not-yet-valid (only the expired
+        # case was covered before).
+        from datetime import datetime, timedelta, timezone
+        priv, pub = ed25519_keypair
+        far = (datetime.now(timezone.utc)
+               + timedelta(days=2)).isoformat().replace('+00:00', 'Z')
+        token = _endorsement_jwt(priv, did_key_from_pem(pub),
+                                 'https://a.example/1', valid_from=far)
+        with pytest.raises(OB3VerificationError, match='not yet valid'):
             verify_endorsement_jwt(token)
 
     def test_json_document_rejected(self):
