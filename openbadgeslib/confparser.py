@@ -27,6 +27,9 @@ from typing import Dict, List, Optional
 import os
 import sys
 import logging
+
+from .errors import ConfigError
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,11 +38,13 @@ def read_config_or_exit(config_file: str) -> ConfigParser:
     missing, empty, or malformed. Shared by all the console-script entrypoints."""
     try:
         conf = ConfParser(config_file).read_conf()
-    except ValueError as exc:
-        # read_conf() raises a clean, typed ValueError for a malformed config
+    except ConfigError as exc:
+        # read_conf() raises a clean, typed ConfigError for a malformed config
         # (bad INI syntax, an unresolvable ${...} reference, an encoding
         # mismatch, or a missing/empty [paths] base). Present it as a controlled
         # CLI error rather than letting it escape as a raw traceback.
+        # ConfigError is a ValueError too, so pre-existing `except ValueError`
+        # callers keep working.
         print('[!] %s' % exc)
         sys.exit(-1)
     if not conf:
@@ -63,7 +68,7 @@ def ob3_issuer_id(conf: ConfigParser) -> str:
     ``url``), the historical behaviour. ``did = auto`` derives the did:web
     identifier from ``publish_url`` — the DID whose document
     ``openbadges-publish -V 3`` generates — and an explicit ``did:...`` value
-    is used verbatim. Raises ValueError for anything else.
+    is used verbatim. Raises ConfigError for anything else.
     """
     issuer_section = conf['issuer']
     base = issuer_section.get('publish_url', issuer_section.get('url', ''))
@@ -75,7 +80,7 @@ def ob3_issuer_id(conf: ConfigParser) -> str:
         return did_web_from_url(base)
     if did.startswith('did:'):
         return did
-    raise ValueError(
+    raise ConfigError(
         "[issuer] did must be 'auto' or a did:... identifier, got %r" % did)
 
 
@@ -88,12 +93,12 @@ def ob3_proof_format(conf: ConfigParser, badge_section: str) -> str:
     """Return the proof format OB3 credentials of *badge_section* use:
     ``vc-jwt`` (compact JWT-VC, the default) or ``ldp`` (embedded Data
     Integrity proof, cryptosuite eddsa-rdfc-2022 — needs an Ed25519 key and
-    the [ldp] extra). Raises ValueError for anything else.
+    the [ldp] extra). Raises ConfigError for anything else.
     """
     value = (conf[badge_section].get('proof_format') or 'vc-jwt').strip()
     if value in OB3_PROOF_FORMATS:
         return value
-    raise ValueError(
+    raise ConfigError(
         "[%s] proof_format must be one of %s, got %r"
         % (badge_section, ', '.join(OB3_PROOF_FORMATS), value))
 
@@ -114,7 +119,7 @@ def ob3_status_config(conf: ConfigParser,
 
     Returns None when the badge does not opt in (no ``status_lists`` key),
     which callers must treat as "issue without credentialStatus" — the
-    pre-3.1 behaviour. Raises ValueError for an invalid purpose or size.
+    pre-3.1 behaviour. Raises ConfigError for an invalid purpose or size.
     """
     from urllib.parse import urljoin
     from .ob3.status_list import DEFAULT_SIZE_BITS, STATUS_PURPOSES
@@ -126,7 +131,7 @@ def ob3_status_config(conf: ConfigParser,
         if not purpose:
             continue
         if purpose not in STATUS_PURPOSES:
-            raise ValueError(
+            raise ConfigError(
                 "[%s] status_lists: unknown purpose %r (choose from %s)"
                 % (badge_section, purpose, ', '.join(STATUS_PURPOSES)))
         if purpose not in purposes:
@@ -138,14 +143,14 @@ def ob3_status_config(conf: ConfigParser,
         size_bits = int(conf[badge_section].get('status_size_bits',
                                                 str(DEFAULT_SIZE_BITS)))
     except ValueError:
-        raise ValueError("[%s] status_size_bits must be an integer"
-                         % badge_section) from None
+        raise ConfigError("[%s] status_size_bits must be an integer"
+                          % badge_section) from None
     # encode_bitstring requires a positive multiple of 8; validate here so a
     # misconfiguration is a clean config error at issuance/publish load rather
     # than a latent raw ValueError from encode_bitstring at publish time.
     if size_bits <= 0 or size_bits % 8:
-        raise ValueError("[%s] status_size_bits must be a positive multiple "
-                         "of 8" % badge_section)
+        raise ConfigError("[%s] status_size_bits must be a positive multiple "
+                          "of 8" % badge_section)
 
     # Optional validUntil horizon: when set, published status lists carry a
     # validUntil = now + N days, and a verifier rejects a stale copy (replay
@@ -157,11 +162,11 @@ def ob3_status_config(conf: ConfigParser,
         try:
             validity_days = int(validity_raw)
         except ValueError:
-            raise ValueError("[%s] status_validity_days must be an integer"
-                             % badge_section) from None
+            raise ConfigError("[%s] status_validity_days must be an integer"
+                              % badge_section) from None
         if validity_days <= 0:
-            raise ValueError("[%s] status_validity_days must be positive"
-                             % badge_section)
+            raise ConfigError("[%s] status_validity_days must be positive"
+                              % badge_section)
 
     base_status = conf['paths'].get('base_status') or \
         os.path.join(conf['paths']['base'], 'status')
@@ -192,22 +197,22 @@ class ConfParser():
             self.parser.read(self.config_file)
         except UnicodeDecodeError:
             # We should raise an UnicodeDecodeError, but the error message is too cryptic.#
-            raise ValueError("The encoding of the configuration file and the default encoding of "
-                             "the operating system mismatch") from None
+            raise ConfigError("The encoding of the configuration file and the default encoding of "
+                              "the operating system mismatch") from None
         except ConfigParserError as exc:
             # Malformed INI syntax (duplicate section/option, a value line
             # with no section header before it, ...) raises directly from
             # read(), before any interpolation is even attempted.
-            raise ValueError(
+            raise ConfigError(
                 "Configuration file %s has invalid INI syntax: %s" % (self.config_file, exc)) from exc
         try:
             base = self.parser['paths']['base']
         except KeyError:
-            raise ValueError(
+            raise ConfigError(
                 "Configuration file %s is missing the [paths] section or its "
                 "'base' key" % self.config_file) from None
         if not base:
-            raise ValueError(
+            raise ConfigError(
                 "Configuration file %s has an empty [paths] 'base' value" % self.config_file)
 
         # A relative base is resolved against the directory that contains the
@@ -236,7 +241,7 @@ class ConfParser():
             for section in self.parser.sections():
                 dict(self.parser.items(section))
         except ConfigParserError as exc:
-            raise ValueError(
+            raise ConfigError(
                 "Configuration file %s has an invalid value: %s" % (self.config_file, exc)) from exc
 
         return self.parser

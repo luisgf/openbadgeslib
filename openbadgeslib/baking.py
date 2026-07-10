@@ -34,6 +34,12 @@ from typing import List, Optional, Tuple, Union, cast
 from defusedxml.minidom import parseString
 from png import Reader, signature as _png_signature
 
+# DecompressionLimitExceeded lives in openbadgeslib.errors (anchored under
+# LibOpenBadgesException). Re-exported explicitly (X as X, so mypy --strict
+# accepts it as a real export) — `baking.DecompressionLimitExceeded` and
+# `from openbadgeslib.baking import DecompressionLimitExceeded` keep working.
+from .errors import DecompressionLimitExceeded as DecompressionLimitExceeded
+
 # OB 2.0 document-format identifiers.
 ITXT_KEYWORD = b'openbadges'
 SVG_ELEMENT = 'openbadges:assertion'
@@ -49,10 +55,6 @@ SVG_NS_OB3 = 'https://purl.imsglobal.org/ob/v3p0'
 # is a few KB; this cap stops a crafted zlib bomb from exhausting memory during
 # extraction (which runs on untrusted input, before any signature check).
 MAX_ITXT_DECOMPRESSED = 256 * 1024
-
-
-class DecompressionLimitExceeded(Exception):
-    """Raised when a compressed iTXt token inflates beyond the allowed size."""
 
 
 def _split_openbadges_itxt(data: bytes, keyword: bytes = ITXT_KEYWORD) -> Optional[bytes]:

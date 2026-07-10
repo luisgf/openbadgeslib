@@ -55,19 +55,19 @@ from urllib.parse import urljoin
 
 from .errors import (BadgeImgFormatUnsupported, ErrorSigningFile,
                      LibOpenBadgesException, StatusError)
+# Re-export explicitly (X as X) so mypy --strict treats the historical
+# `from openbadgeslib.issue import IssuanceError` path as a real public export.
+from .errors import IssuanceError as IssuanceError
 from .keys import KeyType, alg_for_key_type, detect_key_type
 from .badge_model import Badge, BadgeImgType
 from .util import normalize_recipient_id
 
 logger = logging.getLogger(__name__)
 
-
-class IssuanceError(Exception):
-    """Raised when a badge cannot be issued (bad config, unsupported key, a
-    policy violation such as a did:key issuer that is not the signing key, or a
-    status-registry failure). The CLI catches it and presents it; a library
-    caller handles it programmatically. Messages carry no ``[!]`` prefix — the
-    presentation layer adds one."""
+# IssuanceError now lives in openbadgeslib.errors (anchored under
+# LibOpenBadgesException, so `except LibOpenBadgesException` catches it).
+# Re-exported here so `from openbadgeslib.issue import IssuanceError` — the
+# historical import path — keeps working.
 
 
 @dataclass

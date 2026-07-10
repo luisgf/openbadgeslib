@@ -23,6 +23,40 @@
 
 
 class LibOpenBadgesException(Exception):
+    """Root of the library exception hierarchy.
+
+    Every error this library raises deliberately derives from this class, so a
+    caller can trap them all with a single ``except LibOpenBadgesException``.
+    The full map (children in their own modules noted inline)::
+
+        LibOpenBadgesException
+        ├── KeyGenExceptions          (alias: KeyGenException)
+        │   ├── GenPrivateKeyError / GenPublicKeyError
+        │   ├── PrivateKeySaveError / PublicKeySaveError
+        │   ├── PrivateKeyReadError / PublicKeyReadError
+        │   └── UnknownKeyType
+        ├── SignerExceptions          (alias: SignerException)
+        │   ├── ErrorSigningFile
+        │   └── UnsupportedAlgorithm  (also ValueError)
+        ├── VerifierExceptions        (alias: VerifierException)
+        │   ├── AssertionFormatIncorrect
+        │   ├── NotIdentityInAssertion
+        │   └── ErrorParsingFile
+        ├── BadgeImgFormatUnsupported
+        ├── ConfigError               (also ValueError)
+        ├── IssuanceError
+        ├── DecompressionLimitExceeded
+        ├── StatusError               (issuer-side revocation)
+        │   └── StatusListFull / UnknownCredential / AmbiguousCredential
+        │       / AlreadyRevoked / AlreadySuspended / NotSuspended
+        │       / RegistryCorrupt
+        ├── OB2VerificationError      (openbadgeslib.ob2.verifier)
+        └── OB3VerificationError      (openbadgeslib.ob3.verifier)
+
+    ``ConfigError`` and ``UnsupportedAlgorithm`` also inherit ``ValueError`` so
+    that code (and tests) catching the historical ``ValueError`` keep working
+    while the errors are now reachable through the library root too.
+    """
     pass
 
 
@@ -39,6 +73,13 @@ class SignerExceptions(LibOpenBadgesException):
 
 class VerifierExceptions(LibOpenBadgesException):
     pass
+
+
+# Singular aliases for the plural base names, so callers can name a family in
+# the natural singular ("except SignerException") without the historical typo.
+KeyGenException = KeyGenExceptions
+SignerException = SignerExceptions
+VerifierException = VerifierExceptions
 
 
 """ User-defined Exceptions """
@@ -79,6 +120,15 @@ class ErrorSigningFile(SignerExceptions):
     pass
 
 
+class UnsupportedAlgorithm(SignerExceptions, ValueError):
+    """A signer was asked for a JWS algorithm it does not support.
+
+    Also a ``ValueError`` for backward compatibility with callers that trap the
+    historical bare ``ValueError`` from the signer constructors.
+    """
+    pass
+
+
 """ Verifier Exceptions """
 
 
@@ -98,6 +148,40 @@ class ErrorParsingFile(VerifierExceptions):
 
 
 class BadgeImgFormatUnsupported(LibOpenBadgesException):
+    pass
+
+
+""" Configuration Exceptions """
+
+
+class ConfigError(LibOpenBadgesException, ValueError):
+    """A configuration file is missing, malformed, or has an invalid value.
+
+    Also a ``ValueError`` for backward compatibility: the config helpers raised
+    a bare ``ValueError`` historically, and ``read_config_or_exit`` (plus the
+    tests) still catch that. Anchoring it under ``LibOpenBadgesException`` too
+    lets a caller trap every library error with one ``except``.
+    """
+    pass
+
+
+""" Issuance Exceptions """
+
+
+class IssuanceError(LibOpenBadgesException):
+    """Raised when a badge cannot be issued (bad config, unsupported key, a
+    policy violation such as a did:key issuer that is not the signing key, or a
+    status-registry failure). The CLI catches it and presents it; a library
+    caller handles it programmatically. Messages carry no ``[!]`` prefix — the
+    presentation layer adds one."""
+    pass
+
+
+""" Baking Exceptions """
+
+
+class DecompressionLimitExceeded(LibOpenBadgesException):
+    """Raised when a compressed iTXt token inflates beyond the allowed size."""
     pass
 
 

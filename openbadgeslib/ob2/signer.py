@@ -25,7 +25,7 @@ from typing import Any
 from .models import Assertion, _SUPPORTED_ALGORITHMS
 from ..util import __version__
 from ..keys import key_to_pem
-from ..errors import ErrorSigningFile
+from ..errors import ErrorSigningFile, UnsupportedAlgorithm
 from .._jws import sign as jws_sign
 from .._jws import utils as jws_utils
 from .. import baking
@@ -49,7 +49,7 @@ class OB2Signer:
 
     def __init__(self, privkey_pem: Any, algorithm: str = 'RS256') -> None:
         if algorithm not in _SUPPORTED_ALGORITHMS:
-            raise ValueError(
+            raise UnsupportedAlgorithm(
                 "Unsupported algorithm %r. Choose from: %s"
                 % (algorithm, sorted(_SUPPORTED_ALGORITHMS)))
         self.privkey_pem = key_to_pem(privkey_pem)
