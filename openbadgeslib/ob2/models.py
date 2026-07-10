@@ -35,37 +35,19 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional, Union
 
 from ..util import hash_email
+# Shared JSON helpers live in openbadgeslib._jsonmodel now (deduplicated with
+# ob3.credential, which had the correct naive=>UTC _iso semantics). Re-exported
+# (X as X) so ob2.verifier's `from .models import _parse_iso` keeps working.
+from .._jsonmodel import (
+    _iso as _iso, _parse_iso as _parse_iso,
+    _as_dict as _as_dict, _require as _require,
+)
 
 OB2_CONTEXT = "https://w3id.org/openbadges/v2"
 
 # JWS signature algorithms this package can emit/accept, matching the key types
 # openbadges-keygenerator produces (RSA → RS*, ECC P-256 → ES*, Ed25519 → EdDSA).
 _SUPPORTED_ALGORITHMS = {'RS256', 'RS384', 'RS512', 'ES256', 'ES384', 'ES512', 'EdDSA'}
-
-
-# ── date helpers ─────────────────────────────────────────────────────────────
-
-def _iso(dt: datetime) -> str:
-    """Return a datetime as an ISO 8601 string with a ``Z`` UTC suffix."""
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _parse_iso(value: Any, where: str) -> datetime:
-    """Parse an ISO 8601 timestamp (with a UTC offset or trailing ``Z``).
-
-    OB 2.0 requires string ISO 8601 timestamps with a time-zone indicator;
-    a bare Unix timestamp (the legacy OB 1.0 shape) is deliberately rejected
-    here so the strict verifier does not silently accept legacy assertions.
-    """
-    if not isinstance(value, str):
-        raise ValueError("%s must be an ISO 8601 string, got %r" % (where, value))
-    try:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise ValueError("invalid ISO 8601 date in %s: %r" % (where, value)) from exc
-    if dt.tzinfo is None:
-        raise ValueError("%s is missing a UTC offset: %r" % (where, value))
-    return dt
 
 
 # ── JSON-LD validation helpers ───────────────────────────────────────────────
@@ -93,22 +75,6 @@ def _validate_type(value: Any, expected: str, where: str) -> None:
         raise ValueError("%s.type must be a string or array" % where)
     if expected not in types:
         raise ValueError("%s.type must include %r, got %r" % (where, expected, value))
-
-
-def _as_dict(value: Any, where: str) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise ValueError("%s must be a JSON object" % where)
-    return value
-
-
-def _require(data: dict[str, Any], key: str, where: str) -> str:
-    """Return ``data[key]`` as a non-empty string, else raise a clear error."""
-    value = data.get(key)
-    if value is None or value == "":
-        raise ValueError("missing required field %s.%s" % (where, key))
-    if not isinstance(value, str):
-        raise ValueError("field %s.%s must be a string" % (where, key))
-    return value
 
 
 def _iri_or_none(value: Any) -> Optional[str]:
