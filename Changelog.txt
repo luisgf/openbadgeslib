@@ -148,6 +148,16 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     `windows-latest` CI leg plus a monkeypatched test of the `fcntl=None`
     StatusRegistry lock fallback, so the "OS Independent" classifier is actually
     exercised on the non-POSIX path (#230).
+  - refactor: declare the stable public surface (freeze prep for v4). The root
+    package gains an explicit `__all__` (the "public contract"), re-exports
+    `KeyEd25519` (the recommended OB 3.0 / LDP key) alongside `KeyRSA`/`KeyECC`,
+    and exposes the `ob2`/`ob3`/`errors` subpackages and the
+    `issue_from_conf`/`verify_badge` facades by name. `openbadgeslib.ob3`
+    re-exports the `eudi` SD-JWT VC track (its heavy imports stay lazy).
+    `SignResult.credential`/`.assertion` and the `_Ob3Context` fields are typed
+    with `TYPE_CHECKING` forward refs instead of `Any` (zero runtime cost,
+    correct autocompletion / pdoc). Adds a "Stable API" wiki page documenting
+    the stable-vs-internal boundary (#232).
 
 
 * v3.14.0 - 2026-07-10
