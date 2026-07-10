@@ -129,6 +129,25 @@ class TestIssueOb3:
         with pytest.raises(IssuanceError):
             issue_from_conf(conf, 'badge_1', 'r@example.com', '3')
 
+    def test_ob3_issues_without_ob1_verify_key_and_criteria(self, tmp_path):
+        # #223: verify_key and criteria are OpenBadges 1.0 fields; an OB3 config
+        # that omits them must issue cleanly, not blow up with a raw
+        # KeyError('verify_key') out of Badge.create_from_conf.
+        conf = _write_conf(tmp_path)
+        conf.remove_option('badge_1', 'verify_key')
+        conf.remove_option('badge_1', 'criteria')
+        result = issue_from_conf(conf, 'badge_1', 'r@example.com', '3')
+        assert result.badge_bytes
+        assert result.ob_version == '3'
+
+    def test_missing_required_badge_key_raises_issuance_error(self, tmp_path):
+        # #223: a genuinely missing *required* key (name) surfaces as
+        # IssuanceError, not a raw KeyError, honouring the documented contract.
+        conf = _write_conf(tmp_path)
+        conf.remove_option('badge_1', 'name')
+        with pytest.raises(IssuanceError, match='config key'):
+            issue_from_conf(conf, 'badge_1', 'r@example.com', '3')
+
 
 class TestIssueOb2:
     def test_signed_returns_bytes_and_assertion(self, tmp_path):

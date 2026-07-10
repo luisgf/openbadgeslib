@@ -43,11 +43,10 @@ from typing import Any, Optional
 from .keys import KeyType
 from .confparser import read_config_or_exit, resolve_badge_section
 from .logs import enable_debug_logging
-# Badge (the config-driven badge model) is shared across all OB versions here,
-# so it imports from the ob1 leaf module directly — reaching it through the
-# deprecated openbadgeslib.ob1 package surface would warn. The genuinely
-# OB1-only names (Signer, BadgeType) load lazily inside _sign_ob1.
-from .ob1.badge import Badge
+# Badge (the config-driven badge model) is shared across all OB versions, so it
+# lives in the neutral badge_model module. The genuinely OB1-only names (Signer,
+# BadgeType) load lazily inside _sign_ob1.
+from .badge_model import Badge
 from .mail import BadgeMail
 # Issuance orchestration lives in openbadgeslib.issue; this module is the CLI
 # front end (flag parsing, I/O and display) over it.

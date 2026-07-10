@@ -76,6 +76,15 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     `CredentialNotFound` / `AmbiguousCredential` instead of exiting.
     `openbadges-publish -V 3` is now a thin presenter over it (byte-identical
     output). Completes #222.
+  - fix(issue): move the version-neutral badge config model (`Badge`,
+    `BadgeImgType`) out of the legacy `ob1` package into
+    `openbadgeslib.badge_model` (re-exported from `ob1.badge` for
+    compatibility). `create_from_conf` now reads the OpenBadges 1.0-only
+    `verify_key`/`criteria` keys optionally, so issuing an OB3 badge that omits
+    them no longer blows up with a raw `KeyError('verify_key')`; a missing
+    required key surfaces as `IssuanceError` through the `issue_*` entry points,
+    and a missing image raises a typed error instead of `print` + bare
+    `IOError` (#223).
 
 
 * v3.14.0 - 2026-07-10

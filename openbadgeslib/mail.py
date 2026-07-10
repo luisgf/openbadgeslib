@@ -30,7 +30,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate
 from email.header import Header
-from .ob1.badge import BadgeImgType  # leaf import: avoids the ob1 deprecation warning
+from .badge_model import BadgeImgType   # version-neutral model (was ob1.badge)
 from .errors import BadgeImgFormatUnsupported
 
 
