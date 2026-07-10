@@ -9,8 +9,8 @@ import jwt
 import pytest
 
 from openbadgeslib import openbadges_verifier
-from openbadgeslib.openbadges_verifier import (_issuer_did_from_document,
-                                               _issuer_did_from_token)
+from openbadgeslib.verify import (issuer_did_from_document,
+                                  issuer_did_from_token)
 from openbadgeslib.ob3 import (Achievement, Evidence, Issuer,
                                OB3VerificationError, OB3Signer,
                                OpenBadgeCredential)
@@ -29,29 +29,29 @@ def _run(argv):
 class TestIssuerDidHelpers:
     def test_token_malformed_jwt(self):
         with pytest.raises(OB3VerificationError, match='could not read'):
-            _issuer_did_from_token('not-a-jwt')
+            issuer_did_from_token('not-a-jwt')
 
     def test_token_iss_not_a_did(self):
         token = jwt.encode({'iss': 'https://issuer.example'}, 'x' * 32,
                            algorithm='HS256')
         with pytest.raises(OB3VerificationError, match='not a DID'):
-            _issuer_did_from_token(token)
+            issuer_did_from_token(token)
 
     def test_token_falls_back_to_vc_issuer(self):
         token = jwt.encode({'vc': {'issuer': {'id': 'did:web:x.example'}}}, 'x' * 32,
                            algorithm='HS256')
-        assert _issuer_did_from_token(token) == 'did:web:x.example'
+        assert issuer_did_from_token(token) == 'did:web:x.example'
 
     def test_document_malformed_json(self):
         with pytest.raises(OB3VerificationError, match='could not read'):
-            _issuer_did_from_document('{not json')
+            issuer_did_from_document('{not json')
 
     def test_document_issuer_not_a_did(self):
         with pytest.raises(OB3VerificationError, match='not a DID'):
-            _issuer_did_from_document('{"issuer": "https://issuer.example"}')
+            issuer_did_from_document('{"issuer": "https://issuer.example"}')
 
     def test_document_issuer_object(self):
-        assert _issuer_did_from_document(
+        assert issuer_did_from_document(
             '{"issuer": {"id": "did:key:zabc"}}') == 'did:key:zabc'
 
 
@@ -261,7 +261,7 @@ class TestVerifierMiscBranches:
         # iss absent and vc not an object → the vc={} fallback, then no DID.
         token = jwt.encode({'vc': 'not-an-object'}, 'x' * 32, algorithm='HS256')
         with pytest.raises(OB3VerificationError, match='not a DID'):
-            _issuer_did_from_token(token)
+            issuer_did_from_token(token)
 
 
 class TestHumanModeExitCodes:

@@ -72,6 +72,18 @@ def _resolve_trusted_pubkey(args: argparse.Namespace) -> Optional[bytes]:
     return None
 
 
+def _image_format(filein: str) -> str:
+    """The verify_badge image_format hint from the input filename: 'svg'/'png'
+    keep the historical extension-based decision, anything else becomes an
+    unsupported-format result (the facade rejects an unknown hint)."""
+    low = filein.lower()
+    if low.endswith('.svg'):
+        return 'svg'
+    if low.endswith('.png'):
+        return 'png'
+    return 'other'
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Badge Verifier Parameters')
     parser.add_argument('-c', '--config', default='config.ini',
@@ -171,9 +183,13 @@ def main() -> None:
 
 
 def _verify_ob2(args: argparse.Namespace) -> None:
-    """Verify a badge using strict OpenBadges 2.0 (SignedBadge JWS or HostedBadge)."""
-    from .ob2 import OB2Verifier, OB2VerificationError
-    from .errors import ErrorParsingFile
+    """Verify a badge using strict OpenBadges 2.0, then present the result.
+
+    The verification itself (token extraction, signature/revocation, hosted
+    scope, trust classification) lives in :func:`openbadgeslib.verify.verify_badge`;
+    this only turns its :class:`~openbadgeslib.verify.VerifyResult` into the
+    historical human lines / --json payload and exit status."""
+    from .verify import verify_badge
 
     # _exit starts non-zero and is cleared to None only on a valid verdict, so a
     # failed OB2 verification exits non-zero in human mode too (mirrors OB3 and
@@ -186,47 +202,32 @@ def _verify_ob2(args: argparse.Namespace) -> None:
     with open(args.filein, 'rb') as f:
         file_data = f.read()
 
-    try:
-        if args.filein.lower().endswith('.svg'):
-            token = OB2Verifier.extract_token_from_svg(file_data)
-        elif args.filein.lower().endswith('.png'):
-            token = OB2Verifier.extract_token_from_png(file_data)
-        else:
-            result['reason'] = 'Unsupported file format for OB2 verification (use .svg or .png)'
-            result['_exit'] = -1
+    res = verify_badge(file_data, '2', pubkey_pem=pub_pem,
+                       expected_recipient=args.receptor,
+                       image_format=_image_format(args.filein))
+
+    if not res.valid:
+        reason = res.reason or ''
+        result['reason'] = res.reason
+        if reason.startswith('OB2 verification failed: '):
+            result['status'] = 'INVALID'
+            if not args.json:                    # human line prints only the cause
+                print('[-] %s' % reason[len('OB2 verification failed: '):])
+        elif reason.startswith('Unsupported file format'):
             if not args.json:
-                print('[!] %s' % result['reason'])
-            _finish(args, result)
-            return
-    except (OB2VerificationError, ErrorParsingFile) as exc:
-        result['reason'] = 'Could not extract OB2 token: %s' % exc
-        result['_exit'] = -1
-        if not args.json:
-            print('[-] %s' % result['reason'])
+                print('[!] %s' % reason)
+        else:                                    # token-extraction failure
+            if not args.json:
+                print('[-] %s' % reason)
         _finish(args, result)
         return
 
-    # check_revocation=True mirrors OB1's always-check-revocation pipeline; a
-    # HostedBadge additionally fetches its id and issuer to anchor trust.
-    verifier = OB2Verifier(pubkey_pem=pub_pem)
-    try:
-        assertion = verifier.verify(token, expected_recipient=args.receptor,
-                                    check_revocation=True)
-    except OB2VerificationError as exc:
-        result['reason'] = 'OB2 verification failed: %s' % exc
-        result['status'] = 'INVALID'
-        if not args.json:
-            print('[-] %s' % exc)
-        _finish(args, result)
-        return
-
+    assertion = res.assertion
+    assert assertion is not None           # res.valid is True, so it is present
     verification_type = assertion.verification.type
-    # A HostedBadge is anchored by the (scope-checked) HTTPS retrieval of its id;
-    # a SignedBadge is only trusted when the operator supplied the key.
-    trusted = True if verification_type == 'HostedBadge' else (pub_pem is not None)
     result['valid'] = True
     result['_exit'] = None
-    result['trusted'] = trusted
+    result['trusted'] = res.trusted
     result['status'] = 'VALID'
     result['verification_type'] = verification_type
     result['assertion_id'] = assertion.id
@@ -236,7 +237,7 @@ def _verify_ob2(args: argparse.Namespace) -> None:
         print('[+] Assertion:')
         print(json.dumps(assertion.to_dict(), sort_keys=True, indent=4))
 
-    if trusted:
+    if res.trusted:
         result['reason'] = None
         if not args.json:
             if verification_type == 'HostedBadge':
@@ -245,8 +246,7 @@ def _verify_ob2(args: argparse.Namespace) -> None:
             else:
                 print('[+] Signature is correct for the identity %s' % args.receptor)
     else:
-        result['reason'] = ('signature is internally consistent but verified against the '
-                            'badge-declared key, not a trusted issuer key')
+        result['reason'] = res.reason
         if not args.json:
             print('[~] Signature is internally consistent for %s, but it was verified '
                   'against the key the badge itself declares (verification.creator), not a '
@@ -326,54 +326,14 @@ def _verify_ob1(args: argparse.Namespace) -> None:
     _finish(args, result)
 
 
-def _issuer_did_from_token(token: str) -> str:
-    """Read the issuer DID from an unverified JWT-VC (iss, or vc.issuer.id).
-
-    Only used to anchor trust when --resolve-did is set: the DID is read from
-    the untrusted token, resolved to a key, and the signature is then checked
-    against that key (did:key is self-certifying; did:web trusts DNS+TLS)."""
-    import jwt
-    from .ob3 import OB3VerificationError
-    try:
-        payload = jwt.decode(token, options={'verify_signature': False})
-    except jwt.exceptions.PyJWTError as exc:
-        raise OB3VerificationError('could not read token issuer: %s' % exc) from exc
-    iss = payload.get('iss')
-    if not iss:
-        vc = payload.get('vc')
-        if not isinstance(vc, dict):
-            vc = {}
-        issuer = vc.get('issuer')
-        iss = issuer.get('id') if isinstance(issuer, dict) else issuer
-    if not isinstance(iss, str) or not iss.startswith('did:'):
-        raise OB3VerificationError('token issuer is not a DID: %r' % (iss,))
-    return iss
-
-
-def _issuer_did_from_document(document: str) -> str:
-    """Read the issuer DID from an unverified Data Integrity credential.
-
-    The LDP counterpart of _issuer_did_from_token, with the same trust
-    caveat: the DID comes from the untrusted document and is only an anchor
-    for --resolve-did."""
-    import json
-    from .ob3 import OB3VerificationError
-    try:
-        doc = json.loads(document)
-    except ValueError as exc:
-        raise OB3VerificationError(
-            'could not read credential issuer: %s' % exc) from exc
-    issuer = doc.get('issuer') if isinstance(doc, dict) else None
-    iss = issuer.get('id') if isinstance(issuer, dict) else issuer
-    if not isinstance(iss, str) or not iss.startswith('did:'):
-        raise OB3VerificationError('credential issuer is not a DID: %r' % (iss,))
-    return iss
-
-
 def _verify_ob3(args: argparse.Namespace) -> None:
-    """Verify a badge using OpenBadges 3.0 (JWT-VC or Data Integrity)."""
-    from .ob3 import OB3LdpVerifier, OB3VerificationError, OB3Verifier
-    from .errors import ErrorParsingFile
+    """Verify a badge using OpenBadges 3.0, then present the result.
+
+    The verification (token extraction, JWT-VC/LDP auto-detection, DID
+    resolution, trust classification, signature/status) lives in
+    :func:`openbadgeslib.verify.verify_badge`; this only presents its
+    :class:`~openbadgeslib.verify.VerifyResult`."""
+    from .verify import verify_badge
 
     result: Dict[str, Any] = {'ob_version': '3', 'recipient': args.receptor,
                               'trusted': True, 'valid': False, '_exit': -1}
@@ -389,63 +349,33 @@ def _verify_ob3(args: argparse.Namespace) -> None:
     with open(args.filein, 'rb') as f:
         file_data = f.read()
 
-    try:
-        if args.filein.lower().endswith('.svg'):
-            token = OB3Verifier.extract_token_from_svg(file_data)
-        elif args.filein.lower().endswith('.png'):
-            token = OB3Verifier.extract_token_from_png(file_data)
-        else:
-            result['reason'] = 'Unsupported file format for OB3 verification (use .svg or .png)'
-            if not args.json:
-                print('[!] %s' % result['reason'])
-            _finish(args, result)
-            return
-    except (OB3VerificationError, ErrorParsingFile) as exc:
-        result['reason'] = 'Could not extract OB3 token: %s' % exc
+    res = verify_badge(
+        file_data, '3', pubkey_pem=pub_pem, resolve_did=args.resolve_did,
+        expected_recipient=args.receptor, check_status=args.check_status,
+        verify_status_list=not args.no_verify_status_list,
+        image_format=_image_format(args.filein))
+
+    result['proof_format'] = res.proof_format
+    # In --resolve-did mode the facade read the issuer DID from the credential;
+    # surface it and the progress line before the verdict, as the CLI always has.
+    if res.issuer_did is not None:
+        result['issuer_did'] = res.issuer_did
         if not args.json:
-            print('[-] %s' % result['reason'])
+            print('[*] Resolving issuer DID %s' % res.issuer_did)
+
+    if not res.valid:
+        result['reason'] = res.reason
+        if not args.json:
+            prefix = '[!]' if (res.reason or '').startswith('Unsupported file format') else '[-]'
+            print('%s %s' % (prefix, res.reason))
         _finish(args, result)
         return
 
-    # The baked payload is either a compact JWT-VC or (for the OB 3.0 Linked
-    # Data Proof format) the credential JSON itself. Both verifiers share the
-    # verify() signature, so only the construction differs.
-    is_ldp = token.lstrip().startswith('{')
-    result['proof_format'] = 'ldp' if is_ldp else 'vc-jwt'
-
-    # Let the library own recipient binding (it normalises mailto:/DID and
-    # compares), instead of re-implementing the comparison here.
-    try:
-        verifier: Any
-        if pub_pem is not None:
-            verifier = (OB3LdpVerifier(pubkey_pem=pub_pem) if is_ldp
-                        else OB3Verifier(pubkey_pem=pub_pem))
-        else:
-            issuer_did = (_issuer_did_from_document(token) if is_ldp
-                          else _issuer_did_from_token(token))
-            result['issuer_did'] = issuer_did
-            # The DID is read from the untrusted credential itself. A did:key
-            # IS the presenter's chosen key, so resolving it proves only
-            # internal consistency, not issuer identity — mark it untrusted,
-            # mirroring OB2's badge-embedded-key case. did:web is anchored on
-            # the issuer's DNS + TLS, so it stays trusted.
-            result['trusted'] = issuer_did.startswith('did:web:')
-            if not args.json:
-                print('[*] Resolving issuer DID %s' % issuer_did)
-            verifier = (OB3LdpVerifier.for_issuer_did(issuer_did) if is_ldp
-                        else OB3Verifier.for_issuer_did(issuer_did))
-        credential = verifier.verify(token, expected_recipient=args.receptor,
-                                     check_status=args.check_status,
-                                     verify_status_list=not args.no_verify_status_list)
-    except OB3VerificationError as exc:
-        result['reason'] = 'OB3 verification failed: %s' % exc
-        if not args.json:
-            print('[-] %s' % result['reason'])
-        _finish(args, result)
-        return
-
+    credential = res.credential
+    assert credential is not None          # res.valid is True, so it is present
     result['valid'] = True
     result['_exit'] = None
+    result['trusted'] = res.trusted
     result['issuer'] = credential.issuer.name
     result['achievement'] = credential.achievement.name
     result['issued_on'] = credential.issuance_date.isoformat() if credential.issuance_date else None
@@ -493,14 +423,12 @@ def _verify_ob3(args: argparse.Namespace) -> None:
             print('[+] Endorsements       : %d (verify with '
                   'ob3.verify_endorsement_jwt)' % len(endorsement_jwts))
 
-    if result['trusted']:
+    if res.trusted:
         result['reason'] = None
         if not args.json:
             print('[+] OB3 signature is valid for the identity %s' % args.receptor)
     else:
-        result['reason'] = ('signature is valid but verified against a key resolved '
-                            'from the credential\'s own did:key (self-asserted), not a '
-                            'trusted issuer key')
+        result['reason'] = res.reason
         if not args.json:
             print('[~] OB3 signature is internally consistent for %s, but it was '
                   'verified against a key resolved from the credential\'s own '

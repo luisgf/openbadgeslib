@@ -58,6 +58,14 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     term definitions are not rebuilt on every canonicalization (~1.6x faster
     Data Integrity sign/verify); per-call `extra_contexts` stay untagged so a
     changing context is never served stale (#229).
+  - feat: extract a programmatic verification facade — `openbadgeslib.verify`
+    with `verify_badge(data, ob_version, *, pubkey_pem | resolve_did,
+    expected_recipient, check_status, …) -> VerifyResult` (fields `valid`,
+    `trusted`, and the decoded `credential`/`assertion`). It runs the whole
+    verification — token extraction, JWT-VC/LDP auto-detection, issuer-DID
+    resolution, trust classification, signature/status — doing no I/O; an
+    invalid badge is a result, not an exception. `openbadges-verifier` is now a
+    thin presenter over it (byte-identical output). Part of #222.
 
 
 * v3.14.0 - 2026-07-10
