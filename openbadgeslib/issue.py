@@ -53,9 +53,10 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, List, NamedTuple, Optional
 from urllib.parse import urljoin
 
-from .errors import BadgeImgFormatUnsupported, ErrorSigningFile, StatusError
+from .errors import (BadgeImgFormatUnsupported, ErrorSigningFile,
+                     LibOpenBadgesException, StatusError)
 from .keys import KeyType, alg_for_key_type, detect_key_type
-from .ob1.badge import Badge, BadgeImgType
+from .badge_model import Badge, BadgeImgType
 from .util import normalize_recipient_id
 
 logger = logging.getLogger(__name__)
@@ -126,6 +127,19 @@ def output_basename(badge: str, recipient: str,
     raise BadgeImgFormatUnsupported('Unsupported image type: %r' % (image_type,))
 
 
+def _badge_from_conf(conf: configparser.ConfigParser, badge: str) -> Badge:
+    """Build the Badge config model, mapping a missing required config key or an
+    unreadable key/image to :class:`IssuanceError` — so the issue_* entry points
+    honour their documented contract instead of leaking a raw ``KeyError`` (e.g.
+    an OB3 config with no OB1 ``verify_key``) out of ``Badge.create_from_conf``."""
+    try:
+        return Badge.create_from_conf(conf, badge)
+    except KeyError as exc:
+        raise IssuanceError('missing required config key %s' % exc) from exc
+    except LibOpenBadgesException as exc:
+        raise IssuanceError(str(exc)) from exc
+
+
 def issue_from_conf(conf: configparser.ConfigParser, badge: str, recipient: str,
                     ob_version: str = '3', *, evidence: Optional[str] = None,
                     expires: Optional[int] = None, hosted: bool = False,
@@ -137,7 +151,7 @@ def issue_from_conf(conf: configparser.ConfigParser, badge: str, recipient: str,
     overrides the OB3 badge's ``proof_format`` ('vc-jwt' | 'ldp'). Returns a
     :class:`SignResult`; raises :class:`IssuanceError`. Supports OB 2.0 and
     3.0 (OB 1.0 is issued via the CLI only)."""
-    badge_obj = Badge.create_from_conf(conf, badge)
+    badge_obj = _badge_from_conf(conf, badge)
     return issue_badge(conf, badge, recipient, badge_obj, ob_version,
                        evidence=evidence, expires=expires, hosted=hosted,
                        proof_format=proof_format)
@@ -179,7 +193,7 @@ def issue_batch_from_conf(conf: configparser.ConfigParser, badge: str,
     section, or the status list lacking room for the whole batch) raises
     :class:`IssuanceError` — the transaction is atomic, so nothing is issued.
     OpenBadges 1.0 is single-recipient only (CLI)."""
-    badge_obj = Badge.create_from_conf(conf, badge)
+    badge_obj = _badge_from_conf(conf, badge)
     return issue_batch(conf, badge, recipients, badge_obj, ob_version,
                        evidence=evidence, expires=expires, hosted=hosted,
                        proof_format=proof_format)

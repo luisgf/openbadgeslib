@@ -540,7 +540,7 @@ def test_publish_restores_umask_when_a_badge_mkdir_fails(tmp_path):
 # ── Badge.urls_has_problems ─────────────────────────────────────────────────────
 
 def test_urls_has_problems_all_ok(svg_rsa_badge):
-    with patch('openbadgeslib.ob1.badge.download_file', return_value=b'data'):
+    with patch('openbadgeslib.badge_model.download_file', return_value=b'data'):
         assert svg_rsa_badge.urls_has_problems() is False
 
 
@@ -555,7 +555,7 @@ def test_urls_has_problems_detects_later_failure(svg_rsa_badge):
             raise ValueError('unreachable')
         return b'data'
 
-    with patch('openbadgeslib.ob1.badge.download_file', side_effect=fake_download):
+    with patch('openbadgeslib.badge_model.download_file', side_effect=fake_download):
         assert svg_rsa_badge.urls_has_problems() is True
 
 
@@ -727,7 +727,7 @@ def test_signer_ob2_writes_file_and_log(tmp_path, capsys):
     cfg = _write_ob2_sign_config(tmp_path)
     argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
             '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '1', '-E']
-    with patch('openbadgeslib.ob1.badge.download_file', return_value=b'data'), \
+    with patch('openbadgeslib.badge_model.download_file', return_value=b'data'), \
             patch.object(sys, 'argv', argv):
         openbadges_signer.main()
     out = capsys.readouterr().out
@@ -743,7 +743,7 @@ def test_signer_ob2_mail_badge_sends(tmp_path):
     argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
             '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '1', '-E', '-M']
     smtp = MagicMock()
-    with patch('openbadgeslib.ob1.badge.download_file', return_value=b'data'), \
+    with patch('openbadgeslib.badge_model.download_file', return_value=b'data'), \
             patch('openbadgeslib.mail.SMTP', return_value=smtp), \
             patch.object(sys, 'argv', argv):
         openbadges_signer.main()
@@ -761,7 +761,7 @@ def test_signer_ob2_mail_badge_auth_without_ssl_reports_clean_error(tmp_path, ca
         'mail_from = no-reply@example.com\nusername = user\npassword = pass\n'))
     argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
             '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '1', '-E', '-M']
-    with patch('openbadgeslib.ob1.badge.download_file', return_value=b'data'), \
+    with patch('openbadgeslib.badge_model.download_file', return_value=b'data'), \
             patch.object(sys, 'argv', argv):
         openbadges_signer.main()   # must not raise
     out = capsys.readouterr().out
@@ -781,7 +781,7 @@ def test_signer_ob2_mail_badge_missing_template_reports_clean_error(tmp_path, ca
         'mail = %s\n' % (tmp_path / 'nonexistent-mail.txt')))
     argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
             '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '1', '-E', '-M']
-    with patch('openbadgeslib.ob1.badge.download_file', return_value=b'data'), \
+    with patch('openbadgeslib.badge_model.download_file', return_value=b'data'), \
             patch.object(sys, 'argv', argv):
         openbadges_signer.main()   # must not raise
     out = capsys.readouterr().out
