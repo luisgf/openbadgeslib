@@ -29,7 +29,7 @@ import jwt
 from .credential import OpenBadgeCredential, _SUPPORTED_ALGORITHMS
 from ..util import __version__
 from ..keys import key_to_pem
-from ..errors import ErrorSigningFile
+from ..errors import ErrorSigningFile, UnsupportedAlgorithm
 from .. import baking
 
 
@@ -47,7 +47,7 @@ class OB3Signer:
 
     def __init__(self, privkey_pem: Any, algorithm: str = 'RS256') -> None:
         if algorithm not in _SUPPORTED_ALGORITHMS:
-            raise ValueError(
+            raise UnsupportedAlgorithm(
                 f"Unsupported algorithm {algorithm!r}. "
                 f"Choose from: {sorted(_SUPPORTED_ALGORITHMS)}"
             )

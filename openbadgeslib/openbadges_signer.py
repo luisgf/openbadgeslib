@@ -218,11 +218,14 @@ def _write_badge_and_log(conf: configparser.ConfigParser, badge_file_out: str,
     reported but does not lose the already-written badge."""
     with open(badge_file_out, 'wb') as f:
         f.write(badge_bytes)
-    sign_log = os.path.join(conf['paths']['base_log'], conf['logs']['signer'])
     try:
+        # Resolve the log path inside the try: a missing [logs]/[paths] key is a
+        # KeyError, and the badge is already on disk — a log failure must be
+        # reported, not turned into a traceback that loses the written badge.
+        sign_log = os.path.join(conf['paths']['base_log'], conf['logs']['signer'])
         with open(sign_log, 'a') as file:
             file.write(msg + '\n')
-    except OSError as err:
+    except (OSError, KeyError) as err:
         print('[!] Could not write sign log: %s' % err)
     print('%s at: %s' % (msg, badge_file_out))
 

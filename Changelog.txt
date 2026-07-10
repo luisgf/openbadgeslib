@@ -85,6 +85,17 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     required key surfaces as `IssuanceError` through the `issue_*` entry points,
     and a missing image raises a typed error instead of `print` + bare
     `IOError` (#223).
+  - refactor(errors): consolidate the exception hierarchy so a single
+    `except LibOpenBadgesException` traps every library error. `IssuanceError`
+    and `DecompressionLimitExceeded` are re-anchored under the root (still
+    importable from `openbadgeslib.issue` / `openbadgeslib.baking`); the config
+    helpers' bare `ValueError`s become a new `ConfigError` and the signers'
+    unsupported-algorithm error becomes `UnsupportedAlgorithm` — both also
+    subclass `ValueError` so `except ValueError` callers keep working.
+    `_write_badge_and_log` reads the `[logs]` path inside its `try`, so a missing
+    `[logs]` section is reported instead of crashing with a traceback after the
+    badge is already on disk. Adds singular aliases (`KeyGenException`,
+    `SignerException`, `VerifierException`) for the plural base families (#224).
 
 
 * v3.14.0 - 2026-07-10
