@@ -52,6 +52,38 @@ jobs:
       - name: Test (pytest + coverage)
         run: pytest --cov=openbadgeslib --cov-report=term-missing
 
+  windows:
+    # "OS Independent" was only a classifier — nothing non-Linux was ever
+    # exercised. On Windows fcntl is absent, so the StatusRegistry advisory lock
+    # degrades to a no-op (status_registry.py:41-44,86-92), a path no Linux run
+    # takes. Run the suite on windows-latest with the core extras only (the
+    # [ldp]/[eudi] crypto tests skip when their wheels are absent), so nothing
+    # Windows-specific silently rots. Independent of the publish gate (publish
+    # `needs: test`), so a Windows-only quirk never blocks a release. See #230,
+    # and the flock work in #148.
+    name: test (windows, py${{ matrix.python-version }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12']
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package and dev dependencies (core, no network extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Test (pytest)
+        run: pytest
+
   eudi:
     # Hardening for the optional [eudi] SD-JWT VC track, which delegates its
     # crypto to openvc-core (a separate repo). The main `test` job installs the
@@ -132,7 +164,10 @@ jobs:
           python -m build
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        # SHA-pinned (not the mutable release/v1 branch): this step runs with
+        # id-token: write, so a compromised upstream ref could publish under our
+        # OIDC identity. Dependabot (.github/dependabot.yml) bumps the pin.
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
         with:
           # OIDC Trusted Publishing: no password — the id-token permission
           # above authenticates to PyPI. This REQUIRES a Trusted Publisher

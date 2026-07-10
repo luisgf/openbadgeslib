@@ -10,6 +10,12 @@ on:
     branches: [master]
   pull_request:
 
+# Least-privilege GITHUB_TOKEN: this workflow only reads the repo to lint the
+# commit range; it writes nothing. Without an explicit block it would inherit
+# the repository/organization default, which may be broader (#230).
+permissions:
+  contents: read
+
 jobs:
   commit-lint:
     name: Lint commit messages
