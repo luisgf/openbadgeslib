@@ -50,6 +50,11 @@ jobs:
         run: mypy
 
       - name: Test (pytest + coverage)
+        # This job installs [ldp-sd] on purpose, so demand it: the ecdsa-sd-2023
+        # suite FAILs (not skips) if openvc/pyld stop importing here (#221). The
+        # windows leg below omits the extra and does not set this, so it skips.
+        env:
+          OPENBADGES_REQUIRE_LDP_SD: '1'
         run: pytest --cov=openbadgeslib --cov-report=term-missing
 
   windows:

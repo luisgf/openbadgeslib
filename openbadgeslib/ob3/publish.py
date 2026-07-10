@@ -431,11 +431,15 @@ def publish_ob3(conf: configparser.ConfigParser, output: str, *,
                         indices, registry.size_bits, valid_until=valid_until)
                     token = sign_status_list_credential(vc, priv_pem, algorithm)
                     _write_atomic(os.path.join(badge_dir, purpose + '.jwt'), token)
-                    files_written.append(os.path.join(name, purpose + '.jwt'))
+                    # files_written entries are output-relative URL paths (they
+                    # map onto publish_url via urljoin and back to a file via
+                    # rel.replace('/', os.sep) in _check_live) — always '/', never
+                    # os.sep, or a Windows backslash would break both.
+                    files_written.append('%s/%s.jwt' % (name, purpose))
 
                 shutil.copyfile(conf[name]['public_key'],
                                 os.path.join(badge_dir, 'verify.pem'))
-                files_written.append(os.path.join(name, 'verify.pem'))
+                files_written.append('%s/verify.pem' % name)
             except (StatusError, OSError, KeyError, LibOpenBadgesException) as exc:
                 status_skipped.append((name, str(exc)))
                 continue

@@ -79,7 +79,10 @@ class TestReadConfBaseValidation:
         p.write_text('[paths]\nbase = data\nbase_key = ${base}/keys\n')
         conf = ConfParser(str(p)).read_conf()
         assert conf['paths']['base'] == os.path.join(str(d), 'data')
-        assert conf['paths']['base_key'] == os.path.join(str(d), 'data', 'keys')
+        # base_key is ${base} + the INI's literal '/keys'; the separator after
+        # base stays '/' on every platform (os.path.join would use '\' on
+        # Windows and spuriously mismatch), so compare against base + '/keys'.
+        assert conf['paths']['base_key'] == conf['paths']['base'] + '/keys'
 
     def test_nonexistent_file_returns_none(self, tmp_path):
         assert ConfParser(str(tmp_path / 'missing.ini')).read_conf() is None

@@ -147,7 +147,12 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     least-privilege `permissions: contents: read` to commit-lint.yml. Add a
     `windows-latest` CI leg plus a monkeypatched test of the `fcntl=None`
     StatusRegistry lock fallback, so the "OS Independent" classifier is actually
-    exercised on the non-POSIX path (#230).
+    exercised on the non-POSIX path. The leg immediately caught a real
+    portability bug it fixes: `openbadges-publish` now records `files_written`
+    with forward slashes (a Windows `\` would have broken the artefact URLs built
+    via `urljoin`); the POSIX file-mode assertions skip on Windows and the
+    ldp-sd hard-fail guard keys on an explicit `OPENBADGES_REQUIRE_LDP_SD` flag
+    (set by the main test job) so the core-only Windows leg skips it (#230).
   - refactor: declare the stable public surface (freeze prep for v4). The root
     package gains an explicit `__all__` (the "public contract"), re-exports
     `KeyEd25519` (the recommended OB 3.0 / LDP key) alongside `KeyRSA`/`KeyECC`,

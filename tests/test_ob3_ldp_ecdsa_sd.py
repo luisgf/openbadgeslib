@@ -79,10 +79,12 @@ def _issue_and_derive(ob3_credential, *, selective):
 def _require_ldp_sd() -> None:
     """Ensure the [ldp-sd] delegate stack (openvc-core + pyld) is importable.
 
-    Missing it SKIPs locally, but FAILs under CI (``CI=true``): CI installs the
-    extra on purpose, so an import that stops resolving there — e.g. an
-    openvc-core packaging change — must turn the whole ecdsa-sd-2023 suite red
-    instead of letting it pass by skipping in silence (#221).
+    Missing it SKIPs, except where the extra is installed on purpose — the main
+    CI test job sets ``OPENBADGES_REQUIRE_LDP_SD=1`` — where it FAILs instead, so
+    an import that stops resolving there (e.g. an openvc-core packaging change)
+    turns the whole ecdsa-sd-2023 suite red rather than passing by skipping in
+    silence (#221). A core-only CI leg that deliberately omits [ldp-sd] (e.g. the
+    windows-latest leg) does not set the flag and so skips cleanly (#230).
     """
     for mod in ('openvc', 'pyld'):
         try:
@@ -90,7 +92,7 @@ def _require_ldp_sd() -> None:
         except ImportError as exc:
             reason = ('the [ldp-sd] extra is required for the ecdsa-sd-2023 '
                       'tests but %r is not importable: %s' % (mod, exc))
-            if os.environ.get('CI') == 'true':
+            if os.environ.get('OPENBADGES_REQUIRE_LDP_SD') == '1':
                 pytest.fail(reason, pytrace=False)
             pytest.skip(reason)
 
@@ -142,6 +144,10 @@ class TestEcdsaSdVerify:
     def test_selective_omission(self, ob3_credential):
         # Withhold credentialSchema entirely: still verifies, and the field is
         # absent from the presentation the verifier sees.
+        # Unlike the other tests this uses ob3_credential (not the sd_credential
+        # fixture), so it must run the [ldp-sd] guard itself — otherwise the
+        # direct openvc import in _issue_and_derive would fail instead of skip.
+        _require_ldp_sd()
         derived, pub_pem, _ = _issue_and_derive(ob3_credential, selective=[])
         assert 'credentialSchema' not in derived
         OB3LdpVerifier(pubkey_pem=pub_pem).verify(derived)
