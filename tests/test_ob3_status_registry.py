@@ -191,6 +191,9 @@ class TestPersistence:
         assert path.exists()
         assert [p.name for p in path.parent.iterdir()] == ['badge_1.json']
 
+    @pytest.mark.skipif(
+        os.name == 'nt',
+        reason='POSIX file-mode semantics; Windows uses ACLs, not 0o600')
     def test_save_is_private(self, tmp_path):
         reg = _registry(tmp_path)
         reg.save()

@@ -46,6 +46,11 @@ def test_init_creates_directories_with_restrictive_permissions(tmp_path):
     # (not just keys/) ends up owner-only (0700), not world/group readable.
     import os
     import stat
+    import pytest
+    if os.name == 'nt':
+        # POSIX file-mode semantics: on Windows umask/chmod do not map to 0700
+        # (the dir reports 0777), so this owner-only control is POSIX-only.
+        pytest.skip('POSIX file-mode semantics; Windows uses ACLs')
     from openbadgeslib import openbadges_init
     target = tmp_path / 'config'
     with patch.object(sys, 'argv', ['openbadges-init', str(target)]):
