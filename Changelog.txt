@@ -48,6 +48,11 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     "Upgrading to 4.0" wiki page (dropped Python 3.10, the unified 0/1/2
     exit-code contract, the removed pycryptodome/python-ecdsa compat) linked
     from the sidebar, plus a README heads-up.
+  - feat(eudi): `issue_badge_sd_jwt` can embed an `x5c` certificate chain, so a
+    badge SD-JWT VC is issued anchored on X.509 and verified in one call with
+    `verify_badge_sd_jwt(..., x5c_trust_anchors=[…])` — the issue-side
+    counterpart of the verify-side x5c trust (#178), for eIDAS / EU Trusted
+    List anchoring. Raises the [eudi] openvc-core floor to >=1.18.
 
 * v3.13.0 - 2026-07-09
 

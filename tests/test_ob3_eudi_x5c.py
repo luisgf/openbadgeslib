@@ -143,6 +143,30 @@ class TestX5cTrust:
         with pytest.raises(EudiError, match='x5c'):
             verify_badge_sd_jwt(forged, x5c_trust_anchors=[root])
 
+    def test_issue_with_x5c_then_verify_closes_the_loop(self):
+        # openvc-core >=1.18 lets issue_badge_sd_jwt embed the x5c chain, so a
+        # badge is issued anchored on X.509 and verified in one call — the
+        # issue-side counterpart of test_trusted_anchor_verifies_and_binds_issuer.
+        from cryptography.hazmat.primitives import serialization
+        from openbadgeslib.ob3 import (Achievement, Issuer,
+                                       OpenBadgeCredential)
+        from openbadgeslib.ob3.eudi import (_issuer_jwt_has_x5c,
+                                            issue_badge_sd_jwt)
+        x5c, root, leaf_key = _chain()
+        leaf_pem = leaf_key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption())
+        cred = OpenBadgeCredential(
+            issuer=Issuer(id=ISS, name='Issuer'),
+            recipient_id='mailto:r@example.com',
+            achievement=Achievement(id='https://a.example/1', name='A',
+                                    description='d', criteria_narrative='c'))
+        token = issue_badge_sd_jwt(cred, privkey_pem=leaf_pem, x5c=x5c)
+        assert _issuer_jwt_has_x5c(token)                   # x5c embedded on issue
+        result = verify_badge_sd_jwt(token, x5c_trust_anchors=[root])
+        assert result.issuer == ISS                         # verified via anchor
+
 
 def test_x5c_path_needs_the_extra(monkeypatch):
     for name in ('openvc', 'openvc.keys', 'openvc.proof.sd_jwt'):

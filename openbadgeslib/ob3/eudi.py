@@ -191,6 +191,7 @@ def issue_badge_sd_jwt(
     expires_in_s: Optional[int] = None,
     vct: str = OB3_SD_JWT_VCT,
     vct_integrity: Optional[str] = None,
+    x5c: Optional[Iterable[str]] = None,
 ) -> str:
     """Issue *credential* as an SD-JWT VC.
 
@@ -203,6 +204,13 @@ def issue_badge_sd_jwt(
     ``vct#integrity`` claim that pins the Type Metadata served at *vct*, so a
     wallet resolving it fails closed on any tampering — always disclosed,
     alongside ``vct``.
+
+    Pass *x5c* — an X.509 certificate chain (base64 DER, leaf first) — to anchor
+    the issuer in the issuer JWT header, so a verifier validates the badge in one
+    call via ``verify_badge_sd_jwt(token, x5c_trust_anchors=[…])`` (eIDAS / EU
+    Trusted List trust). The leaf's key must be *privkey_pem* and the issuer id
+    must be in the leaf SAN, or verification fails closed. Needs openvc-core
+    >=1.18. This closes the loop with the verify-side x5c support (#178).
     """
     _, _, _, SdJwtVcProofSuite = _require_openvc()
     signing_key = _signing_key(privkey_pem, kid or ("%s#key-1" % credential.issuer.id))
@@ -213,7 +221,7 @@ def issue_badge_sd_jwt(
     try:
         return cast(str, SdJwtVcProofSuite().issue(
             claims, signing_key=signing_key, disclosable=present, vct=vct,
-            holder_jwk=holder_jwk, expires_in_s=expires_in_s))
+            holder_jwk=holder_jwk, expires_in_s=expires_in_s, x5c=x5c))
     except EudiError:
         raise
     except Exception as exc:

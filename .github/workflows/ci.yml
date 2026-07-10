@@ -85,8 +85,8 @@ jobs:
 
       - name: Pin openvc-core to the declared floor
         if: matrix.openvc == 'floor'
-        # Keep 1.13.* in sync with the [eudi] pin in pyproject.toml.
-        run: pip install "openvc-core==1.13.*"
+        # Keep 1.18.* in sync with the [eudi] pin in pyproject.toml.
+        run: pip install "openvc-core==1.18.*"
 
       - name: Take the latest openvc-core release
         if: matrix.openvc == 'latest'
