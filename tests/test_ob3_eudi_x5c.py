@@ -20,11 +20,17 @@ from openbadgeslib.ob3.eudi import (OB3_SD_JWT_VCT, EudiError,
 ISS = 'https://issuer.example'
 _PAST = dt.datetime(2020, 1, 1, tzinfo=dt.timezone.utc)
 _FUTURE = dt.datetime(2035, 1, 1, tzinfo=dt.timezone.utc)
+# Leaf windows that must land on the wrong side of "now" (the boundary tests).
+_EXPIRED = dt.datetime(2021, 1, 1, tzinfo=dt.timezone.utc)    # not_after in the past
+_NOT_YET = dt.datetime(2034, 1, 1, tzinfo=dt.timezone.utc)    # not_before in the future
 
 
-def _chain():
+def _chain(*, leaf_not_before=_PAST, leaf_not_after=_FUTURE, leaf_crldp=False):
     """Build a root -> intermediate -> leaf chain (leaf SAN = ISS). Returns the
-    x5c list [leaf, inter] (DER-base64), the root cert, and the leaf key."""
+    x5c list [leaf, inter] (DER-base64), the root cert, and the leaf key.
+
+    The leaf's validity window and an optional CRL Distribution Point are
+    parametrised for the trust-boundary tests (#236)."""
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import ec
@@ -33,12 +39,13 @@ def _chain():
     def name(cn):
         return x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)])
 
-    def cert(subject, issuer, issuer_key, subject_key, *, ca, san=None):
+    def cert(subject, issuer, issuer_key, subject_key, *, ca, san=None,
+             not_before=_PAST, not_after=_FUTURE, crldp=False):
         builder = (x509.CertificateBuilder()
                    .subject_name(name(subject)).issuer_name(name(issuer))
                    .public_key(subject_key.public_key())
                    .serial_number(x509.random_serial_number())
-                   .not_valid_before(_PAST).not_valid_after(_FUTURE)
+                   .not_valid_before(not_before).not_valid_after(not_after)
                    .add_extension(x509.BasicConstraints(ca=ca, path_length=None),
                                   critical=True))
         if ca:
@@ -50,6 +57,13 @@ def _chain():
         if san:
             builder = builder.add_extension(
                 x509.SubjectAlternativeName(san), critical=False)
+        if crldp:
+            builder = builder.add_extension(x509.CRLDistributionPoints([
+                x509.DistributionPoint(
+                    full_name=[x509.UniformResourceIdentifier(
+                        'http://crl.example/leaf.crl')],
+                    relative_name=None, reasons=None, crl_issuer=None)]),
+                critical=False)
         return builder.sign(issuer_key, hashes.SHA256())
 
     def der_b64(crt):
@@ -62,7 +76,9 @@ def _chain():
     inter = cert('inter', 'root', root_key, inter_key, ca=True)
     leaf_key = ec.generate_private_key(ec.SECP256R1())
     leaf = cert('leaf', 'inter', inter_key, leaf_key, ca=False,
-                san=[x509.UniformResourceIdentifier(ISS)])
+                san=[x509.UniformResourceIdentifier(ISS)],
+                not_before=leaf_not_before, not_after=leaf_not_after,
+                crldp=leaf_crldp)
     return [der_b64(leaf), der_b64(inter)], root, leaf_key
 
 
@@ -166,6 +182,46 @@ class TestX5cTrust:
         assert _issuer_jwt_has_x5c(token)                   # x5c embedded on issue
         result = verify_badge_sd_jwt(token, x5c_trust_anchors=[root])
         assert result.issuer == ISS                         # verified via anchor
+
+
+class TestX5cTrustBoundary:
+    """Pin the X.509 / eIDAS trust decisions openvc-core owns, and document the
+    revocation gap (#236). These assertions run against BOTH the pinned floor
+    and the latest openvc-core in the `eudi` CI drift job, so a change in the
+    delegate's chain-validation behaviour turns that job red. See the
+    'X.509 / eIDAS trust boundary' section of verify_badge_sd_jwt's docstring.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _needs_openvc(self):
+        pytest.importorskip('openvc')
+
+    def test_expired_leaf_is_rejected(self):
+        # Temporal validity IS enforced by openvc-core (cryptography's
+        # PolicyBuilder .time()): a leaf whose window has closed is refused.
+        x5c, root, leaf_key = _chain(leaf_not_after=_EXPIRED)
+        with pytest.raises(EudiError):
+            verify_badge_sd_jwt(_sd_jwt_with_x5c(leaf_key, x5c),
+                                x5c_trust_anchors=[root])
+
+    def test_not_yet_valid_leaf_is_rejected(self):
+        x5c, root, leaf_key = _chain(leaf_not_before=_NOT_YET)
+        with pytest.raises(EudiError):
+            verify_badge_sd_jwt(_sd_jwt_with_x5c(leaf_key, x5c),
+                                x5c_trust_anchors=[root])
+
+    def test_revocation_is_not_consulted(self):
+        # KNOWN GAP (#236): certificate revocation (CRL / OCSP) is NOT checked —
+        # cryptography's path validation ignores CRL Distribution Points and does
+        # no OCSP. A leaf that carries a CRLDP (the marker of a revocable cert),
+        # is otherwise valid and still inside its window, therefore VERIFIES.
+        # Deployments that must honour revocation obtain it out of band. If a
+        # future openvc-core starts enforcing revocation this assertion flips,
+        # and the floor/latest drift job surfaces it for a contract/doc update.
+        x5c, root, leaf_key = _chain(leaf_crldp=True)
+        result = verify_badge_sd_jwt(_sd_jwt_with_x5c(leaf_key, x5c),
+                                     x5c_trust_anchors=[root])
+        assert result.issuer == ISS   # verified despite the revocation pointer
 
 
 def test_x5c_path_needs_the_extra(monkeypatch):

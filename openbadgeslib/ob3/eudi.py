@@ -293,6 +293,32 @@ def verify_badge_sd_jwt(
       chain is rejected in this mode: the anchors are never bypassed by falling
       back to DID / issuer-URL key resolution. Status is not checked here, as
       with the pinned path.
+
+    X.509 / eIDAS trust boundary — division of responsibility
+    ---------------------------------------------------------
+    In the *x5c_trust_anchors* mode the X.509 trust decision is **delegated to
+    openvc-core** (which builds on ``cryptography``'s ``PolicyBuilder``). This
+    library only guarantees the *envelope*; the chain verdict is not re-asserted
+    here. Concretely:
+
+    * **openbadgeslib guarantees**: the issuer JWT actually carries an ``x5c``
+      header before delegating (:func:`_issuer_jwt_has_x5c`), so the anchors can
+      never be silently bypassed by a DID / issuer-URL fallback (fail-closed);
+      and it surfaces any openvc-core failure as :class:`EudiError`.
+    * **openvc-core guarantees** (asserted by the boundary tests in
+      ``tests/test_ob3_eudi_x5c.py`` against both the pinned and latest release):
+      chain path-validation — signatures, the leaf/intermediate **temporal
+      validity windows** (an expired or not-yet-valid leaf is rejected), name
+      chaining, ``basicConstraints`` — the leaf ``SAN`` ↔ ``iss`` binding, and a
+      P-256 leaf key.
+    * **NOT checked by either** — certificate **revocation (CRL / OCSP)**.
+      ``cryptography``'s path validation does not consult CRL Distribution Points
+      or OCSP, so a leaf that is revoked but still inside its validity window,
+      with an otherwise-valid chain, **will verify**. A deployment that must
+      honour revocation has to obtain it out of band (e.g. the EU Trusted List's
+      own revocation signalling) — do not assume this call applies it. This gap
+      is pinned by a regression test so a future openvc-core that adds revocation
+      is caught by the floor/latest drift job (#236).
     """
     if x5c_trust_anchors is not None:
         return _verify_sd_jwt_x5c(
@@ -338,7 +364,11 @@ def _verify_sd_jwt_x5c(token: str, x5c_trust_anchors: Any, *,
     """Verify a badge SD-JWT whose issuer JWT carries an ``x5c`` chain against
     *x5c_trust_anchors* (X.509 roots), via openvc-core's ``verify_credential``
     pipeline — which path-validates the chain and binds it to ``iss`` before
-    using the leaf key. Returns the underlying ``VerifiedSdJwt``."""
+    using the leaf key. Returns the underlying ``VerifiedSdJwt``.
+
+    See :func:`verify_badge_sd_jwt` for the trust-boundary contract: openvc-core
+    owns the chain verdict (temporal validity, name chaining, SAN↔iss binding);
+    certificate revocation (CRL/OCSP) is NOT checked by either layer (#236)."""
     try:
         from openvc import VerificationPolicy, verify_credential
     except ImportError as exc:
