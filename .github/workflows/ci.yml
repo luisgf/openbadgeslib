@@ -135,8 +135,12 @@ jobs:
         run: pip show openvc-core | grep '^Version:'
 
       - name: Test the EUDI SD-JWT VC track (isolated) and type-check it
+        # Include the x5c trust-boundary tests: they assert the chain-validation
+        # decisions openbadgeslib delegates to openvc-core (temporal validity,
+        # SAN<->iss binding) and pin the revocation gap, so a drift in the
+        # delegate's behaviour turns this floor/latest job red (#236).
         run: |
-          pytest tests/test_ob3_eudi_sd_jwt.py -v
+          pytest tests/test_ob3_eudi_sd_jwt.py tests/test_ob3_eudi_x5c.py -v
           mypy openbadgeslib/ob3/eudi.py
 
   publish:

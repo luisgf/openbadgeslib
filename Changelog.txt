@@ -10,6 +10,18 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
   surfaced, test the fail-closed guards, and speed up batch issuance and
   verification.
 
+  - security(eudi): document and pin the X.509 / eIDAS trust boundary for
+    SD-JWT VC verification. All x5c chain validation is delegated to openvc-core
+    (path building, temporal validity, SAN<->iss binding); openbadgeslib only
+    guarantees the envelope (the x5c header is present, so the anchors are never
+    bypassed by a DID fallback — fail-closed). Crucially, certificate revocation
+    (CRL/OCSP) is NOT checked by either layer — a revoked-but-unexpired leaf
+    still verifies — so a deployment must apply revocation out of band. The
+    division of responsibility is spelled out on `verify_badge_sd_jwt` and the
+    Security Model wiki page; new boundary tests assert openvc-core rejects an
+    expired/not-yet-valid leaf and pin the revocation gap, and the eudi
+    floor/latest CI job now runs them so a drift in the delegate's behaviour
+    turns the build red (#236).
   - security(ob3): with `--check-status`, verify the status list's OWN JWT-VC
     signature by default and bind its issuer to the badge's, so a compromised
     status host can no longer silently un-revoke a credential. The badge's

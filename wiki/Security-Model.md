@@ -175,6 +175,16 @@ Beyond the claim cross-checks, the credential body itself is untrusted input, so
 - **Issuance is fail-closed too**: `OB3LdpSigner` rejects non-Ed25519 keys at construction, refuses to add a second proof to an already-secured document (the verifier would reject the ambiguity), signs only against the bundled context allowlist, and derives the did:key verification method from the *private* key's public half so a stale `public_key` file cannot produce an unverifiable badge. With a did:web issuer the proof names the exact `did:web:…#badge_N` method `openbadges-publish -V 3` publishes.
 - **Status lists stay VC-JWT**: `openbadges-publish -V 3` signs Bitstring Status List credentials as JWT-VCs regardless of the badge's proof format, and `check_status` on a Data Integrity credential consumes them unchanged — the status-bit trust chain is identical for both proof formats.
 
+### X.509 / eIDAS issuer trust (SD-JWT VC) — a delegated trust boundary
+
+The EUDI SD-JWT VC track (`openbadgeslib.ob3.eudi`, the `[eudi]` extra) can anchor issuer trust in **X.509 / an EU Trusted List** instead of a pinned key or a DID: `verify_badge_sd_jwt(token, x5c_trust_anchors=[…roots…])` verifies a badge whose issuer JWT carries an `x5c` certificate chain. This binds it to the eIDAS trust model as the binding EU Trusted List cutover proceeds (TLv6 since 2026‑04). It is important to understand where the trust decision is actually made, because it is **delegated to [openvc-core](https://github.com/luisgf/openvc)** (which builds on `cryptography`'s `PolicyBuilder`):
+
+- **openbadgeslib guarantees the envelope, not the chain verdict.** It confirms the issuer JWT actually carries an `x5c` header before delegating, so the trust anchors can **never be silently bypassed** by a fallback to DID / issuer‑URL key resolution (a `did:jwk`/`did:key` issuer is self‑certifying and would otherwise verify against its own key) — this fails closed. Any openvc‑core failure is surfaced as `EudiError`.
+- **openvc‑core owns the chain verdict:** path validation (signatures, the leaf/intermediate **temporal validity windows**, name chaining, `basicConstraints`), the leaf `SAN` ↔ `iss` binding, and a P‑256 leaf key. openbadgeslib re‑asserts these at the boundary with dedicated tests (`tests/test_ob3_eudi_x5c.py`) that run against **both** the pinned floor and the latest openvc‑core release in CI, so a drift in that external behaviour turns the build red.
+- **Certificate revocation (CRL / OCSP) is NOT checked — by either layer.** `cryptography`'s path validation does not consult CRL Distribution Points or perform OCSP, and openvc‑core adds none. **A leaf that has been revoked but is still inside its validity window, with an otherwise‑valid chain, will verify.** A deployment that must honour revocation has to obtain it out of band (for example the EU Trusted List's own revocation signalling) — do not assume this call applies it. This gap is pinned by a regression test, so a future openvc‑core that starts enforcing revocation is caught by the drift job and prompts a contract/doc update.
+
+Separately, an SD‑JWT VC badge is **irrevocable at the credential level**: `issue_badge_sd_jwt` rejects a credential that carries a `credentialStatus` rather than silently dropping it (SD‑JWT VC status carriage is not wired yet), and both verify paths set `require_status=False`. Revocation of an SD‑JWT VC badge therefore currently rests entirely on the (unchecked, see above) certificate layer.
+
 ## What the signature binds — the assertion, not the image
 
 The signature covers the **assertion / credential** (recipient, achievement, issuer, dates, URLs), **not the bytes of the carrier image**. This is by design in OpenBadges: the embedded assertion is the canonical, verifiable artifact, and a correct consumer reads and validates those signed fields — it does not trust the surrounding pixels.
@@ -190,5 +200,6 @@ Binding the signature to the image bytes (e.g. hashing the pixels into the paylo
 - **Pass the recipient** (`-r` for OB2, `expected_recipient` for OB3) whenever the badge is meant for a specific person; otherwise the binding is your responsibility.
 - **Keep `allow_insecure` off.** Do not downgrade downloads to plain HTTP.
 - **Trust revocation only as far as you trust the issuer host** that serves the `revocationList`.
+- **For SD‑JWT VC / eIDAS `x5c` trust, apply certificate revocation yourself.** `verify_badge_sd_jwt(x5c_trust_anchors=…)` validates the chain and its temporal validity but does **not** consult CRL/OCSP (see the X.509 boundary above) — check revocation against the EU Trusted List out of band before trusting a leaf.
 
 See the [[CLI Reference]] for the exact flags and [[Signing and Verification]] for the end-to-end workflow.
