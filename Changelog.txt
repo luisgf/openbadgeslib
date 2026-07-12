@@ -18,6 +18,17 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     artifact under `publish --check-live`, now exit 2 in human mode too (they
     exited 1 before). BREAKING: a wrapper that keyed on 255, or that treated a
     valid-but-untrusted badge's exit 0 as success, must be updated.
+  - feat(cli): add a unified `openbadges <command>` front-end and centralise the
+    shared flags (#234). A new `openbadgeslib/cli_common.py` provides argparse
+    parent parsers for -c/--config, -d/--debug, --json and -v/--version, which
+    all five build_parser()s now compose — so the flags are defined once with
+    consistent help. openbadges-publish gains -d/--debug (it had none) and
+    openbadges-init gains argparse (hence -v/--version, and -h now exits 0 via
+    argparse). The new `openbadges` entry point dispatches to init/keygen/sign/
+    verify/publish, each of which stays installed under its own openbadges-<name>
+    script; a command owns everything after its name, so `openbadges sign ...`
+    behaves exactly like `openbadges-signer ...`. Minor breaking: openbadges-init
+    with a bad/missing argument now exits 2 (argparse), not 1.
 
 * v3.15.0 - unreleased
 

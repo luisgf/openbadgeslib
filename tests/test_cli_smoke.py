@@ -30,12 +30,16 @@ def test_init_existing_directory_exits_cleanly(tmp_path):
 
 def test_init_help_prints_usage_and_creates_nothing(tmp_path, capsys, monkeypatch):
     # `openbadges-init --help` / `-h` must print usage and exit 0, not create a
-    # directory literally named --help (#207).
+    # directory literally named --help (#207). argparse's -h exits 0 via
+    # SystemExit (#234); the #207 guarantee — no dir is created — still holds.
+    import pytest
     from openbadgeslib import openbadges_init
     monkeypatch.chdir(tmp_path)
     for flag in ('--help', '-h'):
         with patch.object(sys, 'argv', ['openbadges-init', flag]):
-            openbadges_init.main()          # returns (exit 0), no SystemExit
+            with pytest.raises(SystemExit) as exc:
+                openbadges_init.main()
+        assert exc.value.code == 0
         assert 'DIRECTORY' in capsys.readouterr().out
         assert not (tmp_path / flag).exists()
 
@@ -824,7 +828,8 @@ def test_enable_debug_logging_sets_level():
 
 def test_all_cli_tools_expose_debug_flag():
     import importlib
-    for name in ('openbadges_signer', 'openbadges_verifier', 'openbadges_keygenerator'):
+    for name in ('openbadges_signer', 'openbadges_verifier', 'openbadges_keygenerator',
+                 'openbadges_publish'):
         mod = importlib.import_module(f'openbadgeslib.{name}')
         opts = {o for a in mod.build_parser()._actions for o in a.option_strings}
         assert '--debug' in opts, f'{name} is missing --debug'

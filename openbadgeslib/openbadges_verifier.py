@@ -40,7 +40,8 @@ from typing import Any, Dict, Optional
 from .errors import LibOpenBadgesException
 from .confparser import read_config_or_exit, resolve_badge_section
 from .logs import enable_debug_logging
-from .util import __version__
+from .cli_common import (config_parser, debug_parser, json_parser,
+                         version_parser)
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +86,9 @@ def _image_format(filein: str) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description='Badge Verifier Parameters')
-    parser.add_argument('-c', '--config', default='config.ini',
-                        help='Specify the config.ini file to use')
+    parser = argparse.ArgumentParser(
+        description='Badge Verifier Parameters',
+        parents=[config_parser, debug_parser, json_parser, version_parser])
     parser.add_argument('-i', '--filein', required=True,
                         help='Specify the input file to verify the signature')
     parser.add_argument('-r', '--receptor', required=True,
@@ -118,15 +119,6 @@ def build_parser() -> argparse.ArgumentParser:
                         metavar='VERSION',
                         help='OpenBadges specification version: 1 (legacy JWS), '
                              '2 (strict OB 2.0 JWS), or 3 (default, JWT-VC).')
-    parser.add_argument('--json', action='store_true',
-                        help='Emit a machine-readable JSON result instead of the human '
-                             'output. Exit status: 0 when the badge is valid AND the '
-                             'issuer is trusted; 2 when the signature is valid but the '
-                             'issuer is not anchored (untrusted); 1 on any failure.')
-    parser.add_argument('-d', '--debug', action='store_true',
-                        help='Show debug messages at runtime.')
-    parser.add_argument('-v', '--version', action='version',
-                        version=__version__)
     return parser
 
 

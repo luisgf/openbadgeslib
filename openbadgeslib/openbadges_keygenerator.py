@@ -40,7 +40,9 @@ from .logs import enable_debug_logging
 from .keys import KeyFactory
 from .confparser import read_config_or_exit, resolve_badge_section, resolve_key_type
 from .errors import ConfigError
-from .util import __version__, emit_cli_json
+from .util import emit_cli_json
+from .cli_common import (config_parser, debug_parser, json_parser,
+                         version_parser)
 
 logger = logging.getLogger(__name__)
 
@@ -56,23 +58,14 @@ def _write_pem_file(path: str, data: bytes, mode: int) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description='Key Generation Parameters')
-    parser.add_argument('-c', '--config', default='config.ini',
-                        help='Specify the config.ini file to use')
+    parser = argparse.ArgumentParser(
+        description='Key Generation Parameters',
+        parents=[config_parser, debug_parser, json_parser, version_parser])
     parser.add_argument('-g', '--genkey', metavar='BADGE',
                         help=("Generate a new key pair for the badge section "
                               "[badge_<BADGE>] (the suffix after 'badge_'). "
                               "Key type (RSA/ECC/ED25519) is taken from the "
                               "badge's key_type field; default RSA."))
-    parser.add_argument('-d', '--debug', action='store_true',
-                        help='Show debug messages at runtime.')
-    parser.add_argument('--json', action='store_true',
-                        help='Emit a machine-readable JSON result '
-                             '{key_type, private_key, public_key} instead of '
-                             'the human log lines. Exit status: 0 on success, '
-                             '1 on any error.')
-    parser.add_argument('-v', '--version', action='version',
-                        version=__version__)
     return parser
 
 

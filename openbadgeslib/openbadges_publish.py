@@ -41,15 +41,19 @@ import tempfile
 from typing import Any, List, TYPE_CHECKING, Tuple
 from urllib.parse import urljoin
 from .confparser import read_config_or_exit, resolve_badge_section
-from .util import __version__, emit_cli_json
+from .logs import enable_debug_logging
+from .util import emit_cli_json
+from .cli_common import (config_parser, debug_parser, json_parser,
+                         version_parser)
 
 if TYPE_CHECKING:
     from .ob3.status_registry import StatusEntry, StatusEvent, StatusRegistry
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description='Publisher Parameters')
-    parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
+    parser = argparse.ArgumentParser(
+        description='Publisher Parameters',
+        parents=[config_parser, debug_parser, json_parser, version_parser])
     parser.add_argument('-o', '--output',
                         help='Output directory for the published files '
                              '(required to publish; not needed for '
@@ -79,13 +83,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('-b', '--badge',
                         help='Badge name; scopes the --revoke/--suspend/--unsuspend '
                              'lookup to that badge registry')
-    parser.add_argument('--json', action='store_true',
-                        help='OB3 only (-V 3): emit a machine-readable JSON '
-                             'result instead of the human output — for publish '
-                             '{did, files_written, status_operation, skipped} '
-                             'and for --list/--status the queried records. Exit '
-                             'status: 0 success, 2 partial (some badges '
-                             'skipped), 1 any error.')
     parser.add_argument('--check-live', action='store_true',
                         help='OB3 only (-V 3): after publishing, download each '
                              'written artifact (did.json, status lists, '
@@ -94,13 +91,13 @@ def build_parser() -> argparse.ArgumentParser:
                              'serves the freshly-regenerated versions, not a '
                              'stale cache. Exit 2 if any artifact is stale or '
                              'missing on the server.')
-    parser.add_argument('-v', '--version', action='version', version=__version__)
     return parser
 
 
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    enable_debug_logging(args.debug)
 
     # JSON output is defined for the OB3 artefacts/registries only (did.json,
     # status lists, the status registries); OB1/OB2 hosted metadata has no such

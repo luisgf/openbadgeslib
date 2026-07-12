@@ -52,7 +52,9 @@ from .mail import BadgeMail
 # front end (flag parsing, I/O and display) over it.
 from .issue import (IssuanceError, SignResult, issue_badge, issue_batch,
                     output_basename)
-from .util import __version__, emit_cli_json
+from .util import emit_cli_json
+from .cli_common import (config_parser, debug_parser, json_parser,
+                         version_parser)
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +62,9 @@ logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description='Badge Signer Parameters')
-    parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
+    parser = argparse.ArgumentParser(
+        description='Badge Signer Parameters',
+        parents=[config_parser, debug_parser, json_parser, version_parser])
     parser.add_argument('-b', '--badge', required=True, help='Specify the badge name for sign')
     parser.add_argument('-r', '--receptor', action='append', metavar='EMAIL',
                         help='Recipient email. Repeat -r to issue to several '
@@ -96,15 +99,6 @@ def build_parser() -> argparse.ArgumentParser:
                              "Integrity proof, eddsa-rdfc-2022; needs an Ed25519 "
                              "key and the [ldp] extra). Overrides the badge's "
                              "'proof_format' config key.")
-    parser.add_argument('-d', '--debug', action='store_true', help='Show debug messages in runtime.')
-    parser.add_argument('--json', action='store_true',
-                        help='Emit a machine-readable JSON result instead of the '
-                             'human output: a single-badge object {ob_version, '
-                             'badge_file, jti, status_index, proof_format}, or a '
-                             'batch summary {signed, skipped, failed}. Exit '
-                             'status: 0 ok, 2 partial (some skipped/failed), 1 '
-                             'error.')
-    parser.add_argument('-v', '--version', action='version', version=__version__)
     return parser
 
 
