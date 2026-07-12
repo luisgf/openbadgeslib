@@ -35,13 +35,9 @@ import importlib
 import warnings
 from typing import Any
 
-#: Public OB1 name -> the leaf submodule that defines it.
-_OB1_API = {
-    'BadgeStatus': 'badge', 'BadgeImgType': 'badge', 'BadgeType': 'badge',
-    'Assertion': 'badge', 'Badge': 'badge', 'BadgeSigned': 'badge',
-    'extract_svg_assertion': 'badge', 'extract_png_assertion': 'badge',
-    'Signer': 'signer', 'Verifier': 'verifier', 'VerifyInfo': 'verifier',
-}
+# The OB1 public-name -> leaf-module table is single-sourced (#235); the
+# top-level package shares the same map for its unprefixed re-exports.
+from .._ob1_api import OB1_API as _OB1_API
 
 __all__ = list(_OB1_API)
 

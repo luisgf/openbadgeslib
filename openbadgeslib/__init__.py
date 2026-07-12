@@ -46,6 +46,11 @@ from .ob3 import (  # noqa: F401
 from .keys import KeyFactory, KeyRSA, KeyECC, KeyEd25519  # noqa: F401
 from .util import __version__  # noqa: F401
 
+# The OB1 legacy name table, shared with openbadgeslib.ob1 (single source,
+# #235). Importing it is cheap and does not pull in the ob1 subpackage, so a
+# bare `import openbadgeslib` stays ob1-free (see __getattr__ below).
+from ._ob1_api import OB1_API as _OB1_API  # noqa: F401
+
 
 # ── Issuance / verification API ──────────────────────────────────────────────
 # "Issue badge X to Y per config" / "verify this badge" as library calls — the
@@ -65,14 +70,8 @@ _ISSUE_API = {
 # OpenBadges 1.0 surface: accessing one emits a DeprecationWarning steering new
 # work to openbadgeslib.ob2 / openbadgeslib.ob3. OB 1.0 itself remains supported
 # (no removal planned). They are resolved lazily from the ob1 leaf modules (PEP
-# 562), so a bare `import openbadgeslib` neither warns nor drags in the ob1
-# package.
-_OB1_API = {
-    'Signer': 'signer', 'Verifier': 'verifier', 'VerifyInfo': 'verifier',
-    'Badge': 'badge', 'BadgeSigned': 'badge', 'Assertion': 'badge',
-    'BadgeStatus': 'badge', 'BadgeImgType': 'badge', 'BadgeType': 'badge',
-    'extract_svg_assertion': 'badge', 'extract_png_assertion': 'badge',
-}
+# 562) using the shared _OB1_API table imported above, so a bare
+# `import openbadgeslib` neither warns nor drags in the ob1 package.
 
 
 def __getattr__(name: str) -> Any:
