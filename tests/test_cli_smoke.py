@@ -30,12 +30,16 @@ def test_init_existing_directory_exits_cleanly(tmp_path):
 
 def test_init_help_prints_usage_and_creates_nothing(tmp_path, capsys, monkeypatch):
     # `openbadges-init --help` / `-h` must print usage and exit 0, not create a
-    # directory literally named --help (#207).
+    # directory literally named --help (#207). argparse's -h exits 0 via
+    # SystemExit (#234); the #207 guarantee — no dir is created — still holds.
+    import pytest
     from openbadgeslib import openbadges_init
     monkeypatch.chdir(tmp_path)
     for flag in ('--help', '-h'):
         with patch.object(sys, 'argv', ['openbadges-init', flag]):
-            openbadges_init.main()          # returns (exit 0), no SystemExit
+            with pytest.raises(SystemExit) as exc:
+                openbadges_init.main()
+        assert exc.value.code == 0
         assert 'DIRECTORY' in capsys.readouterr().out
         assert not (tmp_path / flag).exists()
 
@@ -220,8 +224,8 @@ def test_verifier_ob3_end_to_end(tmp_path, rsa_priv_pem, rsa_pub_pem, svg_image,
 
 def _make_signed_ob2_svg(tmp_path, badge, identity='recipient@example.com'):
     """Sign an OB2 SVG badge to a file and return its path."""
-    from openbadgeslib.signer import Signer
-    from openbadgeslib.badge import BadgeType
+    from openbadgeslib.ob1.signer import Signer
+    from openbadgeslib.ob1.badge import BadgeType
     signed = Signer(identity=identity, badge_type=BadgeType.SIGNED,
                     deterministic=True).sign_badge(badge)
     badge_file = tmp_path / 'badge.svg'
@@ -256,6 +260,7 @@ def test_verifier_ob2_end_to_end_trusted_key(tmp_path, svg_rsa_badge, rsa_pub_pe
 def test_verifier_ob2_without_trusted_key_warns(tmp_path, svg_rsa_badge, rsa_pub_pem, capsys):
     # No --local/--pubkey: the embedded key is used and the result must be
     # reported as internally-consistent-only, not '[+] correct' (SEC-2).
+    import pytest
     from openbadgeslib import openbadges_verifier
     badge_file = _make_signed_ob2_svg(tmp_path, svg_rsa_badge)
 
@@ -264,7 +269,11 @@ def test_verifier_ob2_without_trusted_key_warns(tmp_path, svg_rsa_badge, rsa_pub
     with patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem), \
             patch('openbadgeslib.ob1.verifier.download_file', side_effect=_fake_revocation_download), \
             patch.object(sys, 'argv', argv):
-        openbadges_verifier.main()
+        # Valid signature but only the badge-embedded key (untrusted): the 0/1/2
+        # contract exits 2 in human mode too (#233).
+        with pytest.raises(SystemExit) as exc:
+            openbadges_verifier.main()
+    assert exc.value.code == 2
     out = capsys.readouterr().out
     assert 'Signature is correct' not in out
     assert 'does NOT prove issuer identity' in out
@@ -568,8 +577,8 @@ def test_urls_has_problems_detects_later_failure(svg_rsa_badge):
 
 def test_badgemail_send_handles_connection_error(svg_rsa_badge, capsys):
     from openbadgeslib.mail import BadgeMail
-    from openbadgeslib.signer import Signer
-    from openbadgeslib.badge import BadgeType
+    from openbadgeslib.ob1.signer import Signer
+    from openbadgeslib.ob1.badge import BadgeType
 
     signed = Signer(identity='user@example.com', badge_type=BadgeType.SIGNED,
                     deterministic=True).sign_badge(svg_rsa_badge)
@@ -587,8 +596,8 @@ def test_badgemail_send_handles_connection_error(svg_rsa_badge, capsys):
 
 
 def _signed_for_mail(badge, suffix, identity='user@example.com'):
-    from openbadgeslib.signer import Signer
-    from openbadgeslib.badge import BadgeType
+    from openbadgeslib.ob1.signer import Signer
+    from openbadgeslib.ob1.badge import BadgeType
     signed = Signer(identity=identity, badge_type=BadgeType.SIGNED,
                     deterministic=True).sign_badge(badge)
     signed.file_out = 'badge.' + suffix
@@ -819,7 +828,8 @@ def test_enable_debug_logging_sets_level():
 
 def test_all_cli_tools_expose_debug_flag():
     import importlib
-    for name in ('openbadges_signer', 'openbadges_verifier', 'openbadges_keygenerator'):
+    for name in ('openbadges_signer', 'openbadges_verifier', 'openbadges_keygenerator',
+                 'openbadges_publish'):
         mod = importlib.import_module(f'openbadgeslib.{name}')
         opts = {o for a in mod.build_parser()._actions for o in a.option_strings}
         assert '--debug' in opts, f'{name} is missing --debug'

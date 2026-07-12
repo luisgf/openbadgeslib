@@ -6,7 +6,7 @@ Programmatic guide to the **OpenBadges 1.0 (legacy)** API exposed by `openbadges
 
 What "legacy" means in practice:
 
-- **Library.** Reaching the OB1 API through its public surface emits a `DeprecationWarning` steering new work to OB2/OB3: the `openbadgeslib.ob1` package (e.g. `from openbadgeslib.ob1 import Signer`), the top-level `openbadgeslib.badge` / `openbadgeslib.signer` / `openbadgeslib.verifier` compatibility shims, and the unprefixed `openbadgeslib.Signer` / `openbadgeslib.Verifier` / `openbadgeslib.Badge` / … re-exports. It is a nudge, not a removal notice — `DeprecationWarning` is silent by default (`-W default::DeprecationWarning` to see it). A bare `import openbadgeslib`, the OB2/OB3 APIs, and the internal leaf import `openbadgeslib.ob1.badge` (the shared badge model) all stay silent.
+- **Library.** Reaching the OB1 API through its public surface emits a `DeprecationWarning` steering new work to OB2/OB3: the `openbadgeslib.ob1` package (e.g. `from openbadgeslib.ob1 import Signer`) and the unprefixed `openbadgeslib.Signer` / `openbadgeslib.Verifier` / `openbadgeslib.Badge` / … re-exports. It is a nudge, not a removal notice — `DeprecationWarning` is silent by default (`-W default::DeprecationWarning` to see it). A bare `import openbadgeslib`, the OB2/OB3 APIs, and the internal leaf import `openbadgeslib.ob1.badge` (the shared badge model) all stay silent. (The v4 release dropped the old top-level `openbadgeslib.badge`/`signer`/`verifier` shim modules; use `openbadgeslib.ob1.*` or the unprefixed names above.)
 - **CLI.** `openbadges-signer`, `openbadges-verifier` and `openbadges-publish` print a `[!] OpenBadges 1.0 (-V 1) is a legacy version, still supported …` notice on the `-V 1` paths. The verifier suppresses it under `--json` so machine output stays clean.
 
 **OpenBadges 2.0 is _not_ legacy** and is unaffected: it is strict, recent and ecosystem-mainstream, fully supported. Only the pre-2.0 OB1 format carries the legacy label.
@@ -14,7 +14,7 @@ What "legacy" means in practice:
 ### Migrating off OB1 (when you choose to)
 
 - Issue strict OB 2.0 (`-V 2`, [[Python API OB2]]) or OB 3.0 (`-V 3`, [[Python API OB3]]) instead of `-V 1` for new badges.
-- Replace `openbadgeslib.signer.Signer` / `openbadgeslib.verifier.Verifier` with `openbadgeslib.ob2.OB2Signer`/`OB2Verifier` or `openbadgeslib.ob3.OB3Signer`/`OB3Verifier`.
+- Replace `openbadgeslib.ob1.signer.Signer` / `openbadgeslib.ob1.verifier.Verifier` with `openbadgeslib.ob2.OB2Signer`/`OB2Verifier` or `openbadgeslib.ob3.OB3Signer`/`OB3Verifier`.
 - Existing OB1 badges stay verifiable with `-V 1` — there is no deadline.
 
 ### How OB1 is packaged (evaluated options)
@@ -25,7 +25,7 @@ What "legacy" means in practice:
 
 > The full, always-up-to-date class/function reference is generated from the docstrings: **[API Reference](https://luisgf.github.io/openbadgeslib/)**.
 
-The legacy names are re-exported both from `openbadgeslib.ob1` and, for backward compatibility, from the top-level `openbadgeslib.badge` / `openbadgeslib.signer` / `openbadgeslib.verifier` shims:
+The legacy names are re-exported from `openbadgeslib.ob1` (and, unprefixed, from the top-level package — `openbadgeslib.Signer`, etc.):
 
 ```python
 from openbadgeslib.ob1 import (

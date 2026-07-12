@@ -40,7 +40,8 @@ from typing import Any, Dict, Optional
 from .errors import LibOpenBadgesException
 from .confparser import read_config_or_exit, resolve_badge_section
 from .logs import enable_debug_logging
-from .util import __version__
+from .cli_common import (config_parser, debug_parser, json_parser,
+                         version_parser)
 
 logger = logging.getLogger(__name__)
 
@@ -56,17 +57,17 @@ def _resolve_trusted_pubkey(args: argparse.Namespace) -> Optional[bytes]:
         if 'public_key' not in conf[section]:
             print("[!] [%s] is missing the required 'public_key' config key"
                   % section)
-            sys.exit(-1)
+            sys.exit(1)
         key_path = conf[section]['public_key']
         if not os.path.isfile(key_path):
             print('[!] Public key file %s NOT exists.' % key_path)
-            sys.exit(-1)
+            sys.exit(1)
         with open(key_path, 'rb') as f:
             return f.read()
     if args.pubkey:
         if not os.path.isfile(args.pubkey):
             print('[!] Public key file %s NOT exists.' % args.pubkey)
-            sys.exit(-1)
+            sys.exit(1)
         with open(args.pubkey, 'rb') as f:
             return f.read()
     return None
@@ -85,9 +86,9 @@ def _image_format(filein: str) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description='Badge Verifier Parameters')
-    parser.add_argument('-c', '--config', default='config.ini',
-                        help='Specify the config.ini file to use')
+    parser = argparse.ArgumentParser(
+        description='Badge Verifier Parameters',
+        parents=[config_parser, debug_parser, json_parser, version_parser])
     parser.add_argument('-i', '--filein', required=True,
                         help='Specify the input file to verify the signature')
     parser.add_argument('-r', '--receptor', required=True,
@@ -118,38 +119,29 @@ def build_parser() -> argparse.ArgumentParser:
                         metavar='VERSION',
                         help='OpenBadges specification version: 1 (legacy JWS), '
                              '2 (strict OB 2.0 JWS), or 3 (default, JWT-VC).')
-    parser.add_argument('--json', action='store_true',
-                        help='Emit a machine-readable JSON result instead of the human '
-                             'output. Exit status: 0 when the badge is valid AND the '
-                             'issuer is trusted; 2 when the signature is valid but the '
-                             'issuer is not anchored (untrusted); 1 on any failure.')
-    parser.add_argument('-d', '--debug', action='store_true',
-                        help='Show debug messages at runtime.')
-    parser.add_argument('-v', '--version', action='version',
-                        version=__version__)
     return parser
 
 
 def _finish(args: argparse.Namespace, result: Dict[str, Any]) -> None:
-    """Emit the verification result and set the process exit status.
+    """Emit the verification result (in --json mode) and set the process exit
+    status per the 0/1/2 contract — identically in both human and --json modes.
 
-    In --json mode a single JSON object is printed and the process exit status
-    reflects issuer trust, not merely signature validity: 0 when the badge is
-    valid AND trusted, 2 when the signature is valid but the issuer is not
-    anchored (an OB2 badge-embedded key or a self-asserted did:key), and 1 on
-    any failure. Collapsing 'valid but untrusted' into an exit-0 success would
-    let automation gate on a signature that only proves internal consistency,
-    not who issued the badge. Without --json the human lines have already been
-    printed; the historical exit behaviour is preserved via result['_exit']
-    (None means return without exiting, i.e. a normal exit 0)."""
+    The exit status reflects issuer trust, not merely signature validity: 0 when
+    the badge is valid AND trusted, 2 when the signature is valid but the issuer
+    is not anchored (an OB2 badge-embedded key or a self-asserted did:key), and
+    1 on any failure. Collapsing 'valid but untrusted' into an exit-0 success
+    would let automation gate on a signature that only proves internal
+    consistency, not who issued the badge. Without --json the human lines have
+    already been printed; only the status is set here (#233)."""
+    code = 1 if not result.get('valid') else (0 if result.get('trusted') else 2)
     if args.json:
         payload = {k: v for k, v in result.items() if not k.startswith('_')}
         print(json.dumps(payload))
-        if not result.get('valid'):
-            sys.exit(1)
-        sys.exit(0 if result.get('trusted') else 2)
-    code = result.get('_exit')
-    if code is not None:
+        sys.exit(code)
+    # Human mode: the lines are already printed. Exit only on a non-zero status
+    # (invalid -> 1, valid-but-untrusted -> 2); a valid, trusted badge falls
+    # through to a normal exit 0 so an in-process caller need not trap it.
+    if code:
         sys.exit(code)
 
 
@@ -170,8 +162,7 @@ def main() -> None:
             print('[!] Badge file %s NOT exists.' % args.filein)
         _finish(args, {'ob_version': args.ob_version, 'recipient': args.receptor,
                        'valid': False,
-                       'reason': 'Badge file %s does not exist' % args.filein,
-                       '_exit': -1})
+                       'reason': 'Badge file %s does not exist' % args.filein})
         return
 
     if args.ob_version == '3':
@@ -191,11 +182,10 @@ def _verify_ob2(args: argparse.Namespace) -> None:
     historical human lines / --json payload and exit status."""
     from .verify import verify_badge
 
-    # _exit starts non-zero and is cleared to None only on a valid verdict, so a
-    # failed OB2 verification exits non-zero in human mode too (mirrors OB3 and
-    # the --json path); a bare `None` init would exit 0 on an invalid badge.
+    # valid defaults False and is set True only on a valid verdict, so _finish
+    # exits 1 on any failure and 0/2 only once the badge verifies.
     result: Dict[str, Any] = {'ob_version': '2', 'recipient': args.receptor,
-                              'trusted': True, 'valid': False, '_exit': -1}
+                              'trusted': True, 'valid': False}
 
     pub_pem = _resolve_trusted_pubkey(args)
 
@@ -226,7 +216,6 @@ def _verify_ob2(args: argparse.Namespace) -> None:
     assert assertion is not None           # res.valid is True, so it is present
     verification_type = assertion.verification.type
     result['valid'] = True
-    result['_exit'] = None
     result['trusted'] = res.trusted
     result['status'] = 'VALID'
     result['verification_type'] = verification_type
@@ -266,9 +255,10 @@ def _verify_ob1(args: argparse.Namespace) -> None:
               'new badges are better issued and verified as OB 2.0 (-V 2) or '
               'OB 3.0 (-V 3).')
 
-    # _exit starts non-zero and is cleared only on a VALID verdict (mirrors OB2
-    # and OB3), so an invalid OB1 badge exits non-zero in human mode too.
-    result: Dict[str, Any] = {'ob_version': '1', 'recipient': args.receptor, '_exit': -1}
+    # valid defaults False and is set True only on a VALID verdict (mirrors OB2
+    # and OB3), so an invalid OB1 badge exits 1.
+    result: Dict[str, Any] = {'ob_version': '1', 'recipient': args.receptor,
+                              'valid': False}
     try:
         badge = BadgeSigned.read_from_file(args.filein)
 
@@ -292,7 +282,6 @@ def _verify_ob1(args: argparse.Namespace) -> None:
 
         if check.status is BadgeStatus.VALID:
             result['valid'] = True
-            result['_exit'] = None
             if trusted:
                 result['reason'] = None
                 if not args.json:
@@ -319,7 +308,6 @@ def _verify_ob1(args: argparse.Namespace) -> None:
         # errors inherit LibOpenBadgesException but not VerifierExceptions.
         result['valid'] = False
         result['reason'] = str(exc)
-        result['_exit'] = -1
         if not args.json:
             print('[-] %s' % exc)
 
@@ -336,7 +324,7 @@ def _verify_ob3(args: argparse.Namespace) -> None:
     from .verify import verify_badge
 
     result: Dict[str, Any] = {'ob_version': '3', 'recipient': args.receptor,
-                              'trusted': True, 'valid': False, '_exit': -1}
+                              'trusted': True, 'valid': False}
 
     pub_pem = _resolve_trusted_pubkey(args)
     if pub_pem is None and not args.resolve_did:
@@ -374,7 +362,6 @@ def _verify_ob3(args: argparse.Namespace) -> None:
     credential = res.credential
     assert credential is not None          # res.valid is True, so it is present
     result['valid'] = True
-    result['_exit'] = None
     result['trusted'] = res.trusted
     result['issuer'] = credential.issuer.name
     result['achievement'] = credential.achievement.name

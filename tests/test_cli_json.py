@@ -200,8 +200,8 @@ def test_ob3_resolve_did_web_is_trusted_json(
 # ── OB2 ──────────────────────────────────────────────────────────────────────
 
 def _make_signed_ob2_svg(tmp_path, badge, identity='recipient@example.com'):
-    from openbadgeslib.signer import Signer
-    from openbadgeslib.badge import BadgeType
+    from openbadgeslib.ob1.signer import Signer
+    from openbadgeslib.ob1.badge import BadgeType
     signed = Signer(identity=identity, badge_type=BadgeType.SIGNED,
                     deterministic=True).sign_badge(badge)
     badge_file = tmp_path / 'badge.svg'

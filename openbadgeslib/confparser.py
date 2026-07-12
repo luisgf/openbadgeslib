@@ -64,7 +64,7 @@ def read_config_or_exit(config_file: str) -> ConfigParser:
         # ConfigError is a ValueError too, so pre-existing `except ValueError`
         # callers keep working.
         print('[!] %s' % exc)
-        sys.exit(-1)
+        sys.exit(1)
 
 
 def resolve_badge_section(conf: ConfigParser, name: str) -> str:

@@ -52,7 +52,9 @@ from .mail import BadgeMail
 # front end (flag parsing, I/O and display) over it.
 from .issue import (IssuanceError, SignResult, issue_badge, issue_batch,
                     output_basename)
-from .util import __version__, emit_cli_json
+from .util import emit_cli_json
+from .cli_common import (config_parser, debug_parser, json_parser,
+                         version_parser)
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +62,9 @@ logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description='Badge Signer Parameters')
-    parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
+    parser = argparse.ArgumentParser(
+        description='Badge Signer Parameters',
+        parents=[config_parser, debug_parser, json_parser, version_parser])
     parser.add_argument('-b', '--badge', required=True, help='Specify the badge name for sign')
     parser.add_argument('-r', '--receptor', action='append', metavar='EMAIL',
                         help='Recipient email. Repeat -r to issue to several '
@@ -96,15 +99,6 @@ def build_parser() -> argparse.ArgumentParser:
                              "Integrity proof, eddsa-rdfc-2022; needs an Ed25519 "
                              "key and the [ldp] extra). Overrides the badge's "
                              "'proof_format' config key.")
-    parser.add_argument('-d', '--debug', action='store_true', help='Show debug messages in runtime.')
-    parser.add_argument('--json', action='store_true',
-                        help='Emit a machine-readable JSON result instead of the '
-                             'human output: a single-badge object {ob_version, '
-                             'badge_file, jti, status_index, proof_format}, or a '
-                             'batch summary {signed, skipped, failed}. Exit '
-                             'status: 0 ok, 2 partial (some skipped/failed), 1 '
-                             'error.')
-    parser.add_argument('-v', '--version', action='version', version=__version__)
     return parser
 
 
@@ -115,11 +109,11 @@ def main() -> None:
         emit_cli_json(lambda: _run_sign(args))
         return
     # Human mode: a partial batch (some recipients skipped or failed) returns
-    # _exit=2; surface it as a non-zero exit like openbadges-publish does, so a
-    # wrapper without --json can detect it instead of seeing a bare exit 0.
+    # _exit=2. Exit 2 to match --json under the 0/1/2 contract (#233), so a
+    # wrapper without --json sees the same partial-success status.
     result = _run_sign(args)
     if result.get('_exit') == 2:
-        sys.exit(1)
+        sys.exit(2)
 
 
 def _run_sign(args: argparse.Namespace) -> dict[str, Any]:
@@ -196,13 +190,13 @@ def _sign_single(args: argparse.Namespace, conf: configparser.ConfigParser,
         fbase = output_basename(badge, recipient, badge_obj.image_type)
     except ValueError as exc:
         print('ERROR: %s' % exc)
-        sys.exit(-1)
+        sys.exit(1)
 
     badge_file_out = os.path.join(args.output, fbase)
 
     if os.path.isfile(badge_file_out) and not args.force:
         print('A %s OpenBadge has already signed for %s in %s' % (args.badge, recipient, badge_file_out))
-        sys.exit(-1)
+        sys.exit(1)
 
     if args.ob_version == '3':
         return _sign_ob3(args, conf, badge, badge_obj, badge_file_out, recipient, evidence)
@@ -310,7 +304,7 @@ def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
 
     # Checking url reachability..
     if badge_obj.urls_has_problems():
-        sys.exit(-1)
+        sys.exit(1)
 
     sf = Signer(identity=recipient.encode('utf-8'), evidence=evidence,
                 expiration=expiration, badge_type=BadgeType.SIGNED)
@@ -373,7 +367,7 @@ def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
                              proof_format=args.proof_format)
     except IssuanceError as exc:
         print('[!] %s' % exc)
-        sys.exit(-1)
+        sys.exit(1)
 
     # Informational hints (e.g. the self-asserted did:key warning for a non-DID
     # LDP issuer) precede the SIGNED line, as they did when printed mid-signing.
@@ -449,7 +443,7 @@ def _sign_batch(args: argparse.Namespace, conf: configparser.ConfigParser,
             # A batch-level failure (bad config, or the status list lacking room
             # for the whole batch): the transaction is atomic, nothing issued.
             print('[!] %s' % exc)
-            sys.exit(-1)
+            sys.exit(1)
         for item in results:
             if item.result is None:
                 failed.append({'recipient': item.recipient, 'error': item.error})

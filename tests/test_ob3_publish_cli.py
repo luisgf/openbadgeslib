@@ -763,7 +763,7 @@ class TestCheckLive:
                 patch('openbadgeslib.util.download_file', side_effect=live), \
                 pytest.raises(SystemExit) as exc:
             openbadges_publish.main()
-        assert exc.value.code == 1             # human: stale/missing -> exit 1
+        assert exc.value.code == 2             # stale/missing -> exit 2 (#233)
         assert 'stale or missing' in capsys.readouterr().out
 
 

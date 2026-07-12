@@ -4,6 +4,43 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v4.0.0 - unreleased
+
+  Grouped breaking release (#170). Freeze the declared public contract and
+  unify the CLIs.
+
+  - fix(cli)!: unify every console tool on the 0/1/2 exit-code contract (#233).
+    The 19 `sys.exit(-1)` sites (which exited 255) now exit 1, and the verifier
+    applies the same status in human mode as under --json: 1 on any failure, 2
+    when the signature is valid but the issuer is not anchored (an OB2
+    badge-embedded key or a self-asserted did:key), and 0 only when the badge is
+    valid AND trusted. A partial batch sign or publish, and a stale/missing
+    artifact under `publish --check-live`, now exit 2 in human mode too (they
+    exited 1 before). BREAKING: a wrapper that keyed on 255, or that treated a
+    valid-but-untrusted badge's exit 0 as success, must be updated.
+  - feat(cli): add a unified `openbadges <command>` front-end and centralise the
+    shared flags (#234). A new `openbadgeslib/cli_common.py` provides argparse
+    parent parsers for -c/--config, -d/--debug, --json and -v/--version, which
+    all five build_parser()s now compose — so the flags are defined once with
+    consistent help. openbadges-publish gains -d/--debug (it had none) and
+    openbadges-init gains argparse (hence -v/--version, and -h now exits 0 via
+    argparse). The new `openbadges` entry point dispatches to init/keygen/sign/
+    verify/publish, each of which stays installed under its own openbadges-<name>
+    script; a command owns everything after its name, so `openbadges sign ...`
+    behaves exactly like `openbadges-signer ...`. Minor breaking: openbadges-init
+    with a bad/missing argument now exits 2 (argparse), not 1.
+  - refactor(ob1)!: consolidate the OB1 compatibility surface (#235). The OB1
+    legacy name table (11 names -> leaf module) is single-sourced in
+    openbadgeslib/_ob1_api.py instead of being duplicated between the top-level
+    package and openbadgeslib.ob1. The three top-level shim modules —
+    openbadgeslib.badge, openbadgeslib.signer and openbadgeslib.verifier — are
+    removed. OpenBadges 1.0 stays fully supported and reachable via
+    openbadgeslib.ob1.* (e.g. `from openbadgeslib.ob1 import Signer`) and the
+    unprefixed openbadgeslib.Signer / .Badge / … re-exports, both of which still
+    emit the steering DeprecationWarning. BREAKING: `from openbadgeslib.badge
+    import ...` (and .signer/.verifier) no longer resolve — repoint them to
+    `openbadgeslib.ob1.<module>`.
+
 * v3.15.0 - unreleased
 
   Round-2 roadmap: close the revocation/trust gaps the deep-logic analysis

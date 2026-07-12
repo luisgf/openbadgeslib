@@ -5,13 +5,14 @@ OB1 is an old format (Mozilla Backpack shut down in 2019) but remains
 emits a DeprecationWarning and the -V 1 CLI paths print a [!] notice, both
 steering new work to OB 2.0/3.0; OB1 stays fully functional.
 
-The warning must fire on the *legacy* surface only — the ob1 package, the three
-top-level compat shims, and the unprefixed re-exports — while a bare
-`import openbadgeslib` and the internal leaf imports (openbadgeslib.ob1.badge,
-which OB2/OB3 signing still uses for the shared badge model) stay silent.
+The warning must fire on the *legacy* surface only — the ob1 package and the
+unprefixed re-exports — while a bare `import openbadgeslib` and the internal
+leaf imports (openbadgeslib.ob1.badge, which OB2/OB3 signing still uses for the
+shared badge model) stay silent. The v4 release dropped the three top-level
+compat shim modules (openbadgeslib.badge/signer/verifier); OB1 stays reachable
+via openbadgeslib.ob1.* and the unprefixed top-level names (#235).
 """
 import argparse
-import importlib
 import subprocess
 import sys
 import warnings
@@ -80,12 +81,11 @@ class TestImportWarnings:
     @pytest.mark.parametrize('module', ['openbadgeslib.badge',
                                         'openbadgeslib.signer',
                                         'openbadgeslib.verifier'])
-    def test_top_level_shim_warns_on_import(self, module):
-        # The shim warns at module level (once per process), so force a fresh
-        # execution of the module body to observe it.
-        mod = importlib.import_module(module)
-        with pytest.warns(DeprecationWarning, match='compatibility shim'):
-            importlib.reload(mod)
+    def test_dropped_shim_modules_are_gone(self, module):
+        # The v4 release removed the three compat shim modules (#235). OB1 is
+        # still reachable via openbadgeslib.ob1.* and the top-level names.
+        with pytest.raises(ImportError):
+            __import__(module)
 
     def test_warning_does_not_change_the_symbol(self):
         """The legacy warning is cosmetic: the unprefixed re-export still

@@ -99,7 +99,7 @@ def png_image():
 # ── Badge objects ──────────────────────────────────────────────────────────────
 
 def _make_badge(key_type, priv_pem, pub_pem, image_type, image, img_ext):
-    from openbadgeslib.badge import Badge
+    from openbadgeslib.ob1.badge import Badge
     scheme = 'https://example.com'
     return Badge(
         ini_name=f'test_{key_type.name.lower()}_{img_ext}',
@@ -119,28 +119,28 @@ def _make_badge(key_type, priv_pem, pub_pem, image_type, image, img_ext):
 
 @pytest.fixture(scope='session')
 def svg_rsa_badge(rsa_priv_pem, rsa_pub_pem, svg_image):
-    from openbadgeslib.badge import BadgeImgType
+    from openbadgeslib.ob1.badge import BadgeImgType
     from openbadgeslib.keys import KeyType
     return _make_badge(KeyType.RSA, rsa_priv_pem, rsa_pub_pem, BadgeImgType.SVG, svg_image, 'svg')
 
 
 @pytest.fixture(scope='session')
 def svg_ecc_badge(ecc_priv_pem, ecc_pub_pem, svg_image):
-    from openbadgeslib.badge import BadgeImgType
+    from openbadgeslib.ob1.badge import BadgeImgType
     from openbadgeslib.keys import KeyType
     return _make_badge(KeyType.ECC, ecc_priv_pem, ecc_pub_pem, BadgeImgType.SVG, svg_image, 'svg')
 
 
 @pytest.fixture(scope='session')
 def png_rsa_badge(rsa_priv_pem, rsa_pub_pem, png_image):
-    from openbadgeslib.badge import BadgeImgType
+    from openbadgeslib.ob1.badge import BadgeImgType
     from openbadgeslib.keys import KeyType
     return _make_badge(KeyType.RSA, rsa_priv_pem, rsa_pub_pem, BadgeImgType.PNG, png_image, 'png')
 
 
 @pytest.fixture(scope='session')
 def png_ecc_badge(ecc_priv_pem, ecc_pub_pem, png_image):
-    from openbadgeslib.badge import BadgeImgType
+    from openbadgeslib.ob1.badge import BadgeImgType
     from openbadgeslib.keys import KeyType
     return _make_badge(KeyType.ECC, ecc_priv_pem, ecc_pub_pem, BadgeImgType.PNG, png_image, 'png')
 
@@ -148,8 +148,8 @@ def png_ecc_badge(ecc_priv_pem, ecc_pub_pem, png_image):
 # ── Signed badges ──────────────────────────────────────────────────────────────
 
 def _sign(badge, identity='test@example.com'):
-    from openbadgeslib.signer import Signer
-    from openbadgeslib.badge import BadgeType
+    from openbadgeslib.ob1.signer import Signer
+    from openbadgeslib.ob1.badge import BadgeType
     return Signer(identity=identity, badge_type=BadgeType.SIGNED, deterministic=True).sign_badge(badge)
 
 
@@ -177,8 +177,8 @@ def signed_png_ecc(png_ecc_badge):
 
 def _make_badge_for_verify(badge):
     """Return (BadgeSigned, identity_str) in the format Verifier.check_identity expects."""
-    from openbadgeslib.badge import BadgeSigned, BadgeType
-    from openbadgeslib.signer import Signer
+    from openbadgeslib.ob1.badge import BadgeSigned, BadgeType
+    from openbadgeslib.ob1.signer import Signer
     from openbadgeslib.util import hash_email
 
     signer = Signer(identity=VERIFY_IDENTITY, badge_type=BadgeType.SIGNED, deterministic=True)

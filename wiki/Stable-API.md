@@ -29,7 +29,7 @@ Notes:
 ## What is internal
 
 - **Underscore names.** Anything starting with `_` — `openbadgeslib.util._PinnedHTTPSConnection`, `openbadgeslib.confparser.ConfParser` internals, the `_jsonmodel` helpers, `issue._Ob3Context`, etc. These are implementation detail.
-- **Modules not advertised in an `__all__`.** e.g. `openbadgeslib.signer` / `openbadgeslib.verifier` / `openbadgeslib.badge` at the top level are **legacy OpenBadges 1.0 compatibility shims**. They still work (OB 1.0 is supported, no removal planned) and emit a `DeprecationWarning` steering new work to `ob2` / `ob3`, but they are not the modern stable surface. Prefer `openbadgeslib.ob2` / `openbadgeslib.ob3`.
+- **The unprefixed OB1 names.** `openbadgeslib.Signer` / `openbadgeslib.Verifier` / `openbadgeslib.Badge` / … are **legacy OpenBadges 1.0** re-exports. They still work (OB 1.0 is supported, no removal planned) and emit a `DeprecationWarning` steering new work to `ob2` / `ob3`, but they are not the modern stable surface. Prefer `openbadgeslib.ob2` / `openbadgeslib.ob3`. (The old top-level `openbadgeslib.signer` / `verifier` / `badge` shim modules were removed in v4; use `openbadgeslib.ob1.*`.)
 - **The `ob1` subpackage** is a legacy leaf; do not import from it directly.
 
 ## Versioning promise

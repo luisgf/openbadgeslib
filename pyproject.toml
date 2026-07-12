@@ -91,6 +91,9 @@ Source = "https://github.com/luisgf/openbadgeslib"
 Changelog = "https://github.com/luisgf/openbadgeslib/blob/master/Changelog.txt"
 
 [project.scripts]
+# Unified front-end (#234): `openbadges <command>` dispatches to the five tools
+# below, which remain installed under their own names as aliases.
+openbadges = "openbadgeslib.openbadges_cli:main"
 openbadges-init = "openbadgeslib.openbadges_init:main"
 openbadges-keygenerator = "openbadgeslib.openbadges_keygenerator:main"
 openbadges-signer = "openbadgeslib.openbadges_signer:main"

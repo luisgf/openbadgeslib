@@ -1,8 +1,36 @@
-Reference for the five console scripts installed with `openbadgeslib`. Every flag, default and example below is taken directly from the source. For the meaning of config keys see [[Configuration]]; for an end-to-end walkthrough see [[Quick Start]].
+Reference for the console tools installed with `openbadgeslib`. Every flag, default and example below is taken directly from the source. For the meaning of config keys see [[Configuration]]; for an end-to-end walkthrough see [[Quick Start]].
 
-All scripts except `openbadges-init` accept `-v / --version` (prints the library version and exits) and default `-c / --config` to `config.ini` in the current directory.
+Every tool accepts `-v / --version` (prints the library version and exits), and the config-driven ones (`keygenerator`, `signer`, `verifier`, `publish`) default `-c / --config` to `config.ini` in the current directory and accept `-d / --debug`.
+
+## openbadges (unified front-end)
+
+A single `openbadges <command>` entry point dispatches to the tools below; each command owns everything after its name and behaves exactly like the standalone script (same flags, output and [exit codes](#machine-readable-output-and-exit-codes)). The five `openbadges-<command>` scripts remain installed as aliases.
+
+### Synopsis
+
+```sh
+openbadges COMMAND [ARGS ...]
+openbadges --help            # list the commands
+openbadges COMMAND --help    # a command's own options
+```
+
+| Command | Runs | Alias |
+|---------|------|-------|
+| `init` | Create a working directory | `openbadges-init` |
+| `keygen` | Generate a key pair | `openbadges-keygenerator` |
+| `sign` | Issue (sign) a badge | `openbadges-signer` |
+| `verify` | Verify a badge | `openbadges-verifier` |
+| `publish` | Publish OB3 artefacts / manage status | `openbadges-publish` |
+
+```sh
+$ openbadges sign -c ./config/config.ini -b 1 -r recipient@example.com -E -V 3
+```
 
 ## openbadges-init
+
+Bootstraps a working directory: creates the directory plus `keys/`, `images/`, `log/` and `status/` subdirectories (with a restrictive `0o077` umask) and copies the bundled `config.ini.example` to `<DIRECTORY>/config.ini`.
+
+It takes a single positional argument (the directory, which must not already exist) plus the standard `-h / --help` and `-v / --version`.
 
 Bootstraps a working directory: creates the directory plus `keys/`, `images/`, `log/` and `status/` subdirectories (with a restrictive `0o077` umask) and copies the bundled `config.ini.example` to `<DIRECTORY>/config.ini`.
 
@@ -17,7 +45,8 @@ openbadges-init DIRECTORY
 | Argument | Meaning | Default |
 |----------|---------|---------|
 | `DIRECTORY` (positional) | Directory to create and populate | required |
-| `-h` | Print the usage line and exit | — |
+| `-h` / `--help` | Print help and exit | — |
+| `-v` / `--version` | Print version and exit | — |
 
 ### Example
 
@@ -219,9 +248,9 @@ The output directory is created with a `0o077` umask.
 ### Synopsis
 
 ```sh
-openbadges-publish -o DIR [-c FILE] [-V {1,2,3}] [--check-live]
-openbadges-publish -o DIR -V 3 [--revoke ID | --suspend ID | --unsuspend ID] [--reason TEXT] [-b BADGE] [--check-live] [--json]
-openbadges-publish -V 3 (--list | --status ID) [-c FILE] [-b BADGE] [--json]
+openbadges-publish -o DIR [-c FILE] [-V {1,2,3}] [--check-live] [-d]
+openbadges-publish -o DIR -V 3 [--revoke ID | --suspend ID | --unsuspend ID] [--reason TEXT] [-b BADGE] [--check-live] [--json] [-d]
+openbadges-publish -V 3 (--list | --status ID) [-c FILE] [-b BADGE] [--json] [-d]
 ```
 
 | Short | Long | Meaning | Default |
@@ -235,9 +264,10 @@ openbadges-publish -V 3 (--list | --status ID) [-c FILE] [-b BADGE] [--json]
 | — | `--list` | OB3 only: tabulate issued credentials — jti, recipient, issue date, state (read-only) | — |
 | — | `--status ID` | OB3 only: full status record of a credential by jti or recipient email, revocation/suspension reason included (read-only) | — |
 | — | `--reason TEXT` | Free-text reason recorded with `--revoke`/`--suspend` | — |
-| — | `--check-live` | OB3 only: after publishing, download each written artifact (`did.json`, status lists, `verify.pem`) from `publish_url` and byte-compare it against the local copy — verifying the web server serves the freshly-regenerated versions. Exit `2` (`--json`) / `1` (human) if any is stale or missing | off |
+| — | `--check-live` | OB3 only: after publishing, download each written artifact (`did.json`, status lists, `verify.pem`) from `publish_url` and byte-compare it against the local copy — verifying the web server serves the freshly-regenerated versions. Exit `2` if any is stale or missing | off |
 | — | `--json` | OB3 only: emit a machine-readable JSON result instead of the human output — `{did, files_written, status_operation, skipped}` when publishing, the queried records for `--list`/`--status`. See [Machine-readable output](#machine-readable-output-and-exit-codes) | off |
 | `-b` | `--badge NAME` | Scope the lookup/listing to one badge's registry | all badges |
+| `-d` | `--debug` | Show debug messages at runtime | off |
 | `-v` | `--version` | Print version and exit | — |
 
 `--revoke`, `--suspend`, `--unsuspend`, `--list` and `--status` are mutually exclusive. The three state changes update the badge's status registry **before** regenerating the lists; a recipient email that matches several issued credentials is rejected with the candidate jtis — re-run with the jti. Revocation is permanent (there is no `--unrevoke`); suspension of a revoked credential is likewise rejected.
@@ -307,14 +337,14 @@ Success payloads:
 
 On error the object is `{"error": "<message>"}`.
 
-Exit-code contract (shared across the `--json` paths):
+Exit-code contract (identical in human and `--json` modes):
 
 | Code | Meaning |
 |------|---------|
 | `0` | success |
-| `2` | partial success — verifier: valid signature but the issuer is untrusted; publish: some badges were skipped |
+| `2` | partial success — verifier: valid signature but the issuer is untrusted; signer/publish: some work was skipped, or `--check-live` found a stale/missing artifact |
 | `1` | any error |
 
 `openbadges-publish -V 3 --json` is defined for OpenBadges 3.0 only (the OB1/OB2 hosted-metadata paths have no JSON contract); combining `--json` with `-V 1`/`-V 2` is rejected.
 
-> Note: without `--json`, an **invalid** badge exits non-zero and a valid one exits `0` across OB1/OB2/OB3. The trusted-vs-untrusted distinction (exit `2`) is only surfaced by `--json`, so gate automation that needs it on `--json`.
+> Note: the exit status is the same with or without `--json`. A valid, trusted badge exits `0`; a valid but untrusted one exits `2`; an invalid badge or any error exits `1` — so `verifier … && grant` is safe in either mode (earlier versions exited `0` on an invalid OB1/OB2 badge, or surfaced the untrusted `2` only under `--json`).

@@ -265,10 +265,11 @@ class TestVerifierMiscBranches:
 
 
 class TestHumanModeExitCodes:
-    """#189 — in human (non-``--json``) mode the process exit code must reflect
-    the verdict for OB1/OB2 too: an invalid badge exits non-zero (it used to
-    exit 0, so `verifier … && grant` passed on a forged/expired/revoked badge),
-    a valid badge exits 0. Mirrors OB3 and the ``--json`` path."""
+    """#189 / #233 — in human (non-``--json``) mode the process exit code must
+    follow the same 0/1/2 contract as ``--json``: 0 when valid AND trusted, 2
+    when valid but the issuer is not anchored, 1 on any failure. An invalid
+    badge used to exit 0 (`verifier … && grant` passed on a forged badge), and
+    a setup error used to exit 255 (``sys.exit(-1)``); both are now 1."""
 
     @staticmethod
     def _code(argv):
@@ -290,7 +291,7 @@ class TestHumanModeExitCodes:
             code = self._code(['openbadges-verifier', '-i', str(badge),
                                '-r', 'other@example.com',   # recipient mismatch
                                '-V', '2', '-k', str(pub)])
-        assert code != 0
+        assert code == 1                       # invalid -> 1 (was 255, #233)
 
     def test_ob2_valid_exits_zero(self, tmp_path, rsa_priv_pem, rsa_pub_pem,
                                   svg_image):
@@ -317,7 +318,21 @@ class TestHumanModeExitCodes:
             code = self._code(['openbadges-verifier', '-i', str(badge),
                                '-r', 'wrong@example.com', '-V', '1',
                                '-k', str(pub)])
-        assert code != 0
+        assert code == 1                       # invalid -> 1 (was 255, #233)
+
+    # A valid-but-untrusted badge exits 2 in human mode: pinned by the smoke
+    # tests test_verifier_ob2_without_trusted_key_warns and
+    # test_verify_v2_untrusted_warns, which serve the badge-declared key so the
+    # signature verifies but the issuer stays unanchored.
+
+    def test_missing_key_file_exits_1(self, tmp_path, rsa_priv_pem, svg_image):
+        # A --pubkey path that does not exist is a setup error: it used to
+        # sys.exit(-1) (255); the 0/1/2 contract makes it 1 (#233).
+        badge = _ob2_signed(tmp_path, rsa_priv_pem, svg_image)
+        code = self._code(['openbadges-verifier', '-i', str(badge),
+                           '-r', 'r@example.com', '-V', '2',
+                           '-k', str(tmp_path / 'no-such-key.pem')])
+        assert code == 1
 
 
 def test_local_reads_key_from_config(tmp_path, rsa_priv_pem, rsa_pub_pem,

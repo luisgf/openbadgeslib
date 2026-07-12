@@ -178,7 +178,11 @@ def test_verify_v2_untrusted_warns(tmp_path, capsys):
             '-r', 'recipient@example.com', '-V', '2']
     with patch('openbadgeslib.ob2.verifier.download_file', side_effect=fake), \
             patch.object(sys, 'argv', argv):
-        openbadges_verifier.main()
+        # Valid signature but the badge-declared key (untrusted): 0/1/2 contract
+        # exits 2 in human mode too (#233).
+        with pytest.raises(SystemExit) as exc:
+            openbadges_verifier.main()
+    assert exc.value.code == 2
     out = capsys.readouterr().out
     assert 'Signature is correct' not in out
     assert 'does NOT prove issuer identity' in out

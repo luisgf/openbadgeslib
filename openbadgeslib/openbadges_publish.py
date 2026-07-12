@@ -41,15 +41,19 @@ import tempfile
 from typing import Any, List, TYPE_CHECKING, Tuple
 from urllib.parse import urljoin
 from .confparser import read_config_or_exit, resolve_badge_section
-from .util import __version__, emit_cli_json
+from .logs import enable_debug_logging
+from .util import emit_cli_json
+from .cli_common import (config_parser, debug_parser, json_parser,
+                         version_parser)
 
 if TYPE_CHECKING:
     from .ob3.status_registry import StatusEntry, StatusEvent, StatusRegistry
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description='Publisher Parameters')
-    parser.add_argument('-c', '--config', default='config.ini', help='Specify the config.ini file to use')
+    parser = argparse.ArgumentParser(
+        description='Publisher Parameters',
+        parents=[config_parser, debug_parser, json_parser, version_parser])
     parser.add_argument('-o', '--output',
                         help='Output directory for the published files '
                              '(required to publish; not needed for '
@@ -79,13 +83,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('-b', '--badge',
                         help='Badge name; scopes the --revoke/--suspend/--unsuspend '
                              'lookup to that badge registry')
-    parser.add_argument('--json', action='store_true',
-                        help='OB3 only (-V 3): emit a machine-readable JSON '
-                             'result instead of the human output — for publish '
-                             '{did, files_written, status_operation, skipped} '
-                             'and for --list/--status the queried records. Exit '
-                             'status: 0 success, 2 partial (some badges '
-                             'skipped), 1 any error.')
     parser.add_argument('--check-live', action='store_true',
                         help='OB3 only (-V 3): after publishing, download each '
                              'written artifact (did.json, status lists, '
@@ -94,13 +91,13 @@ def build_parser() -> argparse.ArgumentParser:
                              'serves the freshly-regenerated versions, not a '
                              'stale cache. Exit 2 if any artifact is stale or '
                              'missing on the server.')
-    parser.add_argument('-v', '--version', action='version', version=__version__)
     return parser
 
 
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    enable_debug_logging(args.debug)
 
     # JSON output is defined for the OB3 artefacts/registries only (did.json,
     # status lists, the status registries); OB1/OB2 hosted metadata has no such
@@ -128,10 +125,10 @@ def main() -> None:
             emit_cli_json(lambda: _publish_ob3(args, parser))
         else:
             result = _publish_ob3(args, parser)
-            # A partial failure historically exits 1 in human mode; --json maps
-            # it to 2 (see the result's _exit). Preserve the human exit here.
+            # A partial publish returns _exit=2; exit 2 to match --json under the
+            # 0/1/2 contract (#233) instead of the historical human exit 1.
             if result.get('_exit') == 2:
-                sys.exit(1)
+                sys.exit(2)
         return
 
     if args.revoke or args.suspend or args.unsuspend or args.reason or args.badge:
@@ -200,7 +197,7 @@ def _query_ob3(args: argparse.Namespace,
                         for name in sections}
     except ValueError as exc:
         print('[!] %s' % exc)
-        sys.exit(-1)
+        sys.exit(1)
 
     configured = [(name, sc) for name, sc in status_confs.items()
                   if sc is not None]
@@ -221,7 +218,7 @@ def _query_ob3(args: argparse.Namespace,
             print('[!] Skipping [%s] — %s' % (name, exc))
 
     if not registries:
-        sys.exit(-1)
+        sys.exit(1)
 
     if args.status is not None:
         return _print_status_detail(registries, args.status)
@@ -339,15 +336,16 @@ def _publish_ob3(args: argparse.Namespace,
         print('[!] %s:' % exc)
         for name, jti, issued in exc.matches:
             print('    %s  %s  (issued %s)' % (name, jti, issued))
-        sys.exit(-1)
+        sys.exit(1)
     except PublishError as exc:
-        # Config-level problems historically exited 1 (sys.exit(str)); operation
-        # / key problems exited 255 (print + sys.exit(-1)). Preserve both until
-        # the 0/1/2 contract (#233); exc.cli_exit carries which.
+        # Every publish failure is an error → exit 1 under the 0/1/2 contract
+        # (#233). cli_exit now only selects the historical human presentation: a
+        # config problem carries its message on sys.exit (stderr); an operation
+        # or key problem keeps its stdout '[!]' line. Both exit 1.
         if exc.cli_exit == 1:
             sys.exit('[!] %s' % exc)
         print('[!] %s' % exc)
-        sys.exit(-1)
+        sys.exit(1)
 
     # ── present the result, in the historical order ─────────────────────────
     op = result.status_operation

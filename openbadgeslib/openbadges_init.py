@@ -29,22 +29,28 @@
     POSSIBILITY OF SUCH DAMAGE.
 """
 
+import argparse
 import os
 import os.path
 import sys
 import shutil
 
+from .cli_common import version_parser
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description='Create an OpenBadges working directory (keys/, images/, '
+                    'log/, status/ and a config.ini stub)',
+        parents=[version_parser])
+    parser.add_argument('directory', metavar='DIRECTORY',
+                        help='Directory to create and populate; it must not '
+                             'already exist.')
+    return parser
+
 
 def main() -> None:
-    argv = sys.argv[1:]
-    usage = '%s DIRECTORY' % sys.argv[0]
-    if argv in (['-h'], ['--help']):
-        print(usage)                       # help goes to stdout, exit 0
-        return
-    if len(argv) != 1 or argv[0].startswith('-'):
-        sys.exit(usage)                    # a flag-like arg is not a directory
-
-    directory = argv[0]
+    directory = build_parser().parse_args().directory
 
     if os.path.lexists(directory):
         sys.exit('[!] %s already exists' % directory)
