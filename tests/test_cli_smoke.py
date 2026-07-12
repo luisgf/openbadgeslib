@@ -256,6 +256,7 @@ def test_verifier_ob2_end_to_end_trusted_key(tmp_path, svg_rsa_badge, rsa_pub_pe
 def test_verifier_ob2_without_trusted_key_warns(tmp_path, svg_rsa_badge, rsa_pub_pem, capsys):
     # No --local/--pubkey: the embedded key is used and the result must be
     # reported as internally-consistent-only, not '[+] correct' (SEC-2).
+    import pytest
     from openbadgeslib import openbadges_verifier
     badge_file = _make_signed_ob2_svg(tmp_path, svg_rsa_badge)
 
@@ -264,7 +265,11 @@ def test_verifier_ob2_without_trusted_key_warns(tmp_path, svg_rsa_badge, rsa_pub
     with patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem), \
             patch('openbadgeslib.ob1.verifier.download_file', side_effect=_fake_revocation_download), \
             patch.object(sys, 'argv', argv):
-        openbadges_verifier.main()
+        # Valid signature but only the badge-embedded key (untrusted): the 0/1/2
+        # contract exits 2 in human mode too (#233).
+        with pytest.raises(SystemExit) as exc:
+            openbadges_verifier.main()
+    assert exc.value.code == 2
     out = capsys.readouterr().out
     assert 'Signature is correct' not in out
     assert 'does NOT prove issuer identity' in out

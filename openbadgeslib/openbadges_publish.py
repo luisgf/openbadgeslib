@@ -128,10 +128,10 @@ def main() -> None:
             emit_cli_json(lambda: _publish_ob3(args, parser))
         else:
             result = _publish_ob3(args, parser)
-            # A partial failure historically exits 1 in human mode; --json maps
-            # it to 2 (see the result's _exit). Preserve the human exit here.
+            # A partial publish returns _exit=2; exit 2 to match --json under the
+            # 0/1/2 contract (#233) instead of the historical human exit 1.
             if result.get('_exit') == 2:
-                sys.exit(1)
+                sys.exit(2)
         return
 
     if args.revoke or args.suspend or args.unsuspend or args.reason or args.badge:
@@ -200,7 +200,7 @@ def _query_ob3(args: argparse.Namespace,
                         for name in sections}
     except ValueError as exc:
         print('[!] %s' % exc)
-        sys.exit(-1)
+        sys.exit(1)
 
     configured = [(name, sc) for name, sc in status_confs.items()
                   if sc is not None]
@@ -221,7 +221,7 @@ def _query_ob3(args: argparse.Namespace,
             print('[!] Skipping [%s] — %s' % (name, exc))
 
     if not registries:
-        sys.exit(-1)
+        sys.exit(1)
 
     if args.status is not None:
         return _print_status_detail(registries, args.status)
@@ -339,15 +339,16 @@ def _publish_ob3(args: argparse.Namespace,
         print('[!] %s:' % exc)
         for name, jti, issued in exc.matches:
             print('    %s  %s  (issued %s)' % (name, jti, issued))
-        sys.exit(-1)
+        sys.exit(1)
     except PublishError as exc:
-        # Config-level problems historically exited 1 (sys.exit(str)); operation
-        # / key problems exited 255 (print + sys.exit(-1)). Preserve both until
-        # the 0/1/2 contract (#233); exc.cli_exit carries which.
+        # Every publish failure is an error → exit 1 under the 0/1/2 contract
+        # (#233). cli_exit now only selects the historical human presentation: a
+        # config problem carries its message on sys.exit (stderr); an operation
+        # or key problem keeps its stdout '[!]' line. Both exit 1.
         if exc.cli_exit == 1:
             sys.exit('[!] %s' % exc)
         print('[!] %s' % exc)
-        sys.exit(-1)
+        sys.exit(1)
 
     # ── present the result, in the historical order ─────────────────────────
     op = result.status_operation

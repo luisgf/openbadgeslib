@@ -445,7 +445,7 @@ def emit_cli_json(run: Callable[[], dict[str, Any]]) -> None:
         with contextlib.redirect_stdout(buffer):
             result = run()
     except SystemExit as exc:
-        # A sys.exit('message') carries the message in .code; a sys.exit(-1)
+        # A sys.exit('message') carries the message in .code; a sys.exit(1)
         # after a human print left it in the captured buffer — recover either.
         detail = exc.code if isinstance(exc.code, str) \
             else _last_nonempty_line(buffer.getvalue())
