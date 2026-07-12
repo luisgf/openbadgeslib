@@ -119,8 +119,10 @@ def _iter_refs(node):
 
 class TestIssuedCredentialConforms:
     def test_context_prefix_is_official(self, ob3_credential):
-        # The exact two-element prefix the official schema's Context $def pins.
-        assert ob3_credential.to_vc()['@context'][:2] == OB3_CONTEXT
+        # The official schema's Context $def pins the first two entries (VC 2.0
+        # then the OB v3p0 context) and allows extras after them — we append the
+        # OB v3p0 extensions context (#239), so assert against the pinned prefix.
+        assert ob3_credential.to_vc()['@context'][:2] == OB3_CONTEXT[:2]
 
     def test_canonical_vc_conforms(self, ob3_credential, credential_validator):
         _assert_conformant(credential_validator, ob3_credential.to_vc())

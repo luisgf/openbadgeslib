@@ -42,6 +42,9 @@
 #   https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json
 #     ob-v3p0-context-3.0.3.json  (also served for the unversioned context.json)
 #     3d34f4d4ef1bce691106e63798beb5e7b862ba841423f5ee1e53ab7ddf3bca84
+#   https://purl.imsglobal.org/spec/ob/v3p0/extensions.json  (captured 2026-07-12)
+#     ob-v3p0-extensions.json
+#     87c06c81bc2317663bf288d740d94fddd2818c4342b186270ff6371dfaa63f93
 #   https://w3id.org/security/data-integrity/v2
 #     security-data-integrity-v2.json
 #     67f21e6e33a6c14e5ccfd2fc7865f7474fb71a04af7e94136cb399dfac8ae8f4
@@ -79,6 +82,12 @@ _URL_TO_RESOURCE: Dict[str, str] = {
         'ob-v3p0-context-3.0.2.json',
     'https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json':
         'ob-v3p0-context-3.0.3.json',
+    # OB v3p0 extensions: defines 1EdTechJsonSchemaValidator2019 (the
+    # credentialSchema.type issued credentials carry) and the 1EdTech
+    # status/refresh terms. Bundled so the fail-closed loader can resolve it
+    # during Data Integrity canonicalization without touching the network (#239).
+    'https://purl.imsglobal.org/spec/ob/v3p0/extensions.json':
+        'ob-v3p0-extensions.json',
     # The unversioned OB3 context URL is an internal alias to our latest
     # bundled revision (3.0.3). We deliberately pin it here rather than mirror
     # 1EdTech's moving unversioned endpoint (which currently serves an older

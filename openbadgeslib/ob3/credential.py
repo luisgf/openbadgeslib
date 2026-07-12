@@ -39,6 +39,13 @@ _VC2_CONTEXT = "https://www.w3.org/ns/credentials/v2"
 OB3_CONTEXT = [
     _VC2_CONTEXT,
     "https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json",
+    # The OB v3p0 extensions context defines 1EdTechJsonSchemaValidator2019 (the
+    # credentialSchema.type we emit) plus the 1EdTech status/refresh terms. Its
+    # absence left that term undefined, so a strict JSON-LD validator flagged it
+    # ("Undefined JSON-LD term") and canonicalization mapped it to a base-relative
+    # IRI, breaking the embedded proof (#239). The official schema pins only the
+    # first two @context entries; extras like this one are allowed after them.
+    "https://purl.imsglobal.org/spec/ob/v3p0/extensions.json",
 ]
 
 # The OB v3p0 context URI, optionally version-pinned (…/context-3.0.3.json),

@@ -1,4 +1,6 @@
 """Tests for the OpenBadges 3.0 verifier."""
+import base64
+
 import pytest
 from datetime import datetime, timezone
 
@@ -49,8 +51,14 @@ class TestOB3VerifierVerify:
     ):
         token = ob3_rsa_signer.sign(ob3_credential)
         header, payload, sig = token.split('.')
-        # Flip last character of signature
-        tampered_sig = sig[:-1] + ('A' if sig[-1] != 'A' else 'B')
+        # Flip a byte of the *decoded* signature. Mutating the last base64url
+        # char is unreliable: it carries only the RSA signature's final 2 bits,
+        # so ~3/4 of single-char flips decode to identical bytes and verify
+        # (correctly) still accepts them. Decode → flip → re-encode guarantees
+        # the signature bytes actually change, independent of the payload.
+        raw = base64.urlsafe_b64decode(sig + '=' * (-len(sig) % 4))
+        raw = bytes([raw[0] ^ 0xFF]) + raw[1:]
+        tampered_sig = base64.urlsafe_b64encode(raw).rstrip(b'=').decode('ascii')
         tampered = f"{header}.{payload}.{tampered_sig}"
         with pytest.raises(OB3VerificationError):
             ob3_rsa_verifier.verify(tampered)

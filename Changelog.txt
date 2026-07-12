@@ -10,6 +10,17 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
   surfaced, test the fail-closed guards, and speed up batch issuance and
   verification.
 
+  - fix(ob3): bundle and reference the OB v3p0 extensions context so the
+    `credentialSchema` type (`1EdTechJsonSchemaValidator2019`, emitted since
+    v3.6.0) resolves to a defined JSON-LD term. Without it the term was
+    undefined: the official 1EdTech OB3 validator rejected every issued
+    credential ("Undefined JSON-LD term") and canonicalization mapped the type
+    to a base-relative IRI, so the Data Integrity proof no longer verified. The
+    offline JSON-Schema gate did not catch this (it checks the string, not
+    JSON-LD term resolution). Issued credentials now carry a third `@context`
+    entry (the official schema pins only the first two and allows extras); the
+    context is pinned in the fail-closed allowlist and covered by the drift
+    watchdog (#239).
   - security(eudi): document and pin the X.509 / eIDAS trust boundary for
     SD-JWT VC verification. All x5c chain validation is delegated to openvc-core
     (path building, temporal validity, SAN<->iss binding); openbadgeslib only
