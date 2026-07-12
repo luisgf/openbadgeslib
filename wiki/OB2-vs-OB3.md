@@ -8,7 +8,7 @@ openbadgeslib implements three generations of the IMS Global Open Badges specifi
 
 The original pre-2.0 model, frozen for backward compatibility. It builds a JSON assertion (SHA-256 hashed recipient email + salt, badge URLs, a Unix `issuedOn`) and signs it with **JWS compact serialisation** (RS256/ES256/EdDSA). It uses `uid`, a `verify: {type, url}` object, and `hashed: "true"` (a string). No `@context`/`type` are emitted.
 
-The implementation lives in `openbadgeslib.ob1` (with top-level `badge`, `signer`, `verifier` modules kept as backward-compatible shims for `from openbadgeslib.signer import Signer`). See [[Python API OB1]].
+The implementation lives in `openbadgeslib.ob1` (e.g. `from openbadgeslib.ob1 import Signer`, or the unprefixed `openbadgeslib.Signer`). See [[Python API OB1]].
 
 ### OpenBadges 2.0 — strict, conformant JWS/hosted assertion (`-V 2`)
 

@@ -7,7 +7,7 @@ import pytest
 from png import Reader, signature as png_signature
 
 from openbadgeslib import baking
-from openbadgeslib.badge import (
+from openbadgeslib.ob1.badge import (
     Assertion, extract_svg_assertion, extract_png_assertion, BadgeSigned, Badge,
 )
 from openbadgeslib.keys import KeyType

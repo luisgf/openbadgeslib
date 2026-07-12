@@ -2,14 +2,13 @@ import unittest
 
 import pytest
 
-from openbadgeslib import signer
-from openbadgeslib.signer import Signer
+from openbadgeslib.ob1.signer import Signer
 from openbadgeslib.confparser import ConfParser
 from openbadgeslib.keys import KeyType
 from openbadgeslib.issue import _safe_filename_component
-from openbadgeslib.badge import (Badge, BadgeType, BadgeImgType, Assertion,
-                                 BadgeSigned, extract_svg_assertion,
-                                 extract_png_assertion)
+from openbadgeslib.ob1.badge import (Badge, BadgeType, BadgeImgType, Assertion,
+                                     BadgeSigned, extract_svg_assertion,
+                                     extract_png_assertion)
 from openbadgeslib.errors import ErrorSigningFile, PrivateKeyReadError, PublicKeyReadError
 
 
@@ -207,7 +206,7 @@ class check_signer(unittest.TestCase):
     def setUpClass(cls) :
         cf = ConfParser('./config1.ini')
         cls.conf = cf.read_conf()
-        cls.sign = signer.Signer()
+        cls.sign = Signer()
 
     def test_signer_uid_generation(self):
         """ Testing Serial Number generation """
@@ -253,8 +252,8 @@ class TestSignBadgeRoundTrip:
     def test_signed_assertion_verifies_against_pubkey(self, svg_rsa_badge):
         # End-to-end: the embedded assertion must actually verify with the
         # matching public key, not merely exist.
-        from openbadgeslib.verifier import Verifier
-        from openbadgeslib.badge import BadgeStatus
+        from openbadgeslib.ob1.verifier import Verifier
+        from openbadgeslib.ob1.badge import BadgeStatus
         signed = self._fresh_signer().sign_badge(svg_rsa_badge)
         v = Verifier(verify_key=svg_rsa_badge.pubkey_pem)
         assert v.check_jws_signature(signed).status is BadgeStatus.VALID
@@ -311,7 +310,7 @@ class TestHasAssertion:
 
     def test_signed_svg_has_assertion(self, signed_svg_rsa, svg_rsa_badge):
         # Construct a Badge whose image is the signed SVG content
-        from openbadgeslib.badge import Badge
+        from openbadgeslib.ob1.badge import Badge
         from openbadgeslib.keys import KeyType
         badge_with_sig = Badge(
             image_type=BadgeImgType.SVG,
@@ -322,7 +321,7 @@ class TestHasAssertion:
         assert s.has_assertion(badge_with_sig) is True
 
     def test_signed_png_has_assertion(self, signed_png_rsa, png_rsa_badge):
-        from openbadgeslib.badge import Badge
+        from openbadgeslib.ob1.badge import Badge
         from openbadgeslib.keys import KeyType
         badge_with_sig = Badge(
             image_type=BadgeImgType.PNG,
@@ -335,7 +334,7 @@ class TestHasAssertion:
 
 class TestSignAlreadySigned:
     def test_signing_signed_svg_raises(self, signed_svg_rsa, svg_rsa_badge):
-        from openbadgeslib.badge import Badge
+        from openbadgeslib.ob1.badge import Badge
         from openbadgeslib.keys import KeyType
         badge_with_sig = Badge(
             image_type=BadgeImgType.SVG,
@@ -347,7 +346,7 @@ class TestSignAlreadySigned:
             s.sign_badge(badge_with_sig)
 
     def test_signing_signed_png_raises(self, signed_png_rsa):
-        from openbadgeslib.badge import Badge
+        from openbadgeslib.ob1.badge import Badge
         from openbadgeslib.keys import KeyType
         badge_with_sig = Badge(
             image_type=BadgeImgType.PNG,

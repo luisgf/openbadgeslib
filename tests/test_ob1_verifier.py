@@ -3,8 +3,8 @@ import time
 import pytest
 from unittest.mock import patch
 
-from openbadgeslib.verifier import Verifier
-from openbadgeslib.badge import BadgeStatus, BadgeSigned
+from openbadgeslib.ob1.verifier import Verifier
+from openbadgeslib.ob1.badge import BadgeStatus, BadgeSigned
 from openbadgeslib.errors import VerifierExceptions
 
 

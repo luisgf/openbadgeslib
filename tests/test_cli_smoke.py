@@ -224,8 +224,8 @@ def test_verifier_ob3_end_to_end(tmp_path, rsa_priv_pem, rsa_pub_pem, svg_image,
 
 def _make_signed_ob2_svg(tmp_path, badge, identity='recipient@example.com'):
     """Sign an OB2 SVG badge to a file and return its path."""
-    from openbadgeslib.signer import Signer
-    from openbadgeslib.badge import BadgeType
+    from openbadgeslib.ob1.signer import Signer
+    from openbadgeslib.ob1.badge import BadgeType
     signed = Signer(identity=identity, badge_type=BadgeType.SIGNED,
                     deterministic=True).sign_badge(badge)
     badge_file = tmp_path / 'badge.svg'
@@ -577,8 +577,8 @@ def test_urls_has_problems_detects_later_failure(svg_rsa_badge):
 
 def test_badgemail_send_handles_connection_error(svg_rsa_badge, capsys):
     from openbadgeslib.mail import BadgeMail
-    from openbadgeslib.signer import Signer
-    from openbadgeslib.badge import BadgeType
+    from openbadgeslib.ob1.signer import Signer
+    from openbadgeslib.ob1.badge import BadgeType
 
     signed = Signer(identity='user@example.com', badge_type=BadgeType.SIGNED,
                     deterministic=True).sign_badge(svg_rsa_badge)
@@ -596,8 +596,8 @@ def test_badgemail_send_handles_connection_error(svg_rsa_badge, capsys):
 
 
 def _signed_for_mail(badge, suffix, identity='user@example.com'):
-    from openbadgeslib.signer import Signer
-    from openbadgeslib.badge import BadgeType
+    from openbadgeslib.ob1.signer import Signer
+    from openbadgeslib.ob1.badge import BadgeType
     signed = Signer(identity=identity, badge_type=BadgeType.SIGNED,
                     deterministic=True).sign_badge(badge)
     signed.file_out = 'badge.' + suffix

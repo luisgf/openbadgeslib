@@ -29,6 +29,17 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     script; a command owns everything after its name, so `openbadges sign ...`
     behaves exactly like `openbadges-signer ...`. Minor breaking: openbadges-init
     with a bad/missing argument now exits 2 (argparse), not 1.
+  - refactor(ob1)!: consolidate the OB1 compatibility surface (#235). The OB1
+    legacy name table (11 names -> leaf module) is single-sourced in
+    openbadgeslib/_ob1_api.py instead of being duplicated between the top-level
+    package and openbadgeslib.ob1. The three top-level shim modules —
+    openbadgeslib.badge, openbadgeslib.signer and openbadgeslib.verifier — are
+    removed. OpenBadges 1.0 stays fully supported and reachable via
+    openbadgeslib.ob1.* (e.g. `from openbadgeslib.ob1 import Signer`) and the
+    unprefixed openbadgeslib.Signer / .Badge / … re-exports, both of which still
+    emit the steering DeprecationWarning. BREAKING: `from openbadgeslib.badge
+    import ...` (and .signer/.verifier) no longer resolve — repoint them to
+    `openbadgeslib.ob1.<module>`.
 
 * v3.15.0 - unreleased
 
