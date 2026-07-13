@@ -6,8 +6,11 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v4.0.0 - unreleased
 
-  Grouped breaking release (#170). Freeze the declared public contract and
-  unify the CLIs.
+  Grouped breaking release (#170) — freeze the declared public contract and
+  unify the CLIs — shipped together with the Round-2 roadmap work: close the
+  revocation/trust gaps the deep-logic analysis surfaced, test the fail-closed
+  guards, and speed up batch issuance and verification. Breaking changes first,
+  then the rest of the cycle.
 
   - fix(cli)!: unify every console tool on the 0/1/2 exit-code contract (#233).
     The 19 `sys.exit(-1)` sites (which exited 255) now exit 1, and the verifier
@@ -40,12 +43,6 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     emit the steering DeprecationWarning. BREAKING: `from openbadgeslib.badge
     import ...` (and .signer/.verifier) no longer resolve — repoint them to
     `openbadgeslib.ob1.<module>`.
-
-* v3.15.0 - unreleased
-
-  Round-2 roadmap: close the revocation/trust gaps the deep-logic analysis
-  surfaced, test the fail-closed guards, and speed up batch issuance and
-  verification.
 
   - fix(ob3): bundle and reference the OB v3p0 extensions context so the
     `credentialSchema` type (`1EdTechJsonSchemaValidator2019`, emitted since
