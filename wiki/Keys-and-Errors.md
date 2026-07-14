@@ -71,7 +71,7 @@ from openbadgeslib.keys import detect_key_type, KeyType
 detect_key_type(priv_pem)   # -> KeyType.RSA, KeyType.ECC, or KeyType.ED25519
 ```
 
-`key_to_pem(key)` normalises any supported key into PEM. It exports `cryptography` key objects (RSA, EC and Ed25519, public or private) — what the library now produces — passes `bytes`/`str` through unchanged, and still accepts a live `pycryptodome`/`python-ecdsa` object via a soft import (for a caller predating the 3.7 port). It raises `UnknownKeyType` for anything else. It is the single shared implementation used by the OB2 JWS layer and both OB3 signer/verifier.
+`key_to_pem(key)` normalises any supported key into PEM. It exports `cryptography` key objects (RSA, EC and Ed25519, public or private) — what the library produces — and passes `bytes`/`str` through unchanged. It raises `UnknownKeyType` for anything else; since 4.0.0 that includes a live `pycryptodome`/`python-ecdsa` key object (the soft-import shim was removed — pass a `cryptography` key object or PEM instead). It is the single shared implementation used by the OB2 JWS layer and both OB3 signer/verifier.
 
 ```python
 from openbadgeslib.keys import key_to_pem

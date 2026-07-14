@@ -126,7 +126,7 @@ strict = true
 
 # Third-party dependencies that ship no type information.
 [[tool.mypy.overrides]]
-module = ["Crypto.*", "ecdsa.*", "png.*", "defusedxml.*", "pyld.*"]
+module = ["png.*", "defusedxml.*", "pyld.*"]
 ignore_missing_imports = true
 
 # openvc-core is behind the optional [eudi] extra and is not installed in the

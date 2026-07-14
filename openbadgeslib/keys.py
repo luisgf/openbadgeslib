@@ -25,8 +25,8 @@
 # a hard dependency through PyJWT[crypto]); pycryptodome and python-ecdsa were
 # dropped in the 3.7 port (#167) — they only ever generated/parsed keys here,
 # never signed, and python-ecdsa carried a permanent pip-audit CVE flag
-# (CVE-2024-23342, Minerva). ``key_to_pem`` still accepts a live pycryptodome /
-# python-ecdsa key object via a soft import, for a caller predating the port.
+# (CVE-2024-23342, Minerva). 4.0.0 removed the last soft-import shim, so
+# ``key_to_pem`` now takes only ``cryptography`` key objects and PEM bytes/str.
 
 from typing import Any, Optional, Tuple, Union, cast
 from .errors import PublicKeyReadError, UnknownKeyType
@@ -213,37 +213,15 @@ def alg_for_key_type(key_type: 'KeyType') -> str:
     raise UnknownKeyType('No signing algorithm for key type: %r' % (key_type,))
 
 
-def _legacy_key_to_pem(key: Any) -> Optional[Union[str, bytes]]:
-    """Best-effort PEM for a live pycryptodome RSA or python-ecdsa key object.
-
-    Kept for backward compatibility with a caller still holding one from before
-    the cryptography port (#167). Both libraries were dropped as dependencies,
-    so this soft-imports them and returns ``None`` when they are absent (or the
-    object is neither) — the caller then raises UnknownKeyType.
-    """
-    try:
-        from Crypto.PublicKey import RSA as _RSA
-        if isinstance(key, _RSA.RsaKey):
-            return cast(bytes, key.export_key('PEM'))
-    except ImportError:
-        pass
-    try:
-        from ecdsa import SigningKey as _SigningKey, VerifyingKey as _VerifyingKey
-        if isinstance(key, (_SigningKey, _VerifyingKey)):
-            return cast(Union[str, bytes], key.to_pem())
-    except ImportError:
-        pass
-    return None
-
-
 def key_to_pem(key: Any) -> Union[str, bytes]:
     """Convert a key object to PEM bytes.
 
-    Handles ``cryptography`` key objects (what keys.py and ob1.badge now
-    produce) and passes bytes/str through unchanged; a live pycryptodome /
-    python-ecdsa object is still accepted via :func:`_legacy_key_to_pem`.
-    Centralised here so the OB1/OB2 JWS layer and both OB3 signer/verifier
-    share one implementation instead of hand-maintained copies.
+    Handles ``cryptography`` key objects (what keys.py and ob1.badge produce)
+    and passes bytes/str through unchanged. Centralised here so the OB1/OB2 JWS
+    layer and both OB3 signer/verifier share one implementation instead of
+    hand-maintained copies. Raises UnknownKeyType for anything else — since
+    4.0.0 that includes live pycryptodome/python-ecdsa objects (dropped as
+    dependencies in #167); pass a cryptography key object or PEM bytes/str.
     """
     if isinstance(key, (bytes, str)):
         return key
@@ -258,9 +236,6 @@ def key_to_pem(key: Any) -> Union[str, bytes]:
             _crypto_serialization.NoEncryption())
     if isinstance(key, Ed25519PublicKey):
         return _public_pem(key)
-    legacy = _legacy_key_to_pem(key)
-    if legacy is not None:
-        return legacy
     raise UnknownKeyType('Unsupported key object type: %r' % type(key))
 
 

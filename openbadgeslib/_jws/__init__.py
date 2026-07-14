@@ -17,8 +17,10 @@ from ..errors import UnknownKeyType
 
 # Key objects PyJWT's ``prepare_key`` accepts as-is (its own supported backends).
 # A live one of these can be handed straight to prepare_key, skipping a PEM
-# round-trip; anything else (legacy pycryptodome / python-ecdsa) still needs
-# key_to_pem first — PyJWT does not recognise those objects.
+# round-trip; a PEM str/bytes passes through too. Anything else falls to
+# key_to_pem, which since 4.0.0 accepts only cryptography objects and PEM and so
+# rejects it (UnknownKeyType) — including the pycryptodome / python-ecdsa
+# objects PyJWT never recognised.
 _CRYPTOGRAPHY_KEY_TYPES = (
     rsa.RSAPrivateKey, rsa.RSAPublicKey,
     ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey,
@@ -35,8 +37,9 @@ def _prepare_key_arg(key: Any) -> Any:
     ``load_pem_private_key`` re-parse on every sign: the OB1 path hands in
     ``Badge.priv_key`` — a cryptography object loaded once at construction — so
     round-tripping it back to a PEM here only to re-parse it wasted ~45 ms per
-    RSA badge (#215). Only legacy pycryptodome / python-ecdsa objects, which
-    PyJWT does not recognise, still go through ``key_to_pem``.
+    RSA badge (#215). A PEM str/bytes passes through unchanged; anything else
+    falls to ``key_to_pem``, which since 4.0.0 accepts only cryptography objects
+    and PEM (a live pycryptodome/python-ecdsa object now raises UnknownKeyType).
     """
     if isinstance(key, (bytes, str)):
         return key

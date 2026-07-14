@@ -37,10 +37,10 @@ class OB3Signer:
     """Signs OpenBadges 3.0 credentials as JWT-VCs.
 
     Args:
-        privkey_pem: PEM-encoded private key (bytes, str, or a pycryptodome /
-                     ecdsa / cryptography key object).  RSA keys produce RS256
-                     tokens; EC keys produce ES256; Ed25519 keys produce EdDSA
-                     (pass ``algorithm='EdDSA'``).
+        privkey_pem: PEM-encoded private key (bytes, str, or a ``cryptography``
+                     key object).  RSA keys produce RS256 tokens; EC keys
+                     produce ES256; Ed25519 keys produce EdDSA (pass
+                     ``algorithm='EdDSA'``).
         algorithm:   JWS algorithm identifier.  Defaults to 'RS256'.
                      Supported: RS256/384/512, ES256/384/512, EdDSA.
     """

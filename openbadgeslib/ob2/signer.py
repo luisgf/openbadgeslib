@@ -40,8 +40,8 @@ class OB2Signer:
     identifiers (``openbadges:assertion`` / the ``openbadges`` iTXt keyword).
 
     Args:
-        privkey_pem: PEM-encoded private key (bytes, str, or a pycryptodome /
-                     ecdsa / cryptography key object).
+        privkey_pem: PEM-encoded private key (bytes, str, or a ``cryptography``
+                     key object).
         algorithm:   JWS algorithm identifier bound to the key type — RS256 for
                      RSA, ES256 for ECC P-256, EdDSA for Ed25519. Defaults to
                      'RS256'. Supported: RS256/384/512, ES256/384/512, EdDSA.

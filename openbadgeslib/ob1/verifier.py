@@ -54,9 +54,9 @@ class Verifier():
             # (_allowed_algs_for_key) re-derives the key type itself from the
             # key it verifies against. This call exists only to reject an
             # unrecognizable verify_key early, with a clean exception.
-            # Wrap in key_to_pem() so a live RSA/ecdsa key object — which the
-            # verification path already accepts — is not rejected here, mirroring
-            # OB3Verifier.__init__.
+            # Wrap in key_to_pem() so a live RSA/EC ``cryptography`` key object —
+            # which the verification path already accepts — is not rejected here,
+            # mirroring OB3Verifier.__init__.
             try:
                 detect_key_type(key_to_pem(self.verify_key))
             except UnknownKeyType as exc:

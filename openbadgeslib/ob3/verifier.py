@@ -130,8 +130,8 @@ class OB3Verifier:
     """Verifies OpenBadges 3.0 JWT-VC credentials.
 
     Args:
-        pubkey_pem: PEM-encoded public key (bytes, str, or a pycryptodome /
-                    ecdsa key object).
+        pubkey_pem: PEM-encoded public key (bytes, str, or a ``cryptography``
+                    key object).
     """
 
     def __init__(self, pubkey_pem: Any, issuer_did: Optional[str] = None) -> None:

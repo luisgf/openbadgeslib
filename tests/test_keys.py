@@ -1,6 +1,7 @@
 """#169 — coverage for openbadgeslib.keys conversion/algorithm helpers: the
-per-key-type branches of key_to_pem, the algorithm lookup, and the legacy
-pycryptodome/python-ecdsa soft-import compat (dropped as deps in #167).
+per-key-type branches of key_to_pem and the algorithm lookup. The live
+pycryptodome/python-ecdsa key-object compat was dropped in 4.0.0 (#170); those
+libraries stopped being dependencies in #167.
 """
 import pytest
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
@@ -60,11 +61,3 @@ class TestEcCurveFromPem:
 
     def test_unreadable_pem_returns_none(self):
         assert keys.ec_curve_from_pem(b'not a pem at all') is None
-
-
-class TestLegacyKeyToPem:
-    def test_absent_legacy_libs_return_none(self):
-        # pycryptodome / python-ecdsa were dropped (#167); the soft-import path
-        # finds neither, so it returns None for any object (and key_to_pem then
-        # raises UnknownKeyType).
-        assert keys._legacy_key_to_pem(object()) is None

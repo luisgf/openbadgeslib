@@ -43,6 +43,15 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     emit the steering DeprecationWarning. BREAKING: `from openbadgeslib.badge
     import ...` (and .signer/.verifier) no longer resolve — repoint them to
     `openbadgeslib.ob1.<module>`.
+  - refactor(keys)!: drop the last pycryptodome / python-ecdsa soft-import
+    (#170). Both libraries stopped being dependencies in the 3.7 port (#167),
+    but `key_to_pem` kept a soft-import shim that still accepted a *live*
+    pycryptodome RSA or python-ecdsa key object. That shim (`_legacy_key_to_pem`)
+    is removed, along with the `Crypto.*`/`ecdsa.*` mypy overrides: `key_to_pem`
+    now takes only `cryptography` key objects and PEM bytes/str, raising
+    `UnknownKeyType` otherwise. Key *files* are unaffected — they were already
+    plain PEM and round-trip unchanged. BREAKING: pass a `cryptography` key
+    object or PEM instead of a live pycryptodome/python-ecdsa object.
 
   - fix(ob3): bundle and reference the OB v3p0 extensions context so the
     `credentialSchema` type (`1EdTechJsonSchemaValidator2019`, emitted since
