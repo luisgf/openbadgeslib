@@ -100,9 +100,6 @@ gitlint install-hook
 ```
 openbadgeslib/
     __init__.py          unified public API (OB1 + OB2 + OB3 + shared keys/util)
-    badge.py             backward-compat shim -> ob1.badge
-    signer.py            backward-compat shim -> ob1.signer
-    verifier.py          backward-compat shim -> ob1.verifier
     baking.py            shared SVG/PNG token baking + extraction (OB1/OB2/OB3)
     confparser.py        INI config file reader
     errors.py            custom exception hierarchy
@@ -118,11 +115,14 @@ openbadgeslib/
                          RevocationList)
     ob3/                 OB 3.0: Issuer, Achievement, OpenBadgeCredential,
                          OB3Signer, OB3Verifier (W3C VC / JWT-VC)
+    cli_common.py               shared argparse parent parsers for the CLIs
+    openbadges_cli.py           CLI: the unified openbadges <command> front-end
     openbadges_init.py          CLI: openbadges-init
     openbadges_keygenerator.py  CLI: openbadges-keygenerator
     openbadges_signer.py        CLI: openbadges-signer
     openbadges_verifier.py      CLI: openbadges-verifier
     openbadges_publish.py       CLI: openbadges-publish
+    openbadges_status.py        CLI: openbadges status (front-end only)
 
 tests/
     conftest.py          shared pytest fixtures (OB 2.0 + OB 3.0)

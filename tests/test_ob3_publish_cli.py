@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from openbadgeslib import openbadges_publish, openbadges_signer
+from openbadgeslib import openbadges_cli, openbadges_publish, openbadges_signer
 
 TESTS_DIR = Path(__file__).parent
 RECIPIENT = 'recipient@example.com'
@@ -901,3 +901,96 @@ class TestPublishFacade:
         conf.read_string('[badge_1]\nname = X\n')
         with pytest.raises(PublishError, match='issuer'):
             publish_ob3(conf, str(tmp_path / 'pub'))
+
+
+# ── openbadges status (the read-only query as a first-class command) ──────────
+
+def _status(cfg, extra=()):
+    """Run `openbadges status ...` through the unified front-end, so these
+    tests cover the dispatch too, not just the command's own parser."""
+    argv = ['openbadges', 'status', '-c', str(cfg)] + list(extra)
+    with patch.object(sys, 'argv', argv):
+        openbadges_cli.main()
+
+
+class TestStatusCommand:
+    """`openbadges status` shares query_ob3 with `publish --list/--status`, so
+    these assert the wiring (dispatch, argument mapping, exit status) rather
+    than re-testing the table/detail rendering TestPublishQuery covers."""
+
+    def _issue(self, tmp_path, rsa_pub_pem):
+        cfg = _write_config(tmp_path, status_lists='revocation, suspension')
+        badge_file = _sign(tmp_path, cfg)
+        return cfg, _credential_from(badge_file, rsa_pub_pem)
+
+    def test_no_id_tabulates_every_credential(self, tmp_path, rsa_pub_pem,
+                                              capsys):
+        cfg, credential = self._issue(tmp_path, rsa_pub_pem)
+        capsys.readouterr()                 # drop the signer output
+        _status(cfg)
+        out = capsys.readouterr().out
+        assert credential.id in out
+        assert 'active' in out
+        assert '1 credential total' in out
+
+    def test_id_shows_the_full_record(self, tmp_path, rsa_pub_pem, capsys):
+        cfg, credential = self._issue(tmp_path, rsa_pub_pem)
+        capsys.readouterr()
+        _status(cfg, [credential.id])
+        out = capsys.readouterr().out
+        assert 'jti:' in out and credential.id in out
+        assert 'state:' in out and 'active' in out
+
+    def test_id_accepts_a_recipient_email(self, tmp_path, rsa_pub_pem, capsys):
+        cfg, credential = self._issue(tmp_path, rsa_pub_pem)
+        capsys.readouterr()
+        _status(cfg, [RECIPIENT])
+        assert credential.id in capsys.readouterr().out
+
+    def test_reflects_a_revocation_and_its_reason(self, tmp_path, rsa_pub_pem,
+                                                  capsys):
+        cfg, credential = self._issue(tmp_path, rsa_pub_pem)
+        _publish(tmp_path, cfg, ['--revoke', credential.id,
+                                 '--reason', 'cheating'])
+        capsys.readouterr()
+        _status(cfg, [credential.id])
+        out = capsys.readouterr().out
+        assert 'REVOKED' in out
+        assert 'revoked:' in out and 'cheating' in out
+
+    def test_scoped_to_one_badge(self, tmp_path, rsa_pub_pem, capsys):
+        cfg, credential = self._issue(tmp_path, rsa_pub_pem)
+        capsys.readouterr()
+        _status(cfg, ['-b', '1'])
+        assert credential.id in capsys.readouterr().out
+
+    def test_json_emits_the_same_records(self, tmp_path, rsa_pub_pem, capsys):
+        cfg, credential = self._issue(tmp_path, rsa_pub_pem)
+        capsys.readouterr()
+        # --json always exits explicitly under the machine-output contract:
+        # 0 here, since a successful query is a success (#233).
+        with pytest.raises(SystemExit) as exc:
+            _status(cfg, ['--json'])
+        assert exc.value.code == 0
+        payload = json.loads(capsys.readouterr().out)
+        jtis = [c['jti'] for b in payload['badges'] for c in b['credentials']]
+        assert credential.id in jtis
+
+    def test_unknown_id_exits_1(self, tmp_path, rsa_pub_pem, capsys):
+        cfg, _credential = self._issue(tmp_path, rsa_pub_pem)
+        capsys.readouterr()
+        with pytest.raises(SystemExit) as exc:
+            _status(cfg, ['urn:uuid:nope'])
+        assert exc.value.code == 1
+        assert 'No credential' in capsys.readouterr().out
+
+    def test_needs_no_output_directory(self, tmp_path, rsa_pub_pem):
+        # The command has no -o at all: a read must never require the publish
+        # tree. (It would raise SystemExit(2) on an unrecognised flag.)
+        cfg, _credential = self._issue(tmp_path, rsa_pub_pem)
+        _status(cfg)
+
+    def test_without_status_lists_exits(self, tmp_path):
+        cfg = _write_config(tmp_path)       # no status_lists configured
+        with pytest.raises(SystemExit, match='No badge'):
+            _status(cfg)

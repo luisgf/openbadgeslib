@@ -38,7 +38,7 @@ import shutil
 import sys
 import tempfile
 
-from typing import Any, List, TYPE_CHECKING, Tuple
+from typing import Any, List, Optional, TYPE_CHECKING, Tuple
 from urllib.parse import urljoin
 from .confparser import read_config_or_exit, resolve_badge_section
 from .logs import enable_debug_logging
@@ -111,10 +111,16 @@ def main() -> None:
         if args.ob_version != '3':
             sys.exit('[!] --list/--status query the OpenBadges 3.0 status '
                      'registries and need -V 3')
+        # --reason records why a credential was revoked or suspended; on a
+        # read-only query it can only be a mistake. (The publish paths run the
+        # same check for their own flag combinations.)
+        if args.reason:
+            sys.exit('[!] --reason needs --revoke or --suspend')
         if args.json:
-            emit_cli_json(lambda: _query_ob3(args, parser))
+            emit_cli_json(
+                lambda: query_ob3(args.config, args.badge, args.status))
         else:
-            _query_ob3(args, parser)
+            query_ob3(args.config, args.badge, args.status)
         return
 
     if args.ob_version == '3':
@@ -164,33 +170,36 @@ def _write_atomic(path: str, data: str) -> None:
         raise
 
 
-def _query_ob3(args: argparse.Namespace,
-               parser: argparse.ArgumentParser) -> dict[str, Any]:
+def query_ob3(config: str, badge: Optional[str],
+              credential_id: Optional[str]) -> dict[str, Any]:
     """Read-only inspection of the private OB3 status registries.
 
-    ``--list`` tabulates every issued credential (jti, recipient, issue date,
-    state) for one badge or all of them; ``--status <jti|email>`` prints the
-    full record of the matching credential(s), including the revocation or
-    suspension date and reason. Neither reads nor writes the published
-    artefacts, so no output directory is needed — this closes the credential
-    lifecycle from the CLI: issue -> revoke/suspend -> audit.
+    Without a *credential_id* it tabulates every issued credential (jti,
+    recipient, issue date, state) for one badge or all of them; with one — a
+    jti or a recipient email — it prints the full record of the matching
+    credential(s), including the revocation or suspension date and reason.
+    Neither reads nor writes the published artefacts, so no output directory is
+    needed — this closes the credential lifecycle from the CLI: issue ->
+    revoke/suspend -> audit.
+
+    Shared by ``openbadges status`` (which owns this as its whole job) and
+    ``openbadges-publish --list/--status``; it takes plain arguments rather
+    than a parsed Namespace so neither command's flag layout constrains the
+    other's.
     """
     from .confparser import ob3_status_config
     from .errors import StatusError
     from .ob3.status_registry import StatusRegistry
 
-    conf = read_config_or_exit(args.config)
-
-    if args.reason:
-        sys.exit('[!] --reason needs --revoke or --suspend')
+    conf = read_config_or_exit(config)
 
     try:
         if 'issuer' not in conf:
             raise ValueError('config is missing the [issuer] section')
         if not conf['issuer'].get('publish_url'):
             raise ValueError("[issuer] is missing the 'publish_url' key")
-        if args.badge:
-            sections = [resolve_badge_section(conf, args.badge)]
+        if badge:
+            sections = [resolve_badge_section(conf, badge)]
         else:
             sections = [n for n in conf.sections() if n.startswith('badge_')]
         status_confs = {name: ob3_status_config(conf, name)
@@ -202,9 +211,9 @@ def _query_ob3(args: argparse.Namespace,
     configured = [(name, sc) for name, sc in status_confs.items()
                   if sc is not None]
     if not configured:
-        if args.badge:
-            sys.exit('[!] badge_%s has no status_lists configured' % args.badge)
-        sys.exit('[!] No badge has status_lists configured in %s' % args.config)
+        if badge:
+            sys.exit('[!] badge_%s has no status_lists configured' % badge)
+        sys.exit('[!] No badge has status_lists configured in %s' % config)
 
     # Load each badge's registry once; isolate a per-badge failure (corrupt or
     # unreadable registry) so it does not mask the badges that read cleanly.
@@ -220,8 +229,8 @@ def _query_ob3(args: argparse.Namespace,
     if not registries:
         sys.exit(1)
 
-    if args.status is not None:
-        return _print_status_detail(registries, args.status)
+    if credential_id is not None:
+        return _print_status_detail(registries, credential_id)
     return _print_registry_table(registries)
 
 
@@ -442,7 +451,7 @@ def _require_issuer_publish_keys(conf: configparser.ConfigParser) -> None:
     misconfigured config exits with a clean CLI error instead of a raw
     ``KeyError`` traceback thrown mid-publish — after the output directory
     was already created. Mirrors the ``publish_url`` check the OB3 path and
-    ``_query_ob3`` already perform."""
+    ``query_ob3`` already perform."""
     if not conf.has_section('issuer'):
         sys.exit('[!] config is missing the [issuer] section')
     for key in ('publish_url', 'revocationList'):

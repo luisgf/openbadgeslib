@@ -28,6 +28,10 @@
 # command, then hands the rest to that tool's own main() unchanged — the tool
 # re-parses via its build_parser(), so `openbadges sign ...` behaves exactly
 # like `openbadges-signer ...` (same flags, output and 0/1/2 exit status).
+#
+# `status` is the one command with no openbadges-status alias: the five aliases
+# exist because they predate this front-end, and a command born after it needs
+# no legacy name. Dispatch is unchanged — it too is a module with a main().
 
 import argparse
 import importlib
@@ -49,6 +53,8 @@ COMMANDS: Dict[str, Tuple[str, str]] = {
                'Verify a badge and report issuer trust'),
     'publish': ('openbadgeslib.openbadges_publish',
                 'Publish OB3 artefacts and manage credential status'),
+    'status': ('openbadgeslib.openbadges_status',
+               'Inspect issued OB3 credentials and their revocation state'),
 }
 
 
@@ -62,8 +68,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='openbadges',
         description='OpenBadges toolkit — issue, verify and publish Open '
-                    'Badges. Each command is also installed as its own '
-                    'openbadges-<command> script.',
+                    'Badges. Every command except "status" is also installed '
+                    'as its own openbadges-<command> script.',
         epilog='Run "openbadges COMMAND --help" for a command\'s own options.',
         parents=[version_parser])
     sub = parser.add_subparsers(dest='command', metavar='COMMAND')

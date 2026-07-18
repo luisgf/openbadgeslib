@@ -1,10 +1,12 @@
 Reference for the console tools installed with `openbadgeslib`. Every flag, default and example below is taken directly from the source. For the meaning of config keys see [[Configuration]]; for an end-to-end walkthrough see [[Quick Start]].
 
-Every tool accepts `-v / --version` (prints the library version and exits), and the config-driven ones (`keygenerator`, `signer`, `verifier`, `publish`) default `-c / --config` to `config.ini` in the current directory and accept `-d / --debug`.
+Every tool accepts `-v / --version` (prints the library version and exits), and the config-driven ones (`keygenerator`, `signer`, `verifier`, `publish`, `status`) default `-c / --config` to `config.ini` in the current directory and accept `-d / --debug`.
 
 ## openbadges (unified front-end)
 
 A single `openbadges <command>` entry point dispatches to the tools below; each command owns everything after its name and behaves exactly like the standalone script (same flags, output and [exit codes](#machine-readable-output-and-exit-codes)). The five `openbadges-<command>` scripts remain installed as aliases.
+
+`status` is the exception: it is reachable **only** as `openbadges status`. The aliases exist because they predate the unified front-end, and a command added after it needs no legacy name.
 
 ### Synopsis
 
@@ -21,6 +23,7 @@ openbadges COMMAND --help    # a command's own options
 | `sign` | Issue (sign) a badge | `openbadges-signer` |
 | `verify` | Verify a badge | `openbadges-verifier` |
 | `publish` | Publish OB3 artefacts / manage status | `openbadges-publish` |
+| `status` | Inspect issued OB3 credentials (read-only) | — (front-end only) |
 
 ```sh
 $ openbadges sign -c ./config/config.ini -b 1 -r recipient@example.com -E -V 3
@@ -319,6 +322,55 @@ revoked:    2026-07-08T05:26:12Z  (reason: issued in error)
 ```
 
 `--status` exits non-zero when the credential is not found, so it composes in scripts.
+
+> Both queries are also available as [`openbadges status`](#openbadges-status), which is the preferred spelling: auditing credentials is a read, and it needs neither `-V 3` nor a publish verb.
+
+## openbadges status
+
+Read-only inspection of the issued OpenBadges 3.0 credentials and their revocation state. It reads the private per-badge status registries and never touches the published artefacts, so it needs no output directory.
+
+This is the same query as `openbadges-publish -V 3 --list/--status` (both call the one implementation) promoted to its own command, so that reading a credential's state does not require typing a publish verb. Available only through the unified front-end — there is no `openbadges-status` script.
+
+### Synopsis
+
+```sh
+openbadges status [ID] [-c FILE] [-b BADGE] [--json] [-d]
+```
+
+| Short | Long | Meaning | Default |
+|-------|------|---------|---------|
+| — | `ID` (positional) | Credential to show — its jti (`urn:uuid:...`) or recipient email. Omit to tabulate every issued credential | list everything |
+| `-c` | `--config` | Config file to use | `config.ini` |
+| `-b` | `--badge NAME` | Scope the query to one badge's registry | all badges |
+| — | `--json` | Emit the queried records as JSON instead of the human table/detail | off |
+| `-d` | `--debug` | Show debug messages at runtime | off |
+| `-v` | `--version` | Print version and exit | — |
+
+There is no `-V/--ob-version`: status lists are an OB 3.0 feature, so the command is OB3-only by construction.
+
+### Example
+
+```sh
+$ openbadges status -c ./config/config.ini
+
+# badge_1 — 2 credentials
+JTI                                            RECIPIENT                 ISSUED                STATE
+urn:uuid:388b309b-...                          mailto:alice@example.com  2026-07-08T05:26:11Z  active
+urn:uuid:83e1c0de-...                          mailto:bob@example.com    2026-07-08T05:26:11Z  REVOKED
+
+2 credentials total across 1 badge
+
+$ openbadges status bob@example.com
+badge:      badge_1
+jti:        urn:uuid:83e1c0de-...
+index:      53936
+recipient:  mailto:bob@example.com
+issued:     2026-07-08T05:26:11Z
+state:      REVOKED
+revoked:    2026-07-08T05:26:12Z  (reason: issued in error)
+```
+
+Exits `1` when the credential is not found, so it composes in scripts.
 
 ## Machine-readable output and exit codes
 

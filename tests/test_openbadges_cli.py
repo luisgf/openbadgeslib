@@ -4,6 +4,7 @@ The shell must recognise each command, hand the rest of the argv to that tool's
 own main() unchanged, and otherwise behave like a normal argparse program
 (top-level --help/--version, exit 2 on no/unknown command).
 """
+import pathlib
 import sys
 
 import pytest
@@ -26,7 +27,7 @@ def _run(argv):
 def test_top_level_help_lists_every_command(capsys):
     assert _run(['--help']) == 0
     out = capsys.readouterr().out
-    for command in ('init', 'keygen', 'sign', 'verify', 'publish'):
+    for command in ('init', 'keygen', 'sign', 'verify', 'publish', 'status'):
         assert command in out
 
 
@@ -52,6 +53,7 @@ def test_unknown_command_exits_2(capsys):
     ('sign', '--badge'),
     ('verify', '--filein'),
     ('publish', '--check-live'),
+    ('status', 'ID'),
 ])
 def test_command_help_is_the_tools_own(command, needle, capsys):
     # `openbadges CMD --help` shows that tool's own parser (a command-specific
@@ -85,3 +87,17 @@ def test_missing_required_flag_reaches_tool_parser(capsys):
     # (exit 2), not a shell-level error.
     assert _run(['sign']) == 2
     assert 'required' in capsys.readouterr().err.lower()
+
+
+def test_status_is_dispatchable_but_has_no_alias_script():
+    # status is reachable through the front-end like any other command...
+    assert 'status' in openbadges_cli.COMMANDS
+    # ...but unlike the other five it is deliberately NOT installed as its own
+    # openbadges-status script (the aliases exist only because they predate the
+    # front-end). The top-level --help promises exactly this, so guard the
+    # console_scripts table against growing one by accident.
+    pyproject = (pathlib.Path(__file__).parent.parent / 'pyproject.toml')
+    scripts = pyproject.read_text(encoding='utf-8').split('[project.scripts]')[1]
+    scripts = scripts.split('\n[', 1)[0]
+    assert 'openbadges-publish' in scripts          # the section was found
+    assert 'openbadges-status' not in scripts

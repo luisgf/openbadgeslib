@@ -32,6 +32,19 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     script; a command owns everything after its name, so `openbadges sign ...`
     behaves exactly like `openbadges-signer ...`. Minor breaking: openbadges-init
     with a bad/missing argument now exits 2 (argparse), not 1.
+  - feat(cli): add `openbadges status [ID]`, the sixth subcommand promised by
+    the unified front-end (#170). It is the read-only registry query that until
+    now was reachable only as `openbadges-publish -V 3 --list/--status`: with no
+    ID it tabulates every issued OB3 credential and its state, with one (a jti
+    or a recipient email) it prints that credential's full record including the
+    revocation reason. Auditing a credential is a read, so it no longer requires
+    typing a publish verb, nor `-V 3` — status lists are OB3-only by
+    construction. The query itself is not duplicated: the command and publish's
+    flags both call the shared `query_ob3()`, which now takes plain arguments
+    instead of a parsed argparse Namespace. `--list`/`--status` keep working
+    unchanged. Unlike the other five commands this one has no standalone
+    `openbadges-status` script — those aliases exist only because they predate
+    the front-end.
   - refactor(ob1)!: consolidate the OB1 compatibility surface (#235). The OB1
     legacy name table (11 names -> leaf module) is single-sourced in
     openbadgeslib/_ob1_api.py instead of being duplicated between the top-level
