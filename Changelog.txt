@@ -242,6 +242,21 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     with `TYPE_CHECKING` forward refs instead of `Any` (zero runtime cost,
     correct autocompletion / pdoc). Adds a "Stable API" wiki page documenting
     the stable-vs-internal boundary (#232).
+  - build(deps): the [dev] extra depends on gitlint-core instead of the gitlint
+    meta-package, so it stops installing vulnerable pins. `gitlint` is an empty
+    shim for `gitlint-core[trusted-deps]`, and that extra hard-pins click==8.1.3
+    and sh==1.14.3 — PYSEC-2026-2132 (command injection in `click.edit()`, fixed
+    in 8.3.3) and CVE-2026-54552 (incomplete privilege drop in sh's `_uid`, fixed
+    in 2.2.4), which had been failing the weekly Audit job. Neither is reachable
+    here — gitlint never calls `click.edit()`, and it does not import `sh` at all
+    unless GITLINT_USE_SH_LIB=1, which this repo never sets — but upstream has
+    been dormant since 2023, so the pins would keep the audit red indefinitely.
+    gitlint-core declares the same dependencies loosely and provides the same
+    `gitlint` console script; the [dev] extra now floors `click>=8.3.3` and
+    `sh>=2.2.4` (keeping gitlint-core's non-Windows marker for sh) and caps both
+    below the next major. No pip-audit ignores were added: the advisories are
+    resolved by upgrading, not suppressed. Library users are unaffected — click
+    and sh were only ever development dependencies.
 
 
 * v3.14.0 - 2026-07-10

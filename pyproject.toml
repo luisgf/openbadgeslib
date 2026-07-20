@@ -74,7 +74,26 @@ dev = [
     "flake8>=7.0",
     "pdoc>=14",
     "mypy>=1.8",
-    "gitlint>=0.19",
+    # Commit-message linting. Depend on gitlint-core, NOT the `gitlint`
+    # meta-package: `gitlint` is an empty shim for gitlint-core[trusted-deps],
+    # and that extra hard-pins click==8.1.3 / sh==1.14.3 — both now carry
+    # advisories (PYSEC-2026-2132, command injection in click.edit(), fixed in
+    # 8.3.3; CVE-2026-54552, incomplete privilege drop in sh's _uid, fixed in
+    # 2.2.4) that turned the weekly Audit job red. Neither is reachable from
+    # gitlint (it never calls click.edit(), and it does not import sh at all
+    # unless GITLINT_USE_SH_LIB=1, which nothing here sets), but upstream has
+    # been dormant since 2023 so no fixed release is coming. gitlint-core
+    # declares the same dependencies loosely and still ships the `gitlint`
+    # console script, so the command is unchanged; this is the workaround
+    # gitlint's own installation docs recommend.
+    "gitlint-core>=0.19",
+    # Floors so the patched versions are a requirement, not a resolver accident;
+    # ceilings because we now own these bounds and a dormant gitlint 0.19.1 is
+    # unlikely to survive the next major of either. sh keeps gitlint-core's
+    # platform marker: it is not installed on Windows, and the windows CI leg
+    # installs [dev].
+    "click>=8.3.3,<9",
+    "sh>=2.2.4,<3; sys_platform != 'win32'",
     # Validates issued OB 3.0 credentials against the official 1EdTech JSON
     # Schemas (draft 2019-09); see tests/test_ob3_conformance_schema.py. The
     # format-nongpl extra activates the date-time/uri format checkers (via

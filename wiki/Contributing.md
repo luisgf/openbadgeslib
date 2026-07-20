@@ -2,7 +2,7 @@ Developer guide for hacking on **openbadgeslib**. It covers setting up an editab
 
 ## Getting started
 
-Clone the repository, create a virtual environment, and install the package in editable mode together with the dev extras (`pytest`, `pytest-cov`, `flake8`, `mypy`, `pdoc`, `gitlint`):
+Clone the repository, create a virtual environment, and install the package in editable mode together with the dev extras (`pytest`, `pytest-cov`, `flake8`, `mypy`, `pdoc`, `gitlint-core`):
 
 ```sh
 git clone https://github.com/luisgf/openbadgeslib
@@ -94,6 +94,8 @@ You can wire it as a local `commit-msg` hook so it runs automatically:
 ```sh
 gitlint install-hook
 ```
+
+> **Note:** the dev extra installs `gitlint-core`, not the `gitlint` meta-package, because the latter hard-pins `click`/`sh` versions that now carry advisories. The `gitlint` command is identical — `gitlint-core` provides it. Do **not** set `GITLINT_USE_SH_LIB=1`: that legacy switch activates gitlint's `sh`-backed git layer, which is incompatible with the `sh` 2.x we now install and makes gitlint read an empty commit title and reject valid commits.
 
 ## Repository layout
 

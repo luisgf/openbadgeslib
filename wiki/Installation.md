@@ -82,7 +82,7 @@ cd openbadgeslib
 pip install -e ".[dev]"
 ```
 
-The `[dev]` extra installs `pytest>=8.0`, `pytest-cov>=5.0`, `flake8>=7.0`, `mypy>=1.8`, `pdoc>=14`, `gitlint>=0.19`, and `jsonschema[format-nongpl]>=4.20` (offline OB3 JSON-Schema conformance).
+The `[dev]` extra installs `pytest>=8.0`, `pytest-cov>=5.0`, `flake8>=7.0`, `mypy>=1.8`, `pdoc>=14`, `gitlint-core>=0.19`, and `jsonschema[format-nongpl]>=4.20` (offline OB3 JSON-Schema conformance). It depends on `gitlint-core` rather than the `gitlint` meta-package — the latter hard-pins vulnerable `click`/`sh` versions through its `trusted-deps` extra — and floors `click>=8.3.3` and `sh>=2.2.4` accordingly. The `gitlint` command itself is unchanged; `gitlint-core` provides it.
 
 ## Install with conda
 
