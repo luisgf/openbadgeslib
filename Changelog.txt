@@ -257,6 +257,25 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     below the next major. No pip-audit ignores were added: the advisories are
     resolved by upgrading, not suppressed. Library users are unaffected — click
     and sh were only ever development dependencies.
+  - build(deps)!: raise the PyJWT floor to >=2.13 and the openvc-core floors to
+    >=1.21. The OB3 JWT-VC verifier decodes an untrusted badge with a
+    signature-verifying `jwt.decode()`, so the PyJWT 2.12/2.13 advisory batch is
+    on a reachable path: RFC 7515 §4.1.11 `crit` validation (2.12.0,
+    CVE-2026-32597) and the b64=false unencoded-payload DoS (2.13.0,
+    CVE-2026-48525), plus JWK/alg-binding hardening; 2.13.0 is the minimal floor
+    carrying all of them. Installing [eudi]/[ldp-sd] already pulled a safe PyJWT
+    transitively via openvc-core (whose own floor is >=2.13), so this closes the
+    gap for a base, extras-free install. The native `_jws` engine is structurally
+    immune (it never calls `jwt.decode`). The [eudi]/[ldp-sd] openvc-core floors
+    move from >=1.18 / >=1.13 to >=1.21 per the pin's stated policy (floor at the
+    version the suite is tested against): 1.21 keeps in-floor the delegated
+    SD-JWT fixes openbadgeslib relies on — the key-binding replay fix that now
+    requires a nonce AND audience (1.19.3) and unknown-`crit` rejection on the
+    SD-JWT lane (1.20.4). No openbadgeslib code changed: openvc's new typed
+    ecdsa-sd errors (ProofValueMalformed/ProofMalformed) subclass ProofError, so
+    the existing `except ProofError` in ob3/ldp.py still catches them; the full
+    suite passes against openvc-core 1.21.0. BREAKING only for a caller that
+    pinned PyJWT <2.13 or openvc-core <1.21 alongside openbadgeslib.
 
 
 * v3.14.0 - 2026-07-10

@@ -39,7 +39,15 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "pypng>=0.20220715.0",
-    "PyJWT[crypto]>=2.8",
+    # PyJWT floor at 2.13: the OB3 JWT-VC verifier decodes an untrusted badge
+    # with signature-verifying jwt.decode() (ob3/verifier.py), so the fixes in
+    # the 2.12/2.13 advisory batch are on a reachable path — RFC 7515 §4.1.11
+    # `crit` validation (2.12.0, CVE-2026-32597) and the b64=false unencoded-
+    # payload DoS (2.13.0, CVE-2026-48525), plus JWK/alg-binding hardening.
+    # 2.13.0 is the minimal floor that carries all of them. (The native _jws
+    # engine is structurally immune — it never calls jwt.decode — but the OB3
+    # path is not.)
+    "PyJWT[crypto]>=2.13",
     "cryptography>=42",
     "defusedxml>=0.7",
 ]
@@ -56,7 +64,7 @@ ldp = [
 # the suite is tested against, ceiling at the next major.
 # See openbadgeslib/ob3/eudi.py.
 eudi = [
-    "openvc-core>=1.18,<2",
+    "openvc-core>=1.21,<2",
 ]
 # ecdsa-sd-2023 (selective disclosure) VERIFY for the OB 3.0 Data Integrity
 # track: credentials secured with the ecdsa-sd-2023 cryptosuite are verified by
@@ -66,7 +74,7 @@ eudi = [
 # canonicalization (pyld). Native eddsa-rdfc-2022 stays under [ldp]; issuance of
 # ecdsa-sd-2023 is out of scope. See openbadgeslib/ob3/ldp.py.
 ldp-sd = [
-    "openvc-core[data-integrity]>=1.13,<2",
+    "openvc-core[data-integrity]>=1.21,<2",
 ]
 dev = [
     "pytest>=8.0",
