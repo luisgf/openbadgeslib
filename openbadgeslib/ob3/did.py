@@ -288,12 +288,18 @@ def did_web_from_url(url: str) -> str:
     """
     from urllib.parse import quote, urlsplit
     parts = urlsplit(url)
-    if parts.scheme != 'https':
-        raise ValueError('did:web requires an https URL, got %r' % (url,))
-    if parts.username or parts.password:
+    # Userinfo first: the two checks below quote the URL in their messages, and
+    # a CLI prints those to stdout (and into the 'error' field of --json), so
+    # 'http://user:password@host/' used to publish its own password on the way
+    # out. What they quote is redacted too, so the guarantee no longer depends
+    # on this ordering surviving a future edit.
+    if '@' in parts.netloc:
         raise ValueError('did:web URL must not contain userinfo (user:pass@)')
+    safe = parts._replace(netloc=parts.netloc.rpartition('@')[2]).geturl()
+    if parts.scheme != 'https':
+        raise ValueError('did:web requires an https URL, got %r' % (safe,))
     if not parts.hostname:
-        raise ValueError('URL %r has no host' % (url,))
+        raise ValueError('URL %r has no host' % (safe,))
     authority = parts.hostname
     if parts.port is not None:
         authority += ':%d' % parts.port

@@ -39,12 +39,28 @@ class TestDidWebFromUrl:
     @pytest.mark.parametrize('url', [
         'https://user:secret@example.com/',
         'https://user@example.com/badges/',
+        'https://@example.com/',
     ])
     def test_rejects_userinfo(self, url):
         # A user:pass@ credential must never be embedded into the DID (which
         # is carried by every issued credential); reject rather than leak it.
         with pytest.raises(ValueError):
             did_web_from_url(url)
+
+    @pytest.mark.parametrize('url', [
+        'http://user:hunter2-zzz@example.com/',   # fails the scheme check too
+        'https://user:hunter2-zzz@',              # fails the host check too
+        'ftp://user:hunter2-zzz@example.com/',
+    ])
+    def test_no_message_echoes_the_password(self, url):
+        # The userinfo check must run *before* the scheme and host checks,
+        # which quote the URL: a CLI prints the ValueError to stdout (and into
+        # the 'error' field of --json), so a password reaching those messages
+        # would be published by the very error meant to reject it.
+        with pytest.raises(ValueError) as exc:
+            did_web_from_url(url)
+        assert 'hunter2-zzz' not in str(exc.value)
+        assert 'hunter2-zzz' not in repr(exc.value)
 
     @pytest.mark.parametrize('url,doc_url', [
         ('https://example.com', 'https://example.com/.well-known/did.json'),

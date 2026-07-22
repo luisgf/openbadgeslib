@@ -87,6 +87,136 @@ class TestReadConfBaseValidation:
     def test_nonexistent_file_returns_none(self, tmp_path):
         assert ConfParser(str(tmp_path / 'missing.ini')).read_conf() is None
 
+
+#: A password distinctive enough that its absence from an error message is
+#: meaningful (no substring of the config, the paths or the boilerplate).
+_PW = 'hunter2-zzz'
+
+
+class TestUrlUserinfoRejected:
+    """A publish_url (or any other [issuer]/[badge_*] URL) carrying
+    ``user:password@`` is refused at load time: that URL is printed by the
+    CLIs, joined into the ids written to organization.json / badge.json /
+    key.json, turned into the issuer's did:web and embedded in the
+    credentialStatus of signed OB3 credentials — so accepting it would leak the
+    credential into user-visible output, public files and issued badges alike.
+    No message may echo the password."""
+
+    def test_publish_url_with_userinfo_rejected(self, tmp_path):
+        from openbadgeslib.errors import ConfigError
+        path = _write(
+            tmp_path,
+            '[paths]\nbase = .\n\n[issuer]\nname = x\n'
+            'publish_url = https://user:%s@issuer.example/issuer/\n' % _PW)
+        with pytest.raises(ConfigError) as exc:
+            ConfParser(path).read_conf()
+        assert '[issuer] publish_url' in str(exc.value)
+        assert _PW not in str(exc.value)
+
+    def test_password_absent_from_repr_too(self, tmp_path):
+        # repr() is what a traceback shows; neither it nor str() may carry it.
+        from openbadgeslib.errors import ConfigError
+        path = _write(
+            tmp_path,
+            '[paths]\nbase = .\n\n[issuer]\nname = x\n'
+            'publish_url = https://user:%s@issuer.example/\n' % _PW)
+        with pytest.raises(ConfigError) as exc:
+            ConfParser(path).read_conf()
+        assert _PW not in repr(exc.value)
+
+    @pytest.mark.parametrize('url', [
+        'https://user:%s@issuer.example/' % _PW,   # user:password@
+        'https://user@issuer.example/',            # bare user@
+        'https://@issuer.example/',                # empty userinfo
+        'http://user:%s@issuer.example/' % _PW,    # any scheme, not just https
+    ])
+    def test_every_userinfo_shape_rejected(self, tmp_path, url):
+        from openbadgeslib.errors import ConfigError
+        path = _write(
+            tmp_path,
+            '[paths]\nbase = .\n\n[issuer]\nname = x\npublish_url = %s\n' % url)
+        with pytest.raises(ConfigError):
+            ConfParser(path).read_conf()
+
+    @pytest.mark.parametrize('key', ['url', 'image'])
+    def test_other_issuer_url_keys_rejected(self, tmp_path, key):
+        # publish_url is the documented leak, but [issuer] url is the OB3
+        # issuer-id fallback and image is urljoin'd into published metadata:
+        # every identifier in the section is public.
+        from openbadgeslib.errors import ConfigError
+        path = _write(
+            tmp_path,
+            '[paths]\nbase = .\n\n[issuer]\nname = x\n%s = '
+            'https://user:%s@issuer.example/x\n' % (key, _PW))
+        with pytest.raises(ConfigError) as exc:
+            ConfParser(path).read_conf()
+        assert '[issuer] %s' % key in str(exc.value)
+        assert _PW not in str(exc.value)
+
+    @pytest.mark.parametrize('key', ['image', 'criteria', 'status_base',
+                                     'hosted_assertions_base'])
+    def test_badge_section_url_keys_rejected(self, tmp_path, key):
+        from openbadgeslib.errors import ConfigError
+        path = _write(
+            tmp_path,
+            '[paths]\nbase = .\n\n[badge_1]\n%s = '
+            'https://user:%s@issuer.example/badge_1/\n' % (key, _PW))
+        with pytest.raises(ConfigError) as exc:
+            ConfParser(path).read_conf()
+        assert '[badge_1] %s' % key in str(exc.value)
+        assert _PW not in str(exc.value)
+
+    def test_interpolated_userinfo_rejected(self, tmp_path):
+        # The check runs after ${...} resolution, so a credential cannot be
+        # smuggled in through a reference to an unchecked section.
+        from openbadgeslib.errors import ConfigError
+        path = _write(
+            tmp_path,
+            '[paths]\nbase = .\nhost = user:%s@issuer.example\n\n'
+            '[issuer]\nname = x\n'
+            'publish_url = https://${paths:host}/issuer/\n' % _PW)
+        with pytest.raises(ConfigError) as exc:
+            ConfParser(path).read_conf()
+        assert _PW not in str(exc.value)
+
+    def test_clean_urls_accepted(self, tmp_path):
+        path = _write(
+            tmp_path,
+            '[paths]\nbase = .\n\n[issuer]\nname = x\n'
+            'url = https://www.issuer.example\n'
+            'email = issuer_mail@issuer.example\n'
+            'publish_url = https://issuer.example:8443/issuer/\n'
+            'revocationList = revoked.json\n\n'
+            '[badge_1]\nimage = https://issuer.example/b/badge1.svg\n'
+            'private_key = ${paths:base}/keys/sign.pem\n'
+            'mail = ${paths:base}/badge_1_mail.txt\n')
+        conf = ConfParser(path).read_conf()
+        # A bare mail address is not userinfo, and neither are paths or ports.
+        assert conf['issuer']['email'] == 'issuer_mail@issuer.example'
+        assert conf['issuer']['publish_url'] == 'https://issuer.example:8443/issuer/'
+
+    def test_smtp_credentials_are_not_touched(self, tmp_path):
+        # [smtp] username/password are legitimate secrets that stay on the
+        # issuer's machine — they are never published, so they are not checked.
+        path = _write(
+            tmp_path,
+            '[paths]\nbase = .\n\n[smtp]\nsmtp_server = localhost\n'
+            'username = postmaster\npassword = %s\n' % _PW)
+        conf = ConfParser(path).read_conf()
+        assert conf['smtp']['password'] == _PW
+
+    def test_cli_wrapper_exits_without_echoing_the_password(self, tmp_path, capsys):
+        from openbadgeslib.confparser import read_config_or_exit
+        path = _write(
+            tmp_path,
+            '[paths]\nbase = .\n\n[issuer]\nname = x\n'
+            'publish_url = https://user:%s@issuer.example/issuer/\n' % _PW)
+        with pytest.raises(SystemExit):
+            read_config_or_exit(path)
+        out = capsys.readouterr()
+        assert out.out.startswith('[!]')
+        assert _PW not in out.out and _PW not in out.err
+
     def test_bad_interpolation_reference_raises_clean_value_error(self, tmp_path):
         # ExtendedInterpolation resolves ${...} lazily; a bad reference in a
         # section other than [paths] must surface here, at load time, as a

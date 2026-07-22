@@ -27,6 +27,10 @@ mail_from = no-reply@issuer.badge
 ;password =
 
 ; Configuration of the OpenBadges issuer.
+; Every URL here and in the badge sections is public: it is printed by the
+; tools, published in the badge metadata and embedded in signed credentials.
+; A URL that embeds credentials (https://user:password@host/) is rejected when
+; the config is loaded, so the password cannot leak into any of them.
 [issuer]
 name           = OpenBadge issuer
 url            = https://www.issuer.badge

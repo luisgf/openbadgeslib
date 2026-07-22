@@ -508,6 +508,42 @@ def test_publish_ob2_missing_badge_key_exits_cleanly(tmp_path):
     assert 'missing required config key' in str(exc.value)
 
 
+def test_publish_never_leaks_publish_url_userinfo(tmp_path, capsys):
+    # End-to-end guarantee behind the confparser check: with a
+    # 'https://user:password@host/' publish_url, no -V publishes anything and
+    # no byte of the password reaches stdout/stderr or the output tree. Before
+    # the check, publish printed the URL on success and urljoin'd it into the
+    # ids of organization.json / badge.json / key.json.
+    import pytest
+    from pathlib import Path
+    from openbadgeslib import openbadges_publish
+    tests_dir = Path(__file__).parent
+    password = 'hunter2-zzz'
+    cfg = tmp_path / 'cfg.ini'
+    cfg.write_text('\n'.join([
+        '[paths]', 'base = %s' % tmp_path,
+        '[issuer]', 'name = I', 'url = https://example.com',
+        'publish_url = https://user:%s@example.com/issuer/' % password,
+        'revocationList = revoked.json', 'image = logo.png', 'email = i@x.example',
+        '[badge_1]', 'name = B', 'description = d', 'image = badge.svg',
+        'criteria = https://example.com/c', 'status_lists = revocation',
+        'public_key = %s' % (tests_dir / 'test_verify_rsa.pem'),
+        'private_key = %s' % (tests_dir / 'test_sign_rsa.pem'),
+    ]) + '\n')
+    for version in ('1', '2', '3'):
+        out = tmp_path / ('out%s' % version)
+        argv = ['openbadges-publish', '-c', str(cfg), '-o', str(out),
+                '-V', version]
+        with patch.object(sys, 'argv', argv):
+            with pytest.raises(SystemExit) as exc:
+                openbadges_publish.main()
+        assert exc.value.code == 1
+        captured = capsys.readouterr()
+        assert password not in captured.out
+        assert password not in captured.err
+        assert not out.exists()
+
+
 def test_publish_existing_output_exits_cleanly(tmp_path):
     # -o pointing at an existing path must exit cleanly (SystemExit) with an
     # operator-facing message, not a raw FileExistsError.
