@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v4.0.0 - unreleased
+* v4.0.0 - 2026-07-22
 
   Grouped breaking release (#170) — freeze the declared public contract and
   unify the CLIs — shipped together with the Round-2 roadmap work: close the
