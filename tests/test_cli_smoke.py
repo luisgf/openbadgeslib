@@ -3,6 +3,8 @@ code paths (publish, keygenerator key_type, urls_has_problems, mail errors)."""
 import sys
 from unittest.mock import patch
 
+import pytest
+
 
 # ── openbadges-init ─────────────────────────────────────────────────────────────
 
@@ -508,13 +510,18 @@ def test_publish_ob2_missing_badge_key_exits_cleanly(tmp_path):
     assert 'missing required config key' in str(exc.value)
 
 
-def test_publish_never_leaks_publish_url_userinfo(tmp_path, capsys):
-    # End-to-end guarantee behind the confparser check: with a
-    # 'https://user:password@host/' publish_url, no -V publishes anything and
-    # no byte of the password reaches stdout/stderr or the output tree. Before
-    # the check, publish printed the URL on success and urljoin'd it into the
-    # ids of organization.json / badge.json / key.json.
-    import pytest
+@pytest.mark.parametrize('publish_url', [
+    'https://user:hunter2-zzz@example.com/issuer/',   # userinfo in the authority
+    'https://user:hunter2-zzz/x@example.com/issuer/',  # '/' pushes '@' out of it
+    'https://user:12345/x@example.com/issuer/',        # numeric: encoded into the DID
+])
+def test_publish_never_leaks_publish_url_userinfo(tmp_path, capsys, publish_url):
+    # End-to-end guarantee behind the confparser check: with a credential in
+    # publish_url, no -V publishes anything and no byte of the password reaches
+    # stdout/stderr or the output tree. Before the check, publish printed the
+    # URL on success and urljoin'd it into the ids of organization.json /
+    # badge.json / key.json. The last two forms are the bypass: urlsplit only
+    # reports userinfo when the '@' is inside the authority.
     from pathlib import Path
     from openbadgeslib import openbadges_publish
     tests_dir = Path(__file__).parent
@@ -523,7 +530,7 @@ def test_publish_never_leaks_publish_url_userinfo(tmp_path, capsys):
     cfg.write_text('\n'.join([
         '[paths]', 'base = %s' % tmp_path,
         '[issuer]', 'name = I', 'url = https://example.com',
-        'publish_url = https://user:%s@example.com/issuer/' % password,
+        'publish_url = %s' % publish_url,
         'revocationList = revoked.json', 'image = logo.png', 'email = i@x.example',
         '[badge_1]', 'name = B', 'description = d', 'image = badge.svg',
         'criteria = https://example.com/c', 'status_lists = revocation',
@@ -539,8 +546,9 @@ def test_publish_never_leaks_publish_url_userinfo(tmp_path, capsys):
                 openbadges_publish.main()
         assert exc.value.code == 1
         captured = capsys.readouterr()
-        assert password not in captured.out
-        assert password not in captured.err
+        for secret in (password, '12345', publish_url):
+            assert secret not in captured.out
+            assert secret not in captured.err
         assert not out.exists()
 
 
