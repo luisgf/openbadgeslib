@@ -290,7 +290,7 @@ _PUBLIC_URL_SECTION_PREFIX = 'badge_'
 
 
 def reject_url_userinfo(parser: ConfigParser, config_file: str) -> None:
-    """Reject any [issuer]/[badge_*] value that is a URL carrying userinfo.
+    """Reject any [issuer]/[badge_*] value that is a URL containing an ``@``.
 
     Those sections hold the identifiers the tools publish: ``publish_url`` is
     printed by every publish command, joined into the ids written to
@@ -303,6 +303,18 @@ def reject_url_userinfo(parser: ConfigParser, config_file: str) -> None:
     and every consumer (OB1/OB2/OB3, DID derivation, status lists) inherits the
     guarantee instead of re-checking it.
 
+    A published identifier has no legitimate use for an ``@``, so the whole URL
+    is searched rather than the userinfo component alone: ``urlsplit`` only
+    reports userinfo when the ``@`` sits inside the authority, and a password
+    holding a ``/``, ``?`` or ``#`` pushes it into the path, where the parser
+    stops seeing it as a credential but every downstream consumer still
+    publishes it verbatim. ``%40`` is refused for the same reason. The cost is
+    that an innocent ``https://host/@name/`` is refused too — deliberate: after
+    parsing, the two are the same shape.
+
+    A value with no authority is left alone: an ``[issuer] email`` or a local
+    path may legitimately hold an ``@`` and is not a dereferenceable URL.
+
     The message names the offending section and key but never echoes the value:
     printing it would leak the very password the check exists to protect.
     """
@@ -312,21 +324,22 @@ def reject_url_userinfo(parser: ConfigParser, config_file: str) -> None:
                 and not section.startswith(_PUBLIC_URL_SECTION_PREFIX)):
             continue
         for key, value in parser.items(section):
+            if '@' not in value and '%40' not in value.lower():
+                continue
             try:
-                authority = urlsplit(value).netloc
+                has_authority = bool(urlsplit(value).netloc)
             except ValueError:
-                # Too malformed for urlsplit (an unbalanced IPv6 bracket).
-                # Read the authority textually rather than skip the value:
-                # it is still written out verbatim downstream.
-                authority = value.partition('//')[2].split('/', 1)[0]
-            if '@' in authority:
+                # Too malformed for urlsplit (an unbalanced IPv6 bracket) to
+                # report an authority. A '//' still makes it a URL, and it is
+                # written out verbatim downstream, so judge it as one.
+                has_authority = '//' in value
+            if has_authority:
                 raise ConfigError(
-                    "Configuration file %s: [%s] %s must not carry userinfo "
-                    "(user:password@host) in its URL. That URL is printed by "
-                    "the tools, published in badge metadata and embedded in "
-                    "signed credentials, so the credential would leak; drop "
-                    "the userinfo and protect the host another way."
-                    % (config_file, section, key))
+                    "Configuration file %s: [%s] %s must not contain '@' in "
+                    "its URL. That URL is printed by the tools, published in "
+                    "badge metadata and embedded in signed credentials, so a "
+                    "'user:password@' there would leak; a published identifier "
+                    "has no legitimate use for an '@'." % (config_file, section, key))
 
 
 class ConfParser():

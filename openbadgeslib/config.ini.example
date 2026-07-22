@@ -30,7 +30,10 @@ mail_from = no-reply@issuer.badge
 ; Every URL here and in the badge sections is public: it is printed by the
 ; tools, published in the badge metadata and embedded in signed credentials.
 ; A URL that embeds credentials (https://user:password@host/) is rejected when
-; the config is loaded, so the password cannot leak into any of them.
+; the config is loaded, so the password cannot leak into any of them. The rule
+; is blunt on purpose: an '@' (or %40) ANYWHERE in one of those URLs is
+; refused, because a password holding a '/' hides the '@' from the parser.
+; Values that are not URLs (the e-mail below, local paths) are unaffected.
 [issuer]
 name           = OpenBadge issuer
 url            = https://www.issuer.badge

@@ -166,6 +166,54 @@ class TestUrlUserinfoRejected:
         assert '[badge_1] %s' % key in str(exc.value)
         assert _PW not in str(exc.value)
 
+    @pytest.mark.parametrize('url', [
+        'https://user:12345/x@host/',        # numeric "port": encoded into the DID
+        'https://user:%s/x@host/' % _PW,     # '/' in the password moves the '@'
+        'https://user:%s?q@host/' % _PW,     # ... and so do '?' and '#'
+        'https://user:%s#f@host/' % _PW,
+        'https://user%%40host/badges/',      # '@' written as %40 ('%%' = literal %)
+        'https://host/x?u=a@b',              # '@' in the query
+    ])
+    def test_at_sign_outside_the_authority_rejected(self, tmp_path, url):
+        # urlsplit only reports userinfo when the '@' sits inside the
+        # authority, so checking netloc alone left a bypass: these all loaded
+        # cleanly and then leaked — 'https://user:12345/x@host/' became the
+        # issuer id 'did:web:user%3A12345:x%40host', carried by every signed
+        # credential, and the non-numeric ones surfaced the password through
+        # urllib's own "Port could not be cast..." message.
+        from openbadgeslib.errors import ConfigError
+        path = _write(
+            tmp_path,
+            '[paths]\nbase = .\n\n[issuer]\nname = x\npublish_url = %s\n' % url)
+        with pytest.raises(ConfigError) as exc:
+            ConfParser(path).read_conf()
+        assert _PW not in str(exc.value)
+        assert '12345' not in str(exc.value)
+
+    def test_at_sign_in_path_rejected_even_when_innocent(self, tmp_path):
+        # Deliberate false positive, documented on reject_url_userinfo: once
+        # parsed, 'https://host/@name/' is the same shape as one hiding a
+        # credential, so the blunt rule wins over the rare legitimate use.
+        from openbadgeslib.errors import ConfigError
+        path = _write(
+            tmp_path,
+            '[paths]\nbase = .\n\n[issuer]\nname = x\n'
+            'publish_url = https://issuer.example/@name/\n')
+        with pytest.raises(ConfigError):
+            ConfParser(path).read_conf()
+
+    def test_email_and_paths_with_at_sign_still_accepted(self, tmp_path):
+        # A value with no authority is not a dereferenceable URL: an address or
+        # a local path may hold an '@' and must keep loading.
+        path = _write(
+            tmp_path,
+            '[paths]\nbase = .\n\n[issuer]\nname = x\n'
+            'email = issuer_mail@issuer.badge\n\n'
+            '[badge_1]\nmail = ${paths:base}/@inbox/badge_1.txt\n')
+        conf = ConfParser(path).read_conf()
+        assert conf['issuer']['email'] == 'issuer_mail@issuer.badge'
+        assert conf['badge_1']['mail'].endswith('/@inbox/badge_1.txt')
+
     def test_interpolated_userinfo_rejected(self, tmp_path):
         # The check runs after ${...} resolution, so a credential cannot be
         # smuggled in through a reference to an unchecked section.

@@ -51,16 +51,50 @@ class TestDidWebFromUrl:
         'http://user:hunter2-zzz@example.com/',   # fails the scheme check too
         'https://user:hunter2-zzz@',              # fails the host check too
         'ftp://user:hunter2-zzz@example.com/',
+        'user:hunter2-zzz@example.com/',          # schemeless: "scheme" == user
     ])
     def test_no_message_echoes_the_password(self, url):
-        # The userinfo check must run *before* the scheme and host checks,
-        # which quote the URL: a CLI prints the ValueError to stdout (and into
-        # the 'error' field of --json), so a password reaching those messages
-        # would be published by the very error meant to reject it.
+        # The userinfo check must run *before* the scheme and host checks: a
+        # CLI prints the ValueError to stdout (and into the 'error' field of
+        # --json), so a password reaching those messages would be published by
+        # the very error meant to reject it.
         with pytest.raises(ValueError) as exc:
             did_web_from_url(url)
         assert 'hunter2-zzz' not in str(exc.value)
         assert 'hunter2-zzz' not in repr(exc.value)
+
+    @pytest.mark.parametrize('url,secret', [
+        # urlsplit only reports userinfo when the '@' sits inside the
+        # authority. A password holding a '/', '?' or '#' pushes it into the
+        # path, and the credential then resurfaced two ways: percent-encoded
+        # into the returned DID when what precedes the ':' parses as a port
+        # (this yielded 'did:web:user%3A12345:x%40host'), or through
+        # parts.port's own ValueError, which quotes the value verbatim.
+        ('https://user:12345/x@host/', '12345'),
+        ('https://user:hunter2-zzz/x@host/', 'hunter2-zzz'),
+        ('https://user:hunter2-zzz?q@host/', 'hunter2-zzz'),
+        ('https://user:hunter2-zzz#f@host/', 'hunter2-zzz'),
+        ('https://user%40host/badges/', 'user%40host'),      # '@' written %40
+    ])
+    def test_at_sign_outside_the_authority_is_refused(self, url, secret):
+        with pytest.raises(ValueError) as exc:
+            did_web_from_url(url)
+        assert secret not in str(exc.value)
+        assert secret not in repr(exc.value)
+
+    def test_invalid_port_does_not_quote_the_value(self):
+        # urllib's own "Port could not be cast to integer value as 'x'" quotes
+        # what it could not parse — which on a 'user:password/...' URL is the
+        # password. The parse must be wrapped and re-raised without it.
+        with pytest.raises(ValueError) as exc:
+            did_web_from_url('https://host:hunter2-zzz/badges/')
+        assert 'hunter2-zzz' not in str(exc.value)
+
+    def test_at_sign_in_path_is_refused_even_when_innocent(self):
+        # Deliberate false positive, documented on the function: after parsing,
+        # 'https://host/@name/' is the same shape as one hiding a credential.
+        with pytest.raises(ValueError):
+            did_web_from_url('https://example.com/@name/')
 
     @pytest.mark.parametrize('url,doc_url', [
         ('https://example.com', 'https://example.com/.well-known/did.json'),

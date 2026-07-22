@@ -77,6 +77,20 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     entry (the official schema pins only the first two and allows extras); the
     context is pinned in the fail-closed allowlist and covered by the drift
     watchdog (#239).
+  - security(config): close the bypass in the userinfo guard below: checking
+    `urlsplit(...).netloc` only catches a credential whose `@` lands inside the
+    authority, and a password holding a `/`, `?` or `#` pushes it out. Both
+    layers accepted `https://user:12345/x@host/` — which `did_web_from_url`
+    then turned into the issuer id `did:web:user%3A12345:x%40host`, carried by
+    every signed credential — and `https://user:secret/x@host/`, which surfaced
+    the password through urllib's own `Port could not be cast to integer value
+    as 'secret'` (a message the redaction added below could not reach, since
+    urllib raises it). Both layers now refuse an `@` or `%40` *anywhere* in a
+    URL-shaped value, and `did_web_from_url` wraps the port parse and quotes
+    nothing at all. Values with no authority — `[issuer] email`, local paths —
+    still accept an `@`. BREAKING (narrow): a `publish_url` whose path contains
+    an `@`, e.g. `https://host/@name/`, is now refused; once parsed it is
+    indistinguishable from one hiding a credential (#255).
   - security(config): reject a `[issuer]` / `[badge_*]` URL that embeds
     userinfo (`https://user:password@host/`) when the config is loaded. Those
     URLs are public identifiers: `publish_url` is printed by every publish

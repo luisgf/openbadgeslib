@@ -280,29 +280,52 @@ def did_web_from_url(url: str) -> str:
     Exact inverse of the resolution above: the host keeps any port
     percent-encoded, path segments join with ':', and a bare host resolves
     at ``/.well-known/did.json`` while a path resolves at ``<path>/did.json``.
-    Raises ValueError for a non-HTTPS or hostless URL — did:web trusts TLS,
-    so there is nothing an http:// identifier could safely mean — and for a
-    URL carrying userinfo, which a did:web authority must not contain (and
-    which would otherwise leak a ``user:password@`` credential into the DID
-    embedded in every issued credential).
+    Raises ValueError for a non-HTTPS, hostless or bad-port URL — did:web
+    trusts TLS, so there is nothing an http:// identifier could safely mean —
+    and for any URL carrying an ``@`` (or ``%40``) *anywhere*, which would
+    otherwise leak a ``user:password@`` credential into the DID embedded in
+    every issued credential. No rejection quotes the URL back.
+
+    The ``@`` rule is deliberately blunt: it also refuses an innocent
+    ``https://host/@name/`` base, because once urlsplit has parsed the URL that
+    shape is indistinguishable from one hiding a credential (see below).
     """
     from urllib.parse import quote, urlsplit
     parts = urlsplit(url)
-    # Userinfo first: the two checks below quote the URL in their messages, and
-    # a CLI prints those to stdout (and into the 'error' field of --json), so
-    # 'http://user:password@host/' used to publish its own password on the way
-    # out. What they quote is redacted too, so the guarantee no longer depends
-    # on this ordering surviving a future edit.
-    if '@' in parts.netloc:
-        raise ValueError('did:web URL must not contain userinfo (user:pass@)')
-    safe = parts._replace(netloc=parts.netloc.rpartition('@')[2]).geturl()
+    # None of the messages below quotes the URL. The input is publish_url,
+    # which may carry a credential, and a CLI prints these to stdout and into
+    # the 'error' field of --json: a check that exists to keep a password out
+    # of the DID must not publish it on the way out.
+    #
+    # The whole URL is searched, not the userinfo component, because urlsplit
+    # only reports userinfo when the '@' sits inside the authority. A password
+    # holding a '/', '?' or '#' pushes the marker into the path, query or
+    # fragment, and the credential then resurfaces either through parts.port —
+    # whose ValueError quotes the offending value verbatim — or, when what
+    # precedes the ':' parses as a port, percent-encoded straight into the
+    # returned DID ('https://user:12345/x@host/' used to yield
+    # 'did:web:user%3A12345:x%40host'). A did:web base URL has no legitimate
+    # use for an '@' anywhere, so the blunt rule costs nothing real.
+    if '@' in url or '%40' in url.lower():
+        raise ValueError('did:web URL must not contain "@" (userinfo)')
+    if not parts.netloc:
+        # No '//' at all, so urlsplit read everything before the first ':' as
+        # the scheme — on a schemeless 'user:password@host/' that "scheme" IS
+        # the username, which is the other reason nothing here is quoted.
+        raise ValueError('did:web requires an https:// URL with a host')
     if parts.scheme != 'https':
-        raise ValueError('did:web requires an https URL, got %r' % (safe,))
+        raise ValueError('did:web requires an https URL')
+    try:
+        port = parts.port
+    except ValueError:
+        # urllib's own message quotes the value it could not parse, which on a
+        # 'https://user:secret/x@host/' is the password.
+        raise ValueError('did:web URL has an invalid port') from None
     if not parts.hostname:
-        raise ValueError('URL %r has no host' % (safe,))
+        raise ValueError('did:web URL has no host')
     authority = parts.hostname
-    if parts.port is not None:
-        authority += ':%d' % parts.port
+    if port is not None:
+        authority += ':%d' % port
     pieces = [quote(authority, safe='')]
     pieces += [quote(seg, safe='') for seg in parts.path.split('/') if seg]
     return 'did:web:' + ':'.join(pieces)
