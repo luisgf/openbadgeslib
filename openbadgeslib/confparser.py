@@ -282,6 +282,53 @@ def badge_section_config(conf: ConfigParser,
     )
 
 
+#: Sections whose values are the *public* identifiers of a deployment, checked
+#: by :func:`reject_url_userinfo`. [smtp] is deliberately excluded: its
+#: username/password are credentials that stay on the issuer's machine.
+_PUBLIC_URL_SECTIONS = ('issuer',)
+_PUBLIC_URL_SECTION_PREFIX = 'badge_'
+
+
+def reject_url_userinfo(parser: ConfigParser, config_file: str) -> None:
+    """Reject any [issuer]/[badge_*] value that is a URL carrying userinfo.
+
+    Those sections hold the identifiers the tools publish: ``publish_url`` is
+    printed by every publish command, joined into the ids written to
+    organization.json / badge.json / key.json (``urljoin`` keeps the
+    ``user:pass@``), turned into the issuer's did:web, and used to build the
+    ``credentialStatus`` list URLs embedded in signed OB3 credentials. A
+    ``https://user:password@host/`` value would therefore carry the credential
+    into user-visible output, publicly served files and the credentials
+    delivered to recipients alike — so it is refused once here, at load time,
+    and every consumer (OB1/OB2/OB3, DID derivation, status lists) inherits the
+    guarantee instead of re-checking it.
+
+    The message names the offending section and key but never echoes the value:
+    printing it would leak the very password the check exists to protect.
+    """
+    from urllib.parse import urlsplit
+    for section in parser.sections():
+        if (section not in _PUBLIC_URL_SECTIONS
+                and not section.startswith(_PUBLIC_URL_SECTION_PREFIX)):
+            continue
+        for key, value in parser.items(section):
+            try:
+                authority = urlsplit(value).netloc
+            except ValueError:
+                # Too malformed for urlsplit (an unbalanced IPv6 bracket).
+                # Read the authority textually rather than skip the value:
+                # it is still written out verbatim downstream.
+                authority = value.partition('//')[2].split('/', 1)[0]
+            if '@' in authority:
+                raise ConfigError(
+                    "Configuration file %s: [%s] %s must not carry userinfo "
+                    "(user:password@host) in its URL. That URL is printed by "
+                    "the tools, published in badge metadata and embedded in "
+                    "signed credentials, so the credential would leak; drop "
+                    "the userinfo and protect the host another way."
+                    % (config_file, section, key))
+
+
 class ConfParser():
     def __init__(self, config_file: str = 'config.ini') -> None:
         self.config_file = config_file
@@ -342,6 +389,10 @@ class ConfParser():
         except ConfigParserError as exc:
             raise ConfigError(
                 "Configuration file %s has an invalid value: %s" % (self.config_file, exc)) from exc
+
+        # Every value is resolved by now, so a ${...} reference cannot smuggle
+        # a credential past this check.
+        reject_url_userinfo(self.parser, self.config_file)
 
         return self.parser
 

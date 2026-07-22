@@ -100,6 +100,8 @@ revocationList = revoked.json
 
 For OB3 the issuer `id` is taken from `publish_url`, falling back to `url` if `publish_url` is absent — unless `did` is set (see the table above). For OB1/OB2, `openbadges-publish` writes an `organization.json` and joins `image` and `revocationList` onto `publish_url`; `-V 2` additionally writes a `CryptographicKey` `key.json` per badge and a conformant `RevocationList`.
 
+> **No credentials in URLs.** Every URL in `[issuer]` and `[badge_<name>]` is a *public* identifier: the tools print it, publish it inside `organization.json` / `badge.json` / `key.json`, derive the issuer's did:web from it and embed it (as `credentialStatus`) in the credentials delivered to recipients. A URL carrying userinfo — `https://user:password@host/` — would leak that password into all of them, so the config is **rejected at load time** with an error naming the key (never the value). Protect a staging host with an IP allow-list or a token the library never sees, not with credentials in `publish_url`. `[smtp] username` / `password` are unaffected: they stay on the issuer's machine.
+
 ### `[badge_<name>]`
 
 Define one section per badge. The part after `badge_` is the badge id you pass to the scripts (e.g. `[badge_1]` is used as `-b 1` / `-g 1`).

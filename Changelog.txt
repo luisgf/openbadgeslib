@@ -77,6 +77,28 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     entry (the official schema pins only the first two and allows extras); the
     context is pinned in the fail-closed allowlist and covered by the drift
     watchdog (#239).
+  - security(config): reject a `[issuer]` / `[badge_*]` URL that embeds
+    userinfo (`https://user:password@host/`) when the config is loaded. Those
+    URLs are public identifiers: `publish_url` is printed by every publish
+    command, `urljoin`ed into the ids written to the publicly served
+    organization.json / badge.json / key.json (urljoin preserves the
+    `user:pass@`), turned into the issuer's did:web, and used to build the
+    `credentialStatus` list URLs signed into every OB3 credential — so a
+    password there leaked into user-visible output, files served on the open
+    web and the badges delivered to recipients alike. Only one narrow path
+    guarded against it (did:web derivation, reached solely by
+    `[issuer] did = auto`), and that guard echoed the password back in its own
+    error for a non-https URL. The check now lives once in
+    `ConfParser.read_conf()` — after `${...}` interpolation, so a reference
+    cannot smuggle a credential past it — and every consumer (OB1/OB2/OB3
+    publishing, DID derivation, status lists) inherits it; the ConfigError
+    names the offending section and key but never the value. `did_web_from_url`
+    keeps its own guard as defence in depth, with the userinfo check moved
+    ahead of the scheme and host checks and their messages redacted. Behaviour
+    change: a config that protected a staging host with credentials in a
+    published URL no longer loads — drop the userinfo and use an allow-list or
+    a token the library never sees. `[smtp] username` / `password` are
+    untouched; they never leave the issuer's machine (#252).
   - security(eudi): document and pin the X.509 / eIDAS trust boundary for
     SD-JWT VC verification. All x5c chain validation is delegated to openvc-core
     (path building, temporal validity, SAN<->iss binding); openbadgeslib only
