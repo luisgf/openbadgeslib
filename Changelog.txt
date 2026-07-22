@@ -312,6 +312,12 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     the existing `except ProofError` in ob3/ldp.py still catches them; the full
     suite passes against openvc-core 1.21.0. BREAKING only for a caller that
     pinned PyJWT <2.13 or openvc-core <1.21 alongside openbadgeslib.
+  - security(cli): `openbadges-init` creates config.ini owner-only (0600). It
+    is the file that goes on to hold the SMTP password and the paths to the
+    private keys, but the copy ran outside the umask block that hardens the
+    directories, so it inherited the caller's umask — 0644 on a default shell.
+    The 0700 parent contained it; this is the second lock, matching the one
+    the keygenerator puts on the private key.
 
 
 * v3.14.0 - 2026-07-10

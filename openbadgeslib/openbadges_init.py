@@ -55,17 +55,24 @@ def main() -> None:
     if os.path.lexists(directory):
         sys.exit('[!] %s already exists' % directory)
 
+    source = os.path.join(os.path.dirname(__file__), 'config.ini.example')
+    destination = os.path.join(directory, 'config.ini')
+
     umask = os.umask(0o077)  # rwx------
     try:
         os.mkdir(directory)
         for subdir in ['keys', 'images', 'log', 'status']:
             os.mkdir(os.path.join(directory, subdir))
+        # Inside the umask block on purpose: config.ini is where the SMTP
+        # password and the private-key paths end up, so it is created 0600
+        # (0666 & ~0o077) rather than created 0644 and narrowed afterwards —
+        # a chmod would leave a window, and would leave the file world-readable
+        # for good if the process died in it. The 0700 directory contains it
+        # either way; this is the second lock, matching the one
+        # openbadges_keygenerator._write_pem_file puts on the private key.
+        shutil.copyfile(source, destination)
     finally:
         os.umask(umask)
-
-    source = os.path.join(os.path.dirname(__file__), 'config.ini.example')
-    destination = os.path.join(directory, 'config.ini')
-    shutil.copyfile(source, destination)
 
 
 if __name__ == '__main__':

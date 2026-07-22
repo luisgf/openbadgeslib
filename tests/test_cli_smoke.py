@@ -67,6 +67,24 @@ def test_init_creates_directories_with_restrictive_permissions(tmp_path):
         assert mode == 0o700, '%s has mode %o, expected 0700' % (path, mode)
 
 
+def test_init_writes_config_ini_owner_only(tmp_path):
+    # config.ini is where the SMTP password and the private-key paths end up,
+    # and shutil.copyfile runs outside the umask block, so it would otherwise
+    # be created 0644. The 0700 parent already contains it; this pins the
+    # second lock so a later change to the directory mode cannot expose it.
+    import os
+    import stat
+    import pytest
+    if os.name == 'nt':
+        pytest.skip('POSIX file-mode semantics; Windows uses ACLs')
+    from openbadgeslib import openbadges_init
+    target = tmp_path / 'config'
+    with patch.object(sys, 'argv', ['openbadges-init', str(target)]):
+        openbadges_init.main()
+    mode = stat.S_IMODE(os.stat(target / 'config.ini').st_mode)
+    assert mode == 0o600, 'config.ini has mode %o, expected 0600' % mode
+
+
 def test_init_restores_umask_when_a_subdirectory_mkdir_fails(tmp_path):
     # If any mkdir after os.umask(0o077) raises, the original umask must
     # still be restored — otherwise it stays at 0o077 for the rest of the
