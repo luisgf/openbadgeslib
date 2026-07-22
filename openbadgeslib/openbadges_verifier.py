@@ -266,10 +266,17 @@ def _verify_ob1(args: argparse.Namespace) -> None:
         # explicit file). Falling back to the key the badge itself points to
         # only proves the badge is internally consistent, NOT who issued it.
         trusted_pubkey = _resolve_trusted_pubkey(args)
-        trusted = trusted_pubkey is not None
-        local_pubkey = trusted_pubkey if trusted else badge.get_signkey_pem()
-        logger.debug("OB1 verify: trusted_key=%s (source=%s)",
-                     trusted, 'operator' if trusted else 'badge-embedded')
+        is_trusted = trusted_pubkey is not None
+        local_pubkey = trusted_pubkey if is_trusted else badge.get_signkey_pem()
+        # Log the key's provenance and nothing else. The flag itself used to be
+        # an argument here, and CodeQL's sensitive-data heuristic — which
+        # classifies an identifier containing `trusted` as a secret — reported
+        # that as clear-text logging of a secret, even though the value is a
+        # bool and the key it derives from is public (code-scanning alert #1).
+        # What closes the flow is dropping the flag from the call; the `is_`
+        # prefix on the name is belt and braces (and better naming for a bool).
+        logger.debug("OB1 verify: key source=%s",
+                     'operator' if is_trusted else 'badge-embedded')
 
         v = Verifier(verify_key=local_pubkey, identity=args.receptor)
         if args.show and not args.json:
@@ -277,12 +284,12 @@ def _verify_ob1(args: argparse.Namespace) -> None:
 
         check = v.get_badge_status(badge)
         logger.debug("OB1 verify result: %s", check.status.name)
-        result['trusted'] = trusted
+        result['trusted'] = is_trusted
         result['status'] = check.status.name
 
         if check.status is BadgeStatus.VALID:
             result['valid'] = True
-            if trusted:
+            if is_trusted:
                 result['reason'] = None
                 if not args.json:
                     print('[+] Signature is correct for the identity %s' % v.get_identity())
