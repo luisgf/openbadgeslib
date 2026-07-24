@@ -28,6 +28,13 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     early exit) now seed both booleans False and raise them only on a verdict,
     so `trusted` is always present and `trusted => valid` holds. Exit statuses
     are unchanged — they already keyed on `valid` first (#258).
+  - ci: derive the openvc-core floor the `eudi` job tests from pyproject.toml
+    instead of restating it. The pin drifted: 677f4ed raised the [eudi]/[ldp-sd]
+    floors to >=1.21 and touched only pyproject.toml, so the job's authoritative
+    (non-continue-on-error) `floor` leg kept installing openvc-core 1.18 —
+    downgrading below the package's own constraint and leaving the version users
+    actually resolve at the bottom of the range tested by nothing. A gate in
+    tests/test_docs.py now fails if a literal pin comes back (#264).
 
 
 * v4.0.0 - 2026-07-22

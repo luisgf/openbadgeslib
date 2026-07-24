@@ -196,8 +196,23 @@ jobs:
 
       - name: Pin openvc-core to the declared floor
         if: matrix.openvc == 'floor'
-        # Keep 1.18.* in sync with the [eudi] pin in pyproject.toml.
-        run: pip install "openvc-core==1.18.*"
+        # Read the floor out of pyproject.toml instead of restating it here.
+        # The hardcoded "keep 1.18.* in sync" pin did NOT stay in sync: 677f4ed
+        # raised the [eudi] floor to >=1.21 and touched only pyproject.toml, so
+        # this — the authoritative leg — kept installing 1.18, downgrading below
+        # the package's own constraint and leaving the shipped floor untested
+        # (#264). Deriving it removes the thing that could drift.
+        run: |
+          floor="$(python - <<'PY'
+          import pathlib, re, tomllib
+          data = tomllib.loads(pathlib.Path('pyproject.toml').read_text('utf-8'))
+          spec = next(s for s in data['project']['optional-dependencies']['eudi']
+                      if s.startswith('openvc-core'))
+          print(re.search(r'>=\s*(\d+\.\d+)', spec).group(1))
+          PY
+          )"
+          echo "Declared [eudi] openvc-core floor: $floor"
+          pip install "openvc-core==${floor}.*"
 
       - name: Take the latest openvc-core release
         if: matrix.openvc == 'latest'

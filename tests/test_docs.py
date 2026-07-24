@@ -82,6 +82,22 @@ def test_version_is_single_sourced():
     assert not re.search(r'(?m)^version\s*=\s*"', pyproject)
 
 
+def test_ci_does_not_restate_the_openvc_floor():
+    """The eudi job's authoritative 'floor' leg must DERIVE the openvc-core
+    floor from pyproject.toml, not restate it.
+
+    Same single-sourcing rule as the version above: the hardcoded pin drifted
+    once already — 677f4ed raised the [eudi] floor to >=1.21 and touched only
+    pyproject.toml, leaving CI installing 1.18, below the package's own
+    constraint, so the shipped floor went untested (#264)."""
+    ci = (REPO / '.github' / 'workflows' / 'ci.yml').read_text(encoding='utf-8')
+    # The derived pin is `openvc-core==${floor}.*`; a literal one starts with a
+    # digit, which is what must never come back.
+    literal = re.findall(r'openvc-core==\d[^"\'\s]*', ci)
+    assert not literal, \
+        f"ci.yml pins openvc-core literally ({literal}); derive it from pyproject.toml"
+
+
 def test_cli_reference_does_not_claim_fileexistserror():
     """openbadges-init/publish exit cleanly with a '[!] ... already exists'
     message on a pre-existing target; the wiki must not still claim they raise
