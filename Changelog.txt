@@ -62,6 +62,17 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     message into a traceback. The registry object and its `entries` are now
     shape-checked with named messages, and AttributeError joined the caught
     tuple as belt and braces (#259).
+  - docs(api): publish the issuance/verification facades in the API reference.
+    `issue_from_conf`, `verify_badge`, `IssuanceError` and `SignResult` were
+    listed in the top-level `__all__` "for pdoc" but resolved lazily through
+    `__getattr__`, and pdoc reads the module dict — so it warned that each was
+    unresolvable and published a content-free stub with no signature, type or
+    docstring, while `openbadgeslib.issue` / `.verify` got no page at all. The
+    recommended modern API was therefore absent from the canonical reference. All
+    four are now imported eagerly and both modules are exported (additions to
+    `__all__`, so no contract is broken), which costs ~1.7 ms on an ~80 ms import
+    that already pulls ob2/ob3/keys. A gate in tests/test_public_api.py fails if
+    an `__all__` name becomes lazily-resolved again (#267).
 
 
 * v4.0.0 - 2026-07-22

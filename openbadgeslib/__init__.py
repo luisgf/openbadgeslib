@@ -24,11 +24,11 @@
 from typing import Any
 
 # ── Submodule entry points ───────────────────────────────────────────────────
-# Bind ob2 / ob3 / errors as attributes so they are part of the explicit public
-# surface (and `from openbadgeslib import *`): ob2 (strict OB 2.0), ob3 (OB 3.0,
-# incl. ob3.eudi and ob3.OB3Ldp*), and the errors hierarchy rooted at
-# LibOpenBadgesException.
-from . import ob2, ob3, errors  # noqa: F401
+# Bind ob2 / ob3 / errors / issue / verify as attributes so they are part of the
+# explicit public surface (and `from openbadgeslib import *`): ob2 (strict
+# OB 2.0), ob3 (OB 3.0, incl. ob3.eudi and ob3.OB3Ldp*), the errors hierarchy
+# rooted at LibOpenBadgesException, and the issuance/verification facades.
+from . import ob2, ob3, errors, issue, verify  # noqa: F401
 
 # ── OpenBadges 2.0 (strict) ──────────────────────────────────────────────────
 from .ob2 import (  # noqa: F401
@@ -55,13 +55,20 @@ from ._ob1_api import OB1_API as _OB1_API  # noqa: F401
 # ── Issuance / verification API ──────────────────────────────────────────────
 # "Issue badge X to Y per config" / "verify this badge" as library calls — the
 # orchestration the CLIs wrap, returning a SignResult / VerifyResult instead of
-# doing I/O (openbadgeslib.issue, openbadgeslib.verify). Resolved lazily (PEP
-# 562, below) so a bare `import openbadgeslib` stays lightweight;
-# `from openbadgeslib.issue import ...` / `.verify import ...` work directly.
-_ISSUE_API = {
-    'IssuanceError': 'issue', 'SignResult': 'issue', 'issue_from_conf': 'issue',
-    'verify_badge': 'verify',
-}
+# doing I/O (openbadgeslib.issue, openbadgeslib.verify).
+#
+# Imported eagerly, unlike the OB1 names below. These were resolved lazily (PEP
+# 562) to keep a bare `import openbadgeslib` light, and listed in __all__ "for
+# pdoc" — but pdoc reads the module dict, so it could not resolve them and
+# published each as a content-free stub with no signature, type or docstring,
+# while openbadgeslib.issue / .verify got no page at all (#267). The laziness
+# bought ~1.7 ms against an ~80 ms import that already pulls ob2, ob3 and keys
+# (hence cryptography) — inside the run-to-run noise — so the documentation of
+# the recommended modern API is worth more than it.
+from .issue import (  # noqa: F401
+    IssuanceError, SignResult, issue_from_conf,
+)
+from .verify import verify_badge  # noqa: F401
 
 
 # ── OpenBadges 1.0 (legacy) ──────────────────────────────────────────────────
@@ -75,12 +82,6 @@ _ISSUE_API = {
 
 
 def __getattr__(name: str) -> Any:
-    if name in _ISSUE_API:
-        # The modern issuance / verification API — lazy so a bare import stays
-        # lightweight, but warning-free (unlike the OB1 names below).
-        import importlib
-        return getattr(
-            importlib.import_module('.' + _ISSUE_API[name], __name__), name)
     module = _OB1_API.get(name)
     if module is None:
         raise AttributeError(
@@ -99,12 +100,12 @@ def __getattr__(name: str) -> Any:
 # The stable, supported top-level surface (the "public contract" — see the
 # "Stable API vs internals" wiki/doc page). Everything else (the ob1.* legacy
 # names resolved lazily above, and any underscore-prefixed name) is internal.
-# The issuance/verification facades are resolved lazily by __getattr__ but are
-# part of the contract, so they are listed here for pdoc and `import *`.
+# Every name here is a real module attribute, so pdoc documents all of them —
+# see tests/test_public_api.py, which fails if one becomes unresolvable again.
 __all__ = [
     '__version__',
-    # Subpackage entry points.
-    'ob2', 'ob3', 'errors',
+    # Subpackage / module entry points.
+    'ob2', 'ob3', 'errors', 'issue', 'verify',
     # OpenBadges 2.0 (strict).
     'OB2Signer', 'OB2Verifier', 'OB2VerificationError',
     # OpenBadges 3.0.
@@ -112,6 +113,6 @@ __all__ = [
     'OpenBadgeCredential', 'Achievement', 'Issuer',
     # Keys (KeyEd25519 is the recommended OB 3.0 / LDP key type).
     'KeyFactory', 'KeyRSA', 'KeyECC', 'KeyEd25519',
-    # Programmatic issue / verify facades (resolved lazily).
+    # Programmatic issue / verify facades.
     'issue_from_conf', 'verify_badge', 'IssuanceError', 'SignResult',
 ]

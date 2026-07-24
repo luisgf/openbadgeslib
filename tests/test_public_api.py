@@ -15,7 +15,7 @@ class TestTopLevelAll:
         assert isinstance(openbadgeslib.__all__, list)
 
     @pytest.mark.parametrize('name', [
-        '__version__', 'ob2', 'ob3', 'errors',
+        '__version__', 'ob2', 'ob3', 'errors', 'issue', 'verify',
         'OB2Signer', 'OB2Verifier', 'OB2VerificationError',
         'OB3Signer', 'OB3Verifier', 'OB3VerificationError',
         'OpenBadgeCredential', 'Achievement', 'Issuer',
@@ -26,6 +26,21 @@ class TestTopLevelAll:
         import openbadgeslib
         assert name in openbadgeslib.__all__
         assert getattr(openbadgeslib, name) is not None
+
+    def test_every_contract_name_is_a_real_module_attribute(self):
+        """__all__ names must live in the module dict, not behind __getattr__.
+
+        pdoc — the canonical API reference — reads the module dict, so a name
+        resolved lazily by PEP 562 was published as a content-free stub with no
+        signature, type or docstring while it looked fine to `getattr` (#267).
+        The OB1 legacy names are deliberately lazy, and deliberately NOT in
+        __all__, so this holds for the whole contract."""
+        import openbadgeslib
+        missing = [n for n in openbadgeslib.__all__
+                   if n not in vars(openbadgeslib)]
+        assert not missing, (
+            'these __all__ names resolve only through __getattr__, so pdoc '
+            'cannot document them: %s' % missing)
 
     def test_key_ed25519_is_the_recommended_ob3_key(self):
         from openbadgeslib import KeyEd25519
@@ -43,7 +58,8 @@ class TestTopLevelAll:
 class TestBareImportIsClean:
     def test_bare_import_does_not_warn(self):
         # A plain `import openbadgeslib` must not drag in (or warn about) the
-        # legacy OB1 shims; the modern facades resolve lazily and warning-free.
+        # legacy OB1 shims — those stay lazy. The modern facades are imported
+        # eagerly (so pdoc documents them, #267) and warn about nothing.
         import importlib
         import openbadgeslib
         with warnings.catch_warnings():

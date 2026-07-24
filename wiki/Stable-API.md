@@ -11,7 +11,7 @@ import openbadgeslib
 
 openbadgeslib.__all__
 # __version__
-# ob2, ob3, errors                      -> the subpackage entry points
+# ob2, ob3, errors, issue, verify       -> the subpackage / module entry points
 # OB2Signer, OB2Verifier, OB2VerificationError
 # OB3Signer, OB3Verifier, OB3VerificationError
 # OpenBadgeCredential, Achievement, Issuer
@@ -24,7 +24,7 @@ Notes:
 - **Keys.** `KeyEd25519` is a first-class export alongside `KeyRSA` / `KeyECC` — it is the recommended key type for OB 3.0 and the Data Integrity (LDP, `eddsa-rdfc-2022`) proof format.
 - **Subpackages.** `openbadgeslib.ob2` and `openbadgeslib.ob3` each carry their own `__all__` (see [[Python API OB2]] / [[Python API OB3]]). `openbadgeslib.ob3.eudi` (the SD-JWT VC / EUDI track, `[eudi]` extra) is re-exported from `openbadgeslib.ob3`, so `openbadgeslib.ob3.eudi.issue_badge_sd_jwt(...)` needs no deep import. The OB 3.0 Data Integrity signer/verifier are `openbadgeslib.ob3.OB3LdpSigner` / `OB3LdpVerifier`.
 - **Errors.** Every exception the library raises derives from `errors.LibOpenBadgesException`, so `except openbadgeslib.errors.LibOpenBadgesException` catches them all. See [[Keys and Errors]] for the full map.
-- **Facades.** `issue_from_conf` and `verify_badge` are the programmatic "do what the CLI does, but return a result object instead of doing I/O" entry points. They are resolved lazily (a bare `import openbadgeslib` stays lightweight) but are fully part of the contract.
+- **Facades.** `issue_from_conf` and `verify_badge` are the programmatic "do what the CLI does, but return a result object instead of doing I/O" entry points. Their modules are exported too (`openbadgeslib.issue` / `openbadgeslib.verify`), which is where the rest of that API lives — `issue_batch_from_conf`, `BatchResult`, `VerifyResult`.
 
 ## What is internal
 
