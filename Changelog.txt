@@ -19,6 +19,15 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     URL. The equality checks stay (they still catch a local copy claiming an `id`
     that hosts something else). Narrow behaviour change: the served document must
     itself parse as a strict OB 2.0 Assertion — it is the assertion now (#257).
+  - fix(cli): never report `"trusted": true` for a badge that failed to verify.
+    `openbadges-verifier --json` seeded the OB2/OB3 result with `trusted` True
+    before verifying anything, so every failure emitted it next to
+    `"valid": false`; the OB1 path seeded no `trusted` at all and set it only on
+    a successful parse, so a malformed OB1 badge emitted a payload missing the
+    documented common field entirely. All three paths (and the missing-file
+    early exit) now seed both booleans False and raise them only on a verdict,
+    so `trusted` is always present and `trusted => valid` holds. Exit statuses
+    are unchanged — they already keyed on `valid` first (#258).
 
 
 * v4.0.0 - 2026-07-22

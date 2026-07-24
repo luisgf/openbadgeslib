@@ -266,4 +266,21 @@ def test_missing_file_json(tmp_path, capsys):
     code, result = _run(argv, capsys)
     assert code != 0
     assert result['valid'] is False
+    assert result['trusted'] is False
     assert 'does not exist' in result['reason']
+
+
+@pytest.mark.parametrize('ob_version', ['1', '2', '3'])
+def test_failed_verification_is_never_trusted_json(tmp_path, capsys, ob_version):
+    """`trusted` is a documented common field, so it must always be present —
+    and it must never be true for a badge that did not verify (#258). It used
+    to be seeded True for OB2/OB3 (emitted alongside valid:false) and omitted
+    entirely on an OB1 parse failure."""
+    bogus = tmp_path / 'bogus.png'
+    bogus.write_bytes(b'not a badge at all')
+    argv = ['openbadges-verifier', '-i', str(bogus), '-r', 'recipient@example.com',
+            '-V', ob_version, '--json']
+    code, result = _run(argv, capsys)
+    assert code == 1
+    assert result['valid'] is False
+    assert result['trusted'] is False

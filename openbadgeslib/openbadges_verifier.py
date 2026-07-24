@@ -132,7 +132,12 @@ def _finish(args: argparse.Namespace, result: Dict[str, Any]) -> None:
     1 on any failure. Collapsing 'valid but untrusted' into an exit-0 success
     would let automation gate on a signature that only proves internal
     consistency, not who issued the badge. Without --json the human lines have
-    already been printed; only the status is set here (#233)."""
+    already been printed; only the status is set here (#233).
+
+    Every caller seeds ``valid``/``trusted`` False and raises them only on a
+    verdict, so the payload always carries both and ``trusted`` is never true
+    for a badge that did not verify (#258) — the invariant a consumer reading
+    the object rather than the exit status depends on."""
     code = 1 if not result.get('valid') else (0 if result.get('trusted') else 2)
     if args.json:
         payload = {k: v for k, v in result.items() if not k.startswith('_')}
@@ -161,7 +166,7 @@ def main() -> None:
         if not args.json:
             print('[!] Badge file %s NOT exists.' % args.filein)
         _finish(args, {'ob_version': args.ob_version, 'recipient': args.receptor,
-                       'valid': False,
+                       'valid': False, 'trusted': False,
                        'reason': 'Badge file %s does not exist' % args.filein})
         return
 
@@ -182,10 +187,11 @@ def _verify_ob2(args: argparse.Namespace) -> None:
     historical human lines / --json payload and exit status."""
     from .verify import verify_badge
 
-    # valid defaults False and is set True only on a valid verdict, so _finish
-    # exits 1 on any failure and 0/2 only once the badge verifies.
+    # valid/trusted both default False and are raised only on a verdict, so
+    # _finish exits 1 on any failure and 0/2 only once the badge verifies — and
+    # the payload never claims a failed badge is trusted (#258).
     result: Dict[str, Any] = {'ob_version': '2', 'recipient': args.receptor,
-                              'trusted': True, 'valid': False}
+                              'trusted': False, 'valid': False}
 
     pub_pem = _resolve_trusted_pubkey(args)
 
@@ -255,10 +261,12 @@ def _verify_ob1(args: argparse.Namespace) -> None:
               'new badges are better issued and verified as OB 2.0 (-V 2) or '
               'OB 3.0 (-V 3).')
 
-    # valid defaults False and is set True only on a VALID verdict (mirrors OB2
-    # and OB3), so an invalid OB1 badge exits 1.
+    # valid/trusted both default False and are set only on a verdict (mirrors
+    # OB2 and OB3), so an invalid OB1 badge exits 1 — and 'trusted' is seeded
+    # here, not only inside the try, so a badge that fails to parse still emits
+    # it instead of a payload missing the field (#258).
     result: Dict[str, Any] = {'ob_version': '1', 'recipient': args.receptor,
-                              'valid': False}
+                              'valid': False, 'trusted': False}
     try:
         badge = BadgeSigned.read_from_file(args.filein)
 
@@ -330,8 +338,9 @@ def _verify_ob3(args: argparse.Namespace) -> None:
     :class:`~openbadgeslib.verify.VerifyResult`."""
     from .verify import verify_badge
 
+    # valid/trusted both default False; see _verify_ob2 for the invariant (#258).
     result: Dict[str, Any] = {'ob_version': '3', 'recipient': args.receptor,
-                              'trusted': True, 'valid': False}
+                              'trusted': False, 'valid': False}
 
     pub_pem = _resolve_trusted_pubkey(args)
     if pub_pem is None and not args.resolve_did:
