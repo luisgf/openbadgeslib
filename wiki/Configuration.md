@@ -113,6 +113,7 @@ Define one section per badge. The part after `badge_` is the badge id you pass t
 | `local_image` | `image_badge1.svg` | Source image file under `${paths:base_image}`; `.svg` or `.png` determines the output format. |
 | `image` | `https://.../badge1.svg` | Public URL of the badge image. |
 | `criteria` | `https://.../criteria.html` | URL of the badge criteria. |
+| `criteria_narrative` | `Awarded to anyone who...` *(commented)* | OB3 achievement criteria **narrative** (free text), serialised as `criteria.narrative`. Falls back to `criteria` when unset — i.e. the credential then carries the criteria *URL* where a human-readable narrative belongs, which is rarely intended. |
 | `verify_key` | `https://.../verify_rsa_key.pem` | Public URL where the verify (public) key is hosted (OB2). |
 | `badge` | `https://.../badge.json` | Public URL of the badge JSON / OB3 achievement id. |
 | `crypto_key` | `https://.../key.json` | OB 2.0 (`-V 2`): URL of the badge's `CryptographicKey` document (`verification.creator`); published by `openbadges-publish -V 2`. |
