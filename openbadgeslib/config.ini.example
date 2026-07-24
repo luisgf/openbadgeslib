@@ -45,6 +45,12 @@ revocationList = revoked.json
 ; issuer. 'auto': derive a did:web DID from publish_url (openbadges-publish
 ; -V 3 generates the matching did.json). An explicit did:web:... is used as-is.
 ;did            = auto
+; EUDI SD-JWT VC track (optional): an issuer-hosted vct URL, which must live
+; under publish_url. openbadges-publish -V 3 then writes its SD-JWT VC Type
+; Metadata into the published folder so wallets can resolve and validate
+; SD-JWT badges. Unset: nothing is published and badges use the default
+; imsglobal vct.
+;sd_jwt_vct     = ${publish_url}vct/openbadge
 
 ;Badge configuration sections.
 [badge_1]
@@ -53,6 +59,10 @@ description = Given to any user that install this library
 local_image = image_badge1.svg
 image       = https://www.issuer.badge/issuer/badge_1/badge1.svg
 criteria    = https://www.issuer.badge/issuer/badge_1/criteria.html
+; OpenBadges 3.0 achievement criteria narrative (free text). Falls back to the
+; 'criteria' URL above when unset, which is rarely what you want in a
+; credential a human reads.
+;criteria_narrative = Awarded to anyone who installs this library
 verify_key  = https://www.issuer.badge/issuer/badge_1/verify_rsa_key.pem
 badge       = https://www.issuer.badge/issuer/badge_1/badge.json
 ; OpenBadges 2.0 (-V 2): URL of this badge's CryptographicKey JSON-LD document
@@ -88,8 +98,6 @@ key_type    = RSA
 ; lapses; pick a cadence you can sustain (e.g. 7 => weekly). Unset = no bound
 ; (offline-friendly, but publishes a loud warning).
 ;status_validity_days = 7
-;alignement  =
-;tags        =
 ;mail        = ${paths:base}/badge_1_mail.txt
 
 [badge_2]
@@ -105,6 +113,4 @@ hosted_assertions_base = https://www.issuer.badge/issuer/badge_2/assertions/
 private_key = ${paths:base_key}/sign_rsa_key_2.pem
 public_key  = ${paths:base_key}/verify_rsa_key_2.pem
 key_type    = RSA
-;alignement =
-;tags       =
 ;mail       = ${paths:base}/badge_2_mail.txt
