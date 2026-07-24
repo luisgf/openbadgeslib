@@ -36,7 +36,6 @@ import os
 import os.path
 import shutil
 import sys
-import tempfile
 
 from typing import Any, List, Optional, TYPE_CHECKING, Tuple
 from urllib.parse import urljoin
@@ -156,18 +155,11 @@ def _dump(obj: dict[str, Any]) -> str:
     return json.dumps(obj, sort_keys=True, ensure_ascii=True)
 
 
-def _write_atomic(path: str, data: str) -> None:
-    """Write *path* via a same-directory temp file + rename, so re-publishing
-    over a served directory can never expose a truncated artefact."""
-    directory = os.path.dirname(path) or '.'
-    fd, tmp_path = tempfile.mkstemp(dir=directory, suffix='.tmp')
-    try:
-        with os.fdopen(fd, 'w', encoding='ascii') as f:
-            f.write(data)
-        os.replace(tmp_path, path)
-    except BaseException:
-        os.unlink(tmp_path)
-        raise
+# The atomic-write helper lives in openbadgeslib.ob3.publish, which is the only
+# path that writes regenerated artefacts over a served directory. This module
+# kept a byte-identical second copy that nothing called once the OB3 publish
+# logic moved out of the CLI; the OB1/OB2 paths below create a fresh output
+# directory and write into it, so they have nothing to overwrite atomically.
 
 
 def query_ob3(config: str, badge: Optional[str],
