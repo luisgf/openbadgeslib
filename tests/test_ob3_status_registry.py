@@ -213,6 +213,27 @@ class TestPersistence:
         with pytest.raises(RegistryCorrupt):
             StatusRegistry.load(str(path))
 
+    @pytest.mark.parametrize('entries', [[], 'oops', 3, None],
+                             ids=['list', 'string', 'int', 'null'])
+    def test_non_object_entries_raises_registry_corrupt(self, tmp_path, entries):
+        # `entries` reached .items() unguarded, so a non-object value raised a
+        # raw AttributeError — outside the caught tuple, so it escaped every
+        # caller (publish, `openbadges status`, the signer all trap
+        # StatusError/LibOpenBadgesException) as a traceback (#259).
+        path = tmp_path / 'badge_1.json'
+        path.write_text(json.dumps({'version': 1, 'size_bits': 131072,
+                                    'entries': entries}))
+        with pytest.raises(RegistryCorrupt, match='entries'):
+            StatusRegistry.load(str(path))
+
+    @pytest.mark.parametrize('payload', ['[]', '"a string"', '42'],
+                             ids=['list', 'string', 'int'])
+    def test_non_object_registry_raises_registry_corrupt(self, tmp_path, payload):
+        path = tmp_path / 'badge_1.json'
+        path.write_text(payload)
+        with pytest.raises(RegistryCorrupt, match='JSON object'):
+            StatusRegistry.load(str(path))
+
     def test_duplicate_index_raises(self, tmp_path):
         path = tmp_path / 'badge_1.json'
         entry = {'index': 3, 'recipient': 'mailto:a@example.com',

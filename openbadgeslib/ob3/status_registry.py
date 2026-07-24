@@ -154,7 +154,19 @@ class StatusRegistry:
         except (OSError, ValueError) as exc:
             raise RegistryCorrupt('%s: %s' % (path, exc)) from exc
 
+        # Shape first, with named messages: the guarded block below indexes and
+        # iterates these, and a non-object `entries` reached `.items()` as a raw
+        # AttributeError — which is not in the caught tuple, so it escaped every
+        # caller (they all trap StatusError/LibOpenBadgesException) as a
+        # traceback instead of the documented RegistryCorrupt (#259).
         try:
+            if not isinstance(data, dict):
+                raise ValueError('registry must be a JSON object, got %s'
+                                 % type(data).__name__)
+            entries = data['entries']
+            if not isinstance(entries, dict):
+                raise ValueError("'entries' must be a JSON object, got %s"
+                                 % type(entries).__name__)
             stored_bits = int(data['size_bits'])
             if int(data['version']) != _SCHEMA_VERSION:
                 raise ValueError('unsupported version %r' % (data['version'],))
@@ -164,7 +176,7 @@ class StatusRegistry:
                     'a list would invalidate assigned indices'
                     % (size_bits, stored_bits))
             registry.size_bits = max(size_bits, stored_bits)
-            for jti, raw in data['entries'].items():
+            for jti, raw in entries.items():
                 entry = StatusEntry(
                     jti=jti,
                     index=int(raw['index']),
@@ -179,7 +191,10 @@ class StatusRegistry:
                                      % (entry.index, jti))
                 registry.entries[jti] = entry
                 registry._used_indices.add(entry.index)
-        except (KeyError, TypeError, ValueError) as exc:
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            # AttributeError joins the tuple as belt and braces: every shape the
+            # block reads is checked above, but one slipping through must still
+            # surface as RegistryCorrupt, never as a traceback out of a CLI.
             raise RegistryCorrupt('%s: %s' % (path, exc)) from exc
         return registry
 

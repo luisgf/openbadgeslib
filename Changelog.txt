@@ -53,6 +53,15 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     UPSTREAM over the network, a different property that cannot run on a PR. Two
     offline gates now assert every bundled file matches its digest and that no
     context ships without one (#266).
+  - fix(ob3): raise RegistryCorrupt, not a raw AttributeError, for a status
+    registry whose `entries` is not a JSON object. `StatusRegistry.load` guarded
+    (KeyError, TypeError, ValueError) but called `.items()` on the value
+    unchecked, so `"entries": []` (or a string) escaped as an AttributeError
+    past every caller — openbadges-publish, `openbadges status` and the signer
+    all trap StatusError/LibOpenBadgesException — turning a corrupt-registry
+    message into a traceback. The registry object and its `entries` are now
+    shape-checked with named messages, and AttributeError joined the caught
+    tuple as belt and braces (#259).
 
 
 * v4.0.0 - 2026-07-22
