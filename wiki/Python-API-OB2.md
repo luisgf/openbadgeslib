@@ -57,7 +57,7 @@ OB2Verifier(pubkey_pem=None)
 
 `verify(token, expected_recipient=None, check_revocation=False)` returns the decoded `Assertion` or raises `OB2VerificationError`. It:
 
-- verifies the signature (SignedBadge) or fetches the assertion from its `id` and enforces the issuer scope (HostedBadge);
+- verifies the signature (SignedBadge) or fetches the assertion from its `id` and enforces the issuer scope (HostedBadge) — for a HostedBadge the **fetched** document is what the remaining checks run on and what `verify()` returns, so a member carried only by the baked copy (`evidence`, `narrative`, `image`, …) never reaches the caller;
 - validates `@context`/`type` and rejects legacy shapes (string `hashed`, Unix dates, `uid`-only);
 - checks expiry, and (with `check_revocation=True`, network) the issuer's `RevocationList`;
 - with `expected_recipient`, re-hashes the email + salt and binds it to the recipient.

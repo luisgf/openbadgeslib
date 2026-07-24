@@ -263,6 +263,45 @@ class TestHosted:
             result = OB2Verifier().verify(token, expected_recipient=RECIPIENT)
         assert result.verification.type == 'HostedBadge'
 
+    def test_hosted_copy_is_authoritative_for_every_member(self, rsa_priv_pem):
+        # The baked JWS is non-gating for a HostedBadge, so a holder can re-bake
+        # the image with any members that are not reconciled. Only id/recipient/
+        # badge/issuedOn/expires used to be compared, leaving image, evidence and
+        # narrative holder-controlled on a badge reported valid AND trusted.
+        # verify() must return the FETCHED document, not the baked one (#257).
+        real = Assertion(
+            id='https://example.com/assertions/x.json',
+            recipient=IdentityObject.create(RECIPIENT, salt='s4lt3d'),
+            badge=BADGE, verification=Verification(type='HostedBadge'),
+            issued_on=NOW, evidence='https://example.com/real-evidence',
+            image='https://example.com/real.png', narrative='Passed the exam')
+        forged = Assertion(
+            id=real.id, recipient=IdentityObject.create(RECIPIENT, salt='s4lt3d'),
+            badge=BADGE, verification=Verification(type='HostedBadge'),
+            issued_on=NOW, evidence='https://attacker.test/fake-evidence',
+            image='https://attacker.test/fake.png',
+            narrative='Passed the ADVANCED exam with distinction')
+        token = _sign(rsa_priv_pem, forged)
+        url_map = {real.id: real.to_dict(), BADGE: {'issuer': ISSUER},
+                   ISSUER: {'id': ISSUER}}
+        with patch(PATCH_TARGET, side_effect=_dl(url_map)):
+            result = OB2Verifier().verify(token, expected_recipient=RECIPIENT)
+        assert result.evidence == 'https://example.com/real-evidence'
+        assert result.image == 'https://example.com/real.png'
+        assert result.narrative == 'Passed the exam'
+
+    def test_hosted_copy_that_is_not_an_assertion_rejected(self, rsa_priv_pem):
+        # The fetched document IS the assertion now, so it must parse as a
+        # strict OB 2.0 one; a host serving something else fails closed instead
+        # of silently falling back to the baked copy.
+        token, a = _hosted(rsa_priv_pem)
+        hosted = a.to_dict()
+        del hosted['@context']
+        url_map = {a.id: hosted, BADGE: {'issuer': ISSUER}, ISSUER: {'id': ISSUER}}
+        with patch(PATCH_TARGET, side_effect=_dl(url_map)):
+            with pytest.raises(OB2VerificationError, match='not a valid'):
+                OB2Verifier().verify(token, expected_recipient=RECIPIENT)
+
 
 # ── revocation ──────────────────────────────────────────────────────────────────
 

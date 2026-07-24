@@ -4,6 +4,23 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v4.1.0 - unreleased
+
+  A security & correctness hardening pass (audit-bot).
+
+  - security(ob2): make the fetched copy of a HostedBadge authoritative for the
+    whole document. `_verify_hosted` reconciled only `id`, `recipient`, `badge`,
+    `issuedOn` and `expires` and then kept the copy baked into the image, so
+    `image`, `evidence` and `narrative` stayed holder-controlled on a badge
+    reported valid AND trusted — and the baked JWS is deliberately non-gating for
+    a hosted badge, so re-baking costs the holder nothing. `verify()` now returns
+    the assertion parsed from the HTTPS fetch, and the non-gating JWS check
+    resolves `verification.creator` from that copy instead of a holder-chosen
+    URL. The equality checks stay (they still catch a local copy claiming an `id`
+    that hosts something else). Narrow behaviour change: the served document must
+    itself parse as a strict OB 2.0 Assertion — it is the assertion now (#257).
+
+
 * v4.0.0 - 2026-07-22
 
   Grouped breaking release (#170) — freeze the declared public contract and

@@ -60,7 +60,8 @@ class OB2Verifier:
     * **HostedBadge** — the assertion is fetched over HTTPS from its own ``id``;
       that retrieval (scoped to the issuer's origin) is the trust anchor, per
       the OB 2.0 hosted model. The baked JWS is verified as non-gating
-      defence-in-depth only.
+      defence-in-depth only, so the fetched document — not the baked one — is
+      what every check runs on and what ``verify()`` returns.
 
     Args:
         pubkey_pem: Optional PEM-encoded trusted public key. When supplied it is
@@ -86,7 +87,11 @@ class OB2Verifier:
         """Verify a compact-JWS OB 2.0 assertion token.
 
         Returns the decoded :class:`~openbadgeslib.ob2.models.Assertion` on
-        success; raises :class:`OB2VerificationError` on any failure.
+        success; raises :class:`OB2VerificationError` on any failure. For a
+        HostedBadge the returned assertion is the one **fetched from its id**
+        (the trust anchor), not the copy baked into the image — so a member the
+        baked copy alone carried, such as ``evidence`` or ``narrative``, never
+        reaches the caller.
 
         ``expected_recipient`` (an email) additionally binds the assertion to a
         recipient by re-hashing it with the embedded salt. ``check_revocation``
@@ -100,7 +105,10 @@ class OB2Verifier:
             raise OB2VerificationError("Malformed OB 2.0 assertion: %s" % exc) from exc
 
         if assertion.verification.type == "HostedBadge":
-            self._verify_hosted(assertion, token)
+            # The fetched copy is the trust anchor, so it replaces the local one:
+            # every check below (and the returned object) must speak for the
+            # document the issuer serves, not the one baked into the image.
+            assertion = self._verify_hosted(assertion, token)
         else:
             self._verify_signed(assertion, token)
 
@@ -164,14 +172,25 @@ class OB2Verifier:
 
     # ── hosted path ──────────────────────────────────────────────────────────────
 
-    def _verify_hosted(self, assertion: Assertion, token: str) -> None:
-        """Verify a HostedBadge assertion by fetching its ``id`` over HTTPS.
+    def _verify_hosted(self, assertion: Assertion, token: str) -> Assertion:
+        """Verify a HostedBadge assertion by fetching its ``id`` over HTTPS and
+        return the AUTHORITATIVE assertion parsed from that fetch.
 
         The fetched document is the authoritative copy; its origin must fall
         within the issuer's scope (default: same origin as the issuer Profile
         ``id``; or the issuer's ``verification.startsWith`` / ``allowedOrigins``
         when declared). The baked JWS is verified only as non-gating
         defence-in-depth.
+
+        Returning the fetched assertion — rather than reconciling a fixed list
+        of members and keeping the local one — is what makes "the hosted copy is
+        the trust anchor" true for the *whole* document. Only id/recipient/badge/
+        issuedOn/expires used to be compared, so ``image``, ``evidence`` and
+        ``narrative`` stayed holder-controlled on a badge reported valid and
+        trusted (the baked JWS is non-gating here, so a re-baked local copy costs
+        the holder nothing). The equality checks below stay: they still catch a
+        local copy claiming an ``id`` that legitimately hosts something else.
+        Consequence: the served document must itself be a valid OB 2.0 Assertion.
         """
         assert assertion.id is not None
         fetched = self._fetch_json(assertion.id, "hosted assertion")
@@ -217,22 +236,36 @@ class OB2Verifier:
                 "Hosted assertion at %s does not match the badge's local "
                 "claims (field 'expires' differs)" % (assertion.id,))
 
-        issuer = self._fetch_issuer(assertion)
+        # Everything reconciled: adopt the served document as the assertion this
+        # verification speaks for. It must parse as a strict OB 2.0 Assertion —
+        # it IS the assertion, not a copy of it.
+        try:
+            authoritative = Assertion.from_dict(fetched)
+        except ValueError as exc:
+            raise OB2VerificationError(
+                "Hosted assertion at %s is not a valid OpenBadges 2.0 Assertion: %s"
+                % (assertion.id, exc)) from exc
+
+        issuer = self._fetch_issuer(authoritative)
+        # assertion.id is the fetched id (proven equal above) and is known
+        # non-None, which authoritative.id is only by from_dict's contract.
         self._check_hosted_scope(assertion.id, issuer)
 
         # Defence-in-depth: if the baked token also carries a resolvable key,
         # verify it, but never fail the hosted verdict on it (a hosted badge is
-        # not required to be signed at all).
+        # not required to be signed at all). The creator comes from the
+        # authoritative copy, so this never dereferences a holder-chosen URL.
         try:
             if self.trusted_pubkey_pem is not None:
                 self._verify_jws(token, self.trusted_pubkey_pem)
-            elif assertion.verification.creator:
-                key = self._resolve_creator(assertion.verification.creator)
+            elif authoritative.verification.creator:
+                key = self._resolve_creator(authoritative.verification.creator)
                 self._verify_jws(token, key.public_key_pem.encode('utf-8'))
         except OB2VerificationError as exc:
             logger.debug("Hosted assertion %s: baked JWS did not verify (%s); "
                          "hosted trust comes from the HTTPS fetch, not the signature.",
                          assertion.id, exc)
+        return authoritative
 
     def _check_hosted_scope(self, assertion_id: str, issuer: dict[str, Any]) -> None:
         """Enforce the OB 2.0 hosted-verification scope for ``assertion_id``."""
