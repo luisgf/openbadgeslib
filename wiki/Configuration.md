@@ -173,8 +173,9 @@ This lets you change `base` once and have every dependent path update automatica
 
 | Script | Sections used |
 | --- | --- |
-| `openbadges-keygenerator` | `[paths]`, `[logs]`, `[issuer]`, `[badge_<name>]` (`private_key`, `public_key`, `key_type`) |
+| `openbadges-keygenerator` | `[paths]`, `[badge_<name>]` (`private_key`, `public_key`, `key_type`); `[issuer]` only for the `name` it logs. It does **not** read `[logs]` — a keygen-only config needs no log section. |
 | `openbadges-signer` | `[paths]`, `[logs]`, `[smtp]` (with `-M`), `[issuer]` (OB3), `[badge_<name>]` |
-| `openbadges-publish` | `[paths]` (`base_status`, OB3), `[issuer]` (incl. `did`), `[badge_<name>]` (OB2: `crypto_key`/`hosted_assertions_base`; OB3: `status_lists`/`status_size_bits`/`status_base`) |
+| `openbadges-publish` | `[paths]` (`base_status`, OB3), `[issuer]` (incl. `did`, `sd_jwt_vct`), `[badge_<name>]` (OB2: `crypto_key`/`hosted_assertions_base`; OB3: `status_lists`/`status_size_bits`/`status_base`) |
+| `openbadges status` | `[paths]` (`base_status`), `[issuer]` (`publish_url`), `[badge_<name>]` (`status_lists` and the other status keys) — read-only |
 
 For the full flag list of each command see [[CLI Reference]]. For end-to-end recipes (issuing, mailing, publishing) see [[Guides]].
