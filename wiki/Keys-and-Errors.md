@@ -96,29 +96,35 @@ LibOpenBadgesException
 │   ├── PublicKeyReadError
 │   └── UnknownKeyType
 ├── SignerExceptions
-│   └── ErrorSigningFile
+│   ├── ErrorSigningFile
+│   └── UnsupportedAlgorithm      (also a ValueError)
 ├── VerifierExceptions
 │   ├── AssertionFormatIncorrect
 │   ├── NotIdentityInAssertion
 │   └── ErrorParsingFile
 ├── BadgeImgFormatUnsupported
-└── StatusError
-    ├── StatusListFull
-    ├── UnknownCredential
-    ├── AmbiguousCredential
-    ├── AlreadyRevoked
-    ├── AlreadySuspended
-    ├── NotSuspended
-    └── RegistryCorrupt
+├── ConfigError                   (also a ValueError)
+├── IssuanceError
+├── DecompressionLimitExceeded
+├── StatusError
+│   ├── StatusListFull
+│   ├── UnknownCredential
+│   ├── AmbiguousCredential
+│   ├── AlreadyRevoked
+│   ├── AlreadySuspended
+│   ├── NotSuspended
+│   └── RegistryCorrupt
+├── OB2VerificationError          (openbadgeslib.ob2.verifier)
+└── OB3VerificationError          (openbadgeslib.ob3.verifier)
 ```
 
-`KeyGenExceptions`, `SignerExceptions`, `VerifierExceptions`, and `StatusError` are intermediate base classes; the leaves under each are the concrete errors raised in practice. `StatusError` groups the issuer-side credential-status (revocation/suspension) errors. `BadgeImgFormatUnsupported` hangs directly off `LibOpenBadgesException` (it is neither key, signer, verifier, nor status specific).
+`KeyGenExceptions`, `SignerExceptions`, `VerifierExceptions`, and `StatusError` are intermediate base classes; the leaves under each are the concrete errors raised in practice. `StatusError` groups the issuer-side credential-status (revocation/suspension) errors. `BadgeImgFormatUnsupported`, `ConfigError`, `IssuanceError` and `DecompressionLimitExceeded` hang directly off `LibOpenBadgesException` (none is key, signer, verifier or status specific). `ConfigError` and `UnsupportedAlgorithm` **also** inherit `ValueError`, so code that historically caught a bare `ValueError` from the config helpers or a signer constructor keeps working. The same map lives in the `LibOpenBadgesException` docstring, so `help(openbadgeslib.errors.LibOpenBadgesException)` and this page agree.
 
 `UnknownKeyType` is the one you will see most when working with `openbadgeslib.keys` — `KeyFactory`, `alg_for_key_type`, `key_to_pem`, and `detect_key_type` all raise it.
 
-### OB3 verification errors
+### OB2 and OB3 verification errors
 
-OB3 verification raises `OB3VerificationError`, which **also** inherits from `LibOpenBadgesException`. That means a single broad `except LibOpenBadgesException` still catches OB3 failures alongside OB2 ones.
+> **`OB2VerificationError` is NOT a `VerifierExceptions`.** Both verification errors hang **directly** off `LibOpenBadgesException` (see the tree above), so `except VerifierExceptions` does *not* catch a failed OB 2.0 or OB 3.0 verdict — it catches the parse/identity family (`AssertionFormatIncorrect`, `NotIdentityInAssertion`, `ErrorParsingFile`), which is what the OB 1.0 reader and the OB2/OB3 token extractors raise. Catch `OB2VerificationError` / `OB3VerificationError` by name, or fall back to `LibOpenBadgesException`.
 
 ### What to catch
 
@@ -127,17 +133,24 @@ from openbadgeslib.errors import (
     LibOpenBadgesException,    # catch-all root
     KeyGenExceptions,          # key generation / load / save
     SignerExceptions,          # signing
-    VerifierExceptions,        # OB2 verification
+    VerifierExceptions,        # image/assertion parsing and identity binding
+    ConfigError,               # missing / malformed config.ini
     UnknownKeyType,            # bad / unrecognised key
 )
+from openbadgeslib.ob2 import OB2VerificationError
+from openbadgeslib.ob3 import OB3VerificationError
 
 try:
     # generate, sign, or verify ...
     ...
+except (OB2VerificationError, OB3VerificationError):
+    ...        # the badge did not verify (bad signature, expired, revoked, ...)
 except VerifierExceptions:
-    ...        # OB2 verification specifically failed
+    ...        # the badge could not even be read (malformed image / assertion)
+except ConfigError:
+    ...        # config.ini is missing, empty or malformed
 except LibOpenBadgesException:
-    ...        # anything else from the library, including OB3VerificationError
+    ...        # anything else from the library
 ```
 
 Catch the most specific class you can act on; fall back to `LibOpenBadgesException` for a single safety net.
