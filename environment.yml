@@ -3,13 +3,20 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  # Runtime
+  # Runtime — must mirror [project] dependencies in pyproject.toml (a gate in
+  # tests/test_docs.py fails if the two drift). pycryptodome and python-ecdsa
+  # were dropped in the #167 port to `cryptography` (python-ecdsa also carried a
+  # permanent pip-audit flag, CVE-2024-23342 "Minerva"); nothing here may bring
+  # them back.
   - python>=3.10
-  - pycryptodome>=3.20
-  - ecdsa>=0.19
   - pypng>=0.20220715.0
-  - pyjwt>=2.8          # PyJWT[crypto] — 'crypto' extra not supported in conda
-  - cryptography        # required by pyjwt[crypto]
+  # PyJWT[crypto] — the 'crypto' extra is not supported in conda, hence the
+  # separate cryptography line below. The >=2.13 floor is a security floor:
+  # the OB3 JWT-VC verifier runs a signature-verifying jwt.decode() on untrusted
+  # input, so CVE-2026-32597 (crit validation) and CVE-2026-48525 (b64=false
+  # payload DoS) are on a reachable path.
+  - pyjwt>=2.13
+  - cryptography>=42    # required by pyjwt[crypto]
   - defusedxml>=0.7     # hardened XML parsing of untrusted SVG badges
 
   # Development / testing

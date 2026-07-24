@@ -4,7 +4,9 @@ These tests fail when the docs drift from the code, so CI catches it:
 - every CLI flag the argparse parsers define is documented in the wiki,
 - every wiki [[cross-link]] resolves to a real page,
 - no wiki content page starts with an H1 (GitHub renders the title),
-- the version is single-sourced (pyproject reads it dynamically).
+- the version is single-sourced (pyproject reads it dynamically),
+- environment.yml's runtime block mirrors the pyproject dependencies,
+- CI derives the openvc-core floor instead of restating it.
 """
 import re
 from pathlib import Path
@@ -80,6 +82,42 @@ def test_version_is_single_sourced():
     assert 'attr = "openbadgeslib.util.__version__"' in pyproject
     # No static version = "..." line under [project].
     assert not re.search(r'(?m)^version\s*=\s*"', pyproject)
+
+
+def _pyproject_runtime_dependencies():
+    """Package names from [project] dependencies in pyproject.toml.
+
+    Parsed with a regex rather than tomllib: the CI matrix still includes
+    Python 3.10, where tomllib does not exist.
+    """
+    text = (REPO / 'pyproject.toml').read_text(encoding='utf-8')
+    block = re.search(r'(?ms)^dependencies\s*=\s*\[(.*?)^\]', text)
+    assert block, 'could not locate [project] dependencies in pyproject.toml'
+    names = set()
+    for spec in re.findall(r'"([^"]+)"', block.group(1)):
+        names.add(re.split(r"[\[<>=!~;\s]", spec, maxsplit=1)[0].strip().lower())
+    return names
+
+
+def test_conda_environment_mirrors_the_runtime_dependencies():
+    """environment.yml's Runtime block must list exactly the pyproject runtime
+    dependencies.
+
+    It drifted: the #167 port dropped pycryptodome and python-ecdsa (the latter
+    carrying a permanent pip-audit flag, CVE-2024-23342), but the documented
+    conda setup kept installing both — reinstating a flagged package the audit
+    job believes is gone (#265). Names only; the floors are commented in place."""
+    env = (REPO / 'environment.yml').read_text(encoding='utf-8')
+    runtime = env.split('# Runtime', 1)[1].split('# Development', 1)[0]
+    conda = {re.split(r"[<>=!\s]", line.strip().lstrip("- "), maxsplit=1)[0].lower()
+             for line in runtime.splitlines()
+             if line.strip().startswith('- ')}
+    conda.discard('python')                      # the interpreter, not a dep
+    assert conda == _pyproject_runtime_dependencies(), (
+        'environment.yml Runtime block and pyproject dependencies disagree: '
+        'only in conda=%s, only in pyproject=%s'
+        % (sorted(conda - _pyproject_runtime_dependencies()),
+           sorted(_pyproject_runtime_dependencies() - conda)))
 
 
 def test_ci_does_not_restate_the_openvc_floor():

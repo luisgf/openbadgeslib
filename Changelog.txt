@@ -35,6 +35,15 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     downgrading below the package's own constraint and leaving the version users
     actually resolve at the bottom of the range tested by nothing. A gate in
     tests/test_docs.py now fails if a literal pin comes back (#264).
+  - fix(build): stop the documented conda setup from reinstating the dropped
+    pycryptodome / python-ecdsa. `environment.yml` still listed both as runtime
+    dependencies although the #167 port moved every key path to `cryptography`
+    and v4.0.0 removed the last soft-import shim — so `conda env create` brought
+    back a package the project dropped partly for its permanent pip-audit flag
+    (CVE-2024-23342, "Minerva"), one the weekly Audit job believes is gone. Its
+    `pyjwt` floor was also stale at >=2.8, below the >=2.13 security floor. Both
+    corrected, and a gate in tests/test_docs.py now fails if environment.yml's
+    runtime block and the pyproject dependencies ever disagree again (#265).
 
 
 * v4.0.0 - 2026-07-22
