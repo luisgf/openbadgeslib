@@ -2,6 +2,9 @@
 
 Deliberately runs WITHOUT the [ldp] extra: this module never imports pyld.
 """
+import hashlib
+import re
+
 import pytest
 
 from openbadgeslib.ob3.contexts import (
@@ -85,3 +88,54 @@ def test_contexts_ship_as_package_data():
     files = {p.name for p in resources.files('openbadgeslib.ob3.contexts').iterdir()}
     for resource in set(_URL_TO_RESOURCE.values()):
         assert resource in files, resource
+
+
+# ── provenance ───────────────────────────────────────────────────────────────
+# The module header of ob3/contexts/__init__.py records the SHA-256 of every
+# bundled context. That record is the control that makes the fail-closed
+# allowlist meaningful: RDF canonicalization resolves each @context, so the
+# bundled document decides what a Data Integrity signature actually covers, and
+# an edit to one silently changes the meaning of every proof the library makes
+# and checks. Nothing enforced it — the scheduled context-drift job compares
+# against UPSTREAM over the network, which is a different property and cannot
+# run on a PR — so a reformat or a tampered file passed every gate while the
+# comment quietly became a lie (#266). These gates are offline and stdlib-only.
+
+def _package_dir():
+    from importlib import resources
+    return resources.files('openbadgeslib.ob3.contexts')
+
+
+def _recorded_digests():
+    """{filename: sha256} parsed from the provenance block in the module header."""
+    source = _package_dir().joinpath('__init__.py').read_text('utf-8')
+    header = source.split('import functools', 1)[0]
+    return dict(re.findall(r'#\s+([\w.-]+\.json)[^\n]*\n#\s+([0-9a-f]{64})',
+                           header))
+
+
+def test_bundled_contexts_match_their_recorded_provenance():
+    recorded = _recorded_digests()
+    assert recorded, 'no SHA-256 provenance found in ob3/contexts/__init__.py'
+    mismatched = []
+    for name, expected in sorted(recorded.items()):
+        actual = hashlib.sha256(
+            _package_dir().joinpath(name).read_bytes()).hexdigest()
+        if actual != expected:
+            mismatched.append('%s: recorded %s, actual %s'
+                              % (name, expected, actual))
+    assert not mismatched, (
+        'bundled JSON-LD context(s) no longer match their recorded SHA-256 '
+        'provenance:\n  %s\nIf the change is legitimate, re-capture the file '
+        'AND update its digest in openbadgeslib/ob3/contexts/__init__.py.'
+        % '\n  '.join(mismatched))
+
+
+def test_every_bundled_context_has_recorded_provenance():
+    shipped = {p.name for p in _package_dir().iterdir()
+               if p.name.endswith('.json')}
+    recorded = set(_recorded_digests())
+    assert shipped == recorded, (
+        'context files without a recorded SHA-256: %s; digests recorded for '
+        'files that are not shipped: %s'
+        % (sorted(shipped - recorded), sorted(recorded - shipped)))

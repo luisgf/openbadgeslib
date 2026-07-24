@@ -44,6 +44,15 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     `pyjwt` floor was also stale at >=2.8, below the >=2.13 security floor. Both
     corrected, and a gate in tests/test_docs.py now fails if environment.yml's
     runtime block and the pyproject dependencies ever disagree again (#265).
+  - security(ob3): enforce the bundled JSON-LD contexts against their recorded
+    SHA-256 provenance. The module header of ob3/contexts/__init__.py records a
+    digest per pinned @context — the control that makes the fail-closed
+    allowlist meaningful, since RDF canonicalization resolves each context and
+    the bundled document therefore decides what a Data Integrity proof covers —
+    but nothing checked it: the scheduled context-drift job compares against
+    UPSTREAM over the network, a different property that cannot run on a PR. Two
+    offline gates now assert every bundled file matches its digest and that no
+    context ships without one (#266).
 
 
 * v4.0.0 - 2026-07-22
