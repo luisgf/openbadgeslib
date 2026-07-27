@@ -8,6 +8,15 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
   A security & correctness hardening pass (audit-bot).
 
+  - fix(build): stop git's EOL conversion from defeating the bundled contexts'
+    recorded SHA-256 provenance on Windows. Without a `.gitattributes` entry git
+    checks the JSON-LD contexts out with CRLF on a Windows clone, so the bytes on
+    disk are not the bytes the digests in ob3/contexts/__init__.py cover — the
+    control that makes the fail-closed context allowlist meaningful could not be
+    evaluated on that platform at all, and the `test (windows)` CI leg had been
+    red since the gate landed (which also blocks releases: `publish` is
+    `needs: test`). The contexts are now marked `-text`, and a gate asserts that
+    attribute stays. Wheel/sdist installs were never affected (#274).
   - fix(keys): a failed PEM load lands in the library's exception taxonomy on
     every supported `cryptography`, and the floor moves to >=45. cryptography
     v47 changed the contract — loading a key of an unsupported algorithm now
