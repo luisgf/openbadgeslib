@@ -143,12 +143,13 @@ class TestExtraAbsent:
             issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem)
 
 
-# ── #226: irrevocability + identifier carriage (pure-Python, no [eudi]) ───────
+# ── #226/#270: status carriage + identifier carriage (pure-Python, no [eudi]) ─
 
 class TestSdJwtStatusAndIdentifier:
-    """SD-JWT VC badges are irrevocable, so a credentialStatus is rejected at
-    issuance (not silently dropped), and the recipient's hashed identifier is
-    carried under credentialSubject. These paths need no openvc.
+    """A W3C credentialStatus is rejected at issuance (not silently dropped) —
+    the SD-JWT VC track revokes through the IETF Token Status List instead
+    (#270) — and the recipient's hashed identifier is carried under
+    credentialSubject. These paths need no openvc.
 
     ``ob3_credential`` is a session fixture — never mutate it; derive a variant
     with ``dataclasses.replace`` so other tests keep the pristine credential.
@@ -167,11 +168,14 @@ class TestSdJwtStatusAndIdentifier:
         return IdentityObject(identity_hash=ihash, identity_type="emailAddress",
                               hashed=True)
 
-    def test_issue_rejects_credential_with_status(self, ob3_credential,
-                                                  ed25519_priv_pem):
+    def test_issue_rejects_credential_with_w3c_status(self, ob3_credential,
+                                                      ed25519_priv_pem):
+        # Not because the badge cannot be revoked (it can, via status=), but
+        # because a Bitstring entry points at a list an SD-JWT verifier cannot
+        # read: two formats, two lists.
         from dataclasses import replace
         cred = replace(ob3_credential, credential_status=list(self._STATUS))
-        with pytest.raises(EudiError, match="irrevocable"):
+        with pytest.raises(EudiError, match="IETF Token Status List"):
             issue_badge_sd_jwt(cred, privkey_pem=ed25519_priv_pem)
 
     def test_rejection_precedes_the_openvc_requirement(self, ob3_credential):
@@ -204,3 +208,259 @@ class TestSdJwtStatusAndIdentifier:
         claims = badge_to_sd_jwt_claims(ob3_credential)
         assert "credentialStatus" not in claims
         assert claims["credentialSubject"]["id"] == ob3_credential.recipient_id
+
+
+# ── #270: revocation via the IETF Token Status List ──────────────────────────
+
+class TestTokenStatusList:
+    """Issue a badge carrying an IETF status reference, verify it, flip the bit,
+    re-sign the list and watch the same badge come back revoked.
+
+    Everything about the status list itself — the LSB-first packing, DEFLATE,
+    the token's typ/signature — is openvc-core's; these tests pin the seam this
+    library owns: that the reference is carried always-disclosed, that both
+    verify paths reach the check, and that every way of not knowing the status
+    fails closed.
+    """
+
+    STATUS_URI = "https://issuer.example/status/list-1.jwt"
+    INDEX = 7
+
+    @pytest.fixture(autouse=True)
+    def _needs_openvc(self):
+        pytest.importorskip("openvc")
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _signing_key(priv_pem):
+        from openvc.keys import Ed25519SigningKey
+        return Ed25519SigningKey.from_pem(priv_pem, kid="status-key")
+
+    def _reference(self, index=None):
+        from openvc.status.issue import build_token_status_reference
+        return build_token_status_reference(
+            uri=self.STATUS_URI, index=self.INDEX if index is None else index)
+
+    def _list_token(self, priv_pem, *, revoked=(), suspended=(), bits=1,
+                    uri=None, size=64, **kwargs):
+        """Sign a status-list token with the given indices flipped."""
+        from openvc.status.issue import build_status_list_token
+        from openvc.status.token_status_list import new_status_list, set_status
+        data = new_status_list(size, bits=bits)
+        for idx in revoked:
+            set_status(data, idx, 1, bits=bits)
+        for idx in suspended:
+            set_status(data, idx, 2, bits=bits)
+        return build_status_list_token(
+            signing_key=self._signing_key(priv_pem),
+            uri=uri or self.STATUS_URI, status_list=data, bits=bits, **kwargs)
+
+    def _resolver(self, list_token, pub_pem, *, uri=None):
+        """A resolve_status_list_token that serves *list_token* over a fake
+        download, verified by the real status_list_token_resolver."""
+        from openbadgeslib.ob3.eudi import status_list_token_resolver
+        served = {}
+        served[uri or self.STATUS_URI] = list_token.encode("ascii")
+
+        def download(url):
+            try:
+                return served[url]
+            except KeyError:                      # a URL nobody published
+                raise OSError("404 %s" % url)
+
+        return status_list_token_resolver(pubkey_pem=pub_pem, download=download)
+
+    @staticmethod
+    def _payload(token):
+        """The issuer JWT's payload — what is disclosed unconditionally."""
+        import base64
+        import json
+        body = token.split("~", 1)[0].split(".")[1]
+        return json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+
+    # ── issuance ─────────────────────────────────────────────────────────────
+
+    def test_status_reference_is_carried(self, ob3_credential, ed25519_priv_pem):
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   status=self._reference())
+        status = self._payload(token)["status"]
+        assert status["status_list"] == {"uri": self.STATUS_URI, "idx": self.INDEX}
+
+    def test_status_is_never_selectively_disclosable(self, ob3_credential,
+                                                     ed25519_priv_pem,
+                                                     ed25519_pub_pem):
+        # Even asked for explicitly: a holder able to withhold the pointer could
+        # present a revoked badge as an unrevokable one.
+        token = issue_badge_sd_jwt(
+            ob3_credential, privkey_pem=ed25519_priv_pem,
+            status=self._reference(), disclosable=("credentialSubject", "status"))
+        assert "status" in self._payload(token)          # in the JWT, not a digest
+        # And it survives a presentation that drops every disclosure.
+        bare = token.split("~", 1)[0] + "~"
+        result = verify_badge_sd_jwt(bare, pubkey_pem=ed25519_pub_pem)
+        assert result.claims["status"]["status_list"]["idx"] == self.INDEX
+        assert "credentialSubject" not in result.claims   # that one IS withheld
+
+    def test_inner_reference_shape_is_accepted(self, ob3_credential,
+                                               ed25519_priv_pem):
+        # build_token_status_reference returns the {"status": …} wrapper; the
+        # inner object is accepted too, so neither shape is a footgun.
+        inner = self._reference()["status"]
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   status=inner)
+        assert self._payload(token)["status"] == inner
+
+    @pytest.mark.parametrize("bad", [
+        {"status": {}},                                   # no status_list
+        {"status": {"status_list": {"uri": "https://x/l"}}},          # no idx
+        {"status": {"status_list": {"uri": "https://x/l", "idx": -1}}},
+        {"status": {"status_list": {"uri": "https://x/l", "idx": "3"}}},
+        "not-a-mapping",
+    ])
+    def test_malformed_reference_is_rejected_at_issuance(self, bad,
+                                                         ob3_credential,
+                                                         ed25519_priv_pem):
+        # Rejected here rather than producing a badge whose status can never be
+        # read — an unreadable status is indistinguishable from no status.
+        with pytest.raises(EudiError):
+            issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                               status=bad)
+
+    # ── the round trip ───────────────────────────────────────────────────────
+
+    def test_roundtrip_valid_then_revoked(self, ob3_credential, ed25519_priv_pem,
+                                          ed25519_pub_pem):
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   status=self._reference())
+        # 1. nothing flipped: verifies, and reports the status it checked
+        live = self._resolver(self._list_token(ed25519_priv_pem), ed25519_pub_pem)
+        result = verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem,
+                                     require_status=True,
+                                     resolve_status_list_token=live)
+        assert result.claims["achievement"]["name"] == ob3_credential.achievement.name
+
+        # 2. flip this badge's bit and re-sign the list: the same badge is revoked
+        revoked = self._resolver(
+            self._list_token(ed25519_priv_pem, revoked=[self.INDEX]),
+            ed25519_pub_pem)
+        with pytest.raises(EudiError, match="revoked"):
+            verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem,
+                                require_status=True,
+                                resolve_status_list_token=revoked)
+
+    def test_a_neighbours_revocation_does_not_revoke_this_badge(
+            self, ob3_credential, ed25519_priv_pem, ed25519_pub_pem):
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   status=self._reference())
+        others = self._resolver(
+            self._list_token(ed25519_priv_pem, revoked=[self.INDEX - 1,
+                                                        self.INDEX + 1]),
+            ed25519_pub_pem)
+        result = verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem,
+                                     require_status=True,
+                                     resolve_status_list_token=others)
+        assert result.issuer == ob3_credential.issuer.id
+
+    def test_suspended_is_rejected_too(self, ob3_credential, ed25519_priv_pem,
+                                       ed25519_pub_pem):
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   status=self._reference())
+        suspended = self._resolver(
+            self._list_token(ed25519_priv_pem, suspended=[self.INDEX], bits=2),
+            ed25519_pub_pem)
+        with pytest.raises(EudiError, match="suspended"):
+            verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem,
+                                require_status=True,
+                                resolve_status_list_token=suspended)
+
+    # ── fail-closed ──────────────────────────────────────────────────────────
+
+    def test_declared_status_without_resolver_fails_when_required(
+            self, ob3_credential, ed25519_priv_pem, ed25519_pub_pem):
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   status=self._reference())
+        with pytest.raises(EudiError, match="no resolve_status_list_token"):
+            verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem,
+                                require_status=True)
+
+    def test_declared_status_without_resolver_is_skipped_by_default(
+            self, ob3_credential, ed25519_priv_pem, ed25519_pub_pem):
+        # The pre-#270 behaviour for callers that never opted in.
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   status=self._reference())
+        result = verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem)
+        assert result.issuer == ob3_credential.issuer.id
+
+    def test_unresolvable_list_is_not_read_as_valid(self, ob3_credential,
+                                                    ed25519_priv_pem,
+                                                    ed25519_pub_pem):
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   status=self._reference())
+        # The list is published somewhere else entirely: the fetch fails.
+        missing = self._resolver(self._list_token(ed25519_priv_pem),
+                                 ed25519_pub_pem, uri="https://elsewhere/l.jwt")
+        with pytest.raises(EudiError, match="could not check"):
+            verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem,
+                                resolve_status_list_token=missing)
+
+    def test_status_list_signed_by_another_key_is_rejected(
+            self, ob3_credential, ed25519_priv_pem, ed25519_pub_pem,
+            ecc_priv_pem, ecc_pub_pem):
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   status=self._reference())
+        # The list is signed by a key the verifier does not trust: a compromised
+        # status host must not be able to un-revoke (or revoke) a badge.
+        from openvc.keys import P256SigningKey
+        from openvc.status.issue import build_status_list_token
+        from openvc.status.token_status_list import new_status_list
+        foreign = build_status_list_token(
+            signing_key=P256SigningKey.from_pem(ecc_priv_pem, kid="other"),
+            uri=self.STATUS_URI, status_list=new_status_list(64))
+        resolver = self._resolver(foreign, ed25519_pub_pem)
+        with pytest.raises(EudiError, match="could not check"):
+            verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem,
+                                resolve_status_list_token=resolver)
+
+    def test_list_replayed_from_another_url_is_rejected(self, ob3_credential,
+                                                        ed25519_priv_pem,
+                                                        ed25519_pub_pem):
+        # The IETF anti-swap check: a valid list token published at one URL,
+        # served at the URL this badge points to, must not be accepted — it
+        # would un-revoke every badge in the real list.
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   status=self._reference())
+        elsewhere = self._list_token(ed25519_priv_pem,
+                                     uri="https://issuer.example/status/other.jwt")
+        resolver = self._resolver(elsewhere, ed25519_pub_pem)   # served at OUR uri
+        with pytest.raises(EudiError, match="could not check"):
+            verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem,
+                                resolve_status_list_token=resolver)
+
+    def test_expired_status_list_is_rejected(self, ob3_credential,
+                                             ed25519_priv_pem, ed25519_pub_pem):
+        # A lapsed list must not keep answering "not revoked" forever.
+        import time
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   status=self._reference())
+        stale = self._list_token(ed25519_priv_pem,
+                                 expires=int(time.time()) - 3600)
+        with pytest.raises(EudiError, match="could not check"):
+            verify_badge_sd_jwt(
+                token, pubkey_pem=ed25519_pub_pem,
+                resolve_status_list_token=self._resolver(stale, ed25519_pub_pem))
+
+    # ── badges without a status ──────────────────────────────────────────────
+
+    def test_badge_without_status_verifies_and_says_so(self, ob3_credential,
+                                                       ed25519_priv_pem,
+                                                       ed25519_pub_pem):
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem)
+        assert "status" not in self._payload(token)
+        # require_status is about a status that cannot be CHECKED, not about
+        # demanding every badge carry one — same meaning as the delegate's.
+        result = verify_badge_sd_jwt(
+            token, pubkey_pem=ed25519_pub_pem, require_status=True,
+            resolve_status_list_token=self._resolver(
+                self._list_token(ed25519_priv_pem), ed25519_pub_pem))
+        assert result.issuer == ob3_credential.issuer.id

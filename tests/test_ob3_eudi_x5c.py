@@ -82,7 +82,7 @@ def _chain(*, leaf_not_before=_PAST, leaf_not_after=_FUTURE, leaf_crldp=False):
     return [der_b64(leaf), der_b64(inter)], root, leaf_key
 
 
-def _sd_jwt_with_x5c(leaf_key, x5c, *, iss=ISS, vct=OB3_SD_JWT_VCT):
+def _sd_jwt_with_x5c(leaf_key, x5c, *, iss=ISS, vct=OB3_SD_JWT_VCT, status=None):
     """A minimal badge SD-JWT (no disclosures) whose issuer JWT carries *x5c*."""
     from openvc.keys import P256SigningKey
     from openvc.proof._jws import sign_compact
@@ -91,6 +91,8 @@ def _sd_jwt_with_x5c(leaf_key, x5c, *, iss=ISS, vct=OB3_SD_JWT_VCT):
     payload = {'iss': iss, 'vct': vct, 'iat': int(time.time()),
                'name': 'Python 101',
                'achievement': {'id': 'https://ex/b/1', 'name': 'Python 101'}}
+    if status is not None:
+        payload.update(status)
     return sign_compact(
         header, payload, signing_key=P256SigningKey(leaf_key, kid='leaf')) + '~'
 
@@ -106,6 +108,55 @@ class TestX5cTrust:
             _sd_jwt_with_x5c(leaf_key, x5c), x5c_trust_anchors=[root])
         assert result.issuer == ISS
         assert result.vct == OB3_SD_JWT_VCT
+
+    def test_revoked_badge_is_rejected_on_the_x5c_path(self):
+        # #270: credential status is reachable on BOTH trust paths. Here the
+        # delegate does the check (verify_credential owns it); the seam this
+        # library owns is passing require_status/the resolver through, and
+        # surfacing CredentialRevoked as EudiError.
+        from cryptography.hazmat.primitives import serialization
+        from openbadgeslib.ob3.eudi import status_list_token_resolver
+        from openvc.keys import P256SigningKey
+        from openvc.status.issue import (build_status_list_token,
+                                         build_token_status_reference)
+        from openvc.status.token_status_list import new_status_list, set_status
+
+        uri = 'https://issuer.example/status/x5c-list.jwt'
+        x5c, root, leaf_key = _chain()
+        leaf_pub_pem = leaf_key.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo)
+        token = _sd_jwt_with_x5c(
+            leaf_key, x5c, status=build_token_status_reference(uri=uri, index=3))
+
+        def signed_list(*revoked):
+            data = new_status_list(64)
+            for idx in revoked:
+                set_status(data, idx, 1)
+            list_token = build_status_list_token(
+                signing_key=P256SigningKey(leaf_key, kid='leaf'), uri=uri,
+                status_list=data)
+            return status_list_token_resolver(
+                pubkey_pem=leaf_pub_pem, download=lambda _u: list_token.encode())
+
+        ok = verify_badge_sd_jwt(token, x5c_trust_anchors=[root],
+                                 require_status=True,
+                                 resolve_status_list_token=signed_list())
+        assert ok.issuer == ISS
+        with pytest.raises(EudiError, match='revoked'):
+            verify_badge_sd_jwt(token, x5c_trust_anchors=[root],
+                                require_status=True,
+                                resolve_status_list_token=signed_list(3))
+
+    def test_declared_status_unresolvable_fails_closed_on_the_x5c_path(self):
+        from openvc.status.issue import build_token_status_reference
+        x5c, root, leaf_key = _chain()
+        token = _sd_jwt_with_x5c(
+            leaf_key, x5c, status=build_token_status_reference(
+                uri='https://issuer.example/status/x5c-list.jwt', index=3))
+        with pytest.raises(EudiError):
+            verify_badge_sd_jwt(token, x5c_trust_anchors=[root],
+                                require_status=True)
 
     def test_untrusted_anchor_rejected(self):
         x5c, _root, leaf_key = _chain()

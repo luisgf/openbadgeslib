@@ -372,7 +372,54 @@ verified = verify_badge_sd_jwt(received_badge,
 print('trusted issuer:', verified.issuer)         # bound to the x5c-validated chain
 ```
 
-Exactly one of `pubkey_pem` / `x5c_trust_anchors` is required; the return value is the same `VerifiedSdJwt` either way. The trust-list walk is **fail-closed** (a Trusted List that can't be fetched or whose signature can't be verified contributes zero anchors) and **caller-pinned** (no implicit root); `walk_lotl`'s `select=` filters by qualified-service type. Status is not checked on either path — check it separately if you need it.
+Exactly one of `pubkey_pem` / `x5c_trust_anchors` is required; the return value is the same `VerifiedSdJwt` either way. The trust-list walk is **fail-closed** (a Trusted List that can't be fetched or whose signature can't be verified contributes zero anchors) and **caller-pinned** (no implicit root); `walk_lotl`'s `select=` filters by qualified-service type. Credential revocation is checked on both paths when you pass a resolver — see the next section. (Certificate revocation, CRL/OCSP, is a different thing and is checked by neither layer; see [[Security Model]].)
+
+### Revoking an SD-JWT VC badge (IETF Token Status List)
+
+This track revokes through the **IETF OAuth Token Status List** — the JOSE status format SD-JWT VC uses — *not* the W3C Bitstring Status List of the VC-JWT / Data Integrity tracks. **Two formats, two lists:** they differ in bit order and compression, so a badge issued on both tracks needs two status entries pointing at two lists, not one list read two ways. Decide that before allocating indices; a credential carrying a W3C `credentialStatus` is refused by `issue_badge_sd_jwt` rather than silently mapped onto the wrong wire format.
+
+The list itself — packing, signing, publishing — is `openvc-core`'s (`openvc.status`); openbadgeslib carries the reference into the badge and checks it at verification.
+
+```python
+from openbadgeslib.ob3.eudi import (issue_badge_sd_jwt, verify_badge_sd_jwt,
+                                    status_list_token_resolver)
+from openvc.status.issue import (build_status_list_token,
+                                 build_token_status_reference)
+from openvc.status.token_status_list import new_status_list, set_status
+
+LIST_URI = 'https://issuer.example/status/badges-1.jwt'
+
+# 1. Issue: the badge points at index 7 of that list. The `status` claim is
+#    ALWAYS disclosed — a holder must not be able to withhold it.
+token = issue_badge_sd_jwt(
+    credential, privkey_pem=priv_pem,
+    status=build_token_status_reference(uri=LIST_URI, index=7))
+
+# 2. Publish the list (serve these bytes at LIST_URI):
+bits = new_status_list(131072)                     # all valid
+list_token = build_status_list_token(signing_key=key, uri=LIST_URI,
+                                     status_list=bits)
+
+# 3. Verify with the status check wired in:
+resolve = status_list_token_resolver(pubkey_pem=pub_pem)   # fetch + verify
+result = verify_badge_sd_jwt(token, pubkey_pem=pub_pem,
+                             require_status=True,
+                             resolve_status_list_token=resolve)
+
+# 4. Revoke: flip the bit, re-sign, re-publish. The same badge now fails.
+set_status(bits, 7, 1)                             # 1 = INVALID (revoked)
+```
+
+`resolve_status_list_token` is any `uri -> claims` callable; `status_list_token_resolver` builds the safe default — it fetches over HTTPS (SSRF-guarded, size-capped) and verifies the list token's signature with a key you pin, including the IETF anti-swap check that the token's `sub` equals the URL it came from. Without it a list served at one URL could be replayed at another to un-revoke a badge.
+
+The two knobs are independent, and both fail closed:
+
+| | no resolver | resolver supplied |
+|---|---|---|
+| `require_status=False` (default) | status not checked; badge verifies | status checked; revoked/suspended → `EudiError` |
+| `require_status=True` | badge that *declares* a status → `EudiError` | same as above |
+
+`require_status` is about a status that cannot be **checked**, not about demanding every badge carry one: a badge issued without `status=` verifies under either setting and is simply not revocable. An unreadable list — fetch failure, wrong signing key, expired token, wrong `sub` — always raises rather than being read as "not revoked".
 
 ## Presenting a Data Integrity badge over OpenID4VP (`ldp_vc`)
 

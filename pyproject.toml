@@ -48,7 +48,7 @@ dependencies = [
     # engine is structurally immune — it never calls jwt.decode — but the OB3
     # path is not.)
     "PyJWT[crypto]>=2.13",
-    "cryptography>=42",
+"cryptography>=42",
     "defusedxml>=0.7",
 ]
 
@@ -63,8 +63,12 @@ ldp = [
 # SemVer/deprecation contract, so the pin follows SemVer: floor at the version
 # the suite is tested against, ceiling at the next major.
 # See openbadgeslib/ob3/eudi.py.
+# The floor is >=1.22 in substance — IETF Token Status List revocation
+# (openvc.status.issue.build_token_status_reference, .token_status_list.
+# check_token_status) landed there — and is set at the release the suite is
+# actually tested against, per the rule above.
 eudi = [
-    "openvc-core>=1.21,<2",
+    "openvc-core>=1.23,<2",
 ]
 # ecdsa-sd-2023 (selective disclosure) VERIFY for the OB 3.0 Data Integrity
 # track: credentials secured with the ecdsa-sd-2023 cryptosuite are verified by
