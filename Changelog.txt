@@ -8,6 +8,25 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
   A security & correctness hardening pass (audit-bot).
 
+  - feat(eudi): SD-JWT VC badges are revocable, via the IETF OAuth Token Status
+    List. `issue_badge_sd_jwt(..., status=...)` takes the reference
+    `openvc.status.issue.build_token_status_reference(uri=…, index=…)` builds and
+    emits it as a `status` claim that is **always disclosed** — never selectively
+    disclosable, whatever `disclosable=` says, since a holder able to withhold
+    the pointer could present a revoked badge as an unrevokable one. On the
+    verify side both trust paths (pinned key and x5c) now take
+    `require_status` / `resolve_status_list_token`: a badge whose bit says
+    revoked or suspended raises `EudiError`, and every way of not knowing the
+    status fails closed — an unresolvable, wrongly-signed, expired or
+    URL-swapped list raises rather than reading as "not revoked". The new
+    `status_list_token_resolver(pubkey_pem=…)` builds the safe default resolver
+    (HTTPS fetch + openvc-core's `verify_status_list_token`, including the IETF
+    anti-swap `sub` check). Encoding, signing and packing stay openvc-core's;
+    the `[eudi]` floor moves to >=1.23. This closes the #226 irrevocability
+    boundary for this track. Two formats, two lists: a credential carrying a
+    W3C `credentialStatus` (Bitstring) is still refused at SD-JWT issuance
+    rather than silently mapped onto a different wire format — a badge issued
+    on both tracks needs an index in each list (#245, #270).
   - security(ob2): make the fetched copy of a HostedBadge authoritative for the
     whole document. `_verify_hosted` reconciled only `id`, `recipient`, `badge`,
     `issuedOn` and `expires` and then kept the copy baked into the image, so
