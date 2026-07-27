@@ -1,0 +1,11 @@
+# The bundled JSON-LD contexts are integrity-pinned: openbadgeslib/ob3/contexts/
+# __init__.py records a SHA-256 per file, and that digest is the control which
+# makes the fail-closed context allowlist meaningful (the bundled document
+# decides what a Data Integrity proof covers). Git's EOL conversion would
+# rewrite them to CRLF on a Windows checkout, so the bytes on disk would stop
+# being the bytes that were hashed and the provenance could not be checked at
+# all — which is exactly what the gate exists to prevent (#266, #274).
+#
+# `-text` disables EOL conversion for these files on every platform. Treat any
+# other byte-pinned artifact the same way.
+openbadgeslib/ob3/contexts/*.json -text

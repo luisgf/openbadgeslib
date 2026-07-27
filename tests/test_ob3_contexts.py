@@ -139,3 +139,24 @@ def test_every_bundled_context_has_recorded_provenance():
         'context files without a recorded SHA-256: %s; digests recorded for '
         'files that are not shipped: %s'
         % (sorted(shipped - recorded), sorted(recorded - shipped)))
+
+
+def test_gitattributes_pins_the_contexts_against_eol_conversion():
+    """The digests above are only checkable if git leaves the bytes alone.
+
+    Without a `-text` attribute git rewrites these files to CRLF on a Windows
+    checkout, so every recorded digest mismatches and the provenance control
+    cannot be evaluated on that platform at all — which is how the Windows CI
+    leg went red for three days (#274). Pin the attribute, not just the digests.
+    """
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    attributes = (root / '.gitattributes')
+    assert attributes.is_file(), '.gitattributes is missing (#274)'
+    rules = [line.split('#', 1)[0].split()
+             for line in attributes.read_text(encoding='utf-8').splitlines()
+             if line.strip() and not line.lstrip().startswith('#')]
+    assert any(rule and rule[0].endswith('ob3/contexts/*.json')
+               and '-text' in rule[1:] for rule in rules), (
+        '.gitattributes must mark openbadgeslib/ob3/contexts/*.json as -text so '
+        'git never rewrites the line endings the recorded SHA-256 digests cover')
