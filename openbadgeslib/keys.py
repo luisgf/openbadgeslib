@@ -29,7 +29,9 @@
 # ``key_to_pem`` now takes only ``cryptography`` key objects and PEM bytes/str.
 
 from typing import Any, Optional, Tuple, Union, cast
-from .errors import PublicKeyReadError, UnknownKeyType
+from .errors import (
+    GenPrivateKeyError, PrivateKeyReadError, PublicKeyReadError, UnknownKeyType)
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization as _crypto_serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -37,6 +39,32 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 from enum import Enum
 import logging
 logger = logging.getLogger(__name__)
+
+# What a failed PEM load raises depends on the `cryptography` version: up to v46
+# an unsupported key algorithm came back as ValueError; **v47 changed the
+# contract** to UnsupportedAlgorithm (which is NOT a ValueError). Our floor
+# spans that change, so both are caught in one place and mapped onto the
+# library's own taxonomy — a caller must never have to know which cryptography
+# it resolved, and a raw crypto exception must never escape as a traceback.
+_PEM_LOAD_ERRORS = (ValueError, TypeError, UnsupportedAlgorithm)
+
+
+def _load_private_pem(data: bytes) -> Any:
+    """Load a private key PEM, mapping any load failure to PrivateKeyReadError."""
+    try:
+        return _crypto_serialization.load_pem_private_key(data, password=None)
+    except _PEM_LOAD_ERRORS as exc:
+        raise PrivateKeyReadError(
+            'Unable to read private key PEM: %s' % exc) from exc
+
+
+def _load_public_pem(data: bytes) -> Any:
+    """Load a public key PEM, mapping any load failure to PublicKeyReadError."""
+    try:
+        return _crypto_serialization.load_pem_public_key(data)
+    except _PEM_LOAD_ERRORS as exc:
+        raise PublicKeyReadError(
+            'Unable to read public key PEM: %s' % exc) from exc
 
 
 class KeyType(Enum):
@@ -100,20 +128,26 @@ class KeyRSA(KeyBase):
 
     def generate_keypair(self) -> Tuple[bytes, bytes]:
         """ Generate a RSA Key, returning in PEM Format """
-        self.priv_key = rsa.generate_private_key(
-            public_exponent=65537, key_size=self._key_size)
+        try:
+            self.priv_key = rsa.generate_private_key(
+                public_exponent=65537, key_size=self._key_size)
+        except (ValueError, UnsupportedAlgorithm) as exc:
+            # cryptography v48 enforces a 1024-bit floor on key_size; below it
+            # (and on any other refused parameter) this must be a library error,
+            # not a raw traceback out of the CLI.
+            raise GenPrivateKeyError(
+                'Unable to generate a %d-bit RSA key: %s'
+                % (self._key_size, exc)) from exc
         self.pub_key = self.priv_key.public_key()
         return self.get_priv_key_pem(), self.get_pub_key_pem()
 
     def read_private_key(self, key_pem: Any = None) -> None:
         """ Read the private key from param in PEM format """
-        self.priv_key = _crypto_serialization.load_pem_private_key(
-            _pem_bytes(key_pem), password=None)
+        self.priv_key = _load_private_pem(_pem_bytes(key_pem))
 
     def read_public_key(self, key_pem: Any = None) -> None:
         """ Read the public key from param in PEM format """
-        self.pub_key = _crypto_serialization.load_pem_public_key(
-            _pem_bytes(key_pem))
+        self.pub_key = _load_public_pem(_pem_bytes(key_pem))
 
     def get_priv_key_pem(self) -> bytes:
         return _private_pem(self.priv_key)
@@ -137,13 +171,11 @@ class KeyECC(KeyBase):
 
     def read_private_key(self, key_pem: Any = None) -> None:
         """ Read the private key from param in PEM format """
-        self.priv_key = _crypto_serialization.load_pem_private_key(
-            _pem_bytes(key_pem), password=None)
+        self.priv_key = _load_private_pem(_pem_bytes(key_pem))
 
     def read_public_key(self, key_pem: Any = None) -> None:
         """ Read the public key from param in PEM format """
-        self.pub_key = _crypto_serialization.load_pem_public_key(
-            _pem_bytes(key_pem))
+        self.pub_key = _load_public_pem(_pem_bytes(key_pem))
 
     def get_priv_key_pem(self) -> bytes:
         return _private_pem(self.priv_key)
@@ -155,7 +187,7 @@ class KeyECC(KeyBase):
 def _load_ed25519_private_key(key_pem: Optional[Union[str, bytes]]) -> Ed25519PrivateKey:
     if key_pem is None:
         raise UnknownKeyType('No Ed25519 private key PEM provided')
-    key = _crypto_serialization.load_pem_private_key(_pem_bytes(key_pem), password=None)
+    key = _load_private_pem(_pem_bytes(key_pem))
     if not isinstance(key, Ed25519PrivateKey):
         raise UnknownKeyType('PEM is not an Ed25519 private key')
     return key
@@ -164,7 +196,7 @@ def _load_ed25519_private_key(key_pem: Optional[Union[str, bytes]]) -> Ed25519Pr
 def _load_ed25519_public_key(key_pem: Optional[Union[str, bytes]]) -> Ed25519PublicKey:
     if key_pem is None:
         raise UnknownKeyType('No Ed25519 public key PEM provided')
-    key = _crypto_serialization.load_pem_public_key(_pem_bytes(key_pem))
+    key = _load_public_pem(_pem_bytes(key_pem))
     if not isinstance(key, Ed25519PublicKey):
         raise UnknownKeyType('PEM is not an Ed25519 public key')
     return key
@@ -249,7 +281,7 @@ def public_jwk_from_pem(pubkey_pem: Union[str, bytes]) -> dict[str, Any]:
     import json
     from jwt.algorithms import ECAlgorithm, OKPAlgorithm, RSAAlgorithm
     try:
-        pub = _crypto_serialization.load_pem_public_key(_pem_bytes(pubkey_pem))
+        pub = _load_public_pem(_pem_bytes(pubkey_pem))
         if isinstance(pub, rsa.RSAPublicKey):
             jwk_json = RSAAlgorithm.to_jwk(pub)
         elif isinstance(pub, ec.EllipticCurvePublicKey):
@@ -277,12 +309,9 @@ def ec_curve_from_pem(pem_data: Union[str, bytes]) -> Optional[str]:
     fixes the JOSE algorithm.
     """
     data = _pem_bytes(pem_data)
-    for load in (
-        lambda: _crypto_serialization.load_pem_public_key(data),
-        lambda: _crypto_serialization.load_pem_private_key(data, password=None),
-    ):
+    for load in (_load_public_pem, _load_private_pem):
         try:
-            key = load()
+            key = load(data)
         except Exception:
             continue
         if isinstance(key, (ec.EllipticCurvePublicKey,
@@ -302,12 +331,9 @@ def detect_key_type(pem_data: Union[str, bytes]) -> 'KeyType':
     """
     data = _pem_bytes(pem_data)
     key: Any = None
-    for load in (
-        lambda: _crypto_serialization.load_pem_public_key(data),
-        lambda: _crypto_serialization.load_pem_private_key(data, password=None),
-    ):
+    for load in (_load_public_pem, _load_private_pem):
         try:
-            key = load()
+            key = load(data)
             break
         except Exception:
             continue

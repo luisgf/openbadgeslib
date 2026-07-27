@@ -8,6 +8,21 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
   A security & correctness hardening pass (audit-bot).
 
+  - fix(keys): a failed PEM load lands in the library's exception taxonomy on
+    every supported `cryptography`, and the floor moves to >=45. cryptography
+    v47 changed the contract — loading a key of an unsupported algorithm now
+    raises `UnsupportedAlgorithm`, which is NOT a ValueError — while
+    `KeyRSA`/`KeyECC.read_private_key`/`read_public_key` and the Ed25519 loaders
+    caught nothing at all, so a corrupt or unsupported key PEM escaped as a raw
+    crypto traceback (the `Badge` entry point was already guarded; these direct
+    callers were not). All PEM loading now goes through one guarded helper that
+    maps both contracts onto `PrivateKeyReadError` / `PublicKeyReadError`,
+    keeping the original exception as `__cause__`; `detect_key_type` /
+    `ec_curve_from_pem` stay total. `KeyRSA.generate_keypair` maps the v48
+    1024-bit floor to `GenPrivateKeyError` instead of a raw ValueError. The
+    floor is 45 (openvc-core's own pin, so the extras resolve one range) rather
+    than 47: both contracts are handled and tested, so requiring an April-2026
+    release would buy nothing (#244).
   - feat(eudi): build the OpenID4VCI credential configuration entry for an Open
     Badge issued as SD-JWT VC. `badge_credential_configuration()` returns the
     `credential_configurations_supported` entry a wallet reads to request the
