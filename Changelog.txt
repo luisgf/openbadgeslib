@@ -4,9 +4,11 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v4.1.0 - unreleased
+* v4.1.0 - 2026-07-27
 
-  A security & correctness hardening pass (audit-bot).
+  The EUDI SD-JWT VC track becomes revocable (IETF Token Status List) and
+  advertisable over OpenID4VCI, on top of a security & correctness hardening
+  pass (audit-bot).
 
   - fix(build): stop git's EOL conversion from defeating the bundled contexts'
     recorded SHA-256 provenance on Windows. Without a `.gitattributes` entry git
