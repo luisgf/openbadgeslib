@@ -16,7 +16,7 @@ dependencies:
   # input, so CVE-2026-32597 (crit validation) and CVE-2026-48525 (b64=false
   # payload DoS) are on a reachable path.
   - pyjwt>=2.13
-  - cryptography>=42    # required by pyjwt[crypto]
+  - cryptography>=45    # required by pyjwt[crypto]; openvc-core's core pin too
   - defusedxml>=0.7     # hardened XML parsing of untrusted SVG badges
 
   # Development / testing

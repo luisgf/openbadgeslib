@@ -48,7 +48,13 @@ dependencies = [
     # engine is structurally immune — it never calls jwt.decode — but the OB3
     # path is not.)
     "PyJWT[crypto]>=2.13",
-"cryptography>=42",
+    # Floor at 45, openvc-core's own core pin — so an install that takes the
+    # [eudi]/[ldp-sd] extras resolves one range, not two. It is deliberately
+    # BELOW cryptography 47, where loading a key of an unsupported algorithm
+    # started raising UnsupportedAlgorithm instead of ValueError: 47 is recent
+    # (2026-04) and pinning it would buy nothing, because keys.py handles both
+    # exception contracts in one place and tests both (#244).
+    "cryptography>=45",
     "defusedxml>=0.7",
 ]
 
