@@ -8,6 +8,18 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
   A security & correctness hardening pass (audit-bot).
 
+  - feat(eudi): build the OpenID4VCI credential configuration entry for an Open
+    Badge issued as SD-JWT VC. `badge_credential_configuration()` returns the
+    `credential_configurations_supported` entry a wallet reads to request the
+    badge — `format: dc+sd-jwt`, the `vct`, signing/proof algorithms (ES256, the
+    HAIP floor), `cryptographic_binding_methods_supported`, `claims` and
+    `display` — derived from the same `badge_type_metadata()` document the
+    issuer serves at that `vct`, so the advertised claim set and the served Type
+    Metadata cannot drift apart (the drift makes a wallet reject the credential
+    or display nothing). Pure-Python, no `[eudi]` extra. The enclosing
+    `/.well-known/openid-credential-issuer` document, the Credential Offer and
+    the endpoints stay the application's: they are deployment policy, one per
+    tenant (#271).
   - feat(eudi): SD-JWT VC badges are revocable, via the IETF OAuth Token Status
     List. `issue_badge_sd_jwt(..., status=...)` takes the reference
     `openvc.status.issue.build_token_status_reference(uri=…, index=…)` builds and

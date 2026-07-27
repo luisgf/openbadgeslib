@@ -53,6 +53,9 @@ from ..util import download_file
 # A vct (Verifiable Credential Type) for Open Badges expressed as SD-JWT VC.
 OB3_SD_JWT_VCT = "https://purl.imsglobal.org/spec/ob/v3p0#OpenBadgeCredential"
 
+# The OpenID4VCI / DCQL format identifier for an IETF SD-JWT VC credential.
+OB3_SD_JWT_FORMAT = "dc+sd-jwt"
+
 # Claims made selectively disclosable by default: the recipient's identity, so a
 # holder can present the achievement while withholding who they are.
 DEFAULT_DISCLOSABLE = ("credentialSubject",)
@@ -248,6 +251,110 @@ def _status_claim(status: Mapping[str, Any]) -> dict[str, Any]:
             "status carries no status_list reference; build it with "
             "openvc.status.issue.build_token_status_reference(uri=…, index=…)")
     return claim
+
+
+# ── OpenID4VCI credential configuration (Credential Issuer Metadata) ─────────
+# An OpenID4VCI issuer advertises what it can issue in
+# ``credential_configurations_supported``, and a wallet picks one by
+# ``credential_configuration_id``. The *content* of the Open Badge entry is Open
+# Badges knowledge — the vct, the claim set, which claims are disclosable — so it
+# is built here, from the same constants issuance uses, instead of hand-written
+# once per deployment. The *document* that embeds it
+# (``/.well-known/openid-credential-issuer``: credential_issuer, endpoints,
+# authorization servers, per-tenant display) is deployment policy and stays the
+# application's; so are the Credential Offer, the Credential Response and the
+# nonce store. Pure-Python — no ``[eudi]`` extra needed.
+
+# Human labels for the badge claim paths, so a wallet has something to show.
+_CLAIM_DISPLAY_NAMES: dict[tuple[str, ...], str] = {
+    ("name",): "Credential name",
+    ("achievement",): "Achievement",
+    ("achievement", "name"): "Achievement name",
+    ("validFrom",): "Valid from",
+    ("validUntil",): "Valid until",
+    ("credentialSubject",): "Recipient",
+}
+
+
+def badge_credential_configuration(
+    *,
+    vct: str = OB3_SD_JWT_VCT,
+    signing_alg_values: Iterable[str] = ("ES256",),
+    proof_signing_alg_values: Optional[Iterable[str]] = None,
+    cryptographic_binding_methods: Iterable[str] = ("jwk",),
+    display: Optional[Iterable[Mapping[str, Any]]] = None,
+    scope: Optional[str] = None,
+    locale: str = "en",
+) -> dict[str, Any]:
+    """Build the ``credential_configurations_supported`` **entry** for an Open
+    Badge issued as SD-JWT VC (OpenID4VCI 1.0, Appendix A.3 — ``dc+sd-jwt``).
+
+    Returns one configuration object: ``format``, ``vct``,
+    ``credential_signing_alg_values_supported``,
+    ``cryptographic_binding_methods_supported``, ``proof_types_supported``
+    (``jwt``, whose ``proof_signing_alg_values_supported`` defaults to
+    *signing_alg_values*), ``claims`` and ``display``, plus ``scope`` when given.
+    Put it in your metadata document under the ``credential_configuration_id`` you
+    want wallets to request::
+
+        {"credential_configurations_supported": {
+            "openbadge_sd_jwt_vc": badge_credential_configuration()}}
+
+    The two facts this exists to keep straight are the ones a hand-written copy
+    gets wrong: the ``vct`` is the one :func:`issue_badge_sd_jwt` actually stamps,
+    and the ``claims`` are exactly what :func:`badge_to_sd_jwt_claims` emits —
+    both derived here from :func:`badge_type_metadata`, so the Type Metadata
+    document an issuer serves and the configuration it advertises cannot drift
+    apart. ``mandatory`` mirrors that document: the achievement is always
+    disclosed, the recipient (``credentialSubject``) is the selectively
+    disclosable one (``DEFAULT_DISCLOSABLE``).
+
+    *display* defaults to a generic English label; an issuer with a badge in hand
+    passes its own name, logo and locales. *signing_alg_values* defaults to
+    ``ES256``, the algorithm HAIP pins for EUDI wallets.
+
+    Two things this deliberately does NOT do. It does not build the enclosing
+    ``/.well-known/openid-credential-issuer`` document — ``credential_issuer``,
+    the endpoints, the authorization servers and per-tenant display are
+    deployment policy, and a multi-tenant issuer has one document per tenant. And
+    it does not declare the revocation ``status`` claim
+    (:func:`issue_badge_sd_jwt`'s ``status=``): it is machine-read, never
+    displayed, and declaring it would also change the Type Metadata document's
+    bytes and therefore every already-published ``vct#integrity`` pin.
+
+    Note on layout: OpenID4VCI 1.0 Final carries ``claims`` and ``display`` at
+    the top level of the configuration, which is what this emits. The EU
+    reference issuer has moved them under a ``credential_metadata`` object; if
+    you must match that deployment, nest them yourself — it is a pure dict.
+    """
+    algs = list(signing_alg_values)
+    proof_algs = list(proof_signing_alg_values) if proof_signing_alg_values is not None else algs
+    claims: list[dict[str, Any]] = []
+    for claim in badge_type_metadata(vct)["claims"]:
+        path = list(claim["path"])
+        entry: dict[str, Any] = {
+            "path": path,
+            "mandatory": bool(claim.get("mandatory", False)),
+        }
+        label = _CLAIM_DISPLAY_NAMES.get(tuple(path))
+        if label is not None:
+            entry["display"] = [{"name": label, "locale": locale}]
+        claims.append(entry)
+    configuration: dict[str, Any] = {
+        "format": OB3_SD_JWT_FORMAT,
+        "vct": vct,
+        "credential_signing_alg_values_supported": algs,
+        "cryptographic_binding_methods_supported": list(cryptographic_binding_methods),
+        "proof_types_supported": {
+            "jwt": {"proof_signing_alg_values_supported": proof_algs},
+        },
+        "claims": claims,
+        "display": ([dict(d) for d in display] if display is not None
+                    else [{"name": "Open Badge 3.0", "locale": locale}]),
+    }
+    if scope is not None:
+        configuration["scope"] = scope
+    return configuration
 
 
 def issue_badge_sd_jwt(

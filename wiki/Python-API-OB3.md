@@ -353,6 +353,29 @@ token = issue_badge_sd_jwt(credential, privkey_pem=priv_pem, vct=vct,
 
 The `vct#integrity` claim (a W3C SRI hash over the served bytes) pins the metadata, so a wallet fails closed on any tampering. `badge_type_metadata` / `type_metadata_document_bytes` / `type_metadata_integrity` are pure-Python (no `[eudi]` extra). For issuers who publish a did:web, `openbadges-publish -V 3` **emits this document for you**: set `[issuer] sd_jwt_vct` to a vct under `publish_url` and it is written into the webroot alongside `did.json` (byte-exact, `--check-live`-verified). The default `vct` stays the imsglobal purl, which ships no metadata.
 
+### Advertising the badge over OpenID4VCI (`credential_configurations_supported`)
+
+An OpenID4VCI issuer publishes what it can issue in the `credential_configurations_supported` object of its Credential Issuer Metadata, and a wallet picks one by `credential_configuration_id`. The *content* of the Open Badge entry is Open Badges knowledge — the `vct`, the claim set, which claims are selectively disclosable — so build it rather than hand-copying it from the spec:
+
+```python
+from openbadgeslib.ob3.eudi import badge_credential_configuration
+
+metadata = {                                    # your document, your policy
+    'credential_issuer': 'https://issuer.example',
+    'credential_endpoint': 'https://issuer.example/credential',
+    'nonce_endpoint': 'https://issuer.example/nonce',
+    'authorization_servers': ['https://as.example'],
+    'credential_configurations_supported': {
+        'openbadge_sd_jwt_vc': badge_credential_configuration(
+            display=[{'name': 'Python 101', 'locale': 'en'}]),
+    },
+}
+```
+
+The entry's `vct` is the one `issue_badge_sd_jwt()` actually stamps and its `claims` are derived from the same `badge_type_metadata()` document you serve at that `vct` — the two artifacts cannot drift, which is the failure this prevents (a wallet that rejects the credential, or displays nothing). `credential_signing_alg_values_supported` defaults to `ES256`, the HAIP algorithm for EUDI wallets; `cryptographic_binding_methods_supported` to `jwk`, matching the `holder_jwk=` key binding above. Pure-Python: no `[eudi]` extra needed.
+
+**Out of scope on purpose:** the enclosing `/.well-known/openid-credential-issuer` document (endpoints, authorization servers, per-tenant display — deployment policy, and one document per tenant in a multi-tenant issuer), the Credential Offer, the Credential Response and the nonce store. The protocol endpoints are the application's; this library supplies the format knowledge. Note that OpenID4VCI 1.0 Final carries `claims`/`display` at the top level of the configuration, which is what this emits; the EU reference issuer nests them under `credential_metadata` — nest them yourself if you must match that deployment.
+
 ### Verifying a third-party badge via eIDAS X.509 / EU Trusted Lists
 
 `verify_badge_sd_jwt` is **JWK-pinned** by default (`pubkey_pem=…`) — right when you hold the issuer's key. To verify a badge from an **unknown** issuer whose trust root is the eIDAS X.509 world, pass `x5c_trust_anchors` instead: a received badge whose issuer JWT carries an `x5c` chain is path-validated to those roots and **bound to `iss`** before its key is used (delegated to openvc-core's `verify_credential`; the JWK-pin path cannot do X.509 trust). Needs the `[eudi]` extra.
