@@ -132,7 +132,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Set up Python 3.15 (pre-release)
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.15'
           # Only consulted while a version line has no GA build (today: 3.15).
