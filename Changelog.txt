@@ -4,6 +4,27 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v4.2.0 - unreleased
+
+  The OpenID4VCI credential configuration can declare key attestations.
+
+  - feat(eudi): `badge_credential_configuration()` takes
+    `key_attestations_required=`, so an issuer that requires a wallet key
+    attestation can advertise it — `{}` for "required, no additional
+    constraints", or the OpenID4VCI 1.0 D.2 resistance values it accepts under
+    `key_storage` / `user_authentication`. The default stays **omitted**, and
+    that default is normative rather than conservative: §12.2.4 says the
+    parameter "MUST NOT be present in the metadata" unless the issuer requires an
+    attestation, and an empty object is not a neutral placeholder but the
+    positive claim that one is needed — emitting it unasked would have every
+    badge issuer demand a hardware-backed attestation and lock out the software
+    wallets that cannot produce one. Callers who pass nothing get the same bytes
+    as before. The shape is validated (`EudiError` on an unknown key, an empty
+    array where the spec says non-empty, a bare string where an array belongs, or
+    a non-string level) and defensively copied; the resistance values are not
+    checked, since D.2 lets each ecosystem define its own (#276).
+
+
 * v4.1.0 - 2026-07-27
 
   The EUDI SD-JWT VC track becomes revocable (IETF Token Status List) and

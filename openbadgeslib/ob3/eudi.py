@@ -275,12 +275,61 @@ _CLAIM_DISPLAY_NAMES: dict[tuple[str, ...], str] = {
     ("credentialSubject",): "Recipient",
 }
 
+# The only two constraints OpenID4VCI 1.0 Appendix D.2 defines inside
+# ``key_attestations_required``. The *values* are deliberately extensible there
+# ("ecosystems may define their own values"), so only the shape is checked here,
+# never the level strings themselves.
+_KEY_ATTESTATION_CONSTRAINTS = ("key_storage", "user_authentication")
+
+
+def _key_attestations_required(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate and copy a ``key_attestations_required`` object.
+
+    Empty is legal and meaningful — OpenID4VCI 1.0 §12.2.4: with both
+    ``key_storage`` and ``user_authentication`` absent the object indicates "a key
+    attestation is needed without additional constraints". What is rejected is the
+    shape a wallet cannot act on: an unknown key, an empty array where the spec
+    says non-empty, or a bare string where an array belongs — that last one is
+    silent otherwise, since ``list("iso_18045_moderate")`` is a list of letters.
+    """
+    if not isinstance(value, Mapping):
+        raise EudiError(
+            "key_attestations_required must be a mapping (use {} for 'required, "
+            "no additional constraints'), got %s" % type(value).__name__)
+    unknown = sorted(k for k in value if k not in _KEY_ATTESTATION_CONSTRAINTS)
+    if unknown:
+        raise EudiError(
+            "unknown key_attestations_required key(s) %s; OpenID4VCI 1.0 D.2 "
+            "defines only %s" % (", ".join(unknown),
+                                 ", ".join(_KEY_ATTESTATION_CONSTRAINTS)))
+    required: dict[str, Any] = {}
+    for name in _KEY_ATTESTATION_CONSTRAINTS:
+        if name not in value:
+            continue
+        levels = value[name]
+        if isinstance(levels, (str, bytes)) or not isinstance(levels, (list, tuple)):
+            raise EudiError(
+                "key_attestations_required.%s must be a list of attack potential "
+                "resistance values, got %s" % (name, type(levels).__name__))
+        if not levels:
+            raise EudiError(
+                "key_attestations_required.%s must be a non-empty array; omit the "
+                "key entirely to leave it unconstrained" % name)
+        for level in levels:
+            if not isinstance(level, str):
+                raise EudiError(
+                    "key_attestations_required.%s values must be strings, got %s"
+                    % (name, type(level).__name__))
+        required[name] = list(levels)
+    return required
+
 
 def badge_credential_configuration(
     *,
     vct: str = OB3_SD_JWT_VCT,
     signing_alg_values: Iterable[str] = ("ES256",),
     proof_signing_alg_values: Optional[Iterable[str]] = None,
+    key_attestations_required: Optional[Mapping[str, Any]] = None,
     cryptographic_binding_methods: Iterable[str] = ("jwk",),
     display: Optional[Iterable[Mapping[str, Any]]] = None,
     scope: Optional[str] = None,
@@ -293,7 +342,8 @@ def badge_credential_configuration(
     ``credential_signing_alg_values_supported``,
     ``cryptographic_binding_methods_supported``, ``proof_types_supported``
     (``jwt``, whose ``proof_signing_alg_values_supported`` defaults to
-    *signing_alg_values*), ``claims`` and ``display``, plus ``scope`` when given.
+    *signing_alg_values*), ``claims`` and ``display``, plus ``scope`` and the
+    proof type's ``key_attestations_required`` when given.
     Put it in your metadata document under the ``credential_configuration_id`` you
     want wallets to request::
 
@@ -313,6 +363,18 @@ def badge_credential_configuration(
     passes its own name, logo and locales. *signing_alg_values* defaults to
     ``ES256``, the algorithm HAIP pins for EUDI wallets.
 
+    *key_attestations_required* is omitted by default, and that default is
+    normative rather than conservative: OpenID4VCI 1.0 §12.2.4 says the parameter
+    "MUST NOT be present in the metadata" unless the issuer requires a key
+    attestation, and an **empty** object is not a neutral placeholder — it is the
+    positive claim "a key attestation is needed without additional constraints".
+    Emitting it unasked would have every badge issuer demand a hardware-backed
+    attestation from every holder and lock out software wallets. An issuer that
+    does require one passes ``{}``, or ``{"key_storage": [...],
+    "user_authentication": [...]}`` with the Appendix D.2 resistance values it
+    accepts; the shape is validated (:class:`EudiError`), the values are not —
+    D.2 lets each ecosystem define its own.
+
     Two things this deliberately does NOT do. It does not build the enclosing
     ``/.well-known/openid-credential-issuer`` document — ``credential_issuer``,
     the endpoints, the authorization servers and per-tenant display are
@@ -329,6 +391,10 @@ def badge_credential_configuration(
     """
     algs = list(signing_alg_values)
     proof_algs = list(proof_signing_alg_values) if proof_signing_alg_values is not None else algs
+    proof_jwt: dict[str, Any] = {"proof_signing_alg_values_supported": proof_algs}
+    if key_attestations_required is not None:
+        proof_jwt["key_attestations_required"] = _key_attestations_required(
+            key_attestations_required)
     claims: list[dict[str, Any]] = []
     for claim in badge_type_metadata(vct)["claims"]:
         path = list(claim["path"])
@@ -345,9 +411,7 @@ def badge_credential_configuration(
         "vct": vct,
         "credential_signing_alg_values_supported": algs,
         "cryptographic_binding_methods_supported": list(cryptographic_binding_methods),
-        "proof_types_supported": {
-            "jwt": {"proof_signing_alg_values_supported": proof_algs},
-        },
+        "proof_types_supported": {"jwt": proof_jwt},
         "claims": claims,
         "display": ([dict(d) for d in display] if display is not None
                     else [{"name": "Open Badge 3.0", "locale": locale}]),
