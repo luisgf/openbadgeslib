@@ -4,9 +4,11 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v4.2.0 - unreleased
+* v4.2.0 - 2026-07-29
 
-  The OpenID4VCI credential configuration can declare key attestations.
+  The OpenID4VCI credential configuration an issuer advertises can now declare
+  the key attestation it requires from a wallet — opt-in, because the spec makes
+  the field's mere presence a demand.
 
   - feat(eudi): `badge_credential_configuration()` takes
     `key_attestations_required=`, so an issuer that requires a wallet key
