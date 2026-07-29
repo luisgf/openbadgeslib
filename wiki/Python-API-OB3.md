@@ -374,6 +374,23 @@ metadata = {                                    # your document, your policy
 
 The entry's `vct` is the one `issue_badge_sd_jwt()` actually stamps and its `claims` are derived from the same `badge_type_metadata()` document you serve at that `vct` — the two artifacts cannot drift, which is the failure this prevents (a wallet that rejects the credential, or displays nothing). `credential_signing_alg_values_supported` defaults to `ES256`, the HAIP algorithm for EUDI wallets; `cryptographic_binding_methods_supported` to `jwk`, matching the `holder_jwk=` key binding above. Pure-Python: no `[eudi]` extra needed.
 
+#### Key attestations
+
+The `jwt` proof type can also declare `key_attestations_required` — what the issuer expects a wallet to prove about where it keeps the holder's key. It is **omitted by default, and that is the normative default**, not a conservative one. OpenID4VCI 1.0 §12.2.4: *"If the Credential Issuer does not require a key attestation, this parameter MUST NOT be present in the metadata."* An empty object is not a neutral placeholder either — it is the positive claim *"a key attestation is needed without additional constraints"*. So do not add it to satisfy a strict wallet parser: you would be telling every holder that your badge demands a hardware-backed attestation, and the software wallets that cannot produce one would be locked out of an ordinary Open Badge.
+
+An issuer that genuinely requires one asks for it, either bare or with the Appendix D.2 resistance values it accepts:
+
+```python
+badge_credential_configuration(key_attestations_required={})   # required, unconstrained
+
+badge_credential_configuration(key_attestations_required={
+    'key_storage': ['iso_18045_moderate'],
+    'user_authentication': ['iso_18045_moderate'],
+})
+```
+
+The shape is validated — an unknown key, an empty array (the spec says *non-empty*), a bare string where an array belongs, or a non-string level all raise `EudiError` at build time rather than at a holder's wallet. The resistance *values* are not checked: D.2 defines `iso_18045_high` / `iso_18045_moderate` / `iso_18045_enhanced-basic` / `iso_18045_basic` but lets each ecosystem define its own. Note that HAIP requires *wallets* to support key attestations (§4.5.1); it does not require issuers to demand them.
+
 **Out of scope on purpose:** the enclosing `/.well-known/openid-credential-issuer` document (endpoints, authorization servers, per-tenant display — deployment policy, and one document per tenant in a multi-tenant issuer), the Credential Offer, the Credential Response and the nonce store. The protocol endpoints are the application's; this library supplies the format knowledge. Note that OpenID4VCI 1.0 Final carries `claims`/`display` at the top level of the configuration, which is what this emits; the EU reference issuer nests them under `credential_metadata` — nest them yourself if you must match that deployment.
 
 ### Verifying a third-party badge via eIDAS X.509 / EU Trusted Lists

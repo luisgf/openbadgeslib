@@ -12,6 +12,7 @@ from openbadgeslib.ob3.eudi import (
     DEFAULT_DISCLOSABLE,
     OB3_SD_JWT_FORMAT,
     OB3_SD_JWT_VCT,
+    EudiError,
     badge_credential_configuration,
     badge_to_sd_jwt_claims,
     badge_type_metadata,
@@ -29,6 +30,8 @@ class TestCredentialConfigurationShape:
             "proof_signing_alg_values_supported"] == ["ES256"]
         assert cfg["display"] == [{"name": "Open Badge 3.0", "locale": "en"}]
         assert "scope" not in cfg                    # only when asked for
+        assert "key_attestations_required" not in cfg[
+            "proof_types_supported"]["jwt"]          # ditto — see below
 
     def test_caller_overrides(self):
         cfg = badge_credential_configuration(
@@ -55,6 +58,74 @@ class TestCredentialConfigurationShape:
     def test_is_json_serializable(self):
         import json
         json.loads(json.dumps(badge_credential_configuration()))
+
+
+class TestKeyAttestationsRequired:
+    """An empty ``key_attestations_required`` is not a placeholder: OpenID4VCI
+    1.0 §12.2.4 makes it the claim "a key attestation is needed without
+    additional constraints", and says the parameter MUST NOT be present at all
+    unless the issuer requires one. So the default is absence, and asking for it
+    is explicit."""
+
+    def _jwt(self, **kwargs):
+        return badge_credential_configuration(**kwargs)["proof_types_supported"]["jwt"]
+
+    def test_absent_by_default(self):
+        # Do not "fix" a strict wallet by emitting {} here: that would declare
+        # every badge issuer demands a key attestation, locking out the software
+        # wallets that cannot produce one.
+        assert "key_attestations_required" not in self._jwt()
+
+    def test_empty_object_means_required_without_constraints(self):
+        assert self._jwt(key_attestations_required={})[
+            "key_attestations_required"] == {}
+
+    def test_constraints_are_emitted(self):
+        jwt = self._jwt(key_attestations_required={
+            "key_storage": ["iso_18045_moderate"],
+            "user_authentication": ["iso_18045_moderate", "iso_18045_high"]})
+        assert jwt["key_attestations_required"] == {
+            "key_storage": ["iso_18045_moderate"],
+            "user_authentication": ["iso_18045_moderate", "iso_18045_high"]}
+        assert jwt["proof_signing_alg_values_supported"] == ["ES256"]
+
+    def test_is_copied_not_aliased(self):
+        mine = {"key_storage": ["iso_18045_moderate"]}
+        emitted = self._jwt(key_attestations_required=mine)[
+            "key_attestations_required"]
+        emitted["user_authentication"] = ["iso_18045_high"]
+        emitted["key_storage"].append("iso_18045_basic")
+        assert mine == {"key_storage": ["iso_18045_moderate"]}
+
+    def test_is_json_serializable(self):
+        import json
+        json.loads(json.dumps(badge_credential_configuration(
+            key_attestations_required={"key_storage": ["iso_18045_moderate"]})))
+
+    def test_unknown_key_is_rejected(self):
+        with pytest.raises(EudiError):
+            self._jwt(key_attestations_required={
+                "key_storag": ["iso_18045_moderate"]})
+
+    def test_empty_array_is_rejected(self):
+        # The spec says "non-empty array"; omitting the key is how you say
+        # "unconstrained".
+        with pytest.raises(EudiError):
+            self._jwt(key_attestations_required={"key_storage": []})
+
+    def test_bare_string_is_rejected(self):
+        # Left alone this would be emitted as a list of single letters.
+        with pytest.raises(EudiError):
+            self._jwt(key_attestations_required={
+                "user_authentication": "iso_18045_moderate"})
+
+    def test_non_string_level_is_rejected(self):
+        with pytest.raises(EudiError):
+            self._jwt(key_attestations_required={"key_storage": [4]})
+
+    def test_non_mapping_is_rejected(self):
+        with pytest.raises(EudiError):
+            self._jwt(key_attestations_required=["iso_18045_moderate"])
 
 
 class TestNoDrift:
