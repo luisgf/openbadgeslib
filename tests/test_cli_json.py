@@ -258,6 +258,36 @@ def test_ob2_wrong_receptor_json_exits_nonzero(tmp_path, svg_rsa_badge, rsa_pub_
     assert result['valid'] is False
 
 
+def test_ob1_failed_signature_with_trusted_key_is_not_trusted_json(
+        tmp_path, svg_rsa_badge, rsa_pub_pem, capsys):
+    """#278: an OB1 badge that FAILS the signature check against an operator-
+    supplied trusted key (-k) must report trusted:false. The OB1 path used to
+    set the trust flag unconditionally before the valid/invalid branch, so a
+    SIGNATURE_ERROR with a trusted key emitted {valid:false, trusted:true} —
+    contradicting the #258 invariant the other versions already honour."""
+    from openbadgeslib.keys import KeyRSA
+    # Sign with the fixture RSA key, then verify against a DIFFERENT, valid RSA
+    # key: the signature cannot match, so verification fails while a trusted key
+    # IS supplied (is_trusted=True) — the exact path the bug lived on.
+    other = KeyRSA()
+    other.generate_keypair()
+    wrong_pub = tmp_path / 'wrong.pem'
+    wrong_pub.write_bytes(other.get_pub_key_pem())
+
+    badge_file = _make_signed_ob2_svg(tmp_path, svg_rsa_badge)
+    argv = ['openbadges-verifier', '-i', str(badge_file), '-r', 'recipient@example.com',
+            '-V', '1', '-k', str(wrong_pub), '--json']
+    code, result = _run(argv, capsys, extra_patches=(
+        patch('openbadgeslib.ob1.badge.download_file', return_value=rsa_pub_pem),
+        patch('openbadgeslib.ob1.verifier.download_file',
+              side_effect=_fake_revocation_download),
+    ))
+    assert code == 1
+    assert result['valid'] is False
+    assert result['status'] == 'SIGNATURE_ERROR'
+    assert result['trusted'] is False
+
+
 # ── shared ───────────────────────────────────────────────────────────────────
 
 def test_missing_file_json(tmp_path, capsys):

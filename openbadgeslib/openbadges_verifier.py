@@ -292,11 +292,15 @@ def _verify_ob1(args: argparse.Namespace) -> None:
 
         check = v.get_badge_status(badge)
         logger.debug("OB1 verify result: %s", check.status.name)
-        result['trusted'] = is_trusted
         result['status'] = check.status.name
 
         if check.status is BadgeStatus.VALID:
             result['valid'] = True
+            # Set trusted only on the VALID branch, mirroring the OB2/OB3 paths:
+            # the seeded trusted=False must persist for a badge that failed to
+            # verify, so the payload never claims a bad signature is trusted
+            # (#258) — the invariant _finish's docstring promises.
+            result['trusted'] = is_trusted
             if is_trusted:
                 result['reason'] = None
                 if not args.json:
