@@ -190,6 +190,27 @@ class IdentityObject:
     hashed: bool
     salt: Optional[str] = None
 
+    @classmethod
+    def create(cls, email: str, salt: Optional[str] = None,
+               identity_type: str = 'emailAddress') -> "IdentityObject":
+        """Build a salted-hash identifier from a plaintext email.
+
+        The OB 2.0 mirror of this is ``ob2.models.IdentityObject.create``; both
+        produce the same ``sha256$<hex>`` over ``email + salt``, because it is
+        the same recipient identity in two credential formats.
+
+        This exists for the case where ``credentialSubject.id`` is NOT the
+        recipient — a credential bound to a wallet key carries the holder's
+        did:jwk there, so the recipient would otherwise vanish from the
+        credential entirely. Putting the hash in ``credentialSubject.identifier``
+        keeps the badge attributable to a person without publishing their
+        address to every verifier that sees it.
+        """
+        from ..util import hash_email
+        digest = hash_email(email, salt if salt is not None else '')
+        return cls(identity_hash='sha256$' + digest.decode('ascii'),
+                   identity_type=identity_type, hashed=True, salt=salt)
+
     def to_dict(self) -> dict[str, Any]:
         # This schema type sets additionalProperties:false — emit these keys only.
         d: dict[str, Any] = {

@@ -58,7 +58,12 @@ from ..errors import (
 from ..util import normalize_recipient_id, recipient_ids_match
 from .status_list import DEFAULT_SIZE_BITS
 
-_SCHEMA_VERSION = 1
+#: Bumped to 2 when reservations (``pending`` / ``offer_expires_at``) were
+#: added for OID4VCI. A version-1 file reads unchanged — every entry in one is
+#: a delivered credential, which is exactly what pending=False means — so no
+#: migration step exists or is needed.
+_SCHEMA_VERSION = 2
+_READABLE_SCHEMA_VERSIONS = (1, 2)
 
 #: Random allocation attempts before falling back to a linear scan. With the
 #: spec-minimum 131072-bit list this only triggers past ~99.9% occupancy.
@@ -109,13 +114,26 @@ class StatusEvent:
 
 @dataclass
 class StatusEntry:
-    """The registry record of one issued credential."""
+    """The registry record of one issued credential.
+
+    ``pending`` marks an index RESERVED for a credential that has not been
+    delivered yet — an OID4VCI offer whose wallet has not claimed it. The
+    index counts as used from the moment it is reserved, because the
+    alternative is deciding it at claim time, inside a concurrent request, on
+    a lock that is a no-op on some platforms. An unclaimed reservation is a
+    capacity cost, never a correctness one.
+    """
     jti: str
     index: int
     recipient: str
     issued_on: str
     revoked: Optional[StatusEvent] = None
     suspended: Optional[StatusEvent] = None
+    pending: bool = False
+    #: When the offer backing a pending reservation lapses. Past this, the
+    #: index can be reclaimed by an explicit operator action — never
+    #: automatically, and never from a request path.
+    offer_expires_at: Optional[str] = None
 
 
 class StatusRegistry:
@@ -168,7 +186,7 @@ class StatusRegistry:
                 raise ValueError("'entries' must be a JSON object, got %s"
                                  % type(entries).__name__)
             stored_bits = int(data['size_bits'])
-            if int(data['version']) != _SCHEMA_VERSION:
+            if int(data['version']) not in _READABLE_SCHEMA_VERSIONS:
                 raise ValueError('unsupported version %r' % (data['version'],))
             if size_bits < stored_bits:
                 raise ValueError(
@@ -184,6 +202,8 @@ class StatusRegistry:
                     issued_on=raw['issued_on'],
                     revoked=_event_from(raw.get('revoked')),
                     suspended=_event_from(raw.get('suspended')),
+                    pending=bool(raw.get('pending', False)),
+                    offer_expires_at=raw.get('offer_expires_at'),
                 )
                 if not 0 <= entry.index < registry.size_bits \
                         or entry.index in registry._used_indices:
@@ -246,10 +266,17 @@ class StatusRegistry:
 
     # ── issuance ─────────────────────────────────────────────────────────────
 
-    def allocate(self, jti: str, recipient: str,
-                 issued_on: datetime) -> int:
-        """Assign a free random index to a newly issued credential and record
-        it. Raises StatusListFull when every index is taken."""
+    def allocate(self, jti: str, recipient: str, issued_on: datetime, *,
+                 pending: bool = False,
+                 offer_expires_at: Optional[datetime] = None) -> int:
+        """Assign a free random index to a credential and record it.
+
+        ``pending`` reserves the index for a credential that has not been
+        delivered yet (an OID4VCI offer awaiting its wallet); pass
+        ``offer_expires_at`` so :meth:`reclaimable` can later tell a lapsed
+        reservation from a live one. Raises StatusListFull when every index is
+        taken.
+        """
         if jti in self.entries:
             raise ValueError('jti %r already has index %d'
                              % (jti, self.entries[jti].index))
@@ -259,9 +286,60 @@ class StatusRegistry:
             index=index,
             recipient=normalize_recipient_id(recipient),
             issued_on=_iso_z(issued_on),
+            pending=pending,
+            offer_expires_at=_iso_z(offer_expires_at)
+            if offer_expires_at is not None else None,
         )
         self._used_indices.add(index)
         return index
+
+    def mark_delivered(self, jti: str, issued_on: Optional[datetime] = None
+                       ) -> None:
+        """Turn a reservation into a delivered credential.
+
+        Called when the wallet actually claims it. Clears ``pending`` so the
+        index stops being reclaimable — after this the credential exists in
+        someone's wallet and its index must stay assigned forever, which is the
+        same invariant every directly issued badge already has.
+        """
+        entry = self._entry(jti)
+        entry.pending = False
+        entry.offer_expires_at = None
+        if issued_on is not None:
+            entry.issued_on = _iso_z(issued_on)
+
+    def pending_entries(self) -> List[StatusEntry]:
+        """Reservations whose credential has not been delivered."""
+        return [entry for entry in self.entries.values() if entry.pending]
+
+    def reclaimable(self, now: datetime) -> List[StatusEntry]:
+        """Reservations whose offer lapsed without ever being claimed.
+
+        Reporting only: freeing these is an explicit operator action, never
+        automatic. A reservation with no recorded expiry is never reclaimable,
+        because "we do not know when this lapses" must not read as "it has".
+        """
+        cutoff = _iso_z(now)
+        return [entry for entry in self.entries.values()
+                if entry.pending and entry.offer_expires_at is not None
+                and entry.offer_expires_at <= cutoff]
+
+    def reclaim(self, jti: str) -> int:
+        """Free a lapsed reservation's index, returning it.
+
+        Refuses anything that is not a pending reservation: a delivered
+        credential's index can never be reused, since the credential is out
+        there and reissuing its index would make revoking one revoke the other.
+        """
+        entry = self._entry(jti)
+        if not entry.pending:
+            raise ValueError(
+                'credential %r was delivered, so its status list index cannot '
+                'be reclaimed — reusing it would tie two credentials to one '
+                'revocation bit' % jti)
+        del self.entries[jti]
+        self._used_indices.discard(entry.index)
+        return entry.index
 
     def _free_index(self) -> int:
         if len(self._used_indices) >= self.size_bits:
@@ -353,6 +431,12 @@ def _entry_to_dict(entry: StatusEntry) -> dict[str, Any]:
         data['revoked'] = entry.revoked.to_dict()
     if entry.suspended is not None:
         data['suspended'] = entry.suspended.to_dict()
+    # Written only when set, so a registry with no reservations serialises
+    # byte-identically to what schema 1 produced.
+    if entry.pending:
+        data['pending'] = True
+    if entry.offer_expires_at is not None:
+        data['offer_expires_at'] = entry.offer_expires_at
     return data
 
 

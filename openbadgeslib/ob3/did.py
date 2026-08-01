@@ -36,6 +36,7 @@
 # did:web is only as trustworthy as the host's DNS and TLS. Neither is a
 # ledger/anchored method; did:ion, did:ethr, etc. are out of scope.
 
+import base64
 import json
 
 from typing import Any, Optional, Sequence, Tuple, cast
@@ -183,6 +184,52 @@ def did_key_from_pem(pubkey_pem: Any) -> str:
     unsupported key types.
     """
     return 'did:key:' + multikey_from_pem(pubkey_pem)
+
+
+# ── did:jwk ──────────────────────────────────────────────────────────────────
+
+#: JWK members that only ever appear in a PRIVATE key. A holder key arriving
+#: from a wallet must never carry one; their presence means the wallet is
+#: leaking its private key, or probing for an issuer that would embed it in a
+#: published identifier. Rejected rather than stripped: silently accepting a
+#: request that leaked a private key would hide the wallet's bug from both
+#: sides. Mirrors openvc's own _PRIVATE_JWK_MEMBERS check on the proof header.
+_PRIVATE_JWK_MEMBERS = frozenset({'d', 'k', 'p', 'q', 'dp', 'dq', 'qi', 'priv'})
+
+
+def did_jwk_from_jwk(jwk: Any) -> str:
+    """Derive the did:jwk identifier of a public JWK.
+
+    Self-certifying like did:key — the key IS the identifier — but it carries a
+    JWK rather than a multicodec key, so it expresses any key type JOSE can name
+    instead of just Ed25519/P-256. That is what makes it the right subject
+    identifier for a credential bound to a wallet key: the key arrives from the
+    wallet as a JWK (an OID4VCI key proof header), and round-tripping it through
+    a PEM to reach :func:`did_key_from_pem` would reject P-384 and RSA holders
+    for no reason.
+
+    The JWK is serialised canonically (sorted keys, no whitespace) and
+    base64url-encoded without padding, so the same key always yields the same
+    DID. Raises ValueError if *jwk* is not a JSON object, carries a private-key
+    member, has no ``kty``, or is not JSON-serialisable.
+    """
+    if not isinstance(jwk, dict):
+        raise ValueError('did:jwk needs a JWK object, got %s'
+                         % type(jwk).__name__)
+    leaked = sorted(_PRIVATE_JWK_MEMBERS.intersection(jwk))
+    if leaked:
+        raise ValueError(
+            'refusing to build a did:jwk from a JWK carrying private key '
+            'material (%s)' % ', '.join(leaked))
+    if not jwk.get('kty'):
+        raise ValueError('did:jwk needs a JWK with a kty member')
+    try:
+        encoded = json.dumps(jwk, sort_keys=True, separators=(',', ':'),
+                             ensure_ascii=False).encode('utf-8')
+    except (TypeError, ValueError) as exc:
+        raise ValueError('JWK is not JSON-serialisable: %s' % exc) from exc
+    return 'did:jwk:' + base64.urlsafe_b64encode(encoded).decode(
+        'ascii').rstrip('=')
 
 
 # ── did:web ──────────────────────────────────────────────────────────────────
