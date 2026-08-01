@@ -60,6 +60,28 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     written against a frozen instant — which made the store's own test suite
     pass on the day it was written and fail a week later on the calendar
     rather than on a code change.
+  - security(verifier): `openbadges-verifier -V 1` no longer reports
+    `trusted: true` for a badge that FAILED verification (#278). The OB 1.0 path
+    set the trust flag before the valid/invalid branch, so a tampered badge
+    checked against an operator-supplied key (-k/--local) emitted
+    `{valid: false, trusted: true, status: SIGNATURE_ERROR}` — contradicting the
+    invariant the OB 2.0 and OB 3.0 paths already honoured (#258) and that a
+    consumer reading the JSON object, rather than the exit status, relies on.
+    Exit codes are unchanged: such a badge already exited 1.
+  - fix(cli): `openbadges-signer` maps a misconfigured badge section to a clean
+    `[!]` error instead of a raw traceback (#279). It built the badge model
+    without the mapper that turns a missing config key or an unreadable
+    key/image into an IssuanceError, so the most likely first-run mistake — a
+    section missing `private_key`, or keys not generated yet — ended in a
+    KeyError traceback in human mode (`--json` was already covered).
+  - fix(errors): the documented exception tree no longer misfiles
+    `AmbiguousCredential` (#280). `openbadgeslib.errors` carried a dead
+    `AmbiguousCredential(StatusError)` that was never raised, while the one
+    actually raised and exported is `ob3.publish.AmbiguousCredential`, a
+    `PublishError` — so `except StatusError` around a publish/revoke call, as
+    the tree in the docstring and the wiki instructed, did not catch it. The
+    dead class is gone and the `PublishError` family (with `CredentialNotFound`)
+    is documented in both places.
 
 
 * v4.2.0 - 2026-07-29
