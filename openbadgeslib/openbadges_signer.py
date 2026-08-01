@@ -50,8 +50,8 @@ from .badge_model import Badge
 from .mail import BadgeMail
 # Issuance orchestration lives in openbadgeslib.issue; this module is the CLI
 # front end (flag parsing, I/O and display) over it.
-from .issue import (IssuanceError, SignResult, issue_badge, issue_batch,
-                    output_basename)
+from .issue import (IssuanceError, SignResult, _badge_from_conf, issue_badge,
+                    issue_batch, output_basename)
 from .util import emit_cli_json
 from .cli_common import (config_parser, debug_parser, json_parser,
                          version_parser)
@@ -143,7 +143,15 @@ def _run_sign(args: argparse.Namespace) -> dict[str, Any]:
                  args.badge, len(recipients), args.ob_version, args.output)
     conf = read_config_or_exit(args.config)
     badge = resolve_badge_section(conf, args.badge)
-    badge_obj = Badge.create_from_conf(conf, badge)
+    # Build the Badge through the shared mapper so a missing config key or an
+    # unreadable key/image surfaces as the documented IssuanceError (a clean
+    # '[!] ...' exit), not a raw KeyError/PrivateKeyReadError traceback — the
+    # single most likely first-run crash (keys not generated yet). In --json
+    # mode emit_cli_json turns this sys.exit into the {"error": ...} object.
+    try:
+        badge_obj = _badge_from_conf(conf, badge)
+    except IssuanceError as exc:
+        sys.exit('[!] %s' % exc)
 
     # A single -r keeps the historical single-badge behaviour (exit codes,
     # output); several recipients or a --recipients-file switch to batch.

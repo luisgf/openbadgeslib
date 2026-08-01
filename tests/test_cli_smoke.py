@@ -215,6 +215,55 @@ def test_keygenerator_json_error_is_json(tmp_path, capsys):
     assert 'error' in json.loads(capsys.readouterr().out)
 
 
+def _write_signer_missing_key_config(tmp_path):
+    # A badge section that resolves but omits the signing key pair — the common
+    # "config written, keys not generated yet" first-run state.
+    (tmp_path / 'log').mkdir()
+    cfg = tmp_path / 'config.ini'
+    cfg.write_text(
+        "[paths]\n"
+        f"base = {tmp_path}\n"
+        f"base_key = {tmp_path}/keys\n"
+        f"base_log = {tmp_path}/log\n"
+        f"base_image = {tmp_path}/images\n\n"
+        "[logs]\ngeneral = general.log\nsigner = signer.log\n\n"
+        "[issuer]\nname = Test Issuer\n\n"
+        "[badge_1]\nname = Badge 1\n")   # no private_key/public_key
+    return cfg
+
+
+def test_signer_missing_key_config_exits_cleanly(tmp_path):
+    # #279: openbadges-signer must map a missing key/config to a clean '[!]'
+    # exit, not leak a raw KeyError/PrivateKeyReadError traceback in human mode.
+    import pytest
+    from openbadgeslib import openbadges_signer
+    cfg = _write_signer_missing_key_config(tmp_path)
+    argv = ['openbadges-signer', '-c', str(cfg), '-b', '1', '-E',
+            '-r', 'recipient@example.com', '-o', str(tmp_path / 'out')]
+    with patch.object(sys, 'argv', argv):
+        with pytest.raises(SystemExit) as exc:
+            openbadges_signer.main()
+    # sys.exit('[!] ...') carries the message in .code; it must be the clean
+    # IssuanceError text, and the process must not have raised a traceback.
+    assert exc.value.code != 0
+    assert 'private_key' in str(exc.value.code)
+
+
+def test_signer_missing_key_config_json_error_is_json(tmp_path, capsys):
+    import json
+    import pytest
+    from openbadgeslib import openbadges_signer
+    cfg = _write_signer_missing_key_config(tmp_path)
+    argv = ['openbadges-signer', '-c', str(cfg), '-b', '1', '-E',
+            '-r', 'recipient@example.com', '-o', str(tmp_path / 'out'), '--json']
+    with patch.object(sys, 'argv', argv):
+        with pytest.raises(SystemExit) as exc:
+            openbadges_signer.main()
+    assert exc.value.code == 1
+    result = json.loads(capsys.readouterr().out)
+    assert 'error' in result and 'private_key' in result['error']
+
+
 # ── openbadges-verifier OB3 end-to-end ──────────────────────────────────────────
 
 def test_verifier_ob3_end_to_end(tmp_path, rsa_priv_pem, rsa_pub_pem, svg_image, capsys):
