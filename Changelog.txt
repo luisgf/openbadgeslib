@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v4.3.0 - unreleased
+* v4.3.0 - 2026-08-01
 
   Issue a badge straight to a wallet, over OpenID4VCI.
 
