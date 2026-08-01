@@ -82,6 +82,13 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     the tree in the docstring and the wiki instructed, did not catch it. The
     dead class is gone and the `PublishError` family (with `CredentialNotFound`)
     is documented in both places.
+  - build(deps): the openvc-core floors move to >=1.24 across `[eudi]`,
+    `[ldp-sd]` and `[oid4vci]`, which is the release the suite is actually
+    tested against — the rule the extras already documented, applied uniformly
+    (`[ldp-sd]` had been left behind at >=1.21). Substantively 1.23 still
+    suffices for the OpenID4VCI key proof and 1.22 for the Token Status List;
+    1.24 is additive over both (`ResolveProofKey` is unchanged and not
+    deprecated), so an install already on 1.24 sees no behaviour change.
 
 
 * v4.2.0 - 2026-07-29
