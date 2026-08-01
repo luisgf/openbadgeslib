@@ -66,7 +66,8 @@ from ._ob1_api import OB1_API as _OB1_API  # noqa: F401
 # (hence cryptography) — inside the run-to-run noise — so the documentation of
 # the recommended modern API is worth more than it.
 from .issue import (  # noqa: F401
-    IssuanceError, SignResult, issue_from_conf,
+    CredentialResult, IssuanceError, SignResult, issue_credential_from_conf,
+    issue_from_conf,
 )
 from .verify import verify_badge  # noqa: F401
 
@@ -113,6 +114,9 @@ __all__ = [
     'OpenBadgeCredential', 'Achievement', 'Issuer',
     # Keys (KeyEd25519 is the recommended OB 3.0 / LDP key type).
     'KeyFactory', 'KeyRSA', 'KeyECC', 'KeyEd25519',
-    # Programmatic issue / verify facades.
-    'issue_from_conf', 'verify_badge', 'IssuanceError', 'SignResult',
+    # Programmatic issue / verify facades. issue_credential_from_conf is the
+    # token-returning sibling of issue_from_conf, for delivering a credential
+    # over a digital channel (a wallet, an API) rather than as a badge image.
+    'issue_from_conf', 'issue_credential_from_conf', 'verify_badge',
+    'IssuanceError', 'SignResult', 'CredentialResult',
 ]

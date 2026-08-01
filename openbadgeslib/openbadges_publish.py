@@ -77,6 +77,16 @@ def build_parser() -> argparse.ArgumentParser:
                        help='OB3 only: show the full status record of a '
                             'credential by jti (urn:uuid:...) or recipient '
                             'email, including revocation/suspension reason')
+    group.add_argument('--reclaim-unclaimed', action='store_true',
+                       help='OB3 only: free the status list indices of OID4VCI '
+                            'offers that lapsed without a wallet ever claiming '
+                            'them, and mark the claimed ones delivered. Frees '
+                            'an index only when the registry AND the OID4VCI '
+                            'store agree nothing was issued against it. Add '
+                            '--dry-run to see what it would do.')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='With --reclaim-unclaimed: report only, change '
+                             'nothing')
     parser.add_argument('--reason',
                         help='Free-text reason recorded with --revoke/--suspend')
     parser.add_argument('-b', '--badge',
@@ -120,6 +130,19 @@ def main() -> None:
                 lambda: query_ob3(args.config, args.badge, args.status))
         else:
             query_ob3(args.config, args.badge, args.status)
+        return
+
+    if args.reclaim_unclaimed:
+        if args.ob_version != '3':
+            sys.exit('[!] --reclaim-unclaimed works on the OpenBadges 3.0 '
+                     'status registries and needs -V 3')
+        if args.reason:
+            sys.exit('[!] --reason needs --revoke or --suspend')
+        if args.json:
+            emit_cli_json(lambda: reclaim_ob3(args.config, args.badge,
+                                              dry_run=args.dry_run))
+        else:
+            reclaim_ob3(args.config, args.badge, dry_run=args.dry_run)
         return
 
     if args.ob_version == '3':
@@ -226,12 +249,92 @@ def query_ob3(config: str, badge: Optional[str],
     return _print_registry_table(registries)
 
 
+def reclaim_ob3(config: str, badge: Optional[str], *,
+                dry_run: bool = False) -> dict[str, Any]:
+    """Reconcile OID4VCI status reservations, freeing the lapsed ones.
+
+    An offer reserves a revocation slot before knowing whether a wallet will
+    ever claim it. This is the operator's way to get the unclaimed ones back —
+    deliberately manual and offline, never automatic and never from a request
+    path, because freeing a slot whose credential IS in a wallet would tie two
+    credentials to one revocation bit.
+
+    A slot is freed only when the registry says the reservation is still
+    pending, the OID4VCI store says its grant never issued, and the offer has
+    lapsed. Anything the two sources disagree about is left alone and
+    reported.
+    """
+    from .confparser import ob3_status_config, oid4vci_config
+    from .errors import ConfigError, StatusError
+    from .oid4vci.reconcile import reconcile_reservations
+    from .oid4vci.sqlite_store import SqliteOID4VCIStore
+
+    conf = read_config_or_exit(config)
+    try:
+        if badge:
+            sections = [resolve_badge_section(conf, badge)]
+        else:
+            sections = [n for n in conf.sections() if n.startswith('badge_')]
+        sections = [name for name in sections
+                    if ob3_status_config(conf, name) is not None]
+        cfg = oid4vci_config(conf)
+    except (ConfigError, ValueError) as exc:
+        print('[!] %s' % exc)
+        sys.exit(1)
+
+    if not sections:
+        sys.exit('[!] No badge has status_lists configured in %s' % config)
+    if not os.path.exists(cfg.store_path):
+        sys.exit('[!] No OID4VCI store at %s — nothing has been offered to a '
+                 'wallet from this config' % cfg.store_path)
+
+    store = SqliteOID4VCIStore(cfg.store_path)
+    results = []
+    freed = 0
+    try:
+        for name in sections:
+            try:
+                result = reconcile_reservations(conf, name, store=store,
+                                                reclaim=not dry_run)
+            except StatusError as exc:
+                print('[!] Skipping [%s] — %s' % (name, exc))
+                continue
+            freed += len(result.reclaimed)
+            results.append({'badge': name,
+                            'pending': result.pending_total,
+                            'delivered': result.delivered,
+                            'reclaimed': result.reclaimed,
+                            'undecided': result.undecided})
+            if not result.pending_total:
+                continue
+            print('\n# %s — %d reservation%s'
+                  % (name, result.pending_total,
+                     '' if result.pending_total == 1 else 's'))
+            print('  delivered (kept) : %d' % len(result.delivered))
+            print('  still claimable  : %d' % len(result.undecided))
+            print('  %s : %d'
+                  % ('would reclaim   ' if dry_run else 'reclaimed       ',
+                     len(result.reclaimed)))
+    finally:
+        store.close()
+
+    print('\n%d index%s %s across %d badge%s'
+          % (freed, '' if freed == 1 else 'es',
+             'would be freed' if dry_run else 'freed',
+             len(results), '' if len(results) == 1 else 's'))
+    return {'badges': results, 'reclaimed': freed, 'dry_run': dry_run}
+
+
 def _state_label(entry: 'StatusEntry') -> str:
     """One-word lifecycle state; revocation (permanent) dominates suspension."""
     if entry.revoked is not None:
         return 'REVOKED'
     if entry.suspended is not None:
         return 'SUSPENDED'
+    if entry.pending:
+        # An OID4VCI offer's reserved slot: the index is spoken for, but no
+        # credential has been delivered against it yet.
+        return 'reserved'
     return 'active'
 
 
@@ -278,10 +381,20 @@ def _print_registry_table(
         for cells in (header, *rows):
             print('  '.join(cells[i].ljust(widths[i])
                             for i in range(len(header))).rstrip())
+    reserved = sum(len(registry.pending_entries())
+                   for _, registry in registries)
     print('\n%d credential%s total across %d badge%s'
           % (grand_total, '' if grand_total == 1 else 's',
              len(registries), '' if len(registries) == 1 else 's'))
-    return {'badges': badges, 'total': grand_total}
+    if reserved:
+        # Reservations occupy indices without a credential existing, so an
+        # operator watching capacity needs them called out rather than folded
+        # into the total.
+        print('%d of those %s an unclaimed OID4VCI reservation; '
+              'openbadges publish --reclaim-unclaimed frees the ones whose '
+              'offer has lapsed'
+              % (reserved, 'is' if reserved == 1 else 'are'))
+    return {'badges': badges, 'total': grand_total, 'reserved': reserved}
 
 
 def _print_status_detail(registries: List[Tuple[str, 'StatusRegistry']],

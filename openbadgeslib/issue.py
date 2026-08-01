@@ -371,13 +371,19 @@ def _ob3_setup(conf: configparser.ConfigParser, badge: str, badge_obj: Badge,
 
 def _build_ob3_credential(ctx: _Ob3Context, recipient: str,
                           evidence: Optional[str],
-                          expires: Optional[int]) -> Any:
-    """Build one OpenBadgeCredential from the shared context (no status yet)."""
+                          expires: Optional[int],
+                          credential_id: Optional[str] = None) -> Any:
+    """Build one OpenBadgeCredential from the shared context (no status yet).
+
+    ``credential_id`` pins the credential's id instead of letting the model
+    mint one, for a flow that had to know the id before signing — a reserved
+    status-list slot is recorded against it."""
     from .ob3 import OpenBadgeCredential
     expiration_date = None
     if expires:
         expiration_date = datetime.now(tz=timezone.utc) + timedelta(days=expires)
     return OpenBadgeCredential(
+        id=credential_id,
         issuer=ctx.issuer,
         recipient_id=normalize_recipient_id(recipient),
         achievement=ctx.achievement,
@@ -410,6 +416,185 @@ def _sign_ob3_credential(badge: str, credential: Any, badge_obj: Badge,
             return signer.sign_into_svg(credential, badge_obj.image)
         return signer.sign_into_png(credential, badge_obj.image)
     except ErrorSigningFile as exc:
+        raise IssuanceError(str(exc)) from exc
+
+
+@dataclass
+class CredentialResult:
+    """One OB 3.0 credential issued as a TOKEN rather than baked into an image.
+
+    The counterpart of :class:`SignResult` for callers that deliver a credential
+    over a digital channel — a wallet claiming it over OID4VCI, an LMS API, an
+    email carrying the JWT — where a PNG is not the deliverable and baking one
+    is wasted work.
+
+    ``credential_format`` is the OID4VCI vocabulary (``jwt_vc_json`` /
+    ``vc+sd-jwt``), which is a different axis from the badge section's
+    ``proof_format``: that one governs the baked-image path only."""
+
+    credential_format: str
+    token: str
+    credential: 'OpenBadgeCredential'
+    jti: Optional[str] = None
+    status_index: Optional[int] = None
+    holder_did: Optional[str] = None    # did:jwk of the bound holder, if any
+    notices: List[str] = field(default_factory=list)
+
+
+def _bind_holder(credential: Any, recipient: str,
+                 holder_jwk: dict[str, Any]) -> str:
+    """Rebind a credential's subject to a wallet key, keeping the recipient.
+
+    ``credentialSubject.id`` becomes the holder's did:jwk — the key that proved
+    possession — and the recipient's address moves to
+    ``credentialSubject.identifier`` as a salted hash. Both matter: without the
+    first the credential is not bound to the wallet at all, and without the
+    second the badge stops being attributable to a person, since the holder key
+    is an opaque blob nobody can match to a learner.
+
+    The salt is fresh per credential, so the same address hashed for two badges
+    does not correlate them. Returns the did:jwk.
+    """
+    from .ob3 import IdentityObject
+    from .ob3.did import did_jwk_from_jwk
+
+    try:
+        holder_did = did_jwk_from_jwk(holder_jwk)
+    except ValueError as exc:
+        raise IssuanceError('invalid holder key: %s' % exc) from exc
+    credential.recipient_id = holder_did
+    credential.identifiers = [
+        IdentityObject.create(recipient, salt=os.urandom(16).hex())]
+    return holder_did
+
+
+def _stamp_status(credential: Any, status_conf: Any, index: int) -> None:
+    """Attach credentialStatus entries for an ALREADY allocated index.
+
+    The split from :func:`_allocate_status_batch` exists because OID4VCI
+    allocates at offer time and signs later, when the wallet claims: the index
+    is decided in the issuer's own control path, and the request path only
+    stamps it. Reserving an index inside the credential endpoint instead would
+    put a registry write — an exclusive lock plus a full-file rewrite, and a
+    no-op lock on platforms without fcntl — into a concurrent HTTP path."""
+    from .ob3.status_list import status_entry
+    credential.credential_status = [
+        status_entry(status_conf.list_urls[p], p, index)
+        for p in status_conf.purposes]
+
+
+def issue_credential_from_conf(conf: configparser.ConfigParser, badge: str,
+                               recipient: str, *,
+                               credential_format: str = 'jwt_vc_json',
+                               holder_jwk: Optional[dict[str, Any]] = None,
+                               evidence: Optional[str] = None,
+                               expires: Optional[int] = None,
+                               status_index: Optional[int] = None,
+                               credential_id: Optional[str] = None
+                               ) -> CredentialResult:
+    """Issue an OB 3.0 credential as a token, without baking it into an image.
+
+    ``credential_format`` is ``jwt_vc_json`` (a compact JWT-VC, revocable) or
+    ``vc+sd-jwt`` (an SD-JWT VC, the EUDI track). ``ldp`` has no equivalent
+    here: a document carrying an embedded proof is not a token.
+
+    Pass ``holder_jwk`` — the public key a wallet's OID4VCI key proof
+    demonstrated possession of — to bind the credential to that holder. For
+    ``jwt_vc_json`` the subject id becomes the key's did:jwk and the recipient
+    moves to a salted ``identifier`` hash; for ``vc+sd-jwt`` the key goes into
+    ``cnf``. Without it the subject is the normalised recipient, as in
+    :func:`issue_from_conf`.
+
+    ``status_index`` uses an index reserved earlier instead of allocating one,
+    for a flow that decides revocability before it knows whether the credential
+    will ever be claimed. Passing it for a badge with no status list configured
+    is an error rather than a silent no-op. Pass ``credential_id`` alongside it
+    with the id that reservation was recorded under, or the registry will name
+    a credential that was never issued and the delivered one will be
+    unrevocable.
+
+    Returns a :class:`CredentialResult`; raises :class:`IssuanceError`.
+    """
+    from .oid4vci.formats import (FORMAT_JWT_VC_JSON, FORMAT_SD_JWT_VC,
+                                  OID4VCI_FORMATS, REVOCABLE_FORMATS)
+
+    if credential_format not in OID4VCI_FORMATS:
+        raise IssuanceError(
+            "credential_format must be one of %s, got %r"
+            % (', '.join(OID4VCI_FORMATS), credential_format))
+
+    badge_obj = _badge_from_conf(conf, badge)
+    # Pin the proof format to vc-jwt: the badge section's own setting governs
+    # the baked-image path, and a section configured for ldp must not divert
+    # this one into a Data Integrity document.
+    ctx = _ob3_setup(conf, badge, badge_obj, 'vc-jwt')
+
+    if ctx.status_conf is not None and credential_format not in REVOCABLE_FORMATS:
+        # Refuse rather than drop the status: issuing a credential the issuer
+        # believes is revocable, and which silently is not, is the failure mode
+        # #226 already closed on the SD-JWT path. Catch it here so the caller
+        # learns before a wallet is waiting.
+        raise IssuanceError(
+            "[%s] configures status_lists, but %s cannot carry credential "
+            "status, so the badge would be irrevocable. Issue it as %s, or "
+            "drop status_lists from that section."
+            % (badge, credential_format, FORMAT_JWT_VC_JSON))
+    if status_index is not None and ctx.status_conf is None:
+        raise IssuanceError(
+            "a status_index was reserved for [%s], but that section configures "
+            "no status_lists" % badge)
+
+    credential = _build_ob3_credential(ctx, recipient, evidence, expires,
+                                       credential_id)
+    holder_did = None
+    if holder_jwk is not None:
+        holder_did = _bind_holder(credential, recipient, holder_jwk)
+
+    if status_index is not None:
+        _stamp_status(credential, ctx.status_conf, status_index)
+    else:
+        status_index = _allocate_status_batch([credential], ctx.status_conf)[0]
+
+    assert badge_obj.privkey_pem is not None
+    notices: List[str] = []
+    if credential_format == FORMAT_SD_JWT_VC:
+        token = _issue_sd_jwt_token(conf, credential, badge_obj, holder_jwk)
+    else:
+        token = _issue_jwt_vc_token(credential, badge_obj, ctx)
+
+    return CredentialResult(
+        credential_format=credential_format, token=token,
+        credential=credential, jti=credential.id, status_index=status_index,
+        holder_did=holder_did, notices=notices)
+
+
+def _issue_jwt_vc_token(credential: Any, badge_obj: Badge,
+                        ctx: _Ob3Context) -> str:
+    """Sign a credential into a compact JWT-VC (OID4VCI ``jwt_vc_json``)."""
+    from .ob3 import OB3Signer
+    algorithm = alg_for_key_type(ctx.key_type)
+    signer = OB3Signer(privkey_pem=badge_obj.privkey_pem, algorithm=algorithm)
+    try:
+        return signer.sign(credential)
+    except ErrorSigningFile as exc:
+        raise IssuanceError(str(exc)) from exc
+
+
+def _issue_sd_jwt_token(conf: configparser.ConfigParser, credential: Any,
+                        badge_obj: Badge,
+                        holder_jwk: Optional[dict[str, Any]]) -> str:
+    """Issue a credential as an SD-JWT VC (OID4VCI ``vc+sd-jwt``).
+
+    Uses the issuer's own ``[issuer] sd_jwt_vct`` when configured — the vct
+    whose Type Metadata openbadges-publish writes — so a wallet resolving the
+    type reaches this issuer's document rather than the generic imsglobal one.
+    """
+    from .ob3.eudi import OB3_SD_JWT_VCT, EudiError, issue_badge_sd_jwt
+    vct = (conf['issuer'].get('sd_jwt_vct') or '').strip() or OB3_SD_JWT_VCT
+    try:
+        return issue_badge_sd_jwt(credential, privkey_pem=badge_obj.privkey_pem,
+                                  holder_jwk=holder_jwk, vct=vct)
+    except EudiError as exc:
         raise IssuanceError(str(exc)) from exc
 
 

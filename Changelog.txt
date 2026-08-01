@@ -4,6 +4,64 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v4.3.0 - unreleased
+
+  Issue a badge straight to a wallet, over OpenID4VCI.
+
+  - feat(oid4vci): issue badges to a wallet over OpenID for Verifiable
+    Credential Issuance 1.0, pre-authorized code flow. New `openbadgeslib.
+    oid4vci` package: Credential Offers, the issuer and RFC 8414 discovery
+    documents, and handlers for the token, nonce and credential endpoints. It
+    ships NO web server — the handlers return response bodies and the
+    integrator mounts the routes — which keeps the boundary openbadges-publish
+    already has (it writes files to serve, it does not serve them). The wallet
+    key-proof cryptography is delegated to openvc-core's `openvc.openid4vci`
+    behind a new `[oid4vci]` extra; the state that openvc refuses to hold —
+    codes, tokens, nonces, grants and their lifetimes — lives here, and with it
+    the "no wrong-issue" property. Formats: `jwt_vc_json` (revocable) and
+    `vc+sd-jwt` (the EUDI track, irrevocable per #226).
+    NOT HAIP-conformant and nothing built on it may claim to be: no DPoP, no
+    verified key attestations, no client authentication, no authorization code
+    flow. See wiki/Issuing-to-Wallets-with-OID4VCI.md and the new Security
+    Model section for the full list of what is and is not defended.
+    The state store is an interface with two backends: in-memory for a single
+    process, and SQLite for the threads and processes of one host. Single-use is
+    settled in the database rather than in Python — burning a nonce and claiming
+    an issuance are INSERTs under BEGIN IMMEDIATE — so exactly one caller wins
+    no matter how many workers race. Secrets are stored as digests, the file is
+    0600 in a 0700 directory, and an unknown schema version is refused.
+  - feat(issue): `issue_credential_from_conf()` issues an OB 3.0 credential as
+    a TOKEN rather than a baked badge image, returning a `CredentialResult`.
+    The existing `issue_from_conf` always bakes a PNG/SVG, which is wasted work
+    (and the wrong deliverable) when the credential goes to a wallet, an LMS
+    API or an email — reaching the raw token previously meant baking an SVG and
+    extracting it again. Takes an optional `holder_jwk` to bind the credential
+    to a wallet key: for `jwt_vc_json` the subject id becomes that key's
+    `did:jwk` and the recipient moves to a salted `credentialSubject.
+    identifier` hash, so the badge stays attributable to a person without
+    publishing their address; for `vc+sd-jwt` the key goes into `cnf`.
+  - feat(ob3): `did_jwk_from_jwk()` derives a did:jwk from a public JWK, and
+    `IdentityObject.create()` builds a salted-hash identifier (the OB 3.0
+    mirror of the OB 2.0 constructor). Both refuse JWKs carrying private key
+    material.
+  - feat(ob3): the status registry gains reservations (schema version 2).
+    An OID4VCI offer reserves its revocation slot when the offer is built, not
+    when the wallet claims — deciding it at claim time would put the registry's
+    exclusive lock and full-file rewrite inside a concurrent HTTP path, on a
+    lock that is a no-op where fcntl is missing. Reserved entries show as
+    `reserved` in `--list`; `openbadges-publish -V 3 --reclaim-unclaimed`
+    frees the ones whose offer lapsed, refusing to touch any slot the registry
+    and the OID4VCI store do not both agree was never issued against. Schema
+    version 1 files load unchanged, and a registry with no reservations
+    serialises byte-identically to before.
+  - fix(oid4vci): the SQLite store's opportunistic garbage collection takes an
+    injectable clock. It ran on wall-clock time while every query takes an
+    explicit `now=`, so a write collected the very rows a caller had just
+    written against a frozen instant — which made the store's own test suite
+    pass on the day it was written and fail a week later on the calendar
+    rather than on a code change.
+
+
 * v4.2.0 - 2026-07-29
 
   The OpenID4VCI credential configuration an issuer advertises can now declare

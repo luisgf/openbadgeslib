@@ -254,6 +254,7 @@ The output directory is created with a `0o077` umask.
 openbadges-publish -o DIR [-c FILE] [-V {1,2,3}] [--check-live] [-d]
 openbadges-publish -o DIR -V 3 [--revoke ID | --suspend ID | --unsuspend ID] [--reason TEXT] [-b BADGE] [--check-live] [--json] [-d]
 openbadges-publish -V 3 (--list | --status ID) [-c FILE] [-b BADGE] [--json] [-d]
+openbadges-publish -V 3 --reclaim-unclaimed [-c FILE] [-b BADGE] [--dry-run] [--json] [-d]
 ```
 
 | Short | Long | Meaning | Default |
@@ -266,6 +267,8 @@ openbadges-publish -V 3 (--list | --status ID) [-c FILE] [-b BADGE] [--json] [-d
 | — | `--unsuspend ID` | OB3 only: lift a suspension | — |
 | — | `--list` | OB3 only: tabulate issued credentials — jti, recipient, issue date, state (read-only) | — |
 | — | `--status ID` | OB3 only: full status record of a credential by jti or recipient email, revocation/suspension reason included (read-only) | — |
+| — | `--reclaim-unclaimed` | OB3 only: free the status-list indices reserved by OID4VCI offers that lapsed without a wallet ever claiming them, and mark the claimed ones delivered. See [[Issuing to Wallets with OID4VCI]] | — |
+| — | `--dry-run` | With `--reclaim-unclaimed`: report what would change, change nothing | off |
 | — | `--reason TEXT` | Free-text reason recorded with `--revoke`/`--suspend` | — |
 | — | `--check-live` | OB3 only: after publishing, download each written artifact (`did.json`, status lists, `verify.pem`) from `publish_url` and byte-compare it against the local copy — verifying the web server serves the freshly-regenerated versions. Exit `2` if any is stale or missing | off |
 | — | `--json` | OB3 only: emit a machine-readable JSON result instead of the human output — `{did, files_written, status_operation, skipped}` when publishing, the queried records for `--list`/`--status`. See [Machine-readable output](#machine-readable-output-and-exit-codes) | off |
@@ -273,9 +276,11 @@ openbadges-publish -V 3 (--list | --status ID) [-c FILE] [-b BADGE] [--json] [-d
 | `-d` | `--debug` | Show debug messages at runtime | off |
 | `-v` | `--version` | Print version and exit | — |
 
-`--revoke`, `--suspend`, `--unsuspend`, `--list` and `--status` are mutually exclusive. The three state changes update the badge's status registry **before** regenerating the lists; a recipient email that matches several issued credentials is rejected with the candidate jtis — re-run with the jti. Revocation is permanent (there is no `--unrevoke`); suspension of a revoked credential is likewise rejected.
+`--revoke`, `--suspend`, `--unsuspend`, `--list`, `--status` and `--reclaim-unclaimed` are mutually exclusive. The three state changes update the badge's status registry **before** regenerating the lists; a recipient email that matches several issued credentials is rejected with the candidate jtis — re-run with the jti. Revocation is permanent (there is no `--unrevoke`); suspension of a revoked credential is likewise rejected.
 
-`--list` and `--status` are read-only audits of the private status registries: they need **no** output directory and never touch the published files. `--list` prints one row per issued credential (state is `active`, `REVOKED` or `SUSPENDED`); `--status <jti|email>` prints the full record, including the revocation or suspension date and reason. Together with issue and revoke they close the credential lifecycle from the CLI: issue → revoke → **audit**.
+`--list` and `--status` are read-only audits of the private status registries: they need **no** output directory and never touch the published files. `--list` prints one row per issued credential (state is `active`, `REVOKED` or `SUSPENDED`); `--status <jti|email>` prints the full record, including the revocation or suspension date and reason. Together with issue and revoke they close the credential lifecycle from the CLI: issue → revoke → **audit**. A credential in state `reserved` is an OID4VCI offer's slot that no wallet has claimed yet.
+
+`--reclaim-unclaimed` is the housekeeping pass for those reservations. Issuing to a wallet reserves a revocation slot when the offer is built, before anyone knows whether it will be claimed; the ones that are never claimed would otherwise occupy indices forever. It frees an index only when the status registry **and** the OID4VCI store agree nothing was issued against it — a reservation whose credential reached a wallet is marked delivered and keeps its index for good, because reusing it would tie two credentials to one revocation bit. Deliberately manual: it is never run automatically and never from a request path. Pair it with `--dry-run` first.
 
 ### Example (OB2)
 
@@ -383,8 +388,9 @@ Success payloads:
 | `openbadges-keygenerator` | `{key_type, private_key, public_key}` |
 | `openbadges-signer` | `{ob_version, badge_file, jti, status_index, proof_format}` (`jti`/`status_index`/`proof_format` are OB3; `null` where not applicable) |
 | `openbadges-publish -V 3` | `{did, files_written, status_operation, skipped, live_check}` (`live_check` is `null` unless `--check-live`) |
-| `openbadges-publish -V 3 --list` | `{badges: [{badge, credentials: [...]}], total}` |
+| `openbadges-publish -V 3 --list` | `{badges: [{badge, credentials: [...]}], total, reserved}` |
 | `openbadges-publish -V 3 --status` | `{matches: [...]}` |
+| `openbadges-publish -V 3 --reclaim-unclaimed` | `{badges: [{badge, pending, delivered, reclaimed, undecided}], reclaimed, dry_run}` |
 | `openbadges-verifier` | the verification result (`valid`, `trusted`, `issuer`, `achievement`, …) |
 
 On error the object is `{"error": "<message>"}`.

@@ -86,6 +86,19 @@ eudi = [
 ldp-sd = [
     "openvc-core[data-integrity]>=1.21,<2",
 ]
+# OID4VCI issuance: hand a badge to a wallet over the pre-authorized code flow.
+# openbadgeslib owns the offers, the state (codes, tokens, nonces, grants) and
+# the response bodies; the wallet key-proof cryptography is openvc-core's
+# openvc.openid4vci, which is why the floor is higher than [eudi]'s — that
+# module first ships in openvc-core 1.23.
+#
+# Everything except openbadgeslib/oid4vci/handler.py works without the extra,
+# and the credential-endpoint tests skip themselves when the module is absent —
+# so an install that does not ask for [oid4vci] is never broken by its absence.
+# See openbadgeslib/oid4vci/ and wiki/Issuing-to-Wallets-with-OID4VCI.md.
+oid4vci = [
+    "openvc-core>=1.23,<2",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",

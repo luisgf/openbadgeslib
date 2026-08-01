@@ -333,7 +333,7 @@ result = verify_badge_sd_jwt(presentation, pubkey_pem=pub_pem,
 assert result.key_bound
 ```
 
-The OID4VCI / OID4VP wallet-exchange protocol itself lives in `openvc-core`, not here: this module maps a badge to and from SD-JWT VC claims and runs the issuer/holder crypto through it.
+This module maps a badge to and from SD-JWT VC claims and runs the crypto through `openvc-core`. To hand one of these to a wallet over **OID4VCI**, see [[Issuing to Wallets with OID4VCI]] — `openbadgeslib.oid4vci` owns the offers and the protocol state, and delegates the wallet key-proof verification to openvc-core. The **OID4VP** presentation side stays entirely in openvc-core.
 
 ### Publishing Type Metadata for the badge type
 

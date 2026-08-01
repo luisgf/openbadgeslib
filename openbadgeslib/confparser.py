@@ -23,7 +23,7 @@
 
 from configparser import ConfigParser, ExtendedInterpolation, Error as ConfigParserError
 from dataclasses import dataclass
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 import os
 import sys
 import logging
@@ -197,6 +197,189 @@ def ob3_status_config(conf: ConfigParser,
                            validity_days=validity_days)
 
 
+# ── OID4VCI (OpenID for Verifiable Credential Issuance) ──────────────────────
+# Issuing to a wallet inverts the library's usual direction: instead of the
+# issuer pushing a badge to a known recipient, the wallet claims it against an
+# offer and proves possession of its own key. That needs a handful of
+# deployment values the rest of the config has no reason to carry — the public
+# identifier the wallet's key proofs bind to, and the lifetimes of the
+# short-lived secrets the flow mints.
+#
+# The whole section is optional: without it, nothing else in the library
+# changes behaviour.
+
+#: How long a Credential Offer's pre-authorized code stays redeemable. Short by
+#: default: it is a bearer secret that travels in a QR code or a link.
+DEFAULT_OFFER_TTL_S = 600
+
+#: Lifetime of a c_nonce handed out by the nonce endpoint.
+DEFAULT_NONCE_TTL_S = 120
+
+#: Lifetime of an access token minted at the token endpoint. It only has to
+#: survive the wallet's immediate follow-up call to the credential endpoint.
+DEFAULT_TOKEN_TTL_S = 300
+
+#: How stale a wallet key proof's `iat` may be (openvc's max_age_s).
+DEFAULT_PROOF_MAX_AGE_S = 300
+
+#: Digits in a numeric tx_code, and the input modes OID4VCI 1.0 defines.
+DEFAULT_TX_CODE_LENGTH = 6
+TX_CODE_INPUT_MODES = ('numeric', 'text')
+
+
+@dataclass
+class OID4VCIConfig:
+    """Resolved [oid4vci] section: the issuer identifier, the endpoint URLs and
+    the lifetimes of the flow's short-lived secrets.
+
+    ``credential_issuer`` is load-bearing beyond being an identifier: it is the
+    value every wallet key proof must name in its ``aud``, so it has to match
+    byte for byte what is actually served at
+    ``<credential_issuer>/.well-known/openid-credential-issuer``."""
+
+    credential_issuer: str
+    credential_endpoint: str
+    nonce_endpoint: str
+    token_endpoint: str
+    store_path: str
+    offer_ttl_s: int = DEFAULT_OFFER_TTL_S
+    nonce_ttl_s: int = DEFAULT_NONCE_TTL_S
+    token_ttl_s: int = DEFAULT_TOKEN_TTL_S
+    proof_max_age_s: int = DEFAULT_PROOF_MAX_AGE_S
+    batch_size: int = 1
+    tx_code_length: int = DEFAULT_TX_CODE_LENGTH
+    tx_code_input_mode: str = 'numeric'
+
+
+def _positive_int(conf: ConfigParser, section: str, key: str,
+                  default: int) -> int:
+    """Read a positive integer config key, or its default when unset."""
+    raw = (conf[section].get(key) or '').strip() if section in conf else ''
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ConfigError("[%s] %s must be an integer, got %r"
+                          % (section, key, raw)) from None
+    if value <= 0:
+        raise ConfigError("[%s] %s must be positive" % (section, key))
+    return value
+
+
+def oid4vci_config(conf: ConfigParser) -> OID4VCIConfig:
+    """Resolve the optional [oid4vci] section.
+
+    Every key has a default, so a typical deployment writes none of them: the
+    issuer identifier falls back to ``[issuer] publish_url`` and the three
+    endpoints are derived from it. Raises :class:`ConfigError` when there is no
+    base to derive an issuer identifier from, when it is not https, or when a
+    lifetime is not a positive integer.
+
+    ``https`` is required rather than encouraged. A key proof's ``aud`` binds
+    the wallet's signature to this exact string; over plaintext http an attacker
+    who can rewrite the metadata response also chooses what the wallet signs
+    for, which makes the binding decorative.
+    """
+    from urllib.parse import urljoin
+
+    section = conf['oid4vci'] if 'oid4vci' in conf else None
+    base = (section.get('credential_issuer') if section else None) or \
+        conf['issuer'].get('publish_url') or ''
+    base = base.strip()
+    if not base:
+        raise ConfigError(
+            "[oid4vci] needs a credential_issuer (or an [issuer] publish_url "
+            "to derive it from): it is the identifier wallet key proofs bind "
+            "their 'aud' to")
+    if not base.startswith('https://'):
+        raise ConfigError(
+            "[oid4vci] credential_issuer must be an https URL, got %r — a "
+            "wallet key proof's audience binding is meaningless over plaintext"
+            % base)
+    # A trailing slash makes urljoin append rather than replace the last path
+    # segment; without it, an issuer at https://host/issuer would derive
+    # https://host/credential.
+    endpoint_base = base if base.endswith('/') else base + '/'
+
+    def endpoint(key: str, default_path: str) -> str:
+        explicit = (section.get(key) or '').strip() if section else ''
+        return explicit or urljoin(endpoint_base, default_path)
+
+    store_path = (section.get('store_path') if section else None) or \
+        os.path.join(conf['paths']['base'], 'oid4vci.sqlite3')
+
+    input_mode = ((section.get('tx_code_input_mode') if section else None)
+                  or 'numeric').strip()
+    if input_mode not in TX_CODE_INPUT_MODES:
+        raise ConfigError("[oid4vci] tx_code_input_mode must be one of %s, "
+                          "got %r" % (', '.join(TX_CODE_INPUT_MODES),
+                                      input_mode))
+
+    return OID4VCIConfig(
+        credential_issuer=base,
+        credential_endpoint=endpoint('credential_endpoint', 'credential'),
+        nonce_endpoint=endpoint('nonce_endpoint', 'nonce'),
+        token_endpoint=endpoint('token_endpoint', 'token'),
+        store_path=store_path,
+        offer_ttl_s=_positive_int(conf, 'oid4vci', 'offer_ttl_s',
+                                  DEFAULT_OFFER_TTL_S),
+        nonce_ttl_s=_positive_int(conf, 'oid4vci', 'nonce_ttl_s',
+                                  DEFAULT_NONCE_TTL_S),
+        token_ttl_s=_positive_int(conf, 'oid4vci', 'token_ttl_s',
+                                  DEFAULT_TOKEN_TTL_S),
+        proof_max_age_s=_positive_int(conf, 'oid4vci', 'proof_max_age_s',
+                                      DEFAULT_PROOF_MAX_AGE_S),
+        batch_size=_positive_int(conf, 'oid4vci', 'batch_size', 1),
+        tx_code_length=_positive_int(conf, 'oid4vci', 'tx_code_length',
+                                     DEFAULT_TX_CODE_LENGTH),
+        tx_code_input_mode=input_mode,
+    )
+
+
+def oid4vci_formats(conf: ConfigParser, badge_section: str) -> Tuple[str, ...]:
+    """The OID4VCI credential formats a badge section opts into, in order.
+
+    Returns an empty tuple when the badge does not opt in (no
+    ``oid4vci_formats`` key), which callers treat as "this badge is not offered
+    over OID4VCI" — the same contract as :func:`ob3_status_config` returning
+    None. Opt-in rather than opt-out because listing a badge in the issuer
+    metadata publishes its existence and makes it claimable.
+
+    Raises :class:`ConfigError` for an unknown format, or for ``vc+sd-jwt`` on a
+    section with ``key_type = RSA``: SD-JWT VC has no RSA algorithm profile, so
+    that pairing could never issue and the operator should learn about it when
+    the config loads, not when a wallet is waiting.
+    """
+    from .keys import KeyType
+    from .oid4vci.formats import EC_ONLY_FORMATS, OID4VCI_FORMATS
+
+    raw = conf[badge_section].get('oid4vci_formats', '')
+    formats: List[str] = []
+    for piece in raw.split(','):
+        fmt = piece.strip()
+        if not fmt:
+            continue
+        if fmt not in OID4VCI_FORMATS:
+            raise ConfigError(
+                "[%s] oid4vci_formats: unknown format %r (choose from %s)"
+                % (badge_section, fmt, ', '.join(OID4VCI_FORMATS)))
+        if fmt not in formats:
+            formats.append(fmt)
+    if not formats:
+        return ()
+
+    key_type = resolve_key_type(conf[badge_section].get('key_type'))
+    if key_type is KeyType.RSA:
+        rsa_incapable = [f for f in formats if f in EC_ONLY_FORMATS]
+        if rsa_incapable:
+            raise ConfigError(
+                "[%s] oid4vci_formats includes %s, which cannot be signed with "
+                "an RSA key — use key_type = ED25519 or ECC, or drop that "
+                "format" % (badge_section, ', '.join(rsa_incapable)))
+    return tuple(formats)
+
+
 # ── centralized config defaults ──────────────────────────────────────────────
 # One inventory for the accepted-key defaults, so each lives in a single place
 # rather than being re-spelled at every read site. (The status-list defaults —
@@ -285,7 +468,9 @@ def badge_section_config(conf: ConfigParser,
 #: Sections whose values are the *public* identifiers of a deployment, checked
 #: by :func:`reject_url_userinfo`. [smtp] is deliberately excluded: its
 #: username/password are credentials that stay on the issuer's machine.
-_PUBLIC_URL_SECTIONS = ('issuer',)
+#: [oid4vci] belongs here because its credential_issuer and endpoint URLs are
+#: published in the issuer metadata and handed to every wallet that reads it.
+_PUBLIC_URL_SECTIONS = ('issuer', 'oid4vci')
 _PUBLIC_URL_SECTION_PREFIX = 'badge_'
 
 

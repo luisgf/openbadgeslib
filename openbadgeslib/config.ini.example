@@ -52,6 +52,45 @@ revocationList = revoked.json
 ; imsglobal vct.
 ;sd_jwt_vct     = ${publish_url}vct/openbadge
 
+; OpenID for Verifiable Credential Issuance (OID4VCI), issuer side. Optional and
+; entirely opt-in: without this section nothing changes, and a badge is only
+; offered over OID4VCI if its own 'oid4vci_formats' key says so.
+;
+; This library does NOT run the endpoints. It builds the offers, verifies the
+; wallet's key proof (via openvc-core, the [oid4vci] extra) and issues the
+; credential; you mount the routes in your own web framework at the URLs below.
+;
+; NOT a HAIP-conformant issuer: no DPoP, no key attestation checking, no client
+; authentication and no authorization code flow. Pre-authorized code only.
+;[oid4vci]
+; The Credential Issuer Identifier: the https base URL where you serve
+; /.well-known/openid-credential-issuer. Every wallet key proof binds its 'aud'
+; to this exact string, so it must match what you actually serve. Default:
+; [issuer] publish_url.
+;credential_issuer   = https://openbadges.issuer.badge/issuer/
+; The three endpoints you mount. Default: derived from credential_issuer.
+;credential_endpoint = https://openbadges.issuer.badge/issuer/credential
+;nonce_endpoint      = https://openbadges.issuer.badge/issuer/nonce
+;token_endpoint      = https://openbadges.issuer.badge/issuer/token
+; Where the flow's short-lived state lives (pre-authorized codes, access tokens,
+; spent nonces). SQLite, single host: NOT on NFS/SMB, where its locking breaks.
+; The directory is created 0700 and holds recipient PII — do not back it up.
+; Default: ${paths:base}/oid4vci.sqlite3
+;store_path          = ${paths:base}/oid4vci.sqlite3
+; Lifetimes, in seconds. The offer TTL bounds how long a QR code stays
+; redeemable; keep it short, it is a bearer secret.
+;offer_ttl_s         = 600
+;nonce_ttl_s         = 120
+;token_ttl_s         = 300
+; How stale a wallet's key proof may be before it is refused.
+;proof_max_age_s     = 300
+; Credentials one Credential Request may claim. Leave at 1 unless you have a
+; reason: a batch mints one credential per key proof off a single grant.
+;batch_size          = 1
+; The out-of-band PIN, when an offer asks for one. 'numeric' or 'text'.
+;tx_code_length      = 6
+;tx_code_input_mode  = numeric
+
 ;Badge configuration sections.
 [badge_1]
 name        = Badge 1
@@ -98,6 +137,12 @@ key_type    = RSA
 ; lapses; pick a cadence you can sustain (e.g. 7 => weekly). Unset = no bound
 ; (offline-friendly, but publishes a loud warning).
 ;status_validity_days = 7
+; OID4VCI opt-in for this badge (comma-separated subset of: jwt_vc_json,
+; vc+sd-jwt). Unset means the badge is not published in the issuer metadata and
+; cannot be offered to a wallet. jwt_vc_json is revocable via the status lists
+; above; vc+sd-jwt is the EUDI track and is IRREVOCABLE, so it cannot be
+; combined with status_lists. vc+sd-jwt also needs key_type = ED25519 or ECC.
+;oid4vci_formats  = jwt_vc_json
 ;mail        = ${paths:base}/badge_1_mail.txt
 
 [badge_2]

@@ -24,6 +24,7 @@
 **Guides**
 - [[Guides]]
 - [[Library Integration Tutorial]]
+- [[Issuing to Wallets with OID4VCI]]
 - [[Certification Cookbook]]
 
 **Project**

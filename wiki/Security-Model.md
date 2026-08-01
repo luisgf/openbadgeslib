@@ -195,6 +195,30 @@ A practical consequence: a *valid* assertion can be lifted from one badge image 
 
 Binding the signature to the image bytes (e.g. hashing the pixels into the payload) is deliberately **not** done: it is not part of the OB 2.0/3.0 specifications (other verifiers would ignore it, hurting interoperability) and it is fragile — baking the token changes the image, and any later re-encoding, optimisation or metadata edit would break the hash and flag legitimate badges as tampered. Trust the assertion, not the picture.
 
+## Issuing to wallets over OID4VCI: what is and is not defended
+
+Handing a badge to a wallet ([[Issuing to Wallets with OID4VCI]]) adds an inbound attack surface the rest of this library does not have — the issuer now answers requests from strangers. The property it defends is **no wrong-issue**: a credential must never be issued to a key that did not prove possession of itself, nor twice against one grant.
+
+| Attack | Control |
+|---|---|
+| Replaying a captured key proof | The `c_nonce` is single-use, and spending it is one atomic operation in the store. openvc additionally pins `aud` to the Credential Issuer Identifier and checks `iat` freshness in **both** directions — without the future-dated check a wallet could sign one proof with `iat` years ahead and hold it forever. |
+| Replaying a leaked pre-authorized code | Single-use, enforced by a compare-and-swap. A second presentation means a copy is in circulation, so the grant **and every access token issued against it** are revoked — the holder who went first loses it too. |
+| Brute-forcing a `tx_code` | Three attempts by default, counted and capped in one atomic update. Stored as scrypt, not a bare hash, so reading the store does not yield every live PIN. A short numeric PIN is weak by design; the counter and the offer TTL are the real control, not its entropy. |
+| Enumerating which offers exist | Unknown, expired and already-redeemed codes return the same error, the same message, and — via a dummy KDF on the miss path — the same latency. |
+| A second holder claiming someone else's badge | Issuance is claimed against a fingerprint of the configuration plus the holder key thumbprints. A repeat with the same keys is allowed (a dropped response must not cost the wallet its credential); a different set is refused. |
+| Widening what gets issued | Nothing in the request selects a credential. The access token resolves to a grant that already fixed the badge, recipient, format and status slot when the offer was built; the request can only match it. |
+| Exhausting the status list | Reservations are made only on the issuer's own offer path, unreachable by an attacker. Unclaimed ones are freed by an explicit operator command that refuses to touch anything the registry and the store do not both agree was never issued. |
+| Oversized or hostile request bodies | Capped before parsing, and the batch size is bounded by the grant — so a request cannot make the issuer verify an unbounded number of signatures. |
+
+**What is NOT defended, and must not be claimed:**
+
+- **No DPoP, no verified key attestations, no client authentication, no authorization code flow — therefore not HAIP.** Access tokens are bearer tokens: within their lifetime a stolen one is replayable. Key attestations that arrive in a proof header are captured **unverified**, so no statement about hardware binding is possible.
+- **No rate limiting, no throttling, no TLS.** All of it belongs at your edge.
+- **No encrypted credential responses.** A request asking for one is refused rather than answered in the clear.
+- **Only key proofs carrying their key inline (`jwk`) are accepted.** `kid` and `x5c` proofs are refused for want of a resolver or trust anchors — fail-closed by default.
+- **`vc+sd-jwt` badges are irrevocable**, so an SD-JWT badge in a wallet can never be withdrawn.
+- **The reference store is single-host.** SQLite's locking is broken on NFS/SMB and the store cannot detect it is on one. A multi-host deployment needs a shared backend, and any replacement must keep each decision-and-write atomic — a read-then-write nonce check reopens the replay window and no single-threaded test will catch it.
+
 ## Guidance for safe use
 
 - **Always supply a trusted key** (`--local` or `--pubkey`) when you need a real positive verdict. Treat a `[~]` "internally consistent only" result as *unverified provenance*, never as proof of issuer identity.

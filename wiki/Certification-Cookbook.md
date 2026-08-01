@@ -32,7 +32,8 @@ The same idea applies to strict OB 2.0: the opt-in suite exercises both the **Ho
 ## What is deliberately *not* here
 
 - **Paid 1EdTech membership / the certification portal** — a business decision, not a technical gap. Everything needed to *pass* the tests is above.
-- **Building an OID4VCI/OID4VP issuance rail** — the wallet-exchange *protocol* belongs in `openvc-core`, per the project's delegation pattern; this library issues the credentials, not the protocol. For an end-to-end **presentation** demo — issue a Data Integrity badge here → present it as an `ldp_vc` VP → verify via openvc-core — see the "Presenting a Data Integrity badge over OpenID4VP" section of [[Python API OB3]] and `examples/ob3_openid4vp_presentation.py`.
+- **Formal OID4VCI issuer certification** — the OIDF self-certification suite is a black-box HTTP harness driving a live issuer, and this library ships no server, so it is the *deployment* that could be certified, never the package. Issuance itself is supported: see [[Issuing to Wallets with OID4VCI]]. Note that the rail is **not HAIP-conformant** (no DPoP, no verified key attestations, no client authentication, no authorization code flow), so nothing built on it may claim HAIP.
+- **OID4VP presentation** — accepting a badge *presented* from a wallet is still openvc-core's, per the project's delegation pattern. For an end-to-end presentation demo — issue a Data Integrity badge here → present it as an `ldp_vc` VP → verify via openvc-core — see the "Presenting a Data Integrity badge over OpenID4VP" section of [[Python API OB3]] and `examples/ob3_openid4vp_presentation.py`.
 
 ## See also
 
