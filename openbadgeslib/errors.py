@@ -47,9 +47,10 @@ class LibOpenBadgesException(Exception):
         ├── IssuanceError
         ├── DecompressionLimitExceeded
         ├── StatusError               (issuer-side revocation)
-        │   └── StatusListFull / UnknownCredential / AmbiguousCredential
-        │       / AlreadyRevoked / AlreadySuspended / NotSuspended
-        │       / RegistryCorrupt
+        │   └── StatusListFull / UnknownCredential / AlreadyRevoked
+        │       / AlreadySuspended / NotSuspended / RegistryCorrupt
+        ├── PublishError              (openbadgeslib.ob3.publish)
+        │   └── CredentialNotFound / AmbiguousCredential
         ├── OB2VerificationError      (openbadgeslib.ob2.verifier)
         └── OB3VerificationError      (openbadgeslib.ob3.verifier)
 
@@ -198,10 +199,6 @@ class StatusListFull(StatusError):
 
 
 class UnknownCredential(StatusError):
-    pass
-
-
-class AmbiguousCredential(StatusError):
     pass
 
 

@@ -109,16 +109,18 @@ LibOpenBadgesException
 ├── StatusError
 │   ├── StatusListFull
 │   ├── UnknownCredential
-│   ├── AmbiguousCredential
 │   ├── AlreadyRevoked
 │   ├── AlreadySuspended
 │   ├── NotSuspended
 │   └── RegistryCorrupt
+├── PublishError                  (openbadgeslib.ob3.publish)
+│   ├── CredentialNotFound
+│   └── AmbiguousCredential
 ├── OB2VerificationError          (openbadgeslib.ob2.verifier)
 └── OB3VerificationError          (openbadgeslib.ob3.verifier)
 ```
 
-`KeyGenExceptions`, `SignerExceptions`, `VerifierExceptions`, and `StatusError` are intermediate base classes; the leaves under each are the concrete errors raised in practice. `StatusError` groups the issuer-side credential-status (revocation/suspension) errors. `BadgeImgFormatUnsupported`, `ConfigError`, `IssuanceError` and `DecompressionLimitExceeded` hang directly off `LibOpenBadgesException` (none is key, signer, verifier or status specific). `ConfigError` and `UnsupportedAlgorithm` **also** inherit `ValueError`, so code that historically caught a bare `ValueError` from the config helpers or a signer constructor keeps working. The same map lives in the `LibOpenBadgesException` docstring, so `help(openbadgeslib.errors.LibOpenBadgesException)` and this page agree.
+`KeyGenExceptions`, `SignerExceptions`, `VerifierExceptions`, `StatusError`, and `PublishError` are intermediate base classes; the leaves under each are the concrete errors raised in practice. `StatusError` groups the issuer-side credential-status (revocation/suspension) errors. `PublishError` (raised by `openbadgeslib.ob3.publish` / `openbadges-publish`) groups OB3 publication and status-operation failures — note that `CredentialNotFound` and `AmbiguousCredential` are `PublishError`s, **not** `StatusError`s, so a caller handling "the revoke/suspend identifier matched several credentials (or none)" must catch `PublishError` (or the `LibOpenBadgesException` root), not `StatusError`. `BadgeImgFormatUnsupported`, `ConfigError`, `IssuanceError` and `DecompressionLimitExceeded` hang directly off `LibOpenBadgesException` (none is key, signer, verifier or status specific). `ConfigError` and `UnsupportedAlgorithm` **also** inherit `ValueError`, so code that historically caught a bare `ValueError` from the config helpers or a signer constructor keeps working. The same map lives in the `LibOpenBadgesException` docstring, so `help(openbadgeslib.errors.LibOpenBadgesException)` and this page agree.
 
 `UnknownKeyType` is the one you will see most when working with `openbadgeslib.keys` — `KeyFactory`, `alg_for_key_type`, `key_to_pem`, and `detect_key_type` all raise it.
 

@@ -43,6 +43,25 @@ class TestHierarchyIsUnderTheRoot:
         assert issubclass(OB2VerificationError, LibOpenBadgesException)
         assert issubclass(OB3VerificationError, LibOpenBadgesException)
 
+    def test_publish_error_family_is_under_the_root_not_statuserror(self):
+        # #280: PublishError and its subclasses live in ob3.publish and are
+        # LibOpenBadgesException — but NOT StatusError. The documented tree used
+        # to misfile AmbiguousCredential under StatusError, so a caller following
+        # it with `except StatusError` around publish/revoke would miss it.
+        from openbadgeslib.ob3.publish import (
+            AmbiguousCredential, CredentialNotFound, PublishError)
+        for exc in (PublishError, CredentialNotFound, AmbiguousCredential):
+            assert issubclass(exc, LibOpenBadgesException)
+        assert issubclass(AmbiguousCredential, PublishError)
+        assert issubclass(CredentialNotFound, PublishError)
+        assert not issubclass(AmbiguousCredential, errors.StatusError)
+
+    def test_no_stray_ambiguous_credential_in_errors_module(self):
+        # The dead errors.AmbiguousCredential(StatusError) shadow was removed, so
+        # `from openbadgeslib.errors import AmbiguousCredential` cannot import a
+        # class that is never raised (the live one is ob3.publish's).
+        assert not hasattr(errors, 'AmbiguousCredential')
+
 
 class TestValueErrorCompatibility:
     """ConfigError and UnsupportedAlgorithm stay ValueError so historical
