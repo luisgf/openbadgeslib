@@ -159,6 +159,16 @@ def verify_block(msg: Union[str, bytes], key: Optional[Any] = None) -> bool:
             "Algorithm %r in JWS header is not allowed for this key type"
             % alg_name)
 
+    # RFC 7515 §4.1.11: a verifier MUST reject a JWS whose 'crit' header names
+    # extensions it does not understand. This library understands none, so any
+    # present 'crit' (even an empty list — non-conformant but still a signal the
+    # issuer intended critical processing) fails closed rather than silently
+    # dropping the constraint while a conformant verifier would reject (#292).
+    if 'crit' in header:
+        raise SignatureError(
+            "JWS header requires unsupported 'crit' extensions: %r"
+            % (header.get('crit'),))
+
     signing_input = head_b64 + b'.' + payload_b64
     try:
         raw_sig = utils.from_base64(sig_b64)

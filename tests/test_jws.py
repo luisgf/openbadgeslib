@@ -236,6 +236,36 @@ class TestAlgorithmConfusion:
             verify_block(jws, key=k.get_pub_key())
 
 
+class TestCritHeader:
+    """#292: RFC 7515 §4.1.11 — reject a JWS whose 'crit' header names
+    extensions this verifier does not understand. openbadgeslib understands
+    none, so any present 'crit' must fail closed."""
+
+    def test_crit_extension_rejected(self, rsa_priv_pem, rsa_pub_pem):
+        priv, pub = _load_rsa_keys(rsa_priv_pem, rsa_pub_pem)
+        header = {'alg': 'RS256', 'crit': ['bork'], 'bork': True}
+        raw_sig = sign(header, PAYLOAD, key=priv)
+        jws = _build_jws(header, PAYLOAD, raw_sig)
+        with pytest.raises(SignatureError, match='crit'):
+            verify_block(jws, key=pub)
+
+    def test_empty_crit_list_rejected(self, rsa_priv_pem, rsa_pub_pem):
+        # An empty crit array is non-conformant but still means the issuer
+        # marked something critical; fail closed rather than accept.
+        priv, pub = _load_rsa_keys(rsa_priv_pem, rsa_pub_pem)
+        header = {'alg': 'RS256', 'crit': []}
+        raw_sig = sign(header, PAYLOAD, key=priv)
+        jws = _build_jws(header, PAYLOAD, raw_sig)
+        with pytest.raises(SignatureError, match='crit'):
+            verify_block(jws, key=pub)
+
+    def test_no_crit_still_accepts(self, rsa_priv_pem, rsa_pub_pem):
+        priv, pub = _load_rsa_keys(rsa_priv_pem, rsa_pub_pem)
+        raw_sig = sign({'alg': 'RS256'}, PAYLOAD, key=priv)
+        jws = _build_jws({'alg': 'RS256'}, PAYLOAD, raw_sig)
+        assert verify_block(jws, key=pub) is True
+
+
 class TestEcCurveBinding:
     """#284: ES* algorithms must bind the NIST curve RFC 7518 §3.4 pairs with
     each alg (ES256→P-256, ES384→P-384, ES512→P-521). Without that pin,
