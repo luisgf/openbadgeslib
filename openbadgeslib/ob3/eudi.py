@@ -45,7 +45,7 @@ import json
 from typing import Any, Callable, Iterable, Mapping, Optional, Union, cast
 
 from .credential import OpenBadgeCredential
-from ..errors import LibOpenBadgesException
+from ..errors import LibOpenBadgesException, UnknownKeyType
 from ..keys import (
     KeyType, detect_key_type, ec_curve_from_pem, public_jwk_from_pem)
 from ..util import download_file
@@ -102,7 +102,13 @@ def _signing_key(privkey_pem: Any, kid: str) -> Any:
     curve is read from the key itself, since it fixes the JOSE algorithm.
     """
     Ed25519SigningKey, P256SigningKey, P384SigningKey, _ = _require_openvc()
-    key_type = detect_key_type(privkey_pem)
+    try:
+        key_type = detect_key_type(privkey_pem)
+    except UnknownKeyType as exc:
+        # Malformed / empty PEMs raise UnknownKeyType; a supported-but-wrong
+        # family (RSA) raises EudiError below. Map both through EudiError so
+        # callers of issue_badge_sd_jwt only need to trap one type (#287).
+        raise EudiError("unparseable signing key: %s" % exc) from exc
     if key_type is KeyType.ED25519:
         return Ed25519SigningKey.from_pem(privkey_pem, kid=kid)
     if key_type is KeyType.ECC:                       # NIST curve -> ES256/ES384

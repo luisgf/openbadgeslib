@@ -117,6 +117,20 @@ class TestSdJwtBadge:
         with pytest.raises(EudiError, match="Ed25519|P-256|RSA"):
             issue_badge_sd_jwt(ob3_credential, privkey_pem=rsa_priv_pem)
 
+    def test_unparseable_key_raises_eudi_error(self, ob3_credential):
+        # #287: a malformed PEM used to surface as UnknownKeyType; the module
+        # contract is EudiError for every issuance failure.
+        from openbadgeslib.errors import UnknownKeyType
+        garbage = b'-----BEGIN PRIVATE KEY-----\ngarbage\n-----END PRIVATE KEY-----\n'
+        with pytest.raises(EudiError, match='unparseable'):
+            issue_badge_sd_jwt(ob3_credential, privkey_pem=garbage)
+        # And it must not be the bare key-type exception.
+        with pytest.raises(EudiError):
+            try:
+                issue_badge_sd_jwt(ob3_credential, privkey_pem=garbage)
+            except UnknownKeyType:
+                pytest.fail('UnknownKeyType escaped; expected EudiError')
+
     def test_unsupported_curve_rejected(self, ob3_credential):
         # SD-JWT's ECDSA set is P-256/P-384; a P-521 key must be refused with a
         # clear message rather than mis-signed under the wrong algorithm.
