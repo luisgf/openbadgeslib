@@ -4,6 +4,44 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v4.3.1 - 2026-08-02
+
+  Audit hardening: security fixes in the JWS engine and keygenerator, CLI
+  contract repairs, and documentation that matches the code.
+
+  - security(jws): bind ES* algorithms to their NIST curves (ES256→P-256,
+    ES384→P-384, ES512→P-521) so `verify_block` no longer accepts an ES256
+    header with a P-384/P-521 key (#284).
+  - security(jws): reject a JWS whose header carries `crit` (RFC 7515 §4.1.11);
+    this library understands no critical extensions (#292).
+  - security(cli): write key PEMs with `fchmod` on the open descriptor (no
+    path-based chmod TOCTOU) and map write OSError to a clean CLI exit (#289).
+  - fix(cli): `openbadges-verifier --json` emits a single JSON object when
+    trusted-key/config resolution fails, not a bare `[!]` line (#285).
+  - fix(cli): reject OB3-only verifier flags (`--check-status`,
+    `--no-verify-status-list`, `--resolve-did`) on `-V 1`/`-V 2` instead of
+    silently ignoring them (#286).
+  - fix(cli): ensure the signer `-o` directory exists and is writable before
+    allocating OB3 status indices, so a bad output path does not orphan
+    registry slots (#282).
+  - fix(ob1): map assertion body decode failures to `AssertionFormatIncorrect`
+    (#281); map `OSError`/`TimeoutError` during status checks to a `VerifyInfo`
+    verdict (#283); allow offline verification when a trusted key is supplied
+    even if the badge-declared key URL is dark (#290).
+  - fix(jws): map `TypeError` from `prepare_key` in `sign()` to
+    `SignatureError` (live wrong-family key on the OB1 path) (#288).
+  - fix(ob3): map an unparseable SD-JWT signing key to `EudiError` (#287).
+  - fix(oid4vci): `SqliteOID4VCIStore.close()` closes every per-thread
+    connection (was only the calling thread), clearing the bulk of
+    `ResourceWarning: unclosed database` under `--cov` (#301).
+  - fix(keys): drop the unused module logger and never-raised KeyGen exception
+    classes; PEM loads already map to `*ReadError` (#291).
+  - docs: correct `--check-status` status-list signature wording, Upgrading-to-4.0
+    exit codes, PyJWT floor ≥2.13, openbadges-init argparse docs, six CLI entry
+    points, publish `--json` `no_validity_bound`, and CachingDownloader
+    `max_entries` memory wording (#293–#300).
+
+
 * v4.3.0 - 2026-08-01
 
   Issue a badge straight to a wallet, over OpenID4VCI.
