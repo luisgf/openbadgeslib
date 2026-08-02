@@ -35,10 +35,10 @@ import logging
 import sys
 import os
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, NoReturn, Optional
 
-from .errors import LibOpenBadgesException
-from .confparser import read_config_or_exit, resolve_badge_section
+from .errors import ConfigError, LibOpenBadgesException
+from .confparser import load_config
 from .logs import enable_debug_logging
 from .cli_common import (config_parser, debug_parser, json_parser,
                          version_parser)
@@ -48,26 +48,56 @@ logger = logging.getLogger(__name__)
 # Entry Point
 
 
+def _cli_fail(args: argparse.Namespace, message: str) -> NoReturn:
+    """Abort the verifier CLI with a failure: human ``[!]`` line, or a single
+    JSON object when ``--json`` is set.
+
+    Trusted-key / config resolution runs before the per-version paths reach
+    :func:`_finish`, so failures here must still honour the machine-output
+    contract (exactly one JSON object on stdout, exit 1) rather than printing
+    a bare ``[!]`` line that would break a consumer piping stdout to a JSON
+    parser (#285).
+    """
+    if getattr(args, 'json', False):
+        _finish(args, {
+            'ob_version': getattr(args, 'ob_version', None),
+            'recipient': getattr(args, 'receptor', None),
+            'valid': False,
+            'trusted': False,
+            'reason': message,
+        })
+    print('[!] %s' % message)
+    sys.exit(1)
+
+
 def _resolve_trusted_pubkey(args: argparse.Namespace) -> Optional[bytes]:
     """Return the operator-supplied trusted public key PEM, or None if neither
-    --local nor --pubkey was given. Shared by the OB2 and OB3 verify paths."""
+    --local nor --pubkey was given. Shared by the OB2 and OB3 verify paths.
+
+    On a missing key file, missing config key, or unreadable config this
+    aborts via :func:`_cli_fail` (JSON-safe under ``--json``) and does not
+    return.
+    """
     if args.local:
-        conf = read_config_or_exit(args.config)
-        section = resolve_badge_section(conf, args.local)
+        try:
+            conf = load_config(args.config)
+        except ConfigError as exc:
+            _cli_fail(args, str(exc))
+        section = 'badge_' + args.local
+        if section not in conf:
+            _cli_fail(args, 'There is no "%s" badge in the configuration'
+                      % args.local)
         if 'public_key' not in conf[section]:
-            print("[!] [%s] is missing the required 'public_key' config key"
-                  % section)
-            sys.exit(1)
+            _cli_fail(args, "[%s] is missing the required 'public_key' config key"
+                      % section)
         key_path = conf[section]['public_key']
         if not os.path.isfile(key_path):
-            print('[!] Public key file %s NOT exists.' % key_path)
-            sys.exit(1)
+            _cli_fail(args, 'Public key file %s NOT exists.' % key_path)
         with open(key_path, 'rb') as f:
             return f.read()
     if args.pubkey:
         if not os.path.isfile(args.pubkey):
-            print('[!] Public key file %s NOT exists.' % args.pubkey)
-            sys.exit(1)
+            _cli_fail(args, 'Public key file %s NOT exists.' % args.pubkey)
         with open(args.pubkey, 'rb') as f:
             return f.read()
     return None

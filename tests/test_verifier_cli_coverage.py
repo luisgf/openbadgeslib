@@ -117,6 +117,23 @@ class TestOb3CliBranches:
               '-V', '3', '-k', str(tmp_path / 'nope.pem')])
         assert 'NOT exists' in capsys.readouterr().out
 
+    def test_pubkey_file_missing_json_is_valid_json(self, tmp_path, capsys):
+        # #285: --json must emit a single JSON object even when trusted-key
+        # resolution fails, not a bare "[!] Public key file …" line.
+        f = tmp_path / 'badge.svg'
+        f.write_bytes(b'<svg/>')
+        with pytest.raises(SystemExit) as exc:
+            with patch.object(sys, 'argv', [
+                    'openbadges-verifier', '--json',
+                    '-i', str(f), '-r', 'r@example.com',
+                    '-V', '3', '-k', str(tmp_path / 'nope.pem')]):
+                openbadges_verifier.main()
+        assert exc.value.code == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload['valid'] is False
+        assert payload['trusted'] is False
+        assert 'NOT exists' in payload['reason']
+
     def test_wrong_key_fails(self, tmp_path, rsa_priv_pem, ecc_pub_pem,
                              svg_image, capsys):
         badge = _ob3_svg(tmp_path, rsa_priv_pem, svg_image)
