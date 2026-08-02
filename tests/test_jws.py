@@ -236,6 +236,44 @@ class TestAlgorithmConfusion:
             verify_block(jws, key=k.get_pub_key())
 
 
+class TestEcCurveBinding:
+    """#284: ES* algorithms must bind the NIST curve RFC 7518 §3.4 pairs with
+    each alg (ES256→P-256, ES384→P-384, ES512→P-521). Without that pin,
+    verify_block accepted a P-384 key for ES256 — a combination jwt.decode
+    rejects and that no conformant verifier should accept."""
+
+    def test_es256_with_p384_key_rejected(self):
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from jwt.algorithms import ECAlgorithm
+
+        priv = ec.generate_private_key(ec.SECP384R1())
+        pub = priv.public_key()
+        # Sign with an unbound ES256 algorithm (no expected_curve) so the
+        # token is well-formed but wrong-curve; the library's curve-bound
+        # verify must then reject it.
+        unbound = ECAlgorithm(ECAlgorithm.SHA256)
+        header = {'alg': 'ES256'}
+        signing_input = utils.encode(header) + b'.' + utils.encode(PAYLOAD)
+        raw_sig = unbound.sign(signing_input, unbound.prepare_key(priv))
+        jws = signing_input + b'.' + utils.to_base64(raw_sig)
+        with pytest.raises(SignatureError):
+            verify_block(jws, key=pub)
+
+    def test_es256_with_p256_key_still_accepts(self, ecc_priv_pem, ecc_pub_pem):
+        # Regression: the curve pin must not break the legitimate ES256+P-256
+        # path the library has always used for ECC badges.
+        priv, pub = _load_ecc_keys(ecc_priv_pem, ecc_pub_pem)
+        raw_sig = sign({'alg': 'ES256'}, PAYLOAD, key=priv)
+        jws = _build_jws({'alg': 'ES256'}, PAYLOAD, raw_sig)
+        assert verify_block(jws, key=pub) is True
+
+    def test_sign_es256_with_p384_key_rejected(self):
+        from cryptography.hazmat.primitives.asymmetric import ec
+        priv = ec.generate_private_key(ec.SECP384R1())
+        with pytest.raises(SignatureError):
+            sign({'alg': 'ES256'}, PAYLOAD, key=priv)
+
+
 # ── utils ──────────────────────────────────────────────────────────────────────
 
 class TestUtils:

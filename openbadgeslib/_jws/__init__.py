@@ -48,16 +48,23 @@ def _prepare_key_arg(key: Any) -> Any:
     return key_to_pem(key)
 
 
-# Each entry is (algorithm class, hash id). EdDSA's OKPAlgorithm takes no hash
-# argument — its hash id is None and _algo_for constructs it with no args.
+# Each entry is (algorithm class, hash id, expected_curve). EdDSA's
+# OKPAlgorithm takes no hash or curve — both are None and _algo_for constructs
+# it with no args. RSA has no curve. EC algorithms bind the NIST curve that
+# RFC 7518 §3.4 pairs with each ES* alg (ES256→P-256, ES384→P-384, ES512→P-521)
+# so a P-521 key cannot "verify" an ES256 header and a P-256 key cannot sign
+# ES512 — the same defence jwt.decode() gets from PyJWT's default registry
+# (#284). Without expected_curve, ECAlgorithm accepts any EC key for any ES*
+# hash, which is a lost defence-in-depth layer and an interop asymmetry with
+# conformant verifiers.
 _ALGORITHMS = {
-    'RS256': (RSAAlgorithm, RSAAlgorithm.SHA256),
-    'RS384': (RSAAlgorithm, RSAAlgorithm.SHA384),
-    'RS512': (RSAAlgorithm, RSAAlgorithm.SHA512),
-    'ES256': (ECAlgorithm,  ECAlgorithm.SHA256),
-    'ES384': (ECAlgorithm,  ECAlgorithm.SHA384),
-    'ES512': (ECAlgorithm,  ECAlgorithm.SHA512),
-    'EdDSA': (OKPAlgorithm,  None),
+    'RS256': (RSAAlgorithm, RSAAlgorithm.SHA256, None),
+    'RS384': (RSAAlgorithm, RSAAlgorithm.SHA384, None),
+    'RS512': (RSAAlgorithm, RSAAlgorithm.SHA512, None),
+    'ES256': (ECAlgorithm,  ECAlgorithm.SHA256,  ec.SECP256R1),
+    'ES384': (ECAlgorithm,  ECAlgorithm.SHA384,  ec.SECP384R1),
+    'ES512': (ECAlgorithm,  ECAlgorithm.SHA512,  ec.SECP521R1),
+    'EdDSA': (OKPAlgorithm,  None,               None),
 }
 
 
@@ -65,9 +72,11 @@ def _algo_for(alg_name: str) -> Any:
     entry = _ALGORITHMS.get(alg_name)
     if entry is None:
         raise RouteMissingError(f"Algorithm {alg_name!r} is not supported")
-    cls, hash_id = entry
+    cls, hash_id, expected_curve = entry
     if hash_id is None:
         return cls()
+    if expected_curve is not None:
+        return cls(hash_id, expected_curve)
     return cls(hash_id)
 
 
