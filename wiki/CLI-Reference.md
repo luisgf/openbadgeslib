@@ -199,7 +199,7 @@ openbadges-verifier -i FILE -r RECEPTOR [-l BADGE | -k FILE] [-c FILE] [-s] [--c
 | `-d` | `--debug` | Show debug messages at runtime | off |
 | `-v` | `--version` | Print version and exit | — |
 
-For OB3, `--check-status` resolves each `credentialStatus` entry (W3C Bitstring Status List v1.0 or the legacy StatusList2021), fetches the referenced status list over HTTPS, and rejects the badge if its revocation/suspension bit is set. It is **fail-closed**: an unreachable or malformed status list is treated as a verification failure, not a pass. Only the published status bit is checked, not the status-list credential's own signature. See [[Security Model]].
+For OB3, `--check-status` resolves each `credentialStatus` entry (W3C Bitstring Status List v1.0 or the legacy StatusList2021), fetches the referenced status list over HTTPS, and rejects the badge if its revocation/suspension bit is set. It is **fail-closed**: an unreachable or malformed status list is treated as a verification failure, not a pass. The status list's own signature **is** verified by default (bound to the badge issuer); pass `--no-verify-status-list` to trust the revocation bit on the host's word alone. See [[Security Model]].
 
 ### Example (OB2, trusted via local config)
 
