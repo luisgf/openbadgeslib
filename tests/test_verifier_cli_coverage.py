@@ -170,6 +170,47 @@ class TestOb3CliBranches:
         assert 'Alignments' in out and 'Results' in out
 
 
+class TestOb3OnlyFlagsRejectedOnOlderVersions:
+    """#286: --check-status / --no-verify-status-list / --resolve-did are OB3
+    only; on -V 1/-V 2 they must fail closed with a clear message, not be
+    silently ignored (mirrors the signer's --proof-format / -H guards)."""
+
+    @pytest.mark.parametrize('version,flag', [
+        ('1', '--check-status'),
+        ('1', '--no-verify-status-list'),
+        ('1', '--resolve-did'),
+        ('2', '--check-status'),
+        ('2', '--no-verify-status-list'),
+        ('2', '--resolve-did'),
+    ])
+    def test_ob3_flag_rejected_on_v1_v2(self, tmp_path, version, flag, capsys):
+        f = tmp_path / 'badge.png'
+        f.write_bytes(b'\x89PNG\r\n\x1a\n')
+        with pytest.raises(SystemExit) as exc:
+            with patch.object(sys, 'argv', [
+                    'openbadges-verifier', '-i', str(f),
+                    '-r', 'r@example.com', '-V', version, flag]):
+                openbadges_verifier.main()
+        assert exc.value.code == 1
+        out = capsys.readouterr().out
+        assert flag in out
+        assert 'OpenBadges 3.0 only' in out
+
+    def test_ob3_flag_rejected_json_is_valid_json(self, tmp_path, capsys):
+        f = tmp_path / 'badge.png'
+        f.write_bytes(b'\x89PNG\r\n\x1a\n')
+        with pytest.raises(SystemExit) as exc:
+            with patch.object(sys, 'argv', [
+                    'openbadges-verifier', '--json',
+                    '-i', str(f), '-r', 'r@example.com',
+                    '-V', '2', '--resolve-did']):
+                openbadges_verifier.main()
+        assert exc.value.code == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert payload['valid'] is False
+        assert '--resolve-did' in payload['reason']
+
+
 class TestOb2CliBranches:
     def test_unsupported_extension_errors(self, tmp_path, rsa_pub_pem, capsys):
         f = tmp_path / 'badge.txt'

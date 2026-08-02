@@ -189,6 +189,20 @@ def main() -> None:
         parser.print_help()
         return
 
+    # OB3-only flags must not be silently dropped on -V 1/-V 2 (mirrors the
+    # signer's --proof-format / -H guards). An operator who passed --check-status
+    # with -V 2 would otherwise believe revocation was checked when it was not
+    # (#286).
+    if args.ob_version != '3':
+        for enabled, flag in (
+                (args.check_status, '--check-status'),
+                (args.no_verify_status_list, '--no-verify-status-list'),
+                (args.resolve_did, '--resolve-did')):
+            if enabled:
+                _cli_fail(args, '%s applies to OpenBadges 3.0 only (-V 3)'
+                          % flag)
+                return
+
     logger.debug("Verifying %s as OpenBadges %s for %s",
                  args.filein, args.ob_version, args.receptor)
 
