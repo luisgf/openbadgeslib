@@ -65,6 +65,42 @@ def _run_json(argv, capsys):
     return exc.value.code, json.loads(capsys.readouterr().out)
 
 
+def test_missing_output_dir_is_created_before_issue(tmp_path, capsys):
+    # #282: -o pointing at a missing directory used to allocate an OB3 status
+    # index and then raise FileNotFoundError on write. The signer now creates
+    # the directory up front so issuance only runs when the badge can land.
+    cfg = _write_config(tmp_path, status=True)
+    out = tmp_path / 'new' / 'nested' / 'out'     # does not exist yet
+    assert not out.exists()
+    argv = ['openbadges-signer', '-c', str(cfg), '-b', '1', '-o', str(out),
+            '-V', '3', '-E', '--json', '-r', 'a@e.com']
+    code, result = _run_json(argv, capsys)
+    assert code == 0
+    assert out.is_dir()
+    # Single-recipient path returns the historical one-badge payload (not the
+    # batch {signed:[…]} shape).
+    assert Path(result['badge_file']).is_file()
+    assert result['status_index'] is not None
+
+
+def test_output_path_that_is_a_file_exits_cleanly(tmp_path, capsys):
+    # #282: -o must be a directory; a regular file is a clean CLI error, not a
+    # traceback mid-issue after a status index has been burned.
+    cfg = _write_config(tmp_path, status=True)
+    not_a_dir = tmp_path / 'not_a_dir'
+    not_a_dir.write_text('nope')
+    argv = ['openbadges-signer', '-c', str(cfg), '-b', '1', '-o', str(not_a_dir),
+            '-V', '3', '-E', '--json', '-r', 'a@e.com']
+    code, result = _run_json(argv, capsys)
+    assert code == 1
+    assert 'error' in result
+    assert 'not a directory' in result['error']
+    # No status registry should have been written (issuance never started).
+    status_dir = tmp_path / 'status'
+    if status_dir.exists():
+        assert list(status_dir.rglob('*.json')) == []
+
+
 def test_batch_multiple_recipients_one_registry_transaction(tmp_path, capsys):
     cfg = _write_config(tmp_path, status=True)
     out = _out_dir(tmp_path)

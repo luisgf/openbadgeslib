@@ -153,11 +153,33 @@ def _run_sign(args: argparse.Namespace) -> dict[str, Any]:
     except IssuanceError as exc:
         sys.exit('[!] %s' % exc)
 
+    # Ensure -o exists and is a directory BEFORE any issuance. For a revocable
+    # OB3 badge the status-list index is allocated (and the registry persisted)
+    # before the badge file is written; a missing/non-writable output dir used
+    # to raise FileNotFoundError after allocate and orphan the index — and in
+    # batch mode, every index of the batch (#282).
+    _ensure_output_dir(args.output)
+
     # A single -r keeps the historical single-badge behaviour (exit codes,
     # output); several recipients or a --recipients-file switch to batch.
     if len(recipients) > 1 or args.recipients_file:
         return _sign_batch(args, conf, badge, badge_obj, recipients, evidence)
     return _sign_single(args, conf, badge, badge_obj, recipients[0], evidence)
+
+
+def _ensure_output_dir(path: str) -> None:
+    """Create *path* if missing; exit cleanly if it cannot hold badge files."""
+    # A regular file at -o must be diagnosed before makedirs: on some platforms
+    # makedirs(path) raises a generic "File exists" when path is a file, which
+    # would hide the clearer "not a directory" message.
+    if os.path.exists(path) and not os.path.isdir(path):
+        sys.exit('[!] Output path %s is not a directory' % path)
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError as err:
+        sys.exit('[!] Could not create output directory %s: %s' % (path, err))
+    if not os.access(path, os.W_OK):
+        sys.exit('[!] Output directory %s is not writable' % path)
 
 
 def _gather_recipients(args: argparse.Namespace) -> list[str]:
@@ -217,9 +239,15 @@ def _write_badge_and_log(conf: configparser.ConfigParser, badge_file_out: str,
                          badge_bytes: bytes, msg: str) -> None:
     """Persist the signed badge, append the audit line and print the location —
     the shared tail of every successful OB2/OB3 signing. A log-write failure is
-    reported but does not lose the already-written badge."""
-    with open(badge_file_out, 'wb') as f:
-        f.write(badge_bytes)
+    reported but does not lose the already-written badge. A badge-write failure
+    aborts with a clean message (the status index may already be allocated;
+    ``_ensure_output_dir`` is the primary guard against that, this is the
+    backstop for a race or full disk — #282)."""
+    try:
+        with open(badge_file_out, 'wb') as f:
+            f.write(badge_bytes)
+    except OSError as err:
+        sys.exit('[!] Could not write badge to %s: %s' % (badge_file_out, err))
     try:
         # Resolve the log path inside the try: a missing [logs]/[paths] key is a
         # KeyError, and the badge is already on disk — a log failure must be
@@ -251,9 +279,13 @@ def _write_hosted_assertion(badge_file_out: str, result: SignResult) -> None:
     """Write the OB2 HostedBadge assertion JSON next to the badge and print
     where to publish it (only when `-H`/hosted produced one)."""
     hosted_out = os.path.splitext(badge_file_out)[0] + '.assertion.json'
-    with open(hosted_out, 'w', encoding='ascii') as f:
-        assert result.hosted_json is not None
-        f.write(result.hosted_json)
+    try:
+        with open(hosted_out, 'w', encoding='ascii') as f:
+            assert result.hosted_json is not None
+            f.write(result.hosted_json)
+    except OSError as err:
+        sys.exit('[!] Could not write hosted assertion to %s: %s'
+                 % (hosted_out, err))
     print('[i] Publish the hosted assertion JSON %s on your web server so it '
           'is retrievable at: %s' % (hosted_out, result.assertion_id))
 
@@ -322,8 +354,14 @@ def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
         # Persist the signed badge first, then append to the audit log. Writing
         # the log first and unguarded meant a missing/unwritable base_log raised
         # a raw OSError out of the CLI and lost the already-signed badge; mirror
-        # the OB2 path — save, then log inside try/except.
-        badge_signed.save_to_file(badge_file_out)
+        # the OB2 path — save, then log inside try/except. Badge write is also
+        # guarded (#282): _ensure_output_dir is the primary guard, this is the
+        # backstop.
+        try:
+            badge_signed.save_to_file(badge_file_out)
+        except OSError as err:
+            sys.exit('[!] Could not write badge to %s: %s'
+                     % (badge_file_out, err))
 
         sign_log = os.path.join(conf['paths']['base_log'], conf['logs']['signer'])
         msg = '%s %s SIGNED for %s UID %s' \
