@@ -18,7 +18,7 @@ All dependencies (pypng, PyJWT[crypto], cryptography, defusedxml) are installed 
 
 - [[Installation]] — requirements and how to install
 - [[Quick Start]] — init, generate keys, sign, and verify a badge in four commands
-- [[CLI Reference]] — the five console scripts: `openbadges-init`, `openbadges-keygenerator`, `openbadges-signer`, `openbadges-verifier`, `openbadges-publish`
+- [[CLI Reference]] — the unified `openbadges` command and its five aliases: `openbadges-init`, `openbadges-keygenerator`, `openbadges-signer`, `openbadges-verifier`, `openbadges-publish`
 - [[Python API OB2]] — `OB2Signer`, `OB2Verifier`, `Assertion` for strict OpenBadges 2.0
 - [[Python API OB3]] — `OpenBadgeCredential`, `OB3Signer`, `OB3Verifier` for OpenBadges 3.0
 - [[Python API OB1]] — legacy `Signer` / `Verifier` / `Badge` (frozen OpenBadges 1.0)

@@ -119,5 +119,5 @@ Verifiers opt in with `--check-status`. The full lifecycle is described in [[Gui
 ## Next steps
 
 - Task-oriented recipes (batch signing, emailing, publishing) live in [[Guides]].
-- Every flag for all five console scripts is documented in [[CLI Reference]].
+- Every flag for the unified `openbadges` command and its five aliases is documented in [[CLI Reference]].
 - All `config.ini` keys are explained in [[Configuration]].

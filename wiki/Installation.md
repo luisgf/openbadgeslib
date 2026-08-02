@@ -97,10 +97,11 @@ conda activate openbadgeslib
 
 ## Console scripts
 
-After installation, five command-line tools are available in the active environment's `bin/` directory (`Scripts/` on Windows):
+After installation, six command-line entry points are available in the active environment's `bin/` directory (`Scripts/` on Windows) — the unified `openbadges <command>` front-end plus five `openbadges-<command>` aliases:
 
 | Command | What it does |
 | --- | --- |
+| `openbadges` | Unified front-end: `openbadges init\|keygen\|sign\|verify\|publish\|status …` (same flags as the aliases). |
 | `openbadges-init` | First command to run. Creates a sample `config.ini` and the directory structure (`keys/`, `images/`, `log/`, `status/`). |
 | `openbadges-keygenerator` | Generates an RSA, ECC, or Ed25519 key pair for a badge section defined in `config.ini`. |
 | `openbadges-signer` | Signs a badge image (SVG or PNG) for a given recipient email address. |

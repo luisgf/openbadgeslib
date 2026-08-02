@@ -30,7 +30,7 @@ legacy format, selected with `-V {1,2,3}` (default `3`).
 - Issue and verify badges as EUDI **SD-JWT VC** (the EU wallet / ARF format)
   with selective disclosure, via the optional `[eudi]` extra
 - did:web issuer identity: `did.json` generation and DID resolution
-- Five command-line tools included
+- Six command-line entry points: the unified `openbadges` front-end plus five `openbadges-*` aliases
 
 ## Why openbadgeslib
 
@@ -66,7 +66,7 @@ additive EUDI SD-JWT VC wallet track.
 | Revocation / suspension | ✅ W3C Bitstring Status List | hosted check | `1EdTechRevocationList` | ad-hoc flag | — |
 | `did:web` (generate + resolve) | ✅ | — | — | — | resolve only |
 | Image baking (SVG + PNG) | ✅ | unbake only | ✅ | — | — |
-| Form factor | library + 5 CLI tools | library + CLI | Django server | library | binding |
+| Form factor | library + CLI (`openbadges` + 5 aliases) | library + CLI | Django server | library | binding |
 | Typing / CI | `mypy --strict`, CI 3.10–3.14 | — | — | Pydantic | — |
 | License | LGPLv3 / BSD-2 | Apache-2.0 | AGPL-3.0 | MIT/LGPL | Apache-2.0 |
 
