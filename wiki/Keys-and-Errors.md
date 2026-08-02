@@ -89,9 +89,6 @@ All library-level exceptions in `openbadgeslib.errors` inherit from a single roo
 LibOpenBadgesException
 ├── KeyGenExceptions
 │   ├── GenPrivateKeyError
-│   ├── GenPublicKeyError
-│   ├── PrivateKeySaveError
-│   ├── PublicKeySaveError
 │   ├── PrivateKeyReadError
 │   ├── PublicKeyReadError
 │   └── UnknownKeyType

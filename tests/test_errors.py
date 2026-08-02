@@ -62,6 +62,15 @@ class TestHierarchyIsUnderTheRoot:
         # class that is never raised (the live one is ob3.publish's).
         assert not hasattr(errors, 'AmbiguousCredential')
 
+    def test_dead_keygen_exceptions_removed(self):
+        # #291: GenPublicKeyError / PrivateKeySaveError / PublicKeySaveError
+        # were never raised; only GenPrivateKeyError and the ReadError pair
+        # remain in the live tree.
+        for name in ('GenPublicKeyError', 'PrivateKeySaveError',
+                     'PublicKeySaveError'):
+            assert not hasattr(errors, name)
+        assert hasattr(errors, 'GenPrivateKeyError')
+
 
 class TestValueErrorCompatibility:
     """ConfigError and UnsupportedAlgorithm stay ValueError so historical

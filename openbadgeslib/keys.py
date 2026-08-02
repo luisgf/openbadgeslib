@@ -37,8 +37,6 @@ from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey, Ed25519PublicKey)
 from enum import Enum
-import logging
-logger = logging.getLogger(__name__)
 
 # What a failed PEM load raises depends on the `cryptography` version: up to v46
 # an unsupported key algorithm came back as ValueError; **v47 changed the

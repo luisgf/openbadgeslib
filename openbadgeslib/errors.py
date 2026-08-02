@@ -31,8 +31,7 @@ class LibOpenBadgesException(Exception):
 
         LibOpenBadgesException
         ├── KeyGenExceptions          (alias: KeyGenException)
-        │   ├── GenPrivateKeyError / GenPublicKeyError
-        │   ├── PrivateKeySaveError / PublicKeySaveError
+        │   ├── GenPrivateKeyError
         │   ├── PrivateKeyReadError / PublicKeyReadError
         │   └── UnknownKeyType
         ├── SignerExceptions          (alias: SignerException)
@@ -87,18 +86,6 @@ VerifierException = VerifierExceptions
 
 
 class GenPrivateKeyError(KeyGenExceptions):
-    pass
-
-
-class GenPublicKeyError(KeyGenExceptions):
-    pass
-
-
-class PrivateKeySaveError(KeyGenExceptions):
-    pass
-
-
-class PublicKeySaveError(KeyGenExceptions):
     pass
 
 
