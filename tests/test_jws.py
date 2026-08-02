@@ -356,6 +356,17 @@ class TestSignEdgeCases:
         with pytest.raises((SignatureError, Exception)):
             sign({'alg': 'RS256'}, PAYLOAD, key=k.get_pub_key())
 
+    def test_live_wrong_family_key_raises_signature_error(self, ecc_priv_pem,
+                                                          rsa_pub_pem):
+        # #288: a live cryptography EC key with alg RS256 used to raise a raw
+        # TypeError from prepare_key; it must be SignatureError (mirrors
+        # verify_block). The OB1 signer path hands in live key objects.
+        from openbadgeslib.keys import KeyECC
+        k = KeyECC()
+        k.read_private_key(ecc_priv_pem)
+        with pytest.raises(SignatureError):
+            sign({'alg': 'RS256'}, PAYLOAD, key=k.get_priv_key())
+
 
 # ── key-object reuse (#215) ────────────────────────────────────────────────────
 

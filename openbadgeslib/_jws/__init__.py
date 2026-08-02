@@ -113,7 +113,13 @@ def sign(header_dict: Dict[str, Any], payload_dict: Dict[str, Any], key: Any) ->
     try:
         prepared = algo.prepare_key(_prepare_key_arg(key))
         return cast(bytes, algo.sign(signing_input, prepared))
-    except (InvalidKeyError, ValueError) as exc:
+    except (InvalidKeyError, ValueError, TypeError, AttributeError) as exc:
+        # prepare_key raises a bare TypeError ("Expecting a PEM-formatted key.")
+        # when handed a live cryptography object of the wrong family — the OB1
+        # path passes Badge.priv_key as a live object via _prepare_key_arg
+        # (#215). Mirror verify_block's except tuple so a mismatched key family
+        # surfaces as SignatureError, not a raw traceback out of the signer
+        # (#288).
         raise SignatureError(str(exc)) from exc
 
 
