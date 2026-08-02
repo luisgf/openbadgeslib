@@ -19,10 +19,10 @@ Every CLI already emits this contract under `--json`; 4.0.0 makes **human mode**
 | Code | Meaning |
 |------|---------|
 | `0` | success — a badge valid **and** trusted, or all work done |
-| `1` | any error — bad input, I/O, an exception, an invalid badge, a bad command line |
-| `2` | incomplete — a valid-but-**untrusted** verification, or a partial signer/publish batch |
+| `1` | any error — bad input, I/O, an exception, an invalid badge |
+| `2` | incomplete — a valid-but-**untrusted** verification, a partial signer/publish batch, or a **bad command line** (argparse's standard) |
 
-Concretely, in human mode: errors that exited **255** now exit **1**; a **valid-but-untrusted** verification that exited **0** now exits **2** (it already did under `--json`); a **partial batch** that exited **1** now exits **2**; a **bad command line** now exits **1**, not argparse's **2**.
+Concretely, in human mode: errors that exited **255** now exit **1**; a **valid-but-untrusted** verification that exited **0** now exits **2** (it already did under `--json`); a **partial batch** that exited **1** now exits **2**; a **bad command line** now exits **2** (argparse's standard; `openbadges-init` in particular moved from `1` to `2`).
 
 **Action:** a script that keys on the old `255`, or that read a human-mode exit `0` as "trusted", must adjust. To gate on "valid **and** trusted", require exit `0` (not merely non-error) — an untrusted signature now surfaces as `2` even without `--json`.
 
