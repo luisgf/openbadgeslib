@@ -248,3 +248,11 @@ class TestKeyGeneratorFileWrites:
             _write_pem_file(str(path), b'new', 0o600)
 
         assert path.read_bytes() == b'existing'
+
+    def test_write_pem_file_missing_parent_dir_raises_oserror(self, tmp_path):
+        # #289: a path whose parent directory does not exist must surface as
+        # OSError (caught by the CLI and turned into a clean exit), not a
+        # different exception type.
+        path = tmp_path / 'no' / 'such' / 'dir' / 'key.pem'
+        with pytest.raises(OSError):
+            _write_pem_file(str(path), b'private-key', 0o600)

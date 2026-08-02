@@ -215,6 +215,37 @@ def test_keygenerator_json_error_is_json(tmp_path, capsys):
     assert 'error' in json.loads(capsys.readouterr().out)
 
 
+def test_keygenerator_missing_parent_dir_exits_cleanly(tmp_path):
+    # #289: a private_key/public_key path whose parent directory does not
+    # exist must exit with a clean '[!] Could not write key file: …' message
+    # (SystemExit), not a raw FileNotFoundError escaping main().
+    import pytest
+    from openbadgeslib import openbadges_keygenerator
+    (tmp_path / 'log').mkdir()
+    missing = tmp_path / 'no' / 'such' / 'keys'
+    cfg = tmp_path / 'config.ini'
+    cfg.write_text(
+        "[paths]\n"
+        f"base = {tmp_path}\n"
+        f"base_key = {missing}\n"
+        f"base_log = {tmp_path}/log\n"
+        f"base_image = {tmp_path}/images\n\n"
+        "[logs]\ngeneral = general.log\nsigner = signer.log\n\n"
+        "[issuer]\nname = Test Issuer\n\n"
+        "[badge_1]\nname = Badge 1\n"
+        f"private_key = {missing}/sign.pem\n"
+        f"public_key = {missing}/verify.pem\n"
+        "key_type = RSA\n")
+    with patch.object(sys, 'argv',
+                      ['openbadges-keygenerator', '-c', str(cfg), '-g', '1']):
+        with pytest.raises(SystemExit) as exc:
+            openbadges_keygenerator.main()
+    # SystemExit carries the operator-facing string (not an exception instance).
+    assert isinstance(exc.value.code, str)
+    assert 'Could not write key file' in exc.value.code
+    assert not missing.exists()
+
+
 def _write_signer_missing_key_config(tmp_path):
     # A badge section that resolves but omits the signing key pair — the common
     # "config written, keys not generated yet" first-run state.

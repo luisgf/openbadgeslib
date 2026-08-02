@@ -50,11 +50,26 @@ logger = logging.getLogger(__name__)
 
 
 def _write_pem_file(path: str, data: bytes, mode: int) -> None:
+    """Create *path* exclusively and write *data* with the given permission bits.
+
+    Mode is applied on the open file descriptor (``fchmod``), not via a
+    path-based ``chmod`` after close: the latter is a TOCTOU window where a
+    local attacker with write access to the key directory could replace *path*
+    with a symlink and redirect the permission change onto another file the
+    invoking user owns (#289). ``O_CREAT|O_EXCL`` already prevents following a
+    pre-planted symlink at create time; ``fchmod`` closes the post-close gap.
+    """
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     fd = os.open(path, flags, mode)
-    with os.fdopen(fd, 'wb') as f:
-        f.write(data)
-    os.chmod(path, mode)
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            fd = -1                         # ownership transferred to the file object
+            f.write(data)
+            os.fchmod(f.fileno(), mode)
+    except Exception:
+        if fd >= 0:
+            os.close(fd)
+        raise
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -125,8 +140,14 @@ def _generate(args: argparse.Namespace) -> dict[str, Any]:
     kf = KeyFactory(key_type)
     priv_key_pem, pub_key_pem = kf.generate_keypair()
 
-    _write_pem_file(private_key, priv_key_pem, 0o600)
-    _write_pem_file(public_key, pub_key_pem, 0o644)
+    try:
+        _write_pem_file(private_key, priv_key_pem, 0o600)
+        _write_pem_file(public_key, pub_key_pem, 0o644)
+    except OSError as err:
+        # Missing parent directory, permission denied, full disk, … — report a
+        # clean CLI error instead of a raw traceback (human mode). emit_cli_json
+        # turns this SystemExit into {"error": ...} under --json (#289).
+        sys.exit('[!] Could not write key file: %s' % err)
 
     logger.info('Private key saved at: %s', private_key)
     logger.info('Public key saved at: %s', public_key)
