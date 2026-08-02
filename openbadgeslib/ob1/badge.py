@@ -24,7 +24,7 @@
 from enum import Enum
 from typing import Any, Optional, Union, cast
 
-from ..keys import detect_key_type
+from ..keys import KeyType, detect_key_type
 from ..errors import (BadgeImgFormatUnsupported, AssertionFormatIncorrect,
                       ErrorParsingFile)
 from .._jws import utils as jws_utils
@@ -165,13 +165,19 @@ class BadgeSigned():
         if not verify_url:
             raise ErrorParsingFile("OpenBadge assertion body is missing 'verify.url'")
 
+        # Fetch the badge-declared verify key non-fatally. When the operator
+        # supplies a trusted key (-k/--local) the signature check uses that key
+        # and the fetch is only needed for the optional ECC disclaimer — so a
+        # dark issuer host must not block offline verification (#290). Without
+        # a trusted key, check_jws_signature fails cleanly with MissingKey.
+        pubkey_pem: Optional[Union[str, bytes]] = None
+        key_type: Optional[KeyType] = None
         try:
-            pubkey_pem = download_file(verify_url)
-            key_type = detect_key_type(pubkey_pem)
-        except Exception as exc:
-            raise ErrorParsingFile(
-                'Unable to verify OpenBadge: the verify key URL %s could not be '
-                'fetched (%s)' % (verify_url, exc)) from exc
+            fetched = download_file(verify_url)
+            key_type = detect_key_type(fetched)
+            pubkey_pem = fetched
+        except Exception:
+            pass
 
         try:
             badge = Badge(image_url=body['image'], verify_key_url=verify_url,

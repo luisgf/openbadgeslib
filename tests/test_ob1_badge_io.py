@@ -227,13 +227,16 @@ class TestBadgeSignedReadFromFile:
             badge = BadgeSigned.read_from_file(path)
         assert badge.source.key_type is KeyType.ECC
 
-    def test_verify_key_download_failure_raises(self, tmp_path, signed_svg_rsa):
-        from openbadgeslib.errors import ErrorParsingFile
+    def test_verify_key_download_failure_is_nonfatal(self, tmp_path, signed_svg_rsa):
+        # #290: a dark issuer key URL must not block offline parse; the badge
+        # is returned without key material so a trusted key can still verify.
         path = self._write_temp(tmp_path, signed_svg_rsa.signed, '.svg')
         with patch('openbadgeslib.ob1.badge.download_file',
                    side_effect=ValueError('unreachable')):
-            with pytest.raises(ErrorParsingFile):
-                BadgeSigned.read_from_file(path)
+            badge = BadgeSigned.read_from_file(path)
+        assert badge.source.pubkey_pem is None
+        assert badge.source.key_type is None
+        assert badge.source.pub_key is None
 
     def test_get_serial_num_after_read_is_str(self, tmp_path, signed_svg_rsa, rsa_pub_pem):
         # Regression for the str/bytes bug: get_serial_num must not crash on a

@@ -181,6 +181,27 @@ class TestGetBadgeStatus:
         assert result.status is BadgeStatus.SIGNATURE_ERROR
         assert 'timed out' in str(result.msg)
 
+    def test_offline_verify_with_trusted_key(self, badge_for_verify_rsa,
+                                             rsa_pub_pem):
+        # #290: when the operator supplies a trusted key, verification must
+        # succeed even if the badge's own verify.url is unreachable (and the
+        # badge was parsed without downloading it). source is the session
+        # fixture Badge — restore after so other tests keep their key material.
+        badge, identity = badge_for_verify_rsa
+        saved = (badge.source.pubkey_pem, badge.source.key_type,
+                 badge.source.pub_key)
+        badge.source.pubkey_pem = None
+        badge.source.key_type = None
+        badge.source.pub_key = None
+        try:
+            v = Verifier(verify_key=rsa_pub_pem, identity=identity)
+            with patch.object(v, 'check_revocation', return_value=None):
+                result = v.get_badge_status(badge)
+            assert result.status is BadgeStatus.VALID
+        finally:
+            (badge.source.pubkey_pem, badge.source.key_type,
+             badge.source.pub_key) = saved
+
     def test_identity_mismatch_returns_identity_error(self, badge_for_verify_rsa):
         badge, identity = badge_for_verify_rsa
         v = Verifier(identity='wrong@example.com')
