@@ -71,7 +71,7 @@ import sqlite3
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Set
 
 from .store import (CLAIM_CONFLICT, CLAIM_GONE, CLAIM_OK, OID4VCIStoreError,
                     PreAuthorizedGrant, PurgeStats, STATE_INVALIDATED,
@@ -196,6 +196,15 @@ class SqliteOID4VCIStore:
         self.path = path
         self._timeout = timeout
         self._local = threading.local()
+        # Live connections across every thread that has opened one. close()
+        # drains this set so a multi-threaded process (or the test suite under
+        # --cov) does not leave sqlite3.Connection objects to GC and emit
+        # ResourceWarning: unclosed database (#301). Guarded by _conns_lock.
+        self._conns: Set[sqlite3.Connection] = set()
+        self._conns_lock = threading.Lock()
+        # Bumped by close() so a thread whose local still points at a closed
+        # connection re-opens instead of reusing a dead handle.
+        self._generation = 0
         self._last_gc = 0.0
         # Every query takes its cutoff as an explicit ``now=``; the opportunistic
         # GC is the one place that needs a clock of its own. Injecting it (rather
@@ -228,11 +237,19 @@ class SqliteOID4VCIStore:
         connection interleave their transactions into each other.
         """
         cached: Optional[sqlite3.Connection] = getattr(self._local, 'conn', None)
-        if cached is not None:
+        gen = getattr(self._local, 'gen', -1)
+        if cached is not None and gen == self._generation:
             return cached
         try:
+            # check_same_thread=False so close() can shut every thread's
+            # connection from the calling thread (#301). We still give each
+            # thread its OWN connection and never issue concurrent BEGIN on
+            # one handle — that is the interleaving hazard the original
+            # check_same_thread=True was guarding against, not cross-thread
+            # close itself (which raises ProgrammingError under the default).
             conn = sqlite3.connect(self.path, timeout=self._timeout,
-                                   isolation_level=None)
+                                   isolation_level=None,
+                                   check_same_thread=False)
             self._configure(conn)
             self._migrate(conn)
         except sqlite3.Error as exc:
@@ -240,6 +257,9 @@ class SqliteOID4VCIStore:
                 'could not open the OID4VCI store at %s: %s'
                 % (self.path, exc)) from exc
         self._local.conn = conn
+        self._local.gen = self._generation
+        with self._conns_lock:
+            self._conns.add(conn)
         self._restrict_permissions()
         return conn
 
@@ -296,10 +316,24 @@ class SqliteOID4VCIStore:
                 pass    # not created yet, or a platform without POSIX modes
 
     def close(self) -> None:
-        conn = getattr(self._local, 'conn', None)
-        if conn is not None:
-            conn.close()
-            self._local.conn = None
+        """Close every live per-thread connection this store opened.
+
+        The calling thread's local cache is cleared and the generation counter
+        is bumped so any other thread that still holds a closed connection in
+        its ``threading.local`` re-opens on the next use rather than handing a
+        dead handle to SQLite (#301).
+        """
+        with self._conns_lock:
+            self._generation += 1
+            conns = list(self._conns)
+            self._conns.clear()
+        for conn in conns:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        self._local.conn = None
+        self._local.gen = -1
 
     # ── transactions ─────────────────────────────────────────────────────────
 

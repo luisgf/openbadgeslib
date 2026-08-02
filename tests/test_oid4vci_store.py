@@ -267,6 +267,31 @@ class TestBurnNonce:
         assert results.count(True) == 1
         assert results.count(False) == 15
 
+
+class TestSqliteConnectionLifecycle:
+    def test_close_closes_connections_from_every_thread(self, tmp_path):
+        # #301: close() used to only close the calling thread's connection, so
+        # other threads' handles leaked as ResourceWarning under --cov.
+        path = str(tmp_path / 'state' / 'oid4vci.sqlite3')
+        store = _sqlite(path)
+        barrier = threading.Barrier(4)
+
+        def _open(_):
+            barrier.wait()
+            store._conn()                      # open a connection on this thread
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(_open, range(4)))
+        # __init__ opens one on the main thread + one per worker.
+        assert len(store._conns) >= 4
+        opened = list(store._conns)
+        store.close()
+        assert store._conns == set()
+        # Every previously-open connection must refuse further use.
+        for conn in opened:
+            with pytest.raises(sqlite3.ProgrammingError):
+                conn.execute('SELECT 1')
+
     def test_exactly_one_process_wins(self, tmp_path):
         # The real target. Threads share a GIL and a Python-level lock; only
         # separate processes exercise SQLite's own writer lock, which is the
