@@ -267,7 +267,7 @@ openbadges-publish -V 3 --reclaim-unclaimed [-c FILE] [-b BADGE] [--dry-run] [--
 | — | `--dry-run` | With `--reclaim-unclaimed`: report what would change, change nothing | off |
 | — | `--reason TEXT` | Free-text reason recorded with `--revoke`/`--suspend` | — |
 | — | `--check-live` | OB3 only: after publishing, download each written artifact (`did.json`, status lists, `verify.pem`) from `publish_url` and byte-compare it against the local copy — verifying the web server serves the freshly-regenerated versions. Exit `2` if any is stale or missing | off |
-| — | `--json` | OB3 only: emit a machine-readable JSON result instead of the human output — `{did, files_written, status_operation, skipped}` when publishing, the queried records for `--list`/`--status`. See [Machine-readable output](#machine-readable-output-and-exit-codes) | off |
+| — | `--json` | OB3 only: emit a machine-readable JSON result instead of the human output — `{did, files_written, status_operation, skipped, no_validity_bound}` when publishing (`no_validity_bound` lists revocable badges published without a `validUntil` anti-replay window), the queried records for `--list`/`--status`. See [Machine-readable output](#machine-readable-output-and-exit-codes) | off |
 | `-b` | `--badge NAME` | Scope the lookup/listing to one badge's registry | all badges |
 | `-d` | `--debug` | Show debug messages at runtime | off |
 | `-v` | `--version` | Print version and exit | — |
@@ -383,7 +383,7 @@ Success payloads:
 |---------|-----------------|
 | `openbadges-keygenerator` | `{key_type, private_key, public_key}` |
 | `openbadges-signer` | `{ob_version, badge_file, jti, status_index, proof_format}` (`jti`/`status_index`/`proof_format` are OB3; `null` where not applicable) |
-| `openbadges-publish -V 3` | `{did, files_written, status_operation, skipped, live_check}` (`live_check` is `null` unless `--check-live`) |
+| `openbadges-publish -V 3` | `{did, files_written, status_operation, skipped, no_validity_bound, live_check}` (`no_validity_bound` lists revocable badges published without a `validUntil` anti-replay window; `live_check` is `null` unless `--check-live`) |
 | `openbadges-publish -V 3 --list` | `{badges: [{badge, credentials: [...]}], total, reserved}` |
 | `openbadges-publish -V 3 --status` | `{matches: [...]}` |
 | `openbadges-publish -V 3 --reclaim-unclaimed` | `{badges: [{badge, pending, delivered, reclaimed, undecided}], reclaimed, dry_run}` |
