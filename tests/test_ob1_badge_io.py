@@ -255,6 +255,31 @@ class TestBadgeSignedReadFromFile:
         baked = baking.bake_svg(svg_image, tampered.decode('utf-8'))
         return self._write_temp(tmp_path, baked, '.svg')
 
+    def test_non_utf8_assertion_body_raises_clean_error(
+            self, tmp_path, signed_svg_rsa, svg_image):
+        # #281: a payload that is valid base64url of non-UTF-8 bytes must raise
+        # AssertionFormatIncorrect, not a raw UnicodeDecodeError.
+        from openbadgeslib._jws import utils as jws_utils
+        assertion = extract_svg_assertion(signed_svg_rsa.signed)
+        bad_body = jws_utils.to_base64(b'\xff\xfe')
+        tampered = assertion.header + b'.' + bad_body + b'.' + assertion.signature
+        baked = baking.bake_svg(svg_image, tampered.decode('ascii'))
+        path = self._write_temp(tmp_path, baked, '.svg')
+        with pytest.raises(AssertionFormatIncorrect, match='base64url JSON'):
+            BadgeSigned.read_from_file(path)
+
+    def test_non_json_assertion_body_raises_clean_error(
+            self, tmp_path, signed_svg_rsa, svg_image):
+        # #281: valid UTF-8 that is not JSON → AssertionFormatIncorrect.
+        from openbadgeslib._jws import utils as jws_utils
+        assertion = extract_svg_assertion(signed_svg_rsa.signed)
+        bad_body = jws_utils.to_base64(b'not-json')
+        tampered = assertion.header + b'.' + bad_body + b'.' + assertion.signature
+        baked = baking.bake_svg(svg_image, tampered.decode('ascii'))
+        path = self._write_temp(tmp_path, baked, '.svg')
+        with pytest.raises(AssertionFormatIncorrect, match='base64url JSON'):
+            BadgeSigned.read_from_file(path)
+
     def test_missing_recipient_field_raises_clean_error(self, tmp_path, signed_svg_rsa, svg_image, rsa_pub_pem):
         path = self._badge_with_tampered_body(
             tmp_path, signed_svg_rsa, svg_image, lambda body: body.pop('recipient'))

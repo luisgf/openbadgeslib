@@ -129,7 +129,17 @@ class BadgeSigned():
         else:
             raise BadgeImgFormatUnsupported('The image format for %s is not supported' % file_name)
 
-        body = assertion.decode_body()
+        try:
+            body = assertion.decode_body()
+        except (ValueError, TypeError) as exc:
+            # decode_body → base64url + UTF-8 + JSON. A crafted token whose
+            # payload is valid base64url of non-UTF-8 or non-JSON text raises
+            # UnicodeDecodeError / JSONDecodeError / binascii.Error — all
+            # ValueError subclasses, not LibOpenBadgesException. Map them so a
+            # caller trapping library errors still gets a clean verdict (#281).
+            raise AssertionFormatIncorrect(
+                'OpenBadge assertion body is not valid base64url JSON: %s'
+                % exc) from exc
         if not isinstance(body, dict):
             # The body can decode to any JSON value; a non-object would raise a
             # raw TypeError/AttributeError on the field accesses below, before
