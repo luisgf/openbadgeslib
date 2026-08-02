@@ -169,6 +169,18 @@ class TestGetBadgeStatus:
             result = v.get_badge_status(badge)
         assert result.status is BadgeStatus.SIGNATURE_ERROR
 
+    def test_read_timeout_during_revocation_returns_signature_error(
+            self, badge_for_verify_rsa):
+        # #283: a socket TimeoutError (OSError) from download_file's body read
+        # must become a VerifyInfo verdict, not escape get_badge_status.
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        with patch.object(v, 'check_revocation',
+                          side_effect=TimeoutError('timed out')):
+            result = v.get_badge_status(badge)
+        assert result.status is BadgeStatus.SIGNATURE_ERROR
+        assert 'timed out' in str(result.msg)
+
     def test_identity_mismatch_returns_identity_error(self, badge_for_verify_rsa):
         badge, identity = badge_for_verify_rsa
         v = Verifier(identity='wrong@example.com')

@@ -31,7 +31,6 @@ from .._jws import verify_block as jws_verify_block
 from .._jws import utils as jws_utils
 from ..errors import AssertionFormatIncorrect, NotIdentityInAssertion, UnknownKeyType, VerifierExceptions
 import json
-from urllib.error import HTTPError, URLError
 import logging
 logger = logging.getLogger(__name__)
 
@@ -94,15 +93,21 @@ class Verifier():
                 error = 'Identity mismatch for: %s' % self.get_identity()
                 return VerifyInfo(BadgeStatus.IDENTITY_ERROR, error)
 
-        except HTTPError as e:
-            return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, e.reason)
-        except URLError as e:
-            return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, e.reason)
+        except OSError as e:
+            # Network failures during check_revocation's download_file calls
+            # (badge/issuer/revocation URLs, all attacker-influenced). URLError
+            # and HTTPError are OSError subclasses; so are TimeoutError (socket
+            # read timeout after the handshake) and ssl.SSLError. A single
+            # OSError clause covers them all so a stalled body cannot escape
+            # this method's VerifyInfo contract (#283). Prefer .reason when
+            # present (urllib) so the verdict message stays short.
+            reason = getattr(e, 'reason', None)
+            return VerifyInfo(BadgeStatus.SIGNATURE_ERROR,
+                              str(reason if reason is not None else e))
         except ValueError as e:
-            # download_file() (used by check_revocation for the badge JSON,
-            # issuer JSON, and revocation list URLs, all attacker-influenced)
-            # raises ValueError for a non-HTTPS URL; treat it the same as the
-            # network-error cases above instead of letting it escape uncaught.
+            # download_file() raises ValueError for a non-HTTPS URL / SSRF
+            # block / size or time budget; treat it the same as a network
+            # failure instead of letting it escape uncaught.
             return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, str(e))
         except VerifierExceptions as e:
             # check_revocation raises AssertionFormatIncorrect on malformed or
