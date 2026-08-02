@@ -33,11 +33,7 @@ $ openbadges sign -c ./config/config.ini -b 1 -r recipient@example.com -E -V 3
 
 Bootstraps a working directory: creates the directory plus `keys/`, `images/`, `log/` and `status/` subdirectories (with a restrictive `0o077` umask) and copies the bundled `config.ini.example` to `<DIRECTORY>/config.ini`.
 
-It takes a single positional argument (the directory, which must not already exist) plus the standard `-h / --help` and `-v / --version`.
-
-Bootstraps a working directory: creates the directory plus `keys/`, `images/`, `log/` and `status/` subdirectories (with a restrictive `0o077` umask) and copies the bundled `config.ini.example` to `<DIRECTORY>/config.ini`.
-
-This script does **not** use argparse. It takes a single positional argument and only recognises `-h` (which prints the usage line). It fails if the target path already exists.
+It uses argparse: a single positional `DIRECTORY` argument plus `-h/--help` and `-v/--version`. It fails if the target path already exists.
 
 ### Synopsis
 
