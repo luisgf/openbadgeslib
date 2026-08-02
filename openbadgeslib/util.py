@@ -379,10 +379,13 @@ class CachingDownloader:
     Each entry is the raw bytes the wrapped downloader returned, so every
     ``download_file`` protection (HTTPS-only, the SSRF guard, the size cap) runs
     on the first fetch, before anything is cached. Entries expire after
-    ``ttl_seconds`` on a monotonic clock (immune to wall-clock jumps);
-    ``max_entries`` bounds memory with LRU eviction. **Not thread-safe** — use
-    one per verifying thread, or guard it. For real-time revocation keep the TTL
-    short, or omit the cache and pay the fetch.
+    ``ttl_seconds`` on a monotonic clock (immune to wall-clock jumps).
+    ``max_entries`` bounds the **entry count** (not bytes) with LRU eviction —
+    each entry may be up to :data:`MAX_DOWNLOAD_SIZE` (5 MiB), so the default of
+    256 admits roughly 1.25 GiB resident in the worst case. Lower ``max_entries``
+    for untrusted batches. **Not thread-safe** — use one per verifying thread,
+    or guard it. For real-time revocation keep the TTL short, or omit the cache
+    and pay the fetch.
     """
 
     def __init__(self, download: Optional[Callable[[str], bytes]] = None, *,
