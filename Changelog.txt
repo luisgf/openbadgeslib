@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v4.4.0 - unreleased
+* v4.4.0 - 2026-08-13
 
   Track openvc-core 1.25: the OID4VCI discovery documents this library
   publishes are now validated against the same fail-closed wire parsers a
