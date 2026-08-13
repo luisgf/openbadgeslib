@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v4.4.1 - unreleased
+* v4.4.1 - 2026-08-13
 
   - fix(cli): key generation no longer crashes on Windows, where
     `os.fchmod` does not exist. `_write_pem_file` now guards the fchmod
