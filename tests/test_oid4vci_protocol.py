@@ -895,3 +895,284 @@ class TestCredentialEndpoint:
         verified = verify_badge_sd_jwt(response.credentials[0],
                                        pubkey_pem=pubkey)
         assert verified.confirmation['jwk']['x'] == jwk['x']
+
+
+class TestSelfCheckedDiscovery:
+    """The builders pass their output through openvc-core's fail-closed wire
+    parsers (≥1.25), so a document no wallet would accept is a ConfigError at
+    build time — not a wallet that silently never scans. These tests need the
+    [oid4vci] extra: without it the builders return their output unchecked."""
+
+    @pytest.fixture(autouse=True)
+    def _needs_openvc(self):
+        pytest.importorskip('openvc.openid4vci')
+
+    def test_issuer_metadata_round_trips_through_openvc(self, conf):
+        from openvc.openid4vci import parse_credential_issuer_metadata
+        parsed = parse_credential_issuer_metadata(build_issuer_metadata(conf))
+        assert parsed.credential_issuer == ISSUER
+        assert parsed.credential_endpoint == ISSUER + 'credential'
+        assert parsed.nonce_endpoint == ISSUER + 'nonce'
+        assert parsed.authorization_servers == (ISSUER,)
+        assert 'badge_1_jwt_vc_json' in \
+            parsed.credential_configurations_supported
+
+    def test_offer_round_trips_through_openvc(self, conf, store):
+        from openvc.openid4vci import parse_credential_offer
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=store)
+        parsed = parse_credential_offer(offer.offer)
+        assert parsed.credential_issuer == ISSUER
+        assert list(parsed.credential_configuration_ids) == \
+            ['badge_1_jwt_vc_json']
+
+    def test_an_invalid_endpoint_url_is_a_config_error(self, conf,
+                                                       monkeypatch):
+        # The builders compose URLs from configuration, so a composed value
+        # that violates the wire contract must surface as ConfigError — the
+        # operator's vocabulary — not as openvc's IssuerMetadataMalformed.
+        # Patch the openvc symbol (imported lazily inside the validator), so
+        # the ConfigError translation under test is the real one.
+        from openvc.openid4vci import IssuerMetadataMalformed
+
+        def _refuse(document):
+            raise IssuerMetadataMalformed(
+                "credential_endpoint must be an absolute https URL, got "
+                "'not-a-url'")
+
+        monkeypatch.setattr('openvc.openid4vci.'
+                            'parse_credential_issuer_metadata', _refuse)
+        with pytest.raises(ConfigError, match='not a valid OID4VCI'):
+            build_issuer_metadata(conf)
+
+    def test_the_validator_rejects_what_openvc_rejects(self, conf):
+        # The self-check is not decorative: a document openvc's parser refuses
+        # is a ConfigError through the module's own validator too.
+        from openvc.openid4vci import IssuerMetadataMalformed
+        import openbadgeslib.oid4vci.metadata as metadata_module
+        with pytest.raises(ConfigError, match='not a valid OID4VCI'):
+            metadata_module._validate_issuer_metadata(
+                dict(build_issuer_metadata(conf),
+                     credential_endpoint='not-a-url'))
+        with pytest.raises(IssuerMetadataMalformed):
+            # And the poisoned document is genuinely refused upstream — the
+            # ConfigError above is openvc's verdict, not a local invention.
+            from openvc.openid4vci import parse_credential_issuer_metadata
+            parse_credential_issuer_metadata(
+                dict(build_issuer_metadata(conf),
+                     credential_endpoint='not-a-url'))
+
+    def test_an_invalid_offer_is_a_config_error_and_persists_nothing(
+            self, conf, store, monkeypatch):
+        from openvc.openid4vci import CredentialOfferMalformed
+
+        def _refuse(document):
+            raise CredentialOfferMalformed(
+                "credential_issuer must be an absolute https URL, got "
+                "'http://plaintext.example/'")
+
+        # Patch the openvc symbol (imported lazily inside the validator), so
+        # the ConfigError translation under test is the real one.
+        monkeypatch.setattr('openvc.openid4vci.parse_credential_offer',
+                            _refuse)
+        with pytest.raises(ConfigError, match='not a valid OID4VCI'):
+            build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                   store=store)
+        # The grant must not survive a rejected offer: an offer nobody can use
+        # backed by a live pre-authorized code is an orphan worth refusing.
+        from openbadgeslib.oid4vci.store import STATE_OFFERED
+        assert not [g for g in store._grants.values()
+                    if g.state == STATE_OFFERED]
+
+    def test_the_offer_validator_rejects_what_openvc_rejects(self, conf,
+                                                             store):
+        import openbadgeslib.oid4vci.offer as offer_module
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=store)
+        poisoned = dict(offer.offer,
+                        credential_issuer='http://plaintext.example/')
+        with pytest.raises(ConfigError, match='not a valid OID4VCI'):
+            offer_module._validate_offer(poisoned)
+
+
+class TestReceivedCredentialOffers:
+    """parse_received_credential_offer: validating third-party offers with
+    openvc-core's fail-closed parser. Needs the [oid4vci] extra."""
+
+    @pytest.fixture(autouse=True)
+    def _needs_openvc(self):
+        pytest.importorskip('openvc.openid4vci')
+
+    def test_accepts_a_well_formed_offer(self):
+        from openbadgeslib.oid4vci import parse_received_credential_offer
+        offer = {
+            'credential_issuer': 'https://issuer.example/',
+            'credential_configuration_ids': ['badge_1_jwt_vc_json'],
+            'grants': {'urn:ietf:params:oauth:grant-type:pre-authorized_code':
+                       {'pre-authorized_code': 'abc'}},
+            # An extension member the parser does not model must survive.
+            'x-issuer-extension': {'anything': True},
+        }
+        parsed = parse_received_credential_offer(offer)
+        assert parsed['credential_issuer'] == 'https://issuer.example/'
+        assert parsed['x-issuer-extension'] == {'anything': True}
+
+    def test_accepts_a_json_string(self, conf, store):
+        from openbadgeslib.oid4vci import parse_received_credential_offer
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=store)
+        parsed = parse_received_credential_offer(offer.offer_json)
+        assert parsed == json.loads(offer.offer_json)
+
+    def test_an_http_issuer_is_refused(self):
+        from openbadgeslib.oid4vci import parse_received_credential_offer
+        with pytest.raises(OID4VCIError) as caught:
+            parse_received_credential_offer({
+                'credential_issuer': 'http://plaintext.example/',
+                'credential_configuration_ids': ['x']})
+        assert caught.value.error == INVALID_REQUEST
+
+    def test_duplicate_configuration_ids_are_refused(self):
+        from openbadgeslib.oid4vci import parse_received_credential_offer
+        with pytest.raises(OID4VCIError) as caught:
+            parse_received_credential_offer({
+                'credential_issuer': 'https://issuer.example/',
+                'credential_configuration_ids': ['a', 'a']})
+        assert caught.value.error == INVALID_REQUEST
+
+    def test_empty_configuration_ids_are_refused(self):
+        from openbadgeslib.oid4vci import parse_received_credential_offer
+        with pytest.raises(OID4VCIError):
+            parse_received_credential_offer({
+                'credential_issuer': 'https://issuer.example/',
+                'credential_configuration_ids': []})
+
+    def test_a_by_reference_offer_is_not_dereferenced(self):
+        # credential_offer_uri is a fetch this library does not perform: the
+        # parser takes the object as-is (and rejects it for lacking the
+        # by-value members, which is the fail-closed answer).
+        from openbadgeslib.oid4vci import parse_received_credential_offer
+        with pytest.raises(OID4VCIError):
+            parse_received_credential_offer({
+                'credential_issuer': 'https://issuer.example/',
+                'credential_offer_uri': 'https://issuer.example/offers/1'})
+
+
+class TestKeyAttestationProofs:
+    """The attested-key proof form ({typ, alg, kid, key_attestation}) an EU
+    wallet stack emits, accepted through resolve_proof_key_in_context
+    (openvc-core ≥1.24). Needs the [oid4vci] extra."""
+
+    @pytest.fixture(autouse=True)
+    def _needs_openvc(self):
+        pytest.importorskip('openvc.openid4vci')
+
+    def _attested_proof(self, nonce, holder_priv, holder_jwk):
+        """A key proof in the App. D form: the key is inside the attestation,
+        the header names it only by kid."""
+        provider_priv = ec.generate_private_key(ec.SECP256R1())
+        provider_jwk = json.loads(
+            jwt.algorithms.ECAlgorithm.to_jwk(provider_priv.public_key()))
+        attestation = jwt.encode(
+            {'attested_keys': [holder_jwk], 'iat': int(time.time()),
+             'key_storage': ['iso_18045_moderate']},
+            provider_priv, algorithm='ES256',
+            headers={'typ': 'key-attestation+jwt', 'jwk': provider_jwk})
+        return jwt.encode(
+            {'aud': ISSUER, 'iat': int(time.time()), 'nonce': nonce,
+             'iss': 'wallet-client-id'},
+            holder_priv, algorithm='ES256',
+            headers={'typ': 'openid4vci-proof+jwt', 'kid': 'wallet-key-1',
+                     'key_attestation': attestation})
+
+    def _request_with_proof(self, conf, store, nonces, proof, **kwargs):
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=store)
+        token = handle_token_request(conf, code=offer.pre_authorized_code,
+                                     store=store)
+        body = {'credential_configuration_id':
+                offer.credential_configuration_ids[0],
+                'proofs': {'jwt': [proof]}}
+        return handle_credential_request(
+            conf, body, access_token=token.access_token, store=store,
+            nonces=nonces, **kwargs)
+
+    def test_attested_proof_is_refused_without_a_resolver(self, conf, store,
+                                                          nonces):
+        # The default stays fail-closed: a kid nobody resolves is a refusal,
+        # attestation or no attestation.
+        key, jwk = _holder_key()
+        nonce = handle_nonce_request(conf, nonces=nonces)['c_nonce']
+        proof = self._attested_proof(nonce, key, jwk)
+        with pytest.raises(OID4VCIError) as caught:
+            self._request_with_proof(conf, store, nonces, proof)
+        assert caught.value.error == INVALID_PROOF
+
+    def test_attested_proof_issues_through_the_context_resolver(
+            self, conf, store, nonces):
+        from openbadgeslib.ob3.did import did_jwk_from_jwk
+        key, jwk = _holder_key()
+        nonce = handle_nonce_request(conf, nonces=nonces)['c_nonce']
+        proof = self._attested_proof(nonce, key, jwk)
+
+        seen = []
+
+        def resolver(ctx):
+            # What the deployment actually gets: the kid, the alg, and the
+            # parsed-but-unverified attestation to apply its own trust rule.
+            seen.append(ctx)
+            assert ctx.kid == 'wallet-key-1'
+            assert ctx.alg == 'ES256'
+            assert ctx.key_attestation is not None
+            assert ctx.credential_issuer == ISSUER
+            return dict(ctx.key_attestation.attested_keys[0])
+
+        response = self._request_with_proof(
+            conf, store, nonces, proof, resolve_proof_key_in_context=resolver)
+        assert seen, 'the resolver was never called'
+        claims = jwt.decode(response.credentials[0],
+                            options={'verify_signature': False})
+        assert claims['sub'] == did_jwk_from_jwk(jwk)
+
+    def test_a_proof_signed_outside_its_attestation_is_refused(
+            self, conf, store, nonces):
+        # App. D's MUST: the proof must be signed by one of the attestation's
+        # attested_keys. A resolver that hands back a key the wallet never
+        # claimed gets the request rejected — the check can only refuse.
+        key, jwk = _holder_key()
+        other_priv, _ = _holder_key()
+        nonce = handle_nonce_request(conf, nonces=nonces)['c_nonce']
+        provider_priv = ec.generate_private_key(ec.SECP256R1())
+        provider_jwk = json.loads(
+            jwt.algorithms.ECAlgorithm.to_jwk(provider_priv.public_key()))
+        # The attestation lists the holder key, but the proof is signed by
+        # a different one.
+        attestation = jwt.encode(
+            {'attested_keys': [jwk], 'iat': int(time.time())},
+            provider_priv, algorithm='ES256',
+            headers={'typ': 'key-attestation+jwt', 'jwk': provider_jwk})
+        proof = jwt.encode(
+            {'aud': ISSUER, 'iat': int(time.time()), 'nonce': nonce},
+            other_priv, algorithm='ES256',
+            headers={'typ': 'openid4vci-proof+jwt', 'kid': 'wallet-key-1',
+                     'key_attestation': attestation})
+        with pytest.raises(OID4VCIError) as caught:
+            self._request_with_proof(
+                conf, store, nonces, proof,
+                resolve_proof_key_in_context=lambda ctx: jwk)
+        assert caught.value.error == INVALID_PROOF
+
+    def test_a_malformed_attestation_is_refused_before_crypto(
+            self, conf, store, nonces):
+        nonce = handle_nonce_request(conf, nonces=nonces)['c_nonce']
+        key, jwk = _holder_key()
+        proof = jwt.encode(
+            {'aud': ISSUER, 'iat': int(time.time()), 'nonce': nonce},
+            key, algorithm='ES256',
+            headers={'typ': 'openid4vci-proof+jwt', 'kid': 'wallet-key-1',
+                     'key_attestation': 'not-a-jws'})
+        with pytest.raises(OID4VCIError) as caught:
+            self._request_with_proof(
+                conf, store, nonces, proof,
+                resolve_proof_key_in_context=lambda ctx: jwk)
+        assert caught.value.error in (INVALID_PROOF, INVALID_CREDENTIAL_REQUEST)

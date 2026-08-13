@@ -34,18 +34,22 @@
 
 import configparser
 import json
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 from urllib.parse import quote
 
 from ..confparser import oid4vci_config, oid4vci_formats
 from ..errors import ConfigError, IssuanceError
 from .codes import hash_tx_code, new_id, new_secret, new_tx_code, secret_id
+from .errors import INVALID_REQUEST, OID4VCIError, as_oid4vci_error
 from .formats import REVOCABLE_FORMATS
 from .metadata import credential_configuration_id
 from .store import PreAuthorizedGrant
+
+logger = logging.getLogger(__name__)
 
 #: The scheme a wallet registers for offers arriving by QR or deep link.
 OFFER_SCHEME = 'openid-credential-offer://'
@@ -171,10 +175,10 @@ def build_credential_offer(conf: configparser.ConfigParser, badge: str,
         grant.tx_code_length = cfg.tx_code_length
         grant.tx_code_input_mode = cfg.tx_code_input_mode
 
-    store.save_grant(grant)
-
     offer = _offer_document(cfg.credential_issuer, [configuration_id], code,
                             cfg if tx_code else None)
+    _validate_offer(offer)
+    store.save_grant(grant)
     return CredentialOffer(
         offer=offer, uri=_offer_uri(offer), pre_authorized_code=code,
         grant_id=grant.grant_id, recipient=recipient, expires_at=expires_at,
@@ -204,6 +208,69 @@ def _offer_uri(offer: Dict[str, Any]) -> str:
         OFFER_SCHEME,
         quote(json.dumps(offer, sort_keys=True, separators=(',', ':')),
               safe=''))
+
+
+def _validate_offer(offer: Dict[str, Any]) -> None:
+    """Refuse to hand a wallet an offer document no wallet would accept.
+
+    Same self-check contract as the issuer metadata (see metadata.py): the
+    document is built from local configuration, so a rejection from
+    openvc-core's fail-closed parser is a ConfigError raised BEFORE the grant
+    is persisted — a crash leaves nothing behind, matching the
+    grant-before-offer ordering above. Without the ``[oid4vci]`` extra the
+    offer is returned unchecked, as issuance is unavailable there anyway.
+    """
+    try:
+        from openvc.openid4vci import parse_credential_offer
+    except ImportError:
+        # Same caveat as the metadata self-check: an openvc-core older than
+        # 1.25 takes this branch too, silently skipping the check.
+        logger.debug('openvc-core OID4VCI discovery parsers unavailable; '
+                     'the Credential Offer self-check is skipped (install '
+                     'the [oid4vci] extra for it)')
+        return
+    try:
+        parse_credential_offer(offer)
+    except Exception as exc:
+        raise ConfigError(
+            'the Credential Offer this configuration produces is not a valid '
+            'OID4VCI 1.0 document: %s' % exc) from exc
+
+
+def parse_received_credential_offer(
+        offer: Union[Mapping[str, Any], str]) -> Mapping[str, Any]:
+    """Validate a Credential Offer this issuer RECEIVED, fail-closed.
+
+    This is the mirror of :func:`build_credential_offer`: a badge platform
+    acting as a relay, or a deployment that cross-checks its own served
+    by-reference offer documents, receives third-party JSON and must not act
+    on one that violates the wire contract. The validation is openvc-core's
+    ``parse_credential_offer`` (OID4VCI 1.0 §4.1.1), which requires an
+    absolute https ``credential_issuer`` and a non-empty, duplicate-free
+    ``credential_configuration_ids`` array; unknown members are preserved in
+    the returned mapping rather than dropped.
+
+    A by-reference ``credential_offer_uri`` is NOT dereferenced here — this
+    library fetches nothing it was not explicitly asked to fetch; resolving
+    one stays the caller's (guarded) fetch. Raises :class:`OID4VCIError` with
+    ``invalid_request`` for a malformed offer; the ``[oid4vci]`` extra is
+    required.
+    """
+    try:
+        from openvc.openid4vci import parse_credential_offer
+    except ImportError as exc:
+        raise OID4VCIError(
+            INVALID_REQUEST,
+            'validating a received Credential Offer needs the [oid4vci] '
+            'extra: pip install openbadgeslib[oid4vci]') from exc
+    try:
+        parsed = parse_credential_offer(offer)
+    except Exception as exc:                       # noqa: BLE001 - mapped
+        raise as_oid4vci_error(exc) from exc
+    # raw is the offer mapping exactly as received (openvc preserves every
+    # extension member in it), which is the honest thing to hand back: the
+    # typed view would silently discard what this library chose not to model.
+    return dict(parsed.raw)
 
 
 def _reserve_status_index(conf: configparser.ConfigParser, badge: str,
@@ -257,4 +324,4 @@ def _reserve_status_index(conf: configparser.ConfigParser, badge: str,
 
 
 __all__ = ['CredentialOffer', 'OFFER_SCHEME', 'QR_COMFORTABLE_LIMIT',
-           'build_credential_offer']
+           'build_credential_offer', 'parse_received_credential_offer']

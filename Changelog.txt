@@ -4,6 +4,41 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v4.4.0 - unreleased
+
+  Track openvc-core 1.25: the OID4VCI discovery documents this library
+  publishes are now validated against the same fail-closed wire parsers a
+  wallet's side runs, and wallet key attestations are accepted opt-in.
+
+  - feat(oid4vci): self-check the published discovery documents.
+    `build_issuer_metadata` and `build_credential_offer` now pass their
+    output through openvc-core 1.25's fail-closed parsers
+    (`parse_credential_issuer_metadata` / `parse_credential_offer`) before
+    returning it: a document no conformant wallet would accept is a
+    `ConfigError` at build time, while the operator is looking, instead of a
+    wallet that never scans. The offer check runs BEFORE the grant is
+    persisted, so a rejected offer leaves nothing behind. Without the
+    `[oid4vci]` extra the documents are returned unchecked, as before.
+  - feat(oid4vci): `parse_received_credential_offer` validates a Credential
+    Offer this issuer RECEIVED (a relay platform, or a deployment
+    cross-checking its own served by-reference offers) with openvc-core's
+    fail-closed parser; a by-reference `credential_offer_uri` is never
+    dereferenced by this library.
+  - feat(oid4vci): accept the attested-key key-proof form EU wallet stacks
+    emit (`{typ, alg, kid, key_attestation}`, OID4VCI 1.0 App. D) via a new
+    optional `resolve_proof_key_in_context` parameter on
+    `handle_credential_request`, passed to openvc-core ≥1.24's
+    `verify_credential_request_proofs`. The callable receives the
+    `ProofKeyContext` (kid, alg, read-only header, the parsed-but-UNVERIFIED
+    attestation) and is where attestation signature verification and
+    wallet-provider anchoring belong — trusting an attestation is a
+    deployment decision, never this library's default. openvc enforces App.
+    D's MUST: a proof must be signed by one of its attestation's
+    `attested_keys`.
+  - chore(deps): raise the openvc-core floors to `>=1.25` in the `[eudi]`,
+    `[ldp-sd]` and `[oid4vci]` extras.
+
+
 * v4.3.1 - 2026-08-02
 
   Audit hardening: security fixes in the JWS engine and keygenerator, CLI

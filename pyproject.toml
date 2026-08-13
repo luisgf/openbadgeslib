@@ -74,7 +74,7 @@ ldp = [
 # check_token_status) landed there — and is set at the release the suite is
 # actually tested against, per the rule above.
 eudi = [
-    "openvc-core>=1.24,<2",
+    "openvc-core>=1.25,<2",
 ]
 # ecdsa-sd-2023 (selective disclosure) VERIFY for the OB 3.0 Data Integrity
 # track: credentials secured with the ecdsa-sd-2023 cryptosuite are verified by
@@ -84,21 +84,23 @@ eudi = [
 # canonicalization (pyld). Native eddsa-rdfc-2022 stays under [ldp]; issuance of
 # ecdsa-sd-2023 is out of scope. See openbadgeslib/ob3/ldp.py.
 ldp-sd = [
-    "openvc-core[data-integrity]>=1.24,<2",
+    "openvc-core[data-integrity]>=1.25,<2",
 ]
 # OID4VCI issuance: hand a badge to a wallet over the pre-authorized code flow.
 # openbadgeslib owns the offers, the state (codes, tokens, nonces, grants) and
 # the response bodies; the wallet key-proof cryptography is openvc-core's
 # openvc.openid4vci, which first ships in openvc-core 1.23 — the substantive
 # minimum here, with the pin itself at the tested release like every other
-# openvc-core floor above.
+# openvc-core floor above. 1.25 also brings the discovery parsers this library
+# now self-checks its issuer metadata and Credential Offers against
+# (openbadgeslib/oid4vci/metadata.py and offer.py).
 #
 # Everything except openbadgeslib/oid4vci/handler.py works without the extra,
 # and the credential-endpoint tests skip themselves when the module is absent —
 # so an install that does not ask for [oid4vci] is never broken by its absence.
 # See openbadgeslib/oid4vci/ and wiki/Issuing-to-Wallets-with-OID4VCI.md.
 oid4vci = [
-    "openvc-core>=1.24,<2",
+    "openvc-core>=1.25,<2",
 ]
 dev = [
     "pytest>=8.0",

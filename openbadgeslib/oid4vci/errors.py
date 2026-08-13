@@ -89,6 +89,12 @@ INVALID_TOKEN = 'invalid_token'
 #: surface is importable and testable without the [oid4vci] extra installed.
 _ERROR_CODES: Dict[str, str] = {
     'CredentialRequestMalformed': INVALID_CREDENTIAL_REQUEST,
+    # openvc-core 1.25 discovery parsers. A third-party Credential Offer an
+    # integrator feeds to parse_received_credential_offer is, from this
+    # library's side, untrusted client input — so its failures map to the
+    # client-attributable codes like everything else here.
+    'CredentialOfferMalformed': INVALID_REQUEST,
+    'IssuerMetadataMalformed': INVALID_REQUEST,
     'ProofReplayed': INVALID_NONCE,
     'UnsupportedProofType': INVALID_PROOF,
     'SignatureInvalid': INVALID_PROOF,

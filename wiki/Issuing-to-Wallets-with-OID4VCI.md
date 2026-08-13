@@ -9,7 +9,7 @@ Issuing a badge to a digital wallet inverts the direction this library normally 
 **It is not HAIP-conformant, and nothing built on it may claim to be.** The [OpenID4VC High Assurance Interoperability Profile](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0.html) requires DPoP, verified key attestations, client authentication and the authorization code flow. None of the four are implemented. Concretely:
 
 - Access tokens are bearer tokens (RFC 6750). Within their short lifetime, a stolen token is replayable.
-- Key attestations that arrive in a proof header are captured but **not verified**, so no claim about hardware binding is possible.
+- Key attestations that arrive in a proof header are parsed and structurally checked by openvc-core (and App. D's MUST — the proof must be signed by one of the attestation's `attested_keys` — is enforced), but the attestation's own **signature is not verified** unless you opt in with `resolve_proof_key_in_context` and anchor it yourself, so by default no claim about hardware binding is possible.
 - There is no rate limiting, no IP reputation and no request throttling. That is yours, at the edge.
 - `vc+sd-jwt` badges are **irrevocable** — see [[Signing and Verification]].
 
@@ -71,6 +71,8 @@ You mount these; the library computes the bodies.
 
 Do not skip the RFC 8414 document. Without it a wallet that assumes the Credential Issuer is its own authorization server cannot find the token endpoint, and the flow stops before its first request.
 
+With the `[oid4vci]` extra installed, both discovery documents — and every Credential Offer `build_credential_offer` returns — are passed through openvc-core's own fail-closed wire parsers before they leave the builder: a document no conformant wallet would accept becomes a `ConfigError` at build time, while you are looking, instead of a QR nobody can scan. The offer check runs before the grant is persisted, so a rejected offer leaves nothing behind.
+
 Serve every response with `Cache-Control: no-store`.
 
 ## Wiring it up
@@ -102,6 +104,40 @@ def credential(request):
 ```
 
 Every `OID4VCIError` carries the spec's error code and the status to serve it with — 400 for everything except a bad access token, which RFC 6750 requires be a 401. An `IssuanceError` is **not** translated: it means your config, key or status list is broken, so it must surface as a 500. Dressing it up as `invalid_credential_request` would have the wallet retry a request that can never succeed.
+
+### Wallets with key attestations (EU wallet stacks)
+
+By default only proofs that carry their key **inline** (the `jwk` header parameter) are accepted. EU wallet stacks instead send the attested-key form — `{typ, alg, kid, key_attestation}` per OID4VCI 1.0 Appendix D — where the signing key lives *inside* a wallet-provider-signed attestation. To accept those, pass `resolve_proof_key_in_context=` to `handle_credential_request` (needs openvc-core ≥ 1.24):
+
+```python
+def resolve(ctx):  # ctx is openvc's ProofKeyContext — all UNVERIFIED
+    attestation = ctx.key_attestation
+    if attestation is None:
+        raise KeyError(ctx.kid)            # inline-jwk proofs, if you allow them
+    # YOUR trust decision here: verify the attestation's signature against
+    # your wallet-provider anchor, check key_storage / user_authentication
+    # levels, then pick which attested key ctx.kid names.
+    verify_attestation_with_your_anchor(attestation)
+    return dict(attestation.attested_keys[0])
+
+handle_credential_request(conf, body, access_token=…, store=store,
+                          nonces=nonces,
+                          resolve_proof_key_in_context=resolve)
+```
+
+openvc enforces the one thing that is safe to enforce without trust: App. D's MUST that the proof be signed by one of the attestation's `attested_keys` (compared by RFC 7638 thumbprint). That check can only *reject* — it catches an honest wallet, or your own resolver, handing over a key the wallet never claimed. Whether the attestation itself is genuine is the resolver's job; without one, the attested-key form is refused like any other unresolved `kid`.
+
+### Validating offers you receive
+
+A platform that relays offers, or that wants to cross-check the by-reference documents it serves, can run the same fail-closed parser a wallet runs:
+
+```python
+from openbadgeslib.oid4vci import parse_received_credential_offer
+
+parsed = parse_received_credential_offer(received_json)   # dict, extensions preserved
+```
+
+It requires an absolute https `credential_issuer` and a non-empty, duplicate-free `credential_configuration_ids`, and raises `OID4VCIError` (`invalid_request`) otherwise. A by-reference `credential_offer_uri` is **not** dereferenced — this library fetches nothing it was not explicitly asked to fetch.
 
 ## Making an offer
 

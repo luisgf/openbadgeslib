@@ -68,7 +68,14 @@ MAX_REQUEST_BYTES = 128 * 1024
 
 
 def _require_openvc() -> Any:
-    """Import the openvc-core OID4VCI pieces, or raise with an actionable hint."""
+    """Import the openvc-core OID4VCI pieces, or raise with an actionable hint.
+
+    The openvc-core floor is 1.25 across every extra that pulls it, so
+    ``resolve_proof_key_in_context`` (1.24) and the discovery parsers (1.25)
+    are guaranteed present when the import succeeds; a resolver that somehow
+    resolves older anyway fails loudly at the unexpected-keyword call rather
+    than silently dropping the attested-key form.
+    """
     try:
         from openvc.openid4vci import (parse_credential_request,
                                        verify_credential_request_proofs)
@@ -207,13 +214,28 @@ def handle_credential_request(conf: configparser.ConfigParser,
                               body: Union[Mapping[str, Any], str, bytes], *,
                               access_token: Optional[str], store: Any,
                               nonces: NonceIssuer,
-                              now: Optional[datetime] = None
+                              now: Optional[datetime] = None,
+                              resolve_proof_key_in_context: Any = None
                               ) -> CredentialResponse:
     """Verify a Credential Request and issue what its grant authorises.
 
     *body* is the raw request body (a parsed mapping, or the unparsed JSON).
     *access_token* is the bearer token from the Authorization header, which
     this function looks up rather than trusts.
+
+    *resolve_proof_key_in_context* opts into wallet key proofs that carry
+    their key OUTSIDE the inline ``jwk`` form — the attested-key shape EU
+    wallet stacks emit (``{typ, alg, kid, key_attestation}``, OID4VCI 1.0
+    App. D). It is passed verbatim to openvc-core's
+    ``verify_credential_request_proofs`` (≥1.24), which hands the callable a
+    ``ProofKeyContext`` — the proof's kid, alg, the read-only header and the
+    PARSED-BUT-UNVERIFIED attestation — and expects the public JWK back. The
+    callable is where attestation signature verification and any
+    wallet-provider anchoring belong: openvc parses the attestation and
+    enforces App. D's MUST (the proof must be signed by one of its
+    ``attested_keys``), but trusting the attestation is the deployment's
+    decision, not this library's default. When None (the default), only
+    proofs that carry their key inline are accepted, exactly as before.
 
     Raises :class:`OID4VCIError` for anything the wallet did wrong, and lets
     :class:`~openbadgeslib.errors.IssuanceError` through untouched for anything
@@ -272,10 +294,15 @@ def handle_credential_request(conf: configparser.ConfigParser,
             # a key proof exists, and an issuer that can switch the check off
             # is an issuer that eventually ships with it off.
             check_nonce=nonces.consume, require_nonce=True,
-            # No kid resolver and no trust anchors, so only proofs that carry
-            # their key inline are accepted. Fail closed: resolving a kid or
-            # anchoring an x5c is a deployment decision nobody has asked for.
-            resolve_proof_key=None, trust_anchors=None,
+            # By default, no kid resolver and no trust anchors, so only proofs
+            # that carry their key inline are accepted. Fail closed: resolving
+            # a kid or anchoring an x5c is a deployment decision. An issuer
+            # that wants the attested-key form opts in by passing
+            # resolve_proof_key_in_context (which openvc forbids combining
+            # with resolve_proof_key — the one-key-resolver rule).
+            resolve_proof_key=None,
+            resolve_proof_key_in_context=resolve_proof_key_in_context,
+            trust_anchors=None,
             max_age_s=cfg.proof_max_age_s, now=moment,
             batch_size=grant.max_proofs)
     except OID4VCIStoreError:

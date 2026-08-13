@@ -24,8 +24,19 @@
 # Pure config-to-JSON: no crypto, no key material, no I/O. The issuer serves
 # what these return as static documents; nothing here decides anything at
 # request time.
+#
+# SELF-CHECK. Before a document leaves this module it is passed through
+# openvc-core's fail-closed parser for the wire contract
+# (parse_credential_issuer_metadata / parse_credential_offer), so a document
+# no conformant wallet would accept becomes a ConfigError here — at build
+# time, while the operator is looking, rather than at scan time. The check is
+# cheap (structure only, no network) and openvc fetches nothing, so running
+# it on output carries no SSRF surface. A deployment with an http://
+# credential_issuer already fails at oid4vci_config(); these parsers are the
+# backstop for everything else the wire contract pins.
 
 import configparser
+import logging
 from typing import Any, Dict, List, Optional, Sequence
 
 from ..confparser import (OID4VCIConfig, oid4vci_config, oid4vci_formats,
@@ -33,6 +44,8 @@ from ..confparser import (OID4VCIConfig, oid4vci_config, oid4vci_formats,
 from ..errors import ConfigError
 from ..keys import KeyType
 from .formats import FORMAT_JWT_VC_JSON, FORMAT_SD_JWT_VC
+
+logger = logging.getLogger(__name__)
 
 #: The grant type that identifies the pre-authorized code flow.
 PRE_AUTHORIZED_GRANT = 'urn:ietf:params:oauth:grant-type:pre-authorized_code'
@@ -145,7 +158,36 @@ def build_issuer_metadata(conf: configparser.ConfigParser, *,
     display = _issuer_display(conf)
     if display:
         metadata['display'] = [display]
+    _validate_issuer_metadata(metadata)
     return metadata
+
+
+def _validate_issuer_metadata(metadata: Dict[str, Any]) -> None:
+    """Refuse to publish a metadata document no wallet would accept.
+
+    Runs openvc-core's fail-closed wire-contract parser over what this module
+    just built and maps any violation onto :class:`ConfigError`: the document
+    comes from local configuration, so a rejection is a config mistake, not
+    attacker input. Without the ``[oid4vci]`` extra the document is returned
+    unchecked — issuance itself is unavailable there anyway, and importing
+    openvc from this module would break installs that never asked for it.
+    """
+    try:
+        from openvc.openid4vci import parse_credential_issuer_metadata
+    except ImportError:
+        # An install WITH the extra that lands an openvc-core below the 1.25
+        # parser would take this branch too — indistinguishable from a plain
+        # minimal install, and silent about the skipped check either way.
+        logger.debug('openvc-core OID4VCI discovery parsers unavailable; '
+                     'the issuer metadata self-check is skipped (install the '
+                     '[oid4vci] extra for it)')
+        return
+    try:
+        parse_credential_issuer_metadata(metadata)
+    except Exception as exc:
+        raise ConfigError(
+            'the issuer metadata this configuration produces is not a valid '
+            'OID4VCI 1.0 document: %s' % exc) from exc
 
 
 def build_authorization_server_metadata(conf: configparser.ConfigParser

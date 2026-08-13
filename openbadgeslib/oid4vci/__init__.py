@@ -46,9 +46,13 @@
 # not openvc's.
 #
 # WHAT IS NOT SUPPORTED, and must not be claimed:
-#   * No DPoP, no key attestation verification, no client authentication, and
-#     no authorization code flow. HAIP requires all four, so **this is not a
-#     HAIP-conformant issuer** and nothing built on it may say otherwise.
+#   * No DPoP, no VERIFIED key attestation, no client authentication, and no
+#     authorization code flow. HAIP requires all four, so **this is not a
+#     HAIP-conformant issuer** and nothing built on it may say otherwise. The
+#     attested-key proof FORM is accepted when the caller passes
+#     resolve_proof_key_in_context to handle_credential_request — the
+#     attestation's signature and wallet-provider anchoring stay the
+#     caller's, so the hardware-binding claim is theirs to make, not ours.
 #   * Access tokens are bearer tokens (RFC 6750): within their short lifetime a
 #     stolen token is replayable.
 #   * `vc+sd-jwt` badges are irrevocable (#226).
@@ -66,7 +70,8 @@ from .metadata import (build_authorization_server_metadata,
                        build_issuer_metadata, credential_configuration_id,
                        offered_badges)
 from .nonce import NonceIssuer
-from .offer import CredentialOffer, build_credential_offer
+from .offer import (CredentialOffer, build_credential_offer,
+                    parse_received_credential_offer)
 from .reconcile import ReconcileResult, reconcile_reservations
 from .sqlite_store import SqliteOID4VCIStore
 from .store import (OID4VCIStore, OID4VCIStoreError, PreAuthorizedGrant,
@@ -87,6 +92,7 @@ __all__ = [
     # Offers.
     'CredentialOffer',
     'build_credential_offer',
+    'parse_received_credential_offer',
     # Reconciling unclaimed status-list reservations (offline).
     'ReconcileResult',
     'reconcile_reservations',
