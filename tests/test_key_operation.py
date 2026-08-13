@@ -257,6 +257,8 @@ class TestKeyGeneratorFileWrites:
         with pytest.raises(OSError):
             _write_pem_file(str(path), b'private-key', 0o600)
 
+    @pytest.mark.skipif(not hasattr(os, 'fchmod'),
+                        reason='already the platform under simulation')
     def test_write_pem_file_survives_a_platform_without_fchmod(
             self, tmp_path, monkeypatch):
         # Windows has no os.fchmod (its chmod toggles only the read-only bit),

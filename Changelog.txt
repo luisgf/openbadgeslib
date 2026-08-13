@@ -4,7 +4,26 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v4.4.2 - unreleased
+
+  - fix(cli): key generation no longer crashes on Windows, where
+    `os.fchmod` does not exist. `_write_pem_file` now guards the fchmod
+    call with `hasattr` and skips the permission dance on platforms
+    without it — there the POSIX mode bits are not the access control
+    (NTFS ACLs are), so skipping is the honest behaviour rather than a
+    best-effort `os.chmod` that would only toggle the read-only bit.
+    Regression introduced in v4.3.1 by #289; caught by the Windows CI leg.
+  - fix(tests): the v4.4.1 regression test for the above itself raised on
+    Windows (`monkeypatch.delattr` on an attribute the platform does not
+    have); it now skips where `os.fchmod` is already absent.
+
+
 * v4.4.1 - 2026-08-13
+
+  Superseded the same day: its own regression test failed on Windows
+  (`monkeypatch.delattr` on an attribute the platform does not have), so
+  the release went out with the Windows CI leg still red. The library fix
+  below is correct and is carried forward unchanged; use v4.4.2.
 
   - fix(cli): key generation no longer crashes on Windows, where
     `os.fchmod` does not exist. `_write_pem_file` now guards the fchmod
