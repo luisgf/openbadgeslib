@@ -4,6 +4,17 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v4.4.1 - unreleased
+
+  - fix(cli): key generation no longer crashes on Windows, where
+    `os.fchmod` does not exist. `_write_pem_file` now guards the fchmod
+    call with `hasattr` and skips the permission dance on platforms
+    without it — there the POSIX mode bits are not the access control
+    (NTFS ACLs are), so skipping is the honest behaviour rather than a
+    best-effort `os.chmod` that would only toggle the read-only bit.
+    Regression introduced in v4.3.1 by #289; caught by the Windows CI leg.
+
+
 * v4.4.0 - 2026-08-13
 
   Track openvc-core 1.25: the OID4VCI discovery documents this library

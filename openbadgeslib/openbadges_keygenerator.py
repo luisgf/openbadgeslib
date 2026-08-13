@@ -58,6 +58,12 @@ def _write_pem_file(path: str, data: bytes, mode: int) -> None:
     with a symlink and redirect the permission change onto another file the
     invoking user owns (#289). ``O_CREAT|O_EXCL`` already prevents following a
     pre-planted symlink at create time; ``fchmod`` closes the post-close gap.
+
+    Windows has no ``os.fchmod`` and its ``os.chmod`` only toggles the
+    read-only bit, so there the mode argument is left to the platform and the
+    permission dance is skipped outright: NTFS ACLs, not POSIX bits, are the
+    access control, and the calling user's own profile directory is the
+    boundary that matters there.
     """
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     fd = os.open(path, flags, mode)
@@ -65,7 +71,8 @@ def _write_pem_file(path: str, data: bytes, mode: int) -> None:
         with os.fdopen(fd, 'wb') as f:
             fd = -1                         # ownership transferred to the file object
             f.write(data)
-            os.fchmod(f.fileno(), mode)
+            if hasattr(os, 'fchmod'):
+                os.fchmod(f.fileno(), mode)
     except Exception:
         if fd >= 0:
             os.close(fd)

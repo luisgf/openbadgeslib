@@ -256,3 +256,15 @@ class TestKeyGeneratorFileWrites:
         path = tmp_path / 'no' / 'such' / 'dir' / 'key.pem'
         with pytest.raises(OSError):
             _write_pem_file(str(path), b'private-key', 0o600)
+
+    def test_write_pem_file_survives_a_platform_without_fchmod(
+            self, tmp_path, monkeypatch):
+        # Windows has no os.fchmod (its chmod toggles only the read-only bit),
+        # so the permission dance is skipped there and the write must still
+        # succeed — v4.3.1 crashed key generation on Windows with
+        # AttributeError on exactly this path.
+        import openbadgeslib.openbadges_keygenerator as module
+        monkeypatch.delattr(module.os, 'fchmod')
+        path = tmp_path / 'sign.pem'
+        _write_pem_file(str(path), b'private-key', 0o600)
+        assert path.read_bytes() == b'private-key'
