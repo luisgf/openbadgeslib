@@ -131,6 +131,10 @@ class InMemoryOID4VCIStore:
                    expires_at: datetime) -> None:
         with self._lock:
             self._tokens[token_id] = (grant_id, expires_at)
+            grant = self._grants.get(grant_id)
+            # Cover the advertised token TTL (#320).
+            if grant is not None and grant.expires_at < expires_at:
+                grant.expires_at = expires_at
 
     def grant_for_token(self, token_id: str, *,
                         now: datetime) -> Optional[PreAuthorizedGrant]:

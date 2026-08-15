@@ -494,6 +494,14 @@ class SqliteOID4VCIStore:
             conn.execute(
                 'INSERT INTO access_token (token_id, grant_id, expires_at) '
                 'VALUES (?, ?, ?)', (token_id, grant_id, _epoch(expires_at)))
+            # The credential endpoint also requires the grant itself to be
+            # unexpired. Stretch the grant to cover the advertised token TTL
+            # so redeeming late in the offer window does not clip expires_in
+            # (#320).
+            conn.execute(
+                'UPDATE grant_record SET expires_at = MAX(expires_at, ?) '
+                'WHERE grant_id = ?',
+                (_epoch(expires_at), grant_id))
         self._write(_insert)
 
     def grant_for_token(self, token_id: str, *,

@@ -246,6 +246,20 @@ class TestAccessTokens:
                          expires_at=NOW - timedelta(seconds=1))
         assert store.grant_for_token(secret_id(token), now=NOW) is None
 
+    def test_minting_a_token_stretches_a_short_grant(self, store):
+        # Redeeming late in the offer window must not clip the advertised
+        # token TTL (#320).
+        _, grant = _grant(expires_at=NOW + timedelta(seconds=30))
+        store.save_grant(grant)
+        store.redeem_grant(grant.grant_id, now=NOW)
+        token = new_secret()
+        token_exp = NOW + timedelta(minutes=5)
+        store.mint_token(secret_id(token), grant.grant_id, expires_at=token_exp)
+        later = NOW + timedelta(minutes=2)
+        found = store.grant_for_token(secret_id(token), now=later)
+        assert found is not None and found.grant_id == grant.grant_id
+        assert store.find_grant(grant.grant_id).expires_at >= token_exp
+
     def test_unknown_token_resolves_to_nothing(self, store):
         assert store.grant_for_token(secret_id('nope'), now=NOW) is None
 

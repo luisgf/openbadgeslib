@@ -256,7 +256,12 @@ class OID4VCIStore(Protocol):
 
     def mint_token(self, token_id: str, grant_id: str, *,
                    expires_at: datetime) -> None:
-        """Bind an access token to a grant."""
+        """Bind an access token to a grant.
+
+        The grant's own expiry is stretched to at least *expires_at* so
+        ``grant_for_token`` does not reject a token the issuer just advertised
+        as live (#320).
+        """
         ...
 
     def grant_for_token(self, token_id: str, *,

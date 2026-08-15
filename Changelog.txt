@@ -31,6 +31,9 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
   - fix(ci): the Ubuntu test job installs ``[oid4vci]`` and sets
     ``OPENBADGES_REQUIRE_OID4VCI=1`` so the credential-endpoint suite cannot
     skip itself green.
+  - fix(oid4vci): minting an access token stretches the grant to cover the
+    advertised ``expires_in``, so redeeming late in the offer window no
+    longer clips the token's lifetime.
 
 
 * v4.4.2 - 2026-08-13
