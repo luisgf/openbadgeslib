@@ -342,16 +342,33 @@ class OB2Verifier:
     # ── network / decode helpers ─────────────────────────────────────────────────
 
     def _fetch_issuer(self, assertion: Assertion) -> dict[str, Any]:
-        """Resolve the issuer Profile via the assertion's BadgeClass ``badge`` URL."""
+        """Resolve the issuer Profile via the assertion's BadgeClass ``badge`` URL.
+
+        An embedded Profile object is not trusted: its ``id`` is fetched and
+        that retrieved document is the trust anchor (scope, revocation). A
+        holder-supplied BadgeClass could otherwise name a real issuer ``id``
+        while writing its own ``startsWith`` / ``revocationList`` (#315).
+        """
         badge = self._fetch_json(assertion.badge, "BadgeClass")
-        issuer_url = badge.get("issuer")
-        if isinstance(issuer_url, dict):
-            # BadgeClass.issuer may be an embedded Profile object.
-            return issuer_url
-        if not isinstance(issuer_url, str) or not issuer_url:
+        issuer = badge.get("issuer")
+        if isinstance(issuer, dict):
+            issuer_url = issuer.get("id")
+            if not isinstance(issuer_url, str) or not issuer_url:
+                raise OB2VerificationError(
+                    "BadgeClass at %s has an embedded issuer with no id"
+                    % assertion.badge)
+        elif isinstance(issuer, str) and issuer:
+            issuer_url = issuer
+        else:
             raise OB2VerificationError(
                 "BadgeClass at %s has no valid 'issuer'" % assertion.badge)
-        return self._fetch_json(issuer_url, "issuer Profile")
+        fetched = self._fetch_json(issuer_url, "issuer Profile")
+        fetched_id = fetched.get("id")
+        if isinstance(fetched_id, str) and fetched_id != issuer_url:
+            raise OB2VerificationError(
+                "Issuer Profile at %s has id %r, expected %r"
+                % (issuer_url, fetched_id, issuer_url))
+        return fetched
 
     def _fetch_json(self, url: str, where: str) -> dict[str, Any]:
         try:

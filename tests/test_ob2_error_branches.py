@@ -144,9 +144,12 @@ class TestFetchAndRevocation:
         token = _token(rsa_priv_pem)
 
         def dl(url, *a, **k):
-            # BadgeClass carries an embedded issuer Profile with a bad type.
-            return json.dumps(
-                {'issuer': {'id': 'https://i', 'revocationList': 123}}).encode()
+            # Embedded issuer is fetched at its id (#315); the Profile itself
+            # carries a non-string revocationList.
+            if url == 'https://i':
+                return json.dumps(
+                    {'id': 'https://i', 'revocationList': 123}).encode()
+            return json.dumps({'issuer': {'id': 'https://i'}}).encode()
 
         with patch('openbadgeslib.ob2.verifier.download_file', side_effect=dl):
             with pytest.raises(OB2VerificationError,

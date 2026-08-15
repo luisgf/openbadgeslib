@@ -188,6 +188,32 @@ class TestHosted:
             with pytest.raises(OB2VerificationError, match='startsWith'):
                 OB2Verifier().verify(token)
 
+    def test_embedded_issuer_profile_is_fetched_not_trusted(self, rsa_priv_pem):
+        # A BadgeClass may embed a Profile object. That object is holder-
+        # influenced (it arrives from assertion.badge). Its startsWith would
+        # accept this assertion, but the Profile at issuer.id does not — we
+        # must fetch and use the latter (#315).
+        token, a = _hosted(rsa_priv_pem)
+        embedded = {
+            'id': 'https://other.test/org.json',
+            'verification': {'startsWith': ['https://example.com/']},
+        }
+        url_map = {
+            a.id: a.to_dict(),
+            BADGE: {'issuer': embedded},
+            'https://other.test/org.json': {'id': 'https://other.test/org.json'},
+        }
+        with patch(PATCH_TARGET, side_effect=_dl(url_map)):
+            with pytest.raises(OB2VerificationError, match='same-origin'):
+                OB2Verifier().verify(token)
+
+    def test_embedded_issuer_without_id_rejected(self, rsa_priv_pem):
+        token, a = _hosted(rsa_priv_pem)
+        url_map = {a.id: a.to_dict(), BADGE: {'issuer': {'name': 'no-id'}}}
+        with patch(PATCH_TARGET, side_effect=_dl(url_map)):
+            with pytest.raises(OB2VerificationError, match='embedded issuer'):
+                OB2Verifier().verify(token)
+
     def test_allowed_origins_scope_rejects_foreign_origin(self, rsa_priv_pem):
         # Reject-side of allowedOrigins: the assertion host is not listed.
         token, a = _hosted(rsa_priv_pem)

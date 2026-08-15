@@ -14,6 +14,9 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     wallet has claimed no longer demotes the grant from issued to
     invalidated (tokens are still revoked). That demotion made the next
     `--reclaim-unclaimed` free the delivered credential's status index.
+  - security(ob2): a HostedBadge BadgeClass that embeds an issuer Profile
+    object is no longer trusted as-is. The Profile at ``issuer.id`` is
+    fetched and used for scope and revocation.
 
 
 * v4.4.2 - 2026-08-13
