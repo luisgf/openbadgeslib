@@ -102,8 +102,10 @@ All dependencies are installed automatically. The two OB 3.0 side-tracks ship
 as optional extras (the base install stays lean):
 
 ```bash
-pip install "openbadgeslib[ldp]"    # W3C Data Integrity issuance/verification
-pip install "openbadgeslib[eudi]"   # EUDI SD-JWT VC (pulls openvc-core)
+pip install "openbadgeslib[ldp]"     # W3C Data Integrity issuance/verification
+pip install "openbadgeslib[ldp-sd]"  # verify ecdsa-sd-2023 (selective disclosure)
+pip install "openbadgeslib[eudi]"    # EUDI SD-JWT VC (pulls openvc-core)
+pip install "openbadgeslib[oid4vci]" # issue to wallets (pre-authorized code flow)
 ```
 
 For a development checkout with the test suite and linters:

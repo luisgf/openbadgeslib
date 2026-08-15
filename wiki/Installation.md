@@ -72,6 +72,17 @@ Wallet converges on — including eIDAS X.509 / EU Trusted List issuer trust for
 received badges. Without it, the SD-JWT VC helpers report the missing extra with
 an install hint.
 
+```sh
+pip install "openbadgeslib[oid4vci]"
+```
+
+The `[oid4vci]` extra adds **OpenID for Verifiable Credential Issuance** (the
+pre-authorized code flow). This library does not run the HTTP endpoints; it
+builds offers, verifies the wallet's key proof (via
+[`openvc-core`](https://pypi.org/project/openvc-core/)) and issues the
+credential. Without it, `handle_credential_request` reports the missing extra
+with an install hint. See [[Issuing to Wallets with OID4VCI]].
+
 ## Development install
 
 Clone the repository and install in editable mode together with the test and lint dependencies:
