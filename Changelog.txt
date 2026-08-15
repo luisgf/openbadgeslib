@@ -4,6 +4,14 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* vX.Y.Z - unreleased
+
+  - security(oid4vci): `--reclaim-unclaimed` no longer frees a status-list
+    index whose credential was already delivered to a wallet. Issued grants
+    are kept past the offer TTL (they are the only proof of delivery), and
+    a missing grant row is treated as undecided rather than "never claimed".
+
+
 * v4.4.2 - 2026-08-13
 
   - fix(cli): key generation no longer crashes on Windows, where

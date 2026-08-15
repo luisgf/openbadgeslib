@@ -267,16 +267,61 @@ class TestReconcile:
         assert result.reclaimed == []
         assert result.undecided
 
-    def test_a_missing_grant_with_a_lapsed_offer_is_freed(self, tmp_path,
-                                                          store):
-        # The store garbage-collects expired grants, so "gone" is the normal
-        # end state of an offer nobody claimed.
+    def test_a_missing_grant_with_a_lapsed_offer_is_left_alone(
+            self, tmp_path, store):
+        # "Gone" is not "never issued": a pre-fix GC could have deleted a
+        # STATE_ISSUED grant, and freeing that index would tie two
+        # credentials to one revocation bit (#303). Fail closed.
         conf, offer = self._offered(tmp_path, store)
         later = NOW + timedelta(hours=2)
+        grant = store.find_grant(offer.grant_id)
         store.purge_expired(now=later)
+        # Force the grant out of the store so we exercise the missing-row
+        # path (today's GC no longer deletes STATE_ISSUED, but it still
+        # deletes an unclaimed one — and a missing issued row must be
+        # treated the same).
+        if hasattr(store, '_grants'):
+            store._grants.pop(grant.grant_id, None)
+            store._codes.pop(grant.code_id, None)
+        else:
+            conn = store._conn()
+            conn.execute('DELETE FROM grant_record WHERE grant_id = ?',
+                         (grant.grant_id,))
         result = reconcile_reservations(conf, 'badge_1', store=store,
                                         reclaim=True, now=later)
-        assert result.reclaimed == [offer.status_index]
+        credential_id = grant.credential_id
+        assert result.reclaimed == []
+        assert credential_id not in result.delivered
+        assert credential_id in result.undecided
+        registry = StatusRegistry.load(
+            str(tmp_path / 'status' / 'badge_1.json'))
+        assert credential_id in registry.entries
+
+    def test_an_issued_grant_survives_gc_and_is_marked_delivered(
+            self, tmp_path, store):
+        # The critical case after the offer TTL: the grant has expired,
+        # opportunistic GC has run, and the operator reclaims. The index
+        # must stay assigned (#303).
+        conf, offer = self._offered(tmp_path, store)
+        handle_token_request(conf, code=offer.pre_authorized_code, store=store,
+                             now=NOW)
+        from openbadgeslib.oid4vci.store import issuance_fingerprint
+        store.claim_issuance(offer.grant_id,
+                             issuance_fingerprint('badge_1_jwt_vc_json',
+                                                  ['thumb']), now=NOW)
+        later = NOW + timedelta(hours=2)
+        store.purge_expired(now=later)
+        assert store.find_grant(offer.grant_id) is not None
+        assert store.find_grant(offer.grant_id).state == STATE_ISSUED
+
+        result = reconcile_reservations(conf, 'badge_1', store=store,
+                                        reclaim=True, now=later)
+        credential_id = store.find_grant(offer.grant_id).credential_id
+        assert result.delivered == [credential_id]
+        assert result.reclaimed == []
+        registry = StatusRegistry.load(
+            str(tmp_path / 'status' / 'badge_1.json'))
+        assert registry.entries[credential_id].pending is False
 
     def test_a_badge_without_status_lists_is_a_no_op(self, tmp_path, store):
         conf = _conf(tmp_path)

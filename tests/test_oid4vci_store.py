@@ -419,6 +419,23 @@ class TestPurge:
         assert store.find_grant(dead.grant_id) is None
         assert store.find_grant(live.grant_id) is not None
 
+    def test_an_issued_grant_is_not_collected_after_expiry(self, store):
+        # Delivery evidence must outlive the offer TTL: reconcile reads
+        # STATE_ISSUED to mark the status-list reservation delivered, and
+        # a collected row would look like "never claimed" (#303).
+        _suppress_opportunistic_gc(store)
+        _, grant = _grant()
+        store.save_grant(grant)
+        assert store.redeem_grant(grant.grant_id, now=NOW) is True
+        fp = issuance_fingerprint('badge_1_jwt_vc_json', ['thumb'])
+        assert store.claim_issuance(grant.grant_id, fp, now=NOW) == CLAIM_OK
+        later = NOW + timedelta(hours=2)
+        stats = store.purge_expired(now=later)
+        assert stats.grants == 0
+        kept = store.find_grant(grant.grant_id)
+        assert kept is not None
+        assert kept.state == STATE_ISSUED
+
     def test_a_live_nonce_is_never_collected(self, store):
         # If GC could remove a live burn, a spent nonce would become spendable
         # again — the exact replay the burn list prevents.

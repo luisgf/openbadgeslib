@@ -31,10 +31,10 @@
 # Hence this runs OFFLINE, from an explicit operator command, and never from a
 # request path — and it frees a slot only when BOTH sources agree there is
 # nothing to protect: the registry says the reservation was never claimed, and
-# the OID4VCI store says its grant never reached an issued state. Either source
-# alone is not enough. The store expires and garbage-collects its rows, so a
-# missing grant means "expired long ago", which is only safe to read as
-# "unclaimed" because the registry independently says the same.
+# the OID4VCI store still holds a grant that never reached an issued state.
+# Either source alone is not enough. A missing grant is not "unclaimed":
+# STATE_ISSUED rows are kept past expiry so this pass can see them, and a
+# row that is already gone is left alone rather than reclaimed (#303).
 #
 # The credential endpoint deliberately does NOT clear `pending` when it issues.
 # Doing so would put a registry load-lock-rewrite into a concurrent HTTP path,
@@ -82,9 +82,11 @@ def reconcile_reservations(conf: configparser.ConfigParser, badge: str, *,
     lapsed unclaimed.
 
     An index is freed only when the registry says the reservation is still
-    pending AND the store says its grant never issued AND the offer's expiry
-    has passed. A reservation whose grant reached ``issued`` is marked
-    delivered instead — its index stays assigned for good.
+    pending AND the store still holds a grant that never reached ``issued``
+    AND the offer's expiry has passed. A reservation whose grant reached
+    ``issued`` is marked delivered instead — its index stays assigned for
+    good. A missing grant is left alone (the store no longer forgets an
+    issued row, so "gone" is not proof of "never claimed").
     """
     from ..confparser import ob3_status_config
 
@@ -114,8 +116,17 @@ def reconcile_reservations(conf: configparser.ConfigParser, badge: str, *,
                     # no recorded expiry to judge it by.
                     result.undecided.append(entry.jti)
                     continue
-                if grant is not None and grant.state != STATE_ISSUED \
-                        and not grant.is_expired(moment):
+                if grant is None:
+                    # A missing row is not "the store says this never issued".
+                    # STATE_ISSUED grants are no longer purged (#303), so a
+                    # missing grant here is either an unclaimed offer the GC
+                    # already collected or a pre-fix issued grant whose
+                    # evidence is gone. Either source alone is not enough:
+                    # leave it alone rather than free an index that may
+                    # already belong to a wallet.
+                    result.undecided.append(entry.jti)
+                    continue
+                if grant.state != STATE_ISSUED and not grant.is_expired(moment):
                     # The registry thinks the offer lapsed but the store does
                     # not. Disagreement is not a licence to free anything.
                     result.undecided.append(entry.jti)

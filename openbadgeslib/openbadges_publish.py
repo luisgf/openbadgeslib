@@ -260,9 +260,10 @@ def reclaim_ob3(config: str, badge: Optional[str], *,
     credentials to one revocation bit.
 
     A slot is freed only when the registry says the reservation is still
-    pending, the OID4VCI store says its grant never issued, and the offer has
-    lapsed. Anything the two sources disagree about is left alone and
-    reported.
+    pending, the OID4VCI store still holds a grant that never issued, and
+    the offer has lapsed. A missing grant is left alone — it is not proof
+    of "never claimed". Anything the two sources disagree about is left
+    alone and reported.
     """
     from .confparser import ob3_status_config, oid4vci_config
     from .errors import ConfigError, StatusError

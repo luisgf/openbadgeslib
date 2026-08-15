@@ -179,8 +179,12 @@ class InMemoryOID4VCIStore:
     def purge_expired(self, *, now: datetime, limit: int = 500) -> PurgeStats:
         with self._lock:
             stats = PurgeStats()
+            # Keep STATE_ISSUED grants past expiry: they are the only proof
+            # a wallet claimed the offer, and reconcile needs them so it
+            # does not free a delivered credential's status-list index (#303).
             dead_grants = [gid for gid, g in self._grants.items()
-                           if g.is_expired(now)][:limit]
+                           if g.is_expired(now)
+                           and g.state != STATE_ISSUED][:limit]
             for gid in dead_grants:
                 grant = self._grants.pop(gid)
                 self._codes.pop(grant.code_id, None)

@@ -554,8 +554,20 @@ class SqliteOID4VCIStore:
             stats = PurgeStats()
             # DELETE ... LIMIT needs a compile-time option that is not always
             # present, so bound it through a rowid subquery instead.
-            for table, attr in (('grant_record', 'grants'),
-                                ('access_token', 'tokens'),
+            # STATE_ISSUED grants are the only proof a wallet claimed the
+            # offer: reconcile uses them to mark the status-list reservation
+            # delivered. Purging one would make --reclaim-unclaimed treat a
+            # credential that is already in a wallet as "never issued" and
+            # free its index (#303). Tokens and nonces expire as before.
+            cur = conn.execute(
+                'DELETE FROM grant_record WHERE rowid IN ('
+                'SELECT rowid FROM grant_record WHERE expires_at <= ? '
+                'AND state != ? LIMIT ?)',
+                (cutoff, STATE_ISSUED, limit))
+            stats.grants = max(cur.rowcount, 0)
+            if stats.grants >= limit:
+                stats.more = True
+            for table, attr in (('access_token', 'tokens'),
                                 ('nonce_burn', 'nonces')):
                 cur = conn.execute(
                     'DELETE FROM %s WHERE rowid IN (SELECT rowid FROM %s '
