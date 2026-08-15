@@ -10,6 +10,7 @@ A `config.ini` contains these sections:
 - `[logs]` — log file names.
 - `[smtp]` — mail server settings, used only by `openbadges-signer -M`.
 - `[issuer]` — the issuing organisation profile.
+- `[oid4vci]` — optional OpenID for Verifiable Credential Issuance (wallet) settings.
 - `[badge_<name>]` — one section per badge; the `<name>` suffix is what you pass as the badge id on the command line.
 
 ### `[paths]`
@@ -73,6 +74,33 @@ mail_from = no-reply@issuer.badge
 
 `username` and `password` are read with `.get()`, so omitting (or commenting) them is fine for unauthenticated servers. If `username` is set, `use_ssl` must also be `True` so credentials are not sent over plain SMTP. The recipient address comes from the signer's `-r/--receptor` argument, and the message subject/body come from the badge's `mail` file (see below).
 
+### `[oid4vci]`
+
+Optional and entirely opt-in. This library does **not** run the HTTP endpoints; it builds offers, verifies the wallet's key proof (the `[oid4vci]` extra) and issues the credential. You mount the routes in your own web framework. See [[Issuing to Wallets with OID4VCI]].
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `credential_issuer` | `[issuer] publish_url` | HTTPS Credential Issuer Identifier. Every wallet key proof binds `aud` to this exact string. |
+| `credential_endpoint` | `<issuer>/credential` | URL you mount for Credential Requests. |
+| `nonce_endpoint` | `<issuer>/nonce` | URL you mount for `c_nonce`. |
+| `token_endpoint` | `<issuer>/token` | URL you mount for the pre-authorized-code grant. |
+| `store_path` | `${paths:base}/oid4vci.sqlite3` | SQLite state (codes, tokens, spent nonces). Single host; not NFS/SMB. Directory is `0700`. |
+| `offer_ttl_s` | `600` | How long a pre-authorized code stays redeemable. |
+| `nonce_ttl_s` | `120` | Lifetime of a `c_nonce`. |
+| `token_ttl_s` | `300` | Lifetime of an access token. |
+| `proof_max_age_s` | `300` | How stale a wallet key proof's `iat` may be. |
+| `batch_size` | `1` | Credentials one Credential Request may claim. Must stay `1` if the badge has `status_lists`. |
+| `tx_code_length` | `6` | Digits (or characters) in an out-of-band PIN. |
+| `tx_code_input_mode` | `numeric` | `numeric` or `text`. |
+
+```ini
+;[oid4vci]
+;credential_issuer   = https://openbadges.issuer.badge/issuer/
+;store_path          = ${paths:base}/oid4vci.sqlite3
+;offer_ttl_s         = 600
+;batch_size          = 1
+```
+
 ### `[issuer]`
 
 The issuing organisation. These values feed both the published metadata (`openbadges-publish`, OB2) and the OB3 credential issuer object.
@@ -126,6 +154,7 @@ Define one section per badge. The part after `badge_` is the badge id you pass t
 | `status_size_bits` | `131072` *(commented)* | Bitstring capacity (the W3C minimum by default). Can be grown later; shrinking is rejected. |
 | `status_base` | `https://.../badge_1/` *(commented)* | Public base URL the status lists are served under (`<status_base><purpose>.jwt`). Default: `${issuer:publish_url}badge_N/`. |
 | `status_validity_days` | *(unset)* | OB3, **opt-in**: when set (e.g. `7`–`30`), published status lists carry a `validUntil = now + N days`, and a verifier rejects a stale copy served past that instant (replay protection). Requires republishing (e.g. a cron `openbadges-publish -V 3`) within the window. Unset: lists never expire. |
+| `oid4vci_formats` | `jwt_vc_json` *(commented)* | OID4VCI opt-in: comma-separated subset of `jwt_vc_json`, `vc+sd-jwt`. Unset: the badge is not offered to wallets. `vc+sd-jwt` cannot be combined with `status_lists` and needs `key_type = ED25519` or `ECC`. See [[Issuing to Wallets with OID4VCI]]. |
 | `mail` | `${paths:base}/badge_1_mail.txt` | Path to the mail template used by `openbadges-signer -M`. |
 
 ```ini
@@ -175,7 +204,8 @@ This lets you change `base` once and have every dependent path update automatica
 | --- | --- |
 | `openbadges-keygenerator` | `[paths]`, `[badge_<name>]` (`private_key`, `public_key`, `key_type`); `[issuer]` only for the `name` it logs. It does **not** read `[logs]` — a keygen-only config needs no log section. |
 | `openbadges-signer` | `[paths]`, `[logs]`, `[smtp]` (with `-M`), `[issuer]` (OB3), `[badge_<name>]` |
-| `openbadges-publish` | `[paths]` (`base_status`, OB3), `[issuer]` (incl. `did`, `sd_jwt_vct`), `[badge_<name>]` (OB2: `crypto_key`/`hosted_assertions_base`; OB3: `status_lists`/`status_size_bits`/`status_base`) |
+| `openbadges-publish` | `[paths]` (`base_status`, OB3), `[issuer]` (incl. `did`, `sd_jwt_vct`), `[oid4vci]` (`store_path`, for `--reclaim-unclaimed`), `[badge_<name>]` (OB2: `crypto_key`/`hosted_assertions_base`; OB3: `status_lists`/`status_size_bits`/`status_base`) |
 | `openbadges status` | `[paths]` (`base_status`), `[issuer]` (`publish_url`), `[badge_<name>]` (`status_lists` and the other status keys) — read-only |
+| library OID4VCI | `[oid4vci]`, `[issuer]` (`publish_url`, `sd_jwt_vct`), `[badge_<name>]` (`oid4vci_formats`, `status_lists`, keys) |
 
 For the full flag list of each command see [[CLI Reference]]. For end-to-end recipes (issuing, mailing, publishing) see [[Guides]].
