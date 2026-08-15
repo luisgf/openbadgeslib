@@ -36,12 +36,14 @@ jobs:
       - name: Install package and dev dependencies
         # ldp pulls pyld (Data Integrity tests) and eudi pulls openvc-core (the
         # SD-JWT VC tests); ldp-sd pulls openvc-core[data-integrity] for the
-        # ecdsa-sd-2023 selective-disclosure verify tests — installed explicitly
-        # so that suite can never pass by silently skipping (#221). The
-        # extra-absent behaviour is covered by monkeypatch tests that run either way.
+        # ecdsa-sd-2023 selective-disclosure verify tests; oid4vci pulls the
+        # same openvc-core for the credential-endpoint suite — installed
+        # explicitly so that suite can never pass by silently skipping
+        # (#221, #312). The extra-absent behaviour is covered by monkeypatch
+        # tests that run either way.
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,ldp,eudi,ldp-sd]"
+          pip install -e ".[dev,ldp,eudi,ldp-sd,oid4vci]"
 
       - name: Lint (flake8)
         run: flake8 openbadgeslib tests
@@ -50,11 +52,13 @@ jobs:
         run: mypy
 
       - name: Test (pytest + coverage)
-        # This job installs [ldp-sd] on purpose, so demand it: the ecdsa-sd-2023
-        # suite FAILs (not skips) if openvc/pyld stop importing here (#221). The
-        # windows leg below omits the extra and does not set this, so it skips.
+        # This job installs [ldp-sd] and [oid4vci] on purpose, so demand them:
+        # the ecdsa-sd-2023 suite and the credential-endpoint suite FAIL (not
+        # skip) if openvc stops importing here (#221, #312). The windows leg
+        # below omits those extras and does not set these, so it skips.
         env:
           OPENBADGES_REQUIRE_LDP_SD: '1'
+          OPENBADGES_REQUIRE_OID4VCI: '1'
         run: pytest --cov=openbadgeslib --cov-report=term-missing
 
   windows:

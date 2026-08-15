@@ -28,6 +28,9 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     prefix, not a raw string prefix (blocks subdomain / userinfo tricks).
   - fix(oid4vci): a Credential Offer that fails validation (e.g. batch_size
     > 1 with status_lists) no longer reserves a status-list index first.
+  - fix(ci): the Ubuntu test job installs ``[oid4vci]`` and sets
+    ``OPENBADGES_REQUIRE_OID4VCI=1`` so the credential-endpoint suite cannot
+    skip itself green.
 
 
 * v4.4.2 - 2026-08-13
