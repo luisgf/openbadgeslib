@@ -118,7 +118,9 @@ class InMemoryOID4VCIStore:
     def invalidate_grant(self, grant_id: str) -> None:
         with self._lock:
             grant = self._grants.get(grant_id)
-            if grant is not None:
+            # Keep STATE_ISSUED: it is the delivery evidence reclaim needs
+            # (#313). Tokens are still dropped (OAuth 2.1 code-reuse).
+            if grant is not None and grant.state != STATE_ISSUED:
                 grant.state = STATE_INVALIDATED
             self._tokens = {tid: entry for tid, entry in self._tokens.items()
                             if entry[0] != grant_id}

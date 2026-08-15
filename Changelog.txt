@@ -10,6 +10,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     index whose credential was already delivered to a wallet. Issued grants
     are kept past the offer TTL (they are the only proof of delivery), and
     a missing grant row is treated as undecided rather than "never claimed".
+  - security(oid4vci): presenting a pre-authorized code again after the
+    wallet has claimed no longer demotes the grant from issued to
+    invalidated (tokens are still revoked). That demotion made the next
+    `--reclaim-unclaimed` free the delivered credential's status index.
 
 
 * v4.4.2 - 2026-08-13

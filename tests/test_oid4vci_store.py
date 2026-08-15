@@ -166,6 +166,23 @@ class TestGrantLifecycle:
         assert store.find_grant(grant.grant_id).state == STATE_INVALIDATED
         assert store.grant_for_token(secret_id(token), now=NOW) is None
 
+    def test_invalidate_does_not_demote_an_issued_grant(self, store):
+        # Code reuse after a wallet claimed must revoke tokens, not erase
+        # the delivery evidence reclaim uses to keep the status index (#313).
+        _, grant = _grant()
+        store.save_grant(grant)
+        store.redeem_grant(grant.grant_id, now=NOW)
+        fp = issuance_fingerprint('badge_1_jwt_vc_json', ['thumb'])
+        assert store.claim_issuance(grant.grant_id, fp, now=NOW) == CLAIM_OK
+        token = new_secret()
+        store.mint_token(secret_id(token), grant.grant_id,
+                         expires_at=NOW + timedelta(minutes=5))
+        store.invalidate_grant(grant.grant_id)
+        kept = store.find_grant(grant.grant_id)
+        assert kept.state == STATE_ISSUED
+        assert kept.issuance_fingerprint == fp
+        assert store.grant_for_token(secret_id(token), now=NOW) is None
+
     def test_status_index_round_trips(self, store):
         _, grant = _grant(status_index=4242)
         store.save_grant(grant)

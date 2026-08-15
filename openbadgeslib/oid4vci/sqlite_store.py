@@ -473,8 +473,15 @@ class SqliteOID4VCIStore:
 
     def invalidate_grant(self, grant_id: str) -> None:
         def _kill(conn: sqlite3.Connection) -> None:
-            conn.execute('UPDATE grant_record SET state = ? WHERE grant_id = ?',
-                         (STATE_INVALIDATED, grant_id))
+            # Do not demote STATE_ISSUED: that row is the only proof a wallet
+            # claimed the offer, and --reclaim-unclaimed would then free the
+            # status-list index of a credential already in a wallet (#313).
+            # Tokens are still revoked — that is the OAuth 2.1 code-reuse
+            # response. An unclaimed grant (offered/redeemed) is killed.
+            conn.execute(
+                'UPDATE grant_record SET state = ? '
+                'WHERE grant_id = ? AND state != ?',
+                (STATE_INVALIDATED, grant_id, STATE_ISSUED))
             conn.execute('DELETE FROM access_token WHERE grant_id = ?',
                          (grant_id,))
         self._write(_kill)

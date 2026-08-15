@@ -323,6 +323,32 @@ class TestReconcile:
             str(tmp_path / 'status' / 'badge_1.json'))
         assert registry.entries[credential_id].pending is False
 
+    def test_code_reuse_after_claim_does_not_free_the_index(
+            self, tmp_path, store):
+        # A second token request (wallet retry, or anyone with the offer
+        # QR) must not turn an issued grant into a reclaimable reservation
+        # (#313).
+        conf, offer = self._offered(tmp_path, store)
+        handle_token_request(conf, code=offer.pre_authorized_code, store=store,
+                             now=NOW)
+        from openbadgeslib.oid4vci.store import issuance_fingerprint
+        store.claim_issuance(offer.grant_id,
+                             issuance_fingerprint('badge_1_jwt_vc_json',
+                                                  ['thumb']), now=NOW)
+        # Replay the pre-authorized code — the token endpoint's reuse path.
+        from openbadgeslib.oid4vci.errors import OID4VCIError
+        with pytest.raises(OID4VCIError):
+            handle_token_request(conf, code=offer.pre_authorized_code,
+                                 store=store, now=NOW)
+        assert store.find_grant(offer.grant_id).state == STATE_ISSUED
+
+        later = NOW + timedelta(hours=2)
+        result = reconcile_reservations(conf, 'badge_1', store=store,
+                                        reclaim=True, now=later)
+        credential_id = store.find_grant(offer.grant_id).credential_id
+        assert result.delivered == [credential_id]
+        assert result.reclaimed == []
+
     def test_a_badge_without_status_lists_is_a_no_op(self, tmp_path, store):
         conf = _conf(tmp_path)
         del conf['badge_1']['status_lists']

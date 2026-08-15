@@ -105,8 +105,13 @@ def reconcile_reservations(conf: configparser.ConfigParser, badge: str, *,
 
             for entry in pending:
                 grant = store.find_grant_by_credential_id(entry.jti)
-                if grant is not None and grant.state == STATE_ISSUED:
+                issued = (grant is not None and (
+                    grant.state == STATE_ISSUED
+                    or grant.issuance_fingerprint is not None))
+                if issued:
                     # The wallet claimed it. The index is permanently assigned.
+                    # A fingerprint is enough even if a later code-reuse path
+                    # tried to demote the row (#313).
                     result.delivered.append(entry.jti)
                     if reclaim:
                         registry.mark_delivered(entry.jti)
