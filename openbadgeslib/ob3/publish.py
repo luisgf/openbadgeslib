@@ -39,6 +39,7 @@
 
 import configparser
 import os
+import posixpath
 import shutil
 import tempfile
 
@@ -174,14 +175,28 @@ def _write_atomic(path: str, data: str) -> None:
 def _sd_jwt_vct_relpath(vct: str, publish_url: str) -> Optional[str]:
     """The output-relative path to write Type Metadata for *vct* so serving the
     output dir at *publish_url* resolves it there — or None if *vct* is not
-    hosted under *publish_url* (same scheme+host, path under it)."""
+    hosted under *publish_url* (same scheme+host, path under it).
+
+    The remainder is POSIX-normalized. A ``..`` that would leave the publish
+    prefix is refused (PublishError) rather than joined onto ``-o`` — a vct
+    of ``https://host/out/../../../tmp/x`` used to write outside the output
+    directory (#318).
+    """
     v, p = urlparse(vct), urlparse(publish_url)
     if (v.scheme, v.netloc) != (p.scheme, p.netloc):
         return None
     base = p.path if p.path.endswith('/') else p.path + '/'
     if not v.path.startswith(base):
         return None
-    return v.path[len(base):] or None
+    rel = v.path[len(base):]
+    if not rel:
+        return None
+    normalized = posixpath.normpath(rel)
+    if posixpath.isabs(normalized) or normalized == '..' \
+            or normalized.startswith('../'):
+        raise PublishError(
+            "[issuer] sd_jwt_vct path escapes the publish_url prefix")
+    return normalized
 
 
 def _publish_type_metadata(vct: str, publish_url: str, output: str,
@@ -198,6 +213,12 @@ def _publish_type_metadata(vct: str, publish_url: str, output: str,
     document = badge_type_metadata(vct)
     served = type_metadata_document_bytes(document)
     path = os.path.join(output, rel.replace('/', os.sep))
+    root = os.path.abspath(output)
+    dest = os.path.abspath(path)
+    if os.path.commonpath([root, dest]) != root:
+        raise PublishError(
+            "[issuer] sd_jwt_vct would write Type Metadata outside %s"
+            % output)
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)

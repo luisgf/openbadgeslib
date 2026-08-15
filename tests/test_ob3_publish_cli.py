@@ -794,6 +794,19 @@ class TestPublishTypeMetadata:
         assert 'not under publish_url' in capsys.readouterr().out
         assert not (pub / 'vct').exists()
 
+    def test_vct_dotdot_is_refused(self, tmp_path):
+        from openbadgeslib.ob3.publish import PublishError, _sd_jwt_vct_relpath
+        with pytest.raises(PublishError, match='escapes'):
+            _sd_jwt_vct_relpath(
+                'https://example.com/issuer/../../../tmp/pwned',
+                'https://example.com/issuer/')
+        cfg = _write_config(
+            tmp_path,
+            sd_jwt_vct='https://example.com/issuer/../../../tmp/pwned')
+        with pytest.raises(SystemExit):
+            _publish(tmp_path, cfg)
+        assert not (tmp_path / 'tmp' / 'pwned').exists()
+
     def test_published_metadata_validates_a_pinned_badge(
             self, tmp_path, ob3_credential, ed25519_priv_pem, ed25519_pub_pem):
         pytest.importorskip('openvc')
