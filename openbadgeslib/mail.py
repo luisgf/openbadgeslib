@@ -67,10 +67,12 @@ class BadgeMail():
             raise BadgeImgFormatUnsupported(
                 'Unsupported image type: %r' % (badge.source.image_type,))
 
-        image = MIMEImage(badge.source.image,
-                          Content_Disposition='attachment; filename=%s' % basename(badge.file_out),
-                          Content_Description='Signed OpenBadge',
-                          _subtype=mime_type)
+        image = MIMEImage(badge.source.image, _subtype=mime_type)
+        # Keyword form so the filename is RFC 2231 encoded, never interpolated
+        # into the header value as raw bytes (#316).
+        image.add_header('Content-Disposition', 'attachment',
+                         filename=basename(badge.file_out))
+        image.add_header('Content-Description', 'Signed OpenBadge')
         msg.attach(image)
 
         try:

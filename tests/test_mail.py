@@ -43,8 +43,11 @@ class TestSend:
         smtp.login.assert_not_called()
         smtp.sendmail.assert_called_once()
         smtp.quit.assert_called_once()
-        frm, to, _body = smtp.sendmail.call_args.args
+        frm, to, body = smtp.sendmail.call_args.args
         assert frm == 'issuer@example.com' and to == 'r@example.com'
+        assert 'Content-Disposition: attachment' in body
+        assert 'filename="badge_1_r.svg"' in body or "filename=badge_1_r.svg" in body
+        assert '\nBcc:' not in body
 
     def test_ssl_with_auth_logs_in(self):
         mail = _ready_mail(use_ssl=True, username='u', password='p')

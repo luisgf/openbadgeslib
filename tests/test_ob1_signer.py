@@ -376,6 +376,9 @@ class TestSignerOutputFilenameValidation:
         r'recipient\outside',
         'C:recipient',
         'recipient\x00@example.com',
+        'foo\r\nBcc: attacker@evil',
+        'foo";\r\nBcc: x',
+        "foo'; header",
     ])
     def test_safe_filename_component_rejects_path_values(self, value):
         with pytest.raises(ValueError):

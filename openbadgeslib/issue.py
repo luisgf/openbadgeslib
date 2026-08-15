@@ -116,6 +116,12 @@ def _safe_filename_component(value: str, field_name: str) -> str:
         raise ValueError('%s is not safe for use in an output filename' % field_name)
     if os.path.basename(value) != value or ntpath.basename(value) != value:
         raise ValueError('%s must not contain path separators' % field_name)
+    # CR/LF/quotes/semicolons would inject MIME headers when this name is
+    # used as Content-Disposition filename (#316).
+    if any(ch in value for ch in '\r\n"\';'):
+        raise ValueError(
+            '%s contains characters that are not safe in a filename'
+            % field_name)
     return value
 
 
