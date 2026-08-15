@@ -45,7 +45,7 @@ priv_pem, pub_pem = key.generate_keypair()
 | `get_priv_key()` | Return the underlying crypto object |
 | `get_pub_key()` | Return the underlying crypto object |
 
-`KeyRSA(key_size=2048)` defaults to a 2048-bit modulus; `KeyECC(key_curve=NIST256p)` defaults to the NIST256p curve; `KeyEd25519()` takes no parameters (the curve is fixed).
+`KeyRSA(key_size=2048)` defaults to a 2048-bit modulus; `KeyECC()` defaults to NIST P-256 (`ec.SECP256R1()`); `KeyEd25519()` takes no parameters (the curve is fixed).
 
 ```python
 from openbadgeslib.keys import KeyFactory, KeyType
