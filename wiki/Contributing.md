@@ -136,12 +136,14 @@ Note: `baking.py` is a single shared top-level module (`openbadgeslib.baking`) t
 
 ## Continuous integration
 
-The workflow at `.github/workflows/ci.yml` runs on every **push to `master`**, every **pull request**, every **`vX.Y.Z` tag push**, and when a **release is published**. The `test` job uses a matrix across Python **3.10, 3.11, 3.12, and 3.13** (`fail-fast: false`, so all versions run even if one fails). For each version it:
+The workflow at `.github/workflows/ci.yml` runs on every **push to `master`**, every **pull request**, every **`vX.Y.Z` tag push**, and when a **release is published**. The `test` job uses a matrix across Python **3.10–3.14** (`fail-fast: false`, so all versions run even if one fails). For each version it:
 
-1. Installs the package with `pip install -e ".[dev]"`.
+1. Installs the package with `pip install -e ".[dev,ldp,eudi,ldp-sd,oid4vci]"`.
 2. Lints with `flake8 openbadgeslib tests`.
 3. Type-checks with `mypy`.
-4. Tests with `pytest --cov=openbadgeslib --cov-report=term-missing`.
+4. Tests with `pytest --cov=openbadgeslib --cov-report=term-missing`, with `OPENBADGES_REQUIRE_LDP_SD=1` and `OPENBADGES_REQUIRE_OID4VCI=1` so those suites fail rather than skip.
+
+A Windows job runs the core extras on Python 3.12. Separate jobs cover the eudi-floor pin and a Python 3.15 preview.
 
 A separate `publish` job builds the sdist and wheel and uploads to PyPI when a `vX.Y.Z` tag is pushed (or a GitHub Release is published, or via `workflow_dispatch`), and only after the full test matrix passes. That publish flow is documented in [[Releasing]].
 
