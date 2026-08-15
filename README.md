@@ -89,7 +89,7 @@ all three OB versions.
 - Python >= 3.10 (tested on 3.10–3.14)
 - [pypng](https://pypi.org/project/pypng/) >= 0.20220715.0
 - [PyJWT[crypto]](https://pypi.org/project/PyJWT/) >= 2.13
-- [cryptography](https://pypi.org/project/cryptography/) >= 42
+- [cryptography](https://pypi.org/project/cryptography/) >= 45
 - [defusedxml](https://pypi.org/project/defusedxml/) >= 0.7
 
 ## Installation

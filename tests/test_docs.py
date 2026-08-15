@@ -145,6 +145,18 @@ def test_cli_reference_does_not_claim_fileexistserror():
         "CLI-Reference.md still claims a FileExistsError; init/publish exit cleanly instead"
 
 
+def test_docs_cryptography_floor_matches_pyproject():
+    """README and Installation must not restate a stale cryptography floor (#304)."""
+    pyproject = (REPO / 'pyproject.toml').read_text(encoding='utf-8')
+    match = re.search(r'"cryptography>=(\d+)"', pyproject)
+    assert match, 'could not find cryptography floor in pyproject.toml'
+    floor = match.group(1)
+    for path in (REPO / 'README.md', WIKI / 'Installation.md'):
+        compact = path.read_text(encoding='utf-8').replace(' ', '')
+        assert ('>=%s' % floor) in compact, \
+            '%s does not document cryptography>=%s' % (path.name, floor)
+
+
 @pytest.mark.parametrize('name', CLI_TOOLS)
 def test_build_parser_is_exposed(name):
     """Each CLI tool exposes build_parser() so the parser is testable/documentable."""

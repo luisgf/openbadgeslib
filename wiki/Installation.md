@@ -13,7 +13,7 @@ These are resolved automatically when you install via pip:
 | --- | --- | --- |
 | `pypng` | `>=0.20220715.0` | PNG image manipulation |
 | `PyJWT[crypto]` | `>=2.13` | JWS / JWT-VC signing and verification (pulls in `cryptography`; security floor) |
-| `cryptography` | `>=42` | All key generation, PEM handling and signing (RSA, ECC, Ed25519) |
+| `cryptography` | `>=45` | All key generation, PEM handling and signing (RSA, ECC, Ed25519) |
 | `defusedxml` | `>=0.7` | Hardened XML parsing of untrusted SVG badges |
 
 ## Install from PyPI
