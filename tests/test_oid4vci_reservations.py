@@ -181,6 +181,34 @@ class TestOfferReservations:
         assert entry.index == offer.status_index
         assert entry.offer_expires_at is not None
 
+    def test_batch_size_plus_status_lists_does_not_reserve(self, tmp_path,
+                                                           store):
+        # The check used to run AFTER allocate, so a retry of this
+        # misconfiguration burned a new index each time (#319).
+        from openbadgeslib.errors import ConfigError
+        conf = _conf(tmp_path)
+        conf['oid4vci']['batch_size'] = '4'
+        with pytest.raises(ConfigError, match='batch_size'):
+            build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                   store=store)
+        registry_path = tmp_path / 'status' / 'badge_1.json'
+        assert not registry_path.exists() or \
+            StatusRegistry.load(str(registry_path)).entries == {}
+
+    def test_a_failed_grant_save_releases_the_reservation(self, tmp_path,
+                                                          store):
+        conf = _conf(tmp_path)
+
+        def boom(grant):
+            raise RuntimeError('disk full')
+        store.save_grant = boom
+        with pytest.raises(RuntimeError, match='disk full'):
+            build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                   store=store)
+        registry = StatusRegistry.load(
+            str(tmp_path / 'status' / 'badge_1.json'))
+        assert registry.entries == {}
+
     def test_reserved_entries_do_not_appear_as_revoked(self, tmp_path, store):
         # A reservation must not affect the published bitstring.
         conf = _conf(tmp_path)

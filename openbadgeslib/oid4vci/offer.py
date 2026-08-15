@@ -139,22 +139,22 @@ def build_credential_offer(conf: configparser.ConfigParser, badge: str,
     notices: List[str] = []
     expires_at = moment + timedelta(
         seconds=expires_in_s if expires_in_s is not None else cfg.offer_ttl_s)
+    if cfg.batch_size > 1:
+        # Check before reserving: a failed offer used to burn a status-list
+        # index on every retry (#319).
+        from ..confparser import ob3_status_config
+        if ob3_status_config(conf, badge) is not None:
+            raise ConfigError(
+                "[%s] configures status_lists and [oid4vci] sets batch_size = %d, "
+                "but one grant reserves one revocation slot — the extra "
+                "credentials would be irrevocable. Set batch_size = 1, or drop "
+                "status_lists from that section."
+                % (badge, cfg.batch_size))
+
     # The credential's id is fixed now, not at signing time: the status
     # registry indexes the reserved slot by it, and a signing-time id would
     # leave the registry naming a credential that never existed.
     credential_id = 'urn:uuid:%s' % uuid.uuid4()
-    status_index = _reserve_status_index(conf, badge, chosen, recipient,
-                                         credential_id, expires_at, notices)
-    if status_index is not None and cfg.batch_size > 1:
-        # A grant reserves exactly one status-list slot, so batch issuance
-        # would hand out N credentials of which N-1 could never be revoked.
-        raise ConfigError(
-            "[%s] configures status_lists and [oid4vci] sets batch_size = %d, "
-            "but one grant reserves one revocation slot — the extra "
-            "credentials would be irrevocable. Set batch_size = 1, or drop "
-            "status_lists from that section."
-            % (badge, cfg.batch_size))
-
     code = new_secret()
     configuration_id = credential_configuration_id(badge, chosen)
 
@@ -162,7 +162,7 @@ def build_credential_offer(conf: configparser.ConfigParser, badge: str,
         grant_id=new_id(), code_id=secret_id(code), badge=badge,
         credential_configuration_id=configuration_id,
         credential_format=chosen, recipient=recipient,
-        expires_at=expires_at, status_index=status_index,
+        expires_at=expires_at, status_index=None,
         credential_id=credential_id,
         max_proofs=cfg.batch_size, created_at=moment)
 
@@ -178,7 +178,15 @@ def build_credential_offer(conf: configparser.ConfigParser, badge: str,
     offer = _offer_document(cfg.credential_issuer, [configuration_id], code,
                             cfg if tx_code else None)
     _validate_offer(offer)
-    store.save_grant(grant)
+    status_index = _reserve_status_index(conf, badge, chosen, recipient,
+                                         credential_id, expires_at, notices)
+    grant.status_index = status_index
+    try:
+        store.save_grant(grant)
+    except BaseException:
+        if status_index is not None:
+            _release_status_index(conf, badge, credential_id)
+        raise
     return CredentialOffer(
         offer=offer, uri=_offer_uri(offer), pre_authorized_code=code,
         grant_id=grant.grant_id, recipient=recipient, expires_at=expires_at,
@@ -321,6 +329,23 @@ def _reserve_status_index(conf: configparser.ConfigParser, badge: str,
         'claimed or the reservation is reclaimed after the offer lapses'
         % index)
     return index
+
+
+def _release_status_index(conf: configparser.ConfigParser, badge: str,
+                          credential_id: str) -> None:
+    """Undo a reservation if the grant could not be persisted (#319)."""
+    from ..confparser import ob3_status_config
+    from ..ob3.status_registry import StatusRegistry
+
+    status_conf = ob3_status_config(conf, badge)
+    if status_conf is None:
+        return
+    with StatusRegistry.locked(status_conf.registry_path,
+                               status_conf.size_bits) as registry:
+        if credential_id in registry.entries \
+                and registry.entries[credential_id].pending:
+            registry.reclaim(credential_id)
+            registry.save()
 
 
 __all__ = ['CredentialOffer', 'OFFER_SCHEME', 'QR_COMFORTABLE_LIMIT',
