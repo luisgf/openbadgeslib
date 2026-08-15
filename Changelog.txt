@@ -24,6 +24,8 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
   - security(mail): attachment filenames are RFC 2231 encoded, and CR/LF
     or quotes in a badge/recipient name are rejected before they can
     inject MIME headers.
+  - security(ob2): HostedBadge ``startsWith`` is an origin + path-segment
+    prefix, not a raw string prefix (blocks subdomain / userinfo tricks).
 
 
 * v4.4.2 - 2026-08-13

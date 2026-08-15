@@ -274,7 +274,8 @@ class OB2Verifier:
             starts_with = _as_str_list(verification.get("startsWith"))
             allowed_origins = _as_str_list(verification.get("allowedOrigins"))
             if starts_with:
-                if not any(assertion_id.startswith(prefix) for prefix in starts_with):
+                if not any(_url_starts_with(assertion_id, prefix)
+                           for prefix in starts_with):
                     raise OB2VerificationError(
                         "Hosted assertion id %s is outside the issuer's declared "
                         "startsWith scope" % assertion_id)
@@ -462,3 +463,24 @@ def _same_origin(a: str, b: str) -> bool:
     """Return True if two URLs share scheme + host + port (their origin)."""
     pa, pb = urlparse(a), urlparse(b)
     return (pa.scheme, pa.hostname, pa.port) == (pb.scheme, pb.hostname, pb.port)
+
+
+def _url_starts_with(url: str, prefix: str) -> bool:
+    """True if *url* is in the hosted scope declared by *prefix*.
+
+    A raw ``str.startswith`` treats ``https://issuer.example`` as a prefix of
+    ``https://issuer.example.attacker.tld/…`` (and similar userinfo tricks).
+    Require the same origin, then a path that equals the prefix path or is
+    a strict path-segment descendant (#314).
+    """
+    if not prefix:
+        return False
+    if not _same_origin(url, prefix):
+        return False
+    u, p = urlparse(url), urlparse(prefix)
+    upath, ppath = u.path or '/', p.path or '/'
+    if upath == ppath:
+        return True
+    if not ppath.endswith('/'):
+        ppath += '/'
+    return upath.startswith(ppath)
