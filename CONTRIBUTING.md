@@ -75,8 +75,9 @@ policy is deliberately simple and predictable:
 
 - A version is **dropped** — from `requires-python`, the classifiers, and the CI
   matrix — at the next **major** release after it reaches end-of-life. For
-  example, Python **3.10 (EOL 2026-10)** is dropped in **4.0.0**; until then it
-  stays supported. Grouping drops into majors keeps breaking changes rare.
+  example, Python **3.10 (EOL 2026-10)** stays supported through 4.x and is
+  dropped at the next major after that EOL (5.0). Grouping drops into majors
+  keeps breaking changes rare.
 - A new CPython minor is **added** to the CI matrix once it has a stable
   (non-pre) release, so downstreams can adopt it early.
 - The current matrix is **3.10–3.14**, and `requires-python = ">=3.10"`.
