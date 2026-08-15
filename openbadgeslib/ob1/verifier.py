@@ -182,7 +182,10 @@ class Verifier():
 
         revocation_json = download_file(revocation_url)
         if not revocation_json:
-            return None
+            # The issuer published a revocationList URL; an empty body is not
+            # "no revocations" — that is a missing key. Fail closed (#317).
+            raise AssertionFormatIncorrect(
+                "Revocation list at %s is empty" % revocation_url)
         try:
             revocation = jws_utils.from_json(revocation_json)
         except Exception:

@@ -19,6 +19,8 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     fetched and used for scope and revocation.
   - security(publish): ``sd_jwt_vct`` paths are POSIX-normalized; a ``..``
     that would write Type Metadata outside ``-o`` is refused.
+  - security(ob1): an empty revocation-list response fails closed instead
+    of treating the badge as not revoked.
 
 
 * v4.4.2 - 2026-08-13

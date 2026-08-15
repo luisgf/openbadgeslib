@@ -309,6 +309,30 @@ class TestCheckRevocation:
                    side_effect=self._fake_download(badge, badge_json, issuer_json, revocation_json)):
             assert v.check_revocation(badge) is None
 
+    def test_empty_revocation_body_fails_closed(self, badge_for_verify_rsa):
+        # The issuer published a revocationList URL; an empty 200 is not
+        # "not revoked" (#317).
+        import json as _json
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        badge, identity = badge_for_verify_rsa
+        v = Verifier(identity=identity)
+        badge_json = {'issuer': 'https://example.com/issuer.json'}
+        issuer_json = {'revocationList': 'https://example.com/revoked.json'}
+
+        def fake_download(url, *a, **k):
+            if url == badge.source.json_url:
+                return _json.dumps(badge_json).encode()
+            if url == badge_json['issuer']:
+                return _json.dumps(issuer_json).encode()
+            if url == issuer_json['revocationList']:
+                return b''
+            raise AssertionError('unexpected url %s' % url)
+
+        with patch('openbadgeslib.ob1.verifier.download_file',
+                   side_effect=fake_download):
+            with pytest.raises(AssertionFormatIncorrect, match='empty'):
+                v.check_revocation(badge)
+
     def test_missing_revocation_list_is_not_revoked(self, badge_for_verify_rsa):
         badge, identity = badge_for_verify_rsa
         v = Verifier(identity=identity)
