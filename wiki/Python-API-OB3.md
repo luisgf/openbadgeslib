@@ -131,12 +131,13 @@ OB3Verifier(pubkey_pem)
 On construction the verifier detects the key type and **pins** the accepted JWS algorithms to that key family (`RS*` for RSA, `ES*` for EC, `EdDSA` for Ed25519). The token header can never dictate the algorithm, so `alg:none`, an HMAC downgrade, or cross-type confusion are all rejected up front. An unsupported key type raises `OB3VerificationError`.
 
 ```python
-verify(token, expected_recipient=None, check_status=False) -> OpenBadgeCredential
+verify(token, expected_recipient=None, check_status=False, *,
+       verify_status_list=True, download=None) -> OpenBadgeCredential
 ```
 
 `verify()` checks the signature, expiry and structure, validates that the payload's top-level `type` is an `OpenBadgeCredential` (a `VerifiableCredential` plus `OpenBadgeCredential`/`AchievementCredential` — the native VC-JWT payload has no `vc` wrapper), and cross-checks the registered `iss`/`sub` claims against the credential's issuer/subject. On success it returns a fully reconstructed `OpenBadgeCredential`; any failure raises `OB3VerificationError`.
 
-**Status checking is opt-in.** Verification is otherwise fully offline; pass `check_status=True` (the `--check-status` CLI flag) to additionally fetch each `credentialStatus` list over HTTPS and reject a revoked or suspended credential. The check is fail-closed and enforces the list's `validFrom`/`validUntil` window (a lapsed list is rejected — replay protection). Pass `verify_list=True` to `OB3Verifier.check_status` (or `check_credential_status`) to also verify the status list credential's own JWT-VC proof and bind its issuer to the badge's. See [[Security Model]].
+**Status checking is opt-in.** Verification is otherwise fully offline; pass `check_status=True` (the `--check-status` CLI flag) to additionally fetch each `credentialStatus` list over HTTPS and reject a revoked or suspended credential. The check is fail-closed and enforces the list's `validFrom`/`validUntil` window (a lapsed list is rejected — replay protection). On this high-level path the list's own JWT-VC is verified too (`verify_status_list=True` by default; `--no-verify-status-list` turns that off). The low-level helpers `OB3Verifier.check_status` and `check_credential_status` default the other way (`verify_list=False`) — pass `verify_list=True` there if you call them directly. See [[Security Model]].
 
 **Recipient binding is opt-in.** By default `verify()` does *not* tie the credential to a recipient. Pass `expected_recipient` (a bare email, a `mailto:` URI, or a DID) to additionally require that `credentialSubject.id` matches; otherwise the caller must compare `credential.recipient_id` itself. See [[Security Model]] for why this matters.
 
