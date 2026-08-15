@@ -78,7 +78,7 @@ Serve every response with `Cache-Control: no-store`.
 ## Wiring it up
 
 ```python
-from openbadgeslib.confparser import load_config
+from openbadgeslib.confparser import load_config, oid4vci_config
 from openbadgeslib.oid4vci import (NonceIssuer, SqliteOID4VCIStore,
                                    build_issuer_metadata,
                                    handle_credential_request,
