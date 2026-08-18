@@ -6,6 +6,15 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 * v4.4.3 - unreleased
 
+  - security(oid4vci): an issuer that advertises
+    ``key_attestations_required`` now refuses a proof without
+    ``key_attestation`` before the signature is checked and before the
+    ``c_nonce`` is spent (openvc-core 1.26's ``require_key_attestation``).
+    Set ``oid4vci_key_attestations_required`` on the badge section, or pass
+    ``require_key_attestation=True`` to ``handle_credential_request``.
+    Without this, a software wallet's §8.3.1 retry spent a fresh nonce on
+    every attempt and looped.
+
   - build(deps): raise the openvc-core floors to `>=1.26` in the `[eudi]`,
     `[ldp-sd]` and `[oid4vci]` extras.
 

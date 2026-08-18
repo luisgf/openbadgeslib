@@ -392,6 +392,8 @@ badge_credential_configuration(key_attestations_required={
 
 The shape is validated — an unknown key, an empty array (the spec says *non-empty*), a bare string where an array belongs, or a non-string level all raise `EudiError` at build time rather than at a holder's wallet. The resistance *values* are not checked: D.2 defines `iso_18045_high` / `iso_18045_moderate` / `iso_18045_enhanced-basic` / `iso_18045_basic` but lets each ecosystem define its own. Note that HAIP requires *wallets* to support key attestations (§4.5.1); it does not require issuers to demand them.
 
+If this configuration is the one you serve, the credential endpoint must refuse a proof that has no `key_attestation` **before** it spends the `c_nonce`. `handle_credential_request(..., require_key_attestation=True)` does that (openvc-core ≥ 1.26). An INI-driven issuer that sets `oid4vci_key_attestations_required` gets both the metadata field and the refusal from the same key; see [[Issuing to Wallets with OID4VCI]].
+
 **Out of scope on purpose:** the enclosing `/.well-known/openid-credential-issuer` document (endpoints, authorization servers, per-tenant display — deployment policy, and one document per tenant in a multi-tenant issuer), the Credential Offer, the Credential Response and the nonce store. The protocol endpoints are the application's; this library supplies the format knowledge. Note that OpenID4VCI 1.0 Final carries `claims`/`display` at the top level of the configuration, which is what this emits; the EU reference issuer nests them under `credential_metadata` — nest them yourself if you must match that deployment.
 
 ### Verifying a third-party badge via eIDAS X.509 / EU Trusted Lists

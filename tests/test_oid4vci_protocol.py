@@ -39,7 +39,8 @@ ISSUER = 'https://issuer.example/issuer/'
 
 def _write_conf(tmp_path, *, status=False, formats='jwt_vc_json',
                 key_type='RSA', priv='test_sign_rsa.pem',
-                pub='test_verify_rsa.pem', oid4vci_extra=''):
+                pub='test_verify_rsa.pem', oid4vci_extra='',
+                badge_extra=''):
     log = tmp_path / 'log'
     log.mkdir(exist_ok=True)
     lines = [
@@ -61,6 +62,8 @@ def _write_conf(tmp_path, *, status=False, formats='jwt_vc_json',
         'key_type = %s' % key_type,
         'oid4vci_formats = %s' % formats,
     ]
+    if badge_extra:
+        lines.append(badge_extra)
     if status:
         lines.append('status_lists = revocation')
     path = tmp_path / 'cfg.ini'
@@ -116,6 +119,9 @@ class TestIssuerMetadata:
             'proof_signing_alg_values_supported'] == ['ES256', 'ES384', 'EdDSA']
         assert entry['credential_definition']['type'] == [
             'VerifiableCredential', 'OpenBadgeCredential']
+        # §12.2.4: the parameter MUST NOT be present unless required.
+        assert 'key_attestations_required' not in entry[
+            'proof_types_supported']['jwt']
 
     def test_points_wallets_at_the_authorization_server(self, conf):
         # Without this a wallet cannot find the token endpoint and the
@@ -170,6 +176,25 @@ class TestIssuerMetadata:
         del conf['badge_1']['oid4vci_formats']
         with pytest.raises(ConfigError, match='does not opt into'):
             build_issuer_metadata(conf, badges=['badge_1'])
+
+    def test_advertises_key_attestations_required_when_configured(
+            self, tmp_path):
+        conf = _write_conf(
+            tmp_path,
+            badge_extra='oid4vci_key_attestations_required = true')
+        jwt = build_issuer_metadata(conf)['credential_configurations_supported'][
+            'badge_1_jwt_vc_json']['proof_types_supported']['jwt']
+        assert jwt['key_attestations_required'] == {}
+
+    def test_constraint_object_is_copied_into_metadata(self, tmp_path):
+        conf = _write_conf(
+            tmp_path,
+            badge_extra='oid4vci_key_attestations_required = '
+                        '{"key_storage": ["iso_18045_moderate"]}')
+        jwt = build_issuer_metadata(conf)['credential_configurations_supported'][
+            'badge_1_jwt_vc_json']['proof_types_supported']['jwt']
+        assert jwt['key_attestations_required'] == {
+            'key_storage': ['iso_18045_moderate']}
 
 
 class TestAuthorizationServerMetadata:
@@ -1177,3 +1202,82 @@ class TestKeyAttestationProofs:
                 conf, store, nonces, proof,
                 resolve_proof_key_in_context=lambda ctx: jwk)
         assert caught.value.error in (INVALID_PROOF, INVALID_CREDENTIAL_REQUEST)
+
+
+class TestRequireKeyAttestation:
+    """openvc-core 1.26: refuse a missing ``key_attestation`` before the
+    nonce is spent, when the issuer advertised the requirement."""
+
+    @pytest.fixture(autouse=True)
+    def _needs_openvc(self):
+        pytest.importorskip('openvc.openid4vci')
+
+    def _token_and_body(self, conf, store, proof):
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=store)
+        token = handle_token_request(conf, code=offer.pre_authorized_code,
+                                     store=store)
+        body = {'credential_configuration_id':
+                offer.credential_configuration_ids[0],
+                'proofs': {'jwt': [proof]}}
+        return token, body
+
+    def test_flag_refuses_an_inline_proof_and_keeps_the_nonce(
+            self, conf, store, nonces):
+        key, jwk = _holder_key()
+        nonce = handle_nonce_request(conf, nonces=nonces)['c_nonce']
+        proof = _key_proof(nonce, key, jwk)
+        token, body = self._token_and_body(conf, store, proof)
+        with pytest.raises(OID4VCIError) as caught:
+            handle_credential_request(
+                conf, body, access_token=token.access_token,
+                store=store, nonces=nonces, require_key_attestation=True)
+        assert caught.value.error == INVALID_PROOF
+        # consume() is True iff THIS call spent it: the nonce must still
+        # be live, or the wallet's §8.3.1 retry is a loop.
+        assert nonces.consume(nonce) is True
+
+    def test_advertised_requirement_refuses_without_the_flag(
+            self, tmp_path, store, nonces):
+        conf = _write_conf(
+            tmp_path,
+            badge_extra='oid4vci_key_attestations_required = true')
+        key, jwk = _holder_key()
+        nonce = handle_nonce_request(conf, nonces=nonces)['c_nonce']
+        proof = _key_proof(nonce, key, jwk)
+        token, body = self._token_and_body(conf, store, proof)
+        with pytest.raises(OID4VCIError) as caught:
+            handle_credential_request(
+                conf, body, access_token=token.access_token,
+                store=store, nonces=nonces)
+        assert caught.value.error == INVALID_PROOF
+        assert nonces.consume(nonce) is True
+
+    def test_default_still_accepts_an_inline_proof(self, conf, store, nonces):
+        key, jwk = _holder_key()
+        nonce = handle_nonce_request(conf, nonces=nonces)['c_nonce']
+        proof = _key_proof(nonce, key, jwk)
+        token, body = self._token_and_body(conf, store, proof)
+        response = handle_credential_request(
+            conf, body, access_token=token.access_token,
+            store=store, nonces=nonces)
+        assert len(response.credentials) == 1
+
+    def test_attested_proof_issues_when_required(self, conf, store, nonces):
+        from openbadgeslib.ob3.did import did_jwk_from_jwk
+        key, jwk = _holder_key()
+        nonce = handle_nonce_request(conf, nonces=nonces)['c_nonce']
+        proof = TestKeyAttestationProofs()._attested_proof(nonce, key, jwk)
+
+        def resolver(ctx):
+            return dict(ctx.key_attestation.attested_keys[0])
+
+        token, body = self._token_and_body(conf, store, proof)
+        response = handle_credential_request(
+            conf, body, access_token=token.access_token,
+            store=store, nonces=nonces,
+            resolve_proof_key_in_context=resolver,
+            require_key_attestation=True)
+        claims = jwt.decode(response.credentials[0],
+                            options={'verify_signature': False})
+        assert claims['sub'] == did_jwk_from_jwk(jwk)
