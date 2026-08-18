@@ -127,6 +127,29 @@ handle_credential_request(conf, body, access_token=…, store=store,
 
 openvc enforces the one thing that is safe to enforce without trust: App. D's MUST that the proof be signed by one of the attestation's `attested_keys` (compared by RFC 7638 thumbprint). That check can only *reject* — it catches an honest wallet, or your own resolver, handing over a key the wallet never claimed. Whether the attestation itself is genuine is the resolver's job; without one, the attested-key form is refused like any other unresolved `kid`.
 
+### Requiring a key attestation
+
+Publishing `key_attestations_required` in issuer metadata without refusing proofs that omit `key_attestation` spends the `c_nonce` on a request the wallet will retry forever (OID4VCI 1.0 §8.3.1). The two have to stay in lockstep.
+
+From config, set the badge key — metadata advertises the parameter **and** `handle_credential_request` passes `require_key_attestation=True` to openvc-core (≥ 1.26), which rejects before the signature and before the nonce is spent:
+
+```ini
+[badge_1]
+oid4vci_formats = jwt_vc_json
+oid4vci_key_attestations_required = true
+; or a D.2 constraint object:
+; oid4vci_key_attestations_required = {"key_storage": ["iso_18045_moderate"]}
+```
+
+From code, if you published the requirement through `badge_credential_configuration(key_attestations_required=…)` (your own metadata document, not `build_issuer_metadata`), pass the flag yourself:
+
+```python
+handle_credential_request(conf, body, access_token=…, store=store,
+                          nonces=nonces, require_key_attestation=True)
+```
+
+Leave both unset for an ordinary Open Badge: software wallets stay welcome. The default is the spec default, not a conservative one.
+
 ### Validating offers you receive
 
 A platform that relays offers, or that wants to cross-check the by-reference documents it serves, can run the same fail-closed parser a wallet runs:

@@ -23,7 +23,8 @@
 
 from configparser import ConfigParser, ExtendedInterpolation, Error as ConfigParserError
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+import json
 import os
 import sys
 import logging
@@ -378,6 +379,52 @@ def oid4vci_formats(conf: ConfigParser, badge_section: str) -> Tuple[str, ...]:
                 "an RSA key — use key_type = ED25519 or ECC, or drop that "
                 "format" % (badge_section, ', '.join(rsa_incapable)))
     return tuple(formats)
+
+
+def oid4vci_key_attestations_required(
+        conf: ConfigParser, badge_section: str) -> Optional[Dict[str, Any]]:
+    """The key-attestation policy a badge advertises over OID4VCI, or None.
+
+    Absent (the default) means the issuer does **not** require a key
+    attestation, and OpenID4VCI 1.0 §12.2.4 says the parameter MUST NOT then
+    appear in metadata. Present means it is required:
+
+    * ``true`` / ``yes`` / ``1`` / ``{}`` / empty advertise an unconstrained
+      requirement (a key attestation is needed, with no extra constraints);
+    * a JSON object is the Appendix D.2 constraint set, validated by the same
+      shape check :func:`~openbadgeslib.ob3.eudi.badge_credential_configuration`
+      uses.
+
+    The credential endpoint reads this same key, so advertising the
+    requirement without enforcing it — the wallet-retry loop openvc-core
+    1.26's ``require_key_attestation`` exists to close — cannot happen from
+    configuration alone.
+    """
+    if (badge_section not in conf
+            or 'oid4vci_key_attestations_required' not in conf[badge_section]):
+        return None
+    raw = (conf[badge_section].get('oid4vci_key_attestations_required')
+           or '').strip()
+    if raw.lower() in ('', 'true', 'yes', '1', '{}'):
+        value: Any = {}
+    else:
+        try:
+            parsed = json.loads(raw)
+        except ValueError as exc:
+            raise ConfigError(
+                "[%s] oid4vci_key_attestations_required must be true or a "
+                "JSON object, got %r" % (badge_section, raw)) from exc
+        if not isinstance(parsed, dict):
+            raise ConfigError(
+                "[%s] oid4vci_key_attestations_required must be a JSON "
+                "object, got %s" % (badge_section, type(parsed).__name__))
+        value = parsed
+    from .ob3.eudi import EudiError, _key_attestations_required
+    try:
+        return _key_attestations_required(value)
+    except EudiError as exc:
+        raise ConfigError("[%s] oid4vci_key_attestations_required: %s"
+                          % (badge_section, exc)) from exc
 
 
 # ── centralized config defaults ──────────────────────────────────────────────

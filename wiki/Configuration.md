@@ -155,6 +155,7 @@ Define one section per badge. The part after `badge_` is the badge id you pass t
 | `status_base` | `https://.../badge_1/` *(commented)* | Public base URL the status lists are served under (`<status_base><purpose>.jwt`). Default: `${issuer:publish_url}badge_N/`. |
 | `status_validity_days` | *(unset)* | OB3, **opt-in**: when set (e.g. `7`–`30`), published status lists carry a `validUntil = now + N days`, and a verifier rejects a stale copy served past that instant (replay protection). Requires republishing (e.g. a cron `openbadges-publish -V 3`) within the window. Unset: lists never expire. |
 | `oid4vci_formats` | `jwt_vc_json` *(commented)* | OID4VCI opt-in: comma-separated subset of `jwt_vc_json`, `vc+sd-jwt`. Unset: the badge is not offered to wallets. `vc+sd-jwt` cannot be combined with `status_lists` and needs `key_type = ED25519` or `ECC`. See [[Issuing to Wallets with OID4VCI]]. |
+| `oid4vci_key_attestations_required` | `true` *(commented)* | Advertise `key_attestations_required` on this badge's OID4VCI configuration and refuse a wallet key proof that has no `key_attestation` **before** the nonce is spent. Unset (the default, and the spec default): the parameter is omitted and software wallets stay welcome. `true` / `yes` / `1` / `{}` / empty = required, unconstrained; a JSON object is the Appendix D.2 constraint set (`key_storage` / `user_authentication`). See [[Issuing to Wallets with OID4VCI]]. |
 | `mail` | `${paths:base}/badge_1_mail.txt` | Path to the mail template used by `openbadges-signer -M`. |
 
 ```ini
@@ -206,6 +207,6 @@ This lets you change `base` once and have every dependent path update automatica
 | `openbadges-signer` | `[paths]`, `[logs]`, `[smtp]` (with `-M`), `[issuer]` (OB3), `[badge_<name>]` |
 | `openbadges-publish` | `[paths]` (`base_status`, OB3), `[issuer]` (incl. `did`, `sd_jwt_vct`), `[oid4vci]` (`store_path`, for `--reclaim-unclaimed`), `[badge_<name>]` (OB2: `crypto_key`/`hosted_assertions_base`; OB3: `status_lists`/`status_size_bits`/`status_base`) |
 | `openbadges status` | `[paths]` (`base_status`), `[issuer]` (`publish_url`), `[badge_<name>]` (`status_lists` and the other status keys) — read-only |
-| library OID4VCI | `[oid4vci]`, `[issuer]` (`publish_url`, `sd_jwt_vct`), `[badge_<name>]` (`oid4vci_formats`, `status_lists`, keys) |
+| library OID4VCI | `[oid4vci]`, `[issuer]` (`publish_url`, `sd_jwt_vct`), `[badge_<name>]` (`oid4vci_formats`, `oid4vci_key_attestations_required`, `status_lists`, keys) |
 
 For the full flag list of each command see [[CLI Reference]]. For end-to-end recipes (issuing, mailing, publishing) see [[Guides]].

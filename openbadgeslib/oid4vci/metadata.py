@@ -40,7 +40,7 @@ import logging
 from typing import Any, Dict, List, Optional, Sequence
 
 from ..confparser import (OID4VCIConfig, oid4vci_config, oid4vci_formats,
-                          resolve_key_type)
+                          oid4vci_key_attestations_required, resolve_key_type)
 from ..errors import ConfigError
 from ..keys import KeyType
 from .formats import FORMAT_JWT_VC_JSON, FORMAT_SD_JWT_VC
@@ -233,6 +233,12 @@ def _configuration(conf: configparser.ConfigParser, cfg: OID4VCIConfig,
                     list(PROOF_SIGNING_ALGS)},
         },
     }
+    required = oid4vci_key_attestations_required(conf, badge)
+    if required is not None:
+        # Presence is the requirement. An empty object is the spec's
+        # "needed, unconstrained" spelling — not a placeholder.
+        entry['proof_types_supported']['jwt'][
+            'key_attestations_required'] = required
     if credential_format == FORMAT_SD_JWT_VC:
         from ..ob3.eudi import OB3_SD_JWT_VCT
         entry['vct'] = (conf['issuer'].get('sd_jwt_vct') or '').strip() \

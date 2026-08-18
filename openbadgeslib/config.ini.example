@@ -143,6 +143,13 @@ key_type    = RSA
 ; above; vc+sd-jwt is the EUDI track and is IRREVOCABLE, so it cannot be
 ; combined with status_lists. vc+sd-jwt also needs key_type = ED25519 or ECC.
 ;oid4vci_formats  = jwt_vc_json
+; Demand a key attestation from the wallet (OID4VCI 1.0 §12.2.4). Unset is
+; the spec default: the parameter MUST NOT appear unless you actually
+; require one, or software wallets are locked out. true / {} = required
+; with no extra constraints; a JSON object is the Appendix D.2 set.
+; Advertising this also refuses a proof without key_attestation before
+; the nonce is spent — do not publish it and then accept inline-jwk proofs.
+;oid4vci_key_attestations_required = true
 ;mail        = ${paths:base}/badge_1_mail.txt
 
 [badge_2]

@@ -11,7 +11,8 @@ import os
 import pytest
 
 from openbadgeslib.confparser import (OID4VCIConfig, load_config,
-                                      oid4vci_config, oid4vci_formats)
+                                      oid4vci_config, oid4vci_formats,
+                                      oid4vci_key_attestations_required)
 from openbadgeslib.errors import ConfigError
 from openbadgeslib.ob3 import IdentityObject
 from openbadgeslib.ob3.did import did_jwk_from_jwk
@@ -179,6 +180,49 @@ class TestOID4VCIFormats:
                        badge_extra='oid4vci_formats = jwt_vc_json, vc+sd-jwt\n')
         assert oid4vci_formats(conf, 'badge_1') == \
             (FORMAT_JWT_VC_JSON, FORMAT_SD_JWT_VC)
+
+
+class TestOID4VCIKeyAttestationsRequired:
+    def test_absent_key_means_not_required(self, tmp_path):
+        assert oid4vci_key_attestations_required(
+            _config(tmp_path), 'badge_1') is None
+
+    def test_true_is_unconstrained(self, tmp_path):
+        conf = _config(tmp_path,
+                       badge_extra='oid4vci_key_attestations_required = true\n')
+        assert oid4vci_key_attestations_required(conf, 'badge_1') == {}
+
+    def test_empty_value_is_unconstrained(self, tmp_path):
+        conf = _config(tmp_path,
+                       badge_extra='oid4vci_key_attestations_required =\n')
+        assert oid4vci_key_attestations_required(conf, 'badge_1') == {}
+
+    def test_json_object_is_validated(self, tmp_path):
+        conf = _config(tmp_path, badge_extra=(
+            'oid4vci_key_attestations_required = '
+            '{"key_storage": ["iso_18045_moderate"]}\n'))
+        assert oid4vci_key_attestations_required(conf, 'badge_1') == {
+            'key_storage': ['iso_18045_moderate']}
+
+    def test_unknown_constraint_is_refused(self, tmp_path):
+        conf = _config(tmp_path, badge_extra=(
+            'oid4vci_key_attestations_required = {"hardware": ["yes"]}\n'))
+        with pytest.raises(ConfigError, match='unknown'):
+            oid4vci_key_attestations_required(conf, 'badge_1')
+
+    def test_non_object_json_is_refused(self, tmp_path):
+        conf = _config(
+            tmp_path,
+            badge_extra='oid4vci_key_attestations_required = ["iso"]\n')
+        with pytest.raises(ConfigError, match='JSON object'):
+            oid4vci_key_attestations_required(conf, 'badge_1')
+
+    def test_garbage_is_refused(self, tmp_path):
+        conf = _config(
+            tmp_path,
+            badge_extra='oid4vci_key_attestations_required = not-json\n')
+        with pytest.raises(ConfigError, match='true or a JSON object'):
+            oid4vci_key_attestations_required(conf, 'badge_1')
 
 
 class TestDidJwk:
