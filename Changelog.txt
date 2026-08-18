@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v4.4.3 - unreleased
+* v4.4.3 - 2026-08-18
 
   - security(oid4vci): an issuer that advertises
     ``key_attestations_required`` now refuses a proof without
