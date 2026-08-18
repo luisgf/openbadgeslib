@@ -175,9 +175,10 @@ def _validate_issuer_metadata(metadata: Dict[str, Any]) -> None:
     try:
         from openvc.openid4vci import parse_credential_issuer_metadata
     except ImportError:
-        # An install WITH the extra that lands an openvc-core below the 1.25
-        # parser would take this branch too — indistinguishable from a plain
-        # minimal install, and silent about the skipped check either way.
+        # An install WITH the extra that lands an openvc-core below the 1.26
+        # floor (parsers landed in 1.25) would take this branch too —
+        # indistinguishable from a plain minimal install, and silent about
+        # the skipped check either way.
         logger.debug('openvc-core OID4VCI discovery parsers unavailable; '
                      'the issuer metadata self-check is skipped (install the '
                      '[oid4vci] extra for it)')

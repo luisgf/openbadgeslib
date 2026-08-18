@@ -4,7 +4,10 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* vX.Y.Z - unreleased
+* v4.4.3 - unreleased
+
+  - build(deps): raise the openvc-core floors to `>=1.26` in the `[eudi]`,
+    `[ldp-sd]` and `[oid4vci]` extras.
 
   - security(oid4vci): `--reclaim-unclaimed` no longer frees a status-list
     index whose credential was already delivered to a wallet. Issued grants
