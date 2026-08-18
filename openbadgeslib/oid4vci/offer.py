@@ -232,7 +232,8 @@ def _validate_offer(offer: Dict[str, Any]) -> None:
         from openvc.openid4vci import parse_credential_offer
     except ImportError:
         # Same caveat as the metadata self-check: an openvc-core older than
-        # 1.25 takes this branch too, silently skipping the check.
+        # the 1.26 floor (parsers landed in 1.25) takes this branch too,
+        # silently skipping the check.
         logger.debug('openvc-core OID4VCI discovery parsers unavailable; '
                      'the Credential Offer self-check is skipped (install '
                      'the [oid4vci] extra for it)')

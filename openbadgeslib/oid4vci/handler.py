@@ -70,11 +70,13 @@ MAX_REQUEST_BYTES = 128 * 1024
 def _require_openvc() -> Any:
     """Import the openvc-core OID4VCI pieces, or raise with an actionable hint.
 
-    The openvc-core floor is 1.25 across every extra that pulls it, so
-    ``resolve_proof_key_in_context`` (1.24) and the discovery parsers (1.25)
-    are guaranteed present when the import succeeds; a resolver that somehow
-    resolves older anyway fails loudly at the unexpected-keyword call rather
-    than silently dropping the attested-key form.
+    The openvc-core floor is 1.26 across every extra that pulls it, so
+    ``resolve_proof_key_in_context`` (1.24), the discovery parsers (1.25)
+    and ``require_key_attestation`` (1.26) are guaranteed present when the
+    import succeeds; a resolver that somehow resolves older anyway fails
+    loudly at the unexpected-keyword call rather than silently dropping
+    the attested-key form or spending a nonce on a proof that lacked the
+    advertised attestation.
     """
     try:
         from openvc.openid4vci import (parse_credential_request,

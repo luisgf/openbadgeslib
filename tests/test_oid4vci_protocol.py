@@ -899,9 +899,10 @@ class TestCredentialEndpoint:
 
 class TestSelfCheckedDiscovery:
     """The builders pass their output through openvc-core's fail-closed wire
-    parsers (≥1.25), so a document no wallet would accept is a ConfigError at
-    build time — not a wallet that silently never scans. These tests need the
-    [oid4vci] extra: without it the builders return their output unchecked."""
+    parsers (1.25, floor 1.26), so a document no wallet would accept is a
+    ConfigError at build time — not a wallet that silently never scans.
+    These tests need the [oid4vci] extra: without it the builders return
+    their output unchecked."""
 
     @pytest.fixture(autouse=True)
     def _needs_openvc(self):
