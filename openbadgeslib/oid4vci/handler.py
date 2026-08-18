@@ -43,7 +43,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Mapping, Optional, Union
 
-from ..confparser import oid4vci_config
+from ..confparser import oid4vci_config, oid4vci_key_attestations_required
 from ..issue import CredentialResult, issue_credential_from_conf
 from .codes import (dummy_tx_verification, new_secret, secret_id,
                     verify_tx_code)
@@ -217,7 +217,8 @@ def handle_credential_request(conf: configparser.ConfigParser,
                               access_token: Optional[str], store: Any,
                               nonces: NonceIssuer,
                               now: Optional[datetime] = None,
-                              resolve_proof_key_in_context: Any = None
+                              resolve_proof_key_in_context: Any = None,
+                              require_key_attestation: bool = False
                               ) -> CredentialResponse:
     """Verify a Credential Request and issue what its grant authorises.
 
@@ -238,6 +239,19 @@ def handle_credential_request(conf: configparser.ConfigParser,
     ``attested_keys``), but trusting the attestation is the deployment's
     decision, not this library's default. When None (the default), only
     proofs that carry their key inline are accepted, exactly as before.
+
+    *require_key_attestation* refuses a proof whose header has no
+    ``key_attestation`` **before** the signature is checked and **before**
+    the ``c_nonce`` is spent (openvc-core ≥1.26). Default False, matching
+    the normative metadata default: OpenID4VCI 1.0 §12.2.4 says
+    ``key_attestations_required`` MUST NOT appear unless the issuer
+    actually requires one. The flag is also forced on when the grant's
+    badge advertises that parameter (via
+    ``oid4vci_key_attestations_required`` in the config, or an explicit
+    True here for a caller that published the requirement through
+    :func:`~openbadgeslib.ob3.eudi.badge_credential_configuration`).
+    Advertising it without this check spends the nonce on a proof the
+    wallet will retry forever.
 
     Raises :class:`OID4VCIError` for anything the wallet did wrong, and lets
     :class:`~openbadgeslib.errors.IssuanceError` through untouched for anything
@@ -288,6 +302,9 @@ def handle_credential_request(conf: configparser.ConfigParser,
             'this issuer does not use credential_identifier; send a '
             'credential_configuration_id')
 
+    badge, _fmt = parse_credential_configuration_id(
+        conf, grant.credential_configuration_id)
+    advertised = oid4vci_key_attestations_required(conf, badge) is not None
     try:
         proofs = verify_proofs(
             request,
@@ -305,6 +322,9 @@ def handle_credential_request(conf: configparser.ConfigParser,
             resolve_proof_key=None,
             resolve_proof_key_in_context=resolve_proof_key_in_context,
             trust_anchors=None,
+            # OR, never AND-NOT: advertising the requirement without
+            # enforcing it is the retry loop this flag exists to close.
+            require_key_attestation=require_key_attestation or advertised,
             max_age_s=cfg.proof_max_age_s, now=moment,
             batch_size=grant.max_proofs)
     except OID4VCIStoreError:
