@@ -27,9 +27,34 @@ from openbadgeslib.ob3.ldp import (
 
 # Core fields always revealed; credentialSchema is left non-mandatory so it can
 # be disclosed selectively (exercising the per-statement signatures) or withheld
-# (exercising a genuine selective-disclosure omission).
+# (exercising a genuine selective-disclosure omission). validUntil and
+# credentialStatus are issuer-signed but NOT mandatory: that is what lets a
+# holder hide them, which OB3LdpVerifier.verify must refuse (#328).
 MANDATORY = ['/id', '/type', '/name', '/issuer', '/validFrom',
              '/credentialSubject']
+
+_STATUS_ENTRY = {
+    'id': 'https://example.com/status/1#0',
+    'type': 'BitstringStatusListEntry',
+    'statusPurpose': 'revocation',
+    'statusListIndex': '0',
+    'statusListCredential': 'https://example.com/status/1',
+}
+
+
+def _lifecycle_credential(ob3_credential):
+    """Copy of *ob3_credential* with validUntil and credentialStatus set.
+
+    ecdsa-sd-2023 presentations that omit either claim are rejected at
+    OB3LdpVerifier.verify, so the happy-path fixture has to carry both.
+    """
+    from dataclasses import replace
+    from datetime import datetime, timezone
+    return replace(
+        ob3_credential,
+        expiration_date=datetime(2030, 1, 1, tzinfo=timezone.utc),
+        credential_status=[dict(_STATUS_ENTRY)],
+    )
 
 
 def _p256_pem_pair():
@@ -99,9 +124,11 @@ def _require_ldp_sd() -> None:
 
 @pytest.fixture(scope='session')
 def sd_credential(ob3_credential):
-    """A holder presentation revealing the core fields + credentialSchema."""
+    """A holder presentation revealing schema + the lifecycle claims."""
     _require_ldp_sd()
-    return _issue_and_derive(ob3_credential, selective=['/credentialSchema'])
+    return _issue_and_derive(
+        _lifecycle_credential(ob3_credential),
+        selective=['/credentialSchema', '/validUntil', '/credentialStatus'])
 
 
 class TestEcdsaSdVerify:
@@ -143,14 +170,46 @@ class TestEcdsaSdVerify:
 
     def test_selective_omission(self, ob3_credential):
         # Withhold credentialSchema entirely: still verifies, and the field is
-        # absent from the presentation the verifier sees.
+        # absent from the presentation the verifier sees. Lifecycle claims stay
+        # disclosed — omitting those is a fail, not a selective-disclosure
+        # feature (#328).
         # Unlike the other tests this uses ob3_credential (not the sd_credential
         # fixture), so it must run the [ldp-sd] guard itself — otherwise the
         # direct openvc import in _issue_and_derive would fail instead of skip.
         _require_ldp_sd()
-        derived, pub_pem, _ = _issue_and_derive(ob3_credential, selective=[])
+        derived, pub_pem, _ = _issue_and_derive(
+            _lifecycle_credential(ob3_credential),
+            selective=['/validUntil', '/credentialStatus'])
         assert 'credentialSchema' not in derived
         OB3LdpVerifier(pubkey_pem=pub_pem).verify(derived)
+
+    def test_omitted_valid_until_is_rejected(self, ob3_credential):
+        _require_ldp_sd()
+        derived, pub_pem, _ = _issue_and_derive(
+            _lifecycle_credential(ob3_credential),
+            selective=['/credentialStatus'])
+        assert 'validUntil' not in derived
+        with pytest.raises(OB3VerificationError, match='validUntil'):
+            OB3LdpVerifier(pubkey_pem=pub_pem).verify(derived)
+
+    def test_omitted_credential_status_is_rejected(self, ob3_credential):
+        _require_ldp_sd()
+        derived, pub_pem, _ = _issue_and_derive(
+            _lifecycle_credential(ob3_credential),
+            selective=['/validUntil'])
+        assert 'credentialStatus' not in derived
+        with pytest.raises(OB3VerificationError, match='credentialStatus'):
+            OB3LdpVerifier(pubkey_pem=pub_pem).verify(derived)
+
+    def test_low_level_entry_does_not_enforce_lifecycle(self, ob3_credential):
+        # verify_data_integrity_proof checks the proof alone; hiding
+        # validUntil is a high-level OB3LdpVerifier policy, not a crypto
+        # failure.
+        _require_ldp_sd()
+        derived, pub_pem, _ = _issue_and_derive(
+            _lifecycle_credential(ob3_credential), selective=[])
+        assert 'validUntil' not in derived
+        verify_data_integrity_proof(derived, pub_pem)
 
     def test_registered_in_cryptosuites(self):
         from openbadgeslib.ob3.ldp import _CRYPTOSUITES

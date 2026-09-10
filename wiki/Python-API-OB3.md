@@ -216,7 +216,10 @@ library (see [[Security Model]]); `extra_contexts` extends that allowlist per
 call. `ecdsa-sd-2023` (selective disclosure) is verified by delegating to
 `openvc-core` (the `[ldp-sd]` extra); a cryptosuite the library supports
 neither natively nor by delegation (e.g. `ecdsa-rdfc-2019`) fails closed naming
-the supported ones.
+the supported ones. An `ecdsa-sd-2023` presentation that omits `validUntil` or
+`credentialStatus` is rejected: a holder must not be able to hide expiry or
+revocation. `verify_data_integrity_proof` does not apply that check (it
+verifies the proof alone).
 
 ## Issuing Data Integrity (LDP) credentials — `OB3LdpSigner`
 

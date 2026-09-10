@@ -35,10 +35,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          wiki_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git"
+          # Do not embed GH_TOKEN in the remote URL: it would persist in
+          # .git/config and leak via `git remote -v` (#328). Authenticate
+          # clone and push with a one-shot http extraheader instead.
+          wiki_url="https://github.com/${GITHUB_REPOSITORY}.wiki.git"
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | openssl base64 -A)"
+          git_auth=(git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}")
           tmp="$(mktemp -d)"
 
-          if ! git clone --depth 1 "$wiki_url" "$tmp" 2>/dev/null; then
+          if ! "${git_auth[@]}" clone --depth 1 "$wiki_url" "$tmp" 2>/dev/null; then
             echo "::error::Could not clone the wiki repo. Enable Wikis in Settings and create the first page once, then re-run this workflow."
             exit 1
           fi
@@ -55,5 +60,5 @@ jobs:
             echo "Wiki already up to date."
           else
             git commit -m "Sync wiki from ${GITHUB_SHA::7}"
-            git push
+            "${git_auth[@]}" push
           fi

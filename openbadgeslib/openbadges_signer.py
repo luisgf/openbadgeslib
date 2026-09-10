@@ -58,6 +58,30 @@ from .cli_common import (config_parser, debug_parser, json_parser,
 
 logger = logging.getLogger(__name__)
 
+
+def _append_signer_log(path: str, line: str) -> None:
+    """Append *line* to the signer audit log with owner-only permissions.
+
+    signer.log names recipients. Creating it with the process umask (often
+    0o022 → 0644) would leave those addresses group/world readable. ``O_CREAT``
+    uses 0o600 and ``fchmod`` tightens an already-existing file. Windows has
+    no ``fchmod`` and NTFS ACLs are the control there, so the dance is
+    skipped — same stance as ``_write_pem_file`` (#328).
+    """
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+    fd = os.open(path, flags, 0o600)
+    try:
+        if hasattr(os, 'fchmod'):
+            os.fchmod(fd, 0o600)
+        with os.fdopen(fd, 'a') as f:
+            fd = -1
+            f.write(line + '\n')
+    except Exception:
+        if fd >= 0:
+            os.close(fd)
+        raise
+
+
 # Entry Point
 
 
@@ -253,8 +277,7 @@ def _write_badge_and_log(conf: configparser.ConfigParser, badge_file_out: str,
         # KeyError, and the badge is already on disk — a log failure must be
         # reported, not turned into a traceback that loses the written badge.
         sign_log = os.path.join(conf['paths']['base_log'], conf['logs']['signer'])
-        with open(sign_log, 'a') as file:
-            file.write(msg + '\n')
+        _append_signer_log(sign_log, msg)
     except (OSError, KeyError) as err:
         print('[!] Could not write sign log: %s' % err)
     print('%s at: %s' % (msg, badge_file_out))
@@ -368,8 +391,7 @@ def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
             % (datetime.today().isoformat(), badge,
                badge_signed.get_identity(), badge_signed.get_serial_num())
         try:
-            with open(sign_log, 'a') as file:
-                file.write(msg + '\n')
+            _append_signer_log(sign_log, msg)
         except OSError as err:
             print('[!] Could not write sign log: %s' % err)
 

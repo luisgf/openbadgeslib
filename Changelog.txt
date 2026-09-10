@@ -4,6 +4,32 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v4.4.4 - unreleased
+
+  - security(baking): SVG baking strips ``<script>`` / ``foreignObject`` /
+    event-handler attributes and ``javascript:`` / hostile ``data:`` URLs
+    from the carrier so a source image cannot turn a baked badge into an
+    XSS gadget.
+  - security(ob3): ``ecdsa-sd-2023`` presentations that omit ``validUntil``
+    or ``credentialStatus`` fail closed — a holder can no longer hide expiry
+    or revocation behind selective disclosure.
+  - security(oid4vci): explicit ``credential_endpoint`` / ``token_endpoint``
+    / ``nonce_endpoint`` overrides must be absolute ``https://`` URLs, not
+    plaintext HTTP.
+  - security(cli): ``signer.log`` is created and kept at mode ``0600``
+    (recipient emails); a file inherited from a permissive umask is
+    tightened on the next append.
+  - security(ci): wiki-sync authenticates clone/push with an HTTP extraheader
+    instead of embedding ``GITHUB_TOKEN`` in the git remote URL.
+  - security(mail): SMTP connections time out after 30 s; plaintext SMTP to
+    a non-loopback host is upgraded with STARTTLS (validating context).
+  - security(util): ``allow_insecure=True`` HTTP downloads pin the connect
+    IP the same way HTTPS already did (DNS rebinding).
+  - security(oid4vci): a live PIN-gated offer presented without ``tx_code``
+    returns the same ``invalid_grant`` as an unknown code, so the token
+    endpoint is not an oracle for which offers are PIN-gated.
+
+
 * v4.4.3 - 2026-08-18
 
   - security(oid4vci): an issuer that advertises

@@ -892,6 +892,32 @@ def test_signer_ob2_writes_file_and_log(tmp_path, capsys):
     assert (tmp_path / 'log' / 'signer.log').read_text().strip() != ''
 
 
+def test_signer_log_is_owner_only_under_permissive_umask(tmp_path):
+    # signer.log names recipients; creating it with umask 0 must still yield
+    # 0600, and an already-world-readable file must be tightened (#328).
+    import os
+    import stat
+    import pytest
+    if os.name == 'nt' or not hasattr(os, 'fchmod'):
+        pytest.skip('POSIX file-mode semantics; Windows uses ACLs')
+    from openbadgeslib import openbadges_signer
+    cfg = _write_ob2_sign_config(tmp_path)
+    log = tmp_path / 'log' / 'signer.log'
+    log.write_text('prior\n')
+    os.chmod(log, 0o644)
+    argv = ['openbadges-signer', '-c', str(cfg), '-b', '1',
+            '-r', 'recipient@example.com', '-o', str(tmp_path), '-V', '1', '-E']
+    old = os.umask(0)
+    try:
+        with patch('openbadgeslib.badge_model.download_file', return_value=b'data'), \
+                patch.object(sys, 'argv', argv):
+            openbadges_signer.main()
+    finally:
+        os.umask(old)
+    mode = stat.S_IMODE(log.stat().st_mode)
+    assert mode == 0o600, 'signer.log has mode %o, expected 0600' % mode
+
+
 def test_signer_ob2_mail_badge_sends(tmp_path):
     from unittest.mock import MagicMock
     from openbadgeslib import openbadges_signer

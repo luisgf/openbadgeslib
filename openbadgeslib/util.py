@@ -220,6 +220,43 @@ class _HTTPSOnlyRedirectHandler(request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+@contextlib.contextmanager
+def _pinned_dial(conn: http.client.HTTPConnection, default_port: int,
+                 allow_private: bool) -> Any:
+    """Resolve *conn.host*, SSRF-validate, and dial the validated IP.
+
+    Shared by the HTTPS and (allow_insecure) HTTP connection classes so a
+    name that answers public at the pre-check and private at connect (DNS
+    rebinding) is caught on both schemes (#328).
+    """
+    port = conn.port or default_port
+    try:
+        addrs = _resolve_host(conn.host, port)
+    except OSError as exc:
+        raise ValueError('Could not resolve host %r: %s'
+                         % (conn.host, exc)) from exc
+    if not addrs:
+        raise ValueError('Could not resolve host %r' % conn.host)
+    if not allow_private:
+        for ip_str in addrs:
+            if _ip_is_blocked(ip_str):
+                raise ValueError(
+                    'Refusing to connect to %r: resolves to non-public '
+                    'address %s (possible SSRF / DNS rebinding).'
+                    % (conn.host, ip_str))
+    pinned = addrs[0]
+    original = getattr(conn, '_create_connection')
+
+    def _dial_pinned(address: Any, *a: Any, **k: Any) -> Any:
+        return original((pinned, address[1]), *a, **k)
+
+    setattr(conn, '_create_connection', _dial_pinned)
+    try:
+        yield
+    finally:
+        setattr(conn, '_create_connection', original)
+
+
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     """An HTTPSConnection that resolves and SSRF-validates the host *at connect
     time* and dials the validated IP, while still presenting the original
@@ -239,37 +276,26 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         self._allow_private = allow_private
 
     def connect(self) -> None:
-        port = self.port or 443
-        try:
-            addrs = _resolve_host(self.host, port)
-        except OSError as exc:
-            raise ValueError('Could not resolve host %r: %s'
-                             % (self.host, exc)) from exc
-        if not addrs:
-            raise ValueError('Could not resolve host %r' % self.host)
-        if not self._allow_private:
-            for ip_str in addrs:
-                if _ip_is_blocked(ip_str):
-                    raise ValueError(
-                        'Refusing to connect to %r: resolves to non-public '
-                        'address %s (possible SSRF / DNS rebinding).'
-                        % (self.host, ip_str))
-        # Dial the validated IP directly (no second resolution) by pointing the
-        # connection's socket factory at it, then delegate to the parent connect
-        # — which still uses self.host for TLS SNI, certificate verification and
-        # the Host header. urllib exposes _create_connection as an instance
-        # attribute precisely so it can be swapped like this.
-        pinned = addrs[0]
-        original = self._create_connection  # type: ignore[has-type]
-
-        def _dial_pinned(address: Any, *a: Any, **k: Any) -> Any:
-            return original((pinned, address[1]), *a, **k)
-
-        self._create_connection = _dial_pinned
-        try:
+        with _pinned_dial(self, 443, self._allow_private):
             super().connect()
-        finally:
-            self._create_connection = original
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """HTTP twin of :class:`_PinnedHTTPSConnection` for ``allow_insecure=True``.
+
+    Without this, an http:// download skipped the connect-time pin and
+    re-resolved at dial, reopening the DNS-rebinding window the HTTPS path
+    closed (#328).
+    """
+
+    def __init__(self, host: str, *args: Any,
+                 allow_private: bool = False, **kwargs: Any) -> None:
+        super().__init__(host, *args, **kwargs)
+        self._allow_private = allow_private
+
+    def connect(self) -> None:
+        with _pinned_dial(self, 80, self._allow_private):
+            super().connect()
 
 
 class _PinnedHTTPSHandler(request.HTTPSHandler):
@@ -285,6 +311,18 @@ class _PinnedHTTPSHandler(request.HTTPSHandler):
     def https_open(self, req: Any) -> Any:
         return self.do_open(
             _PinnedHTTPSConnection, req, allow_private=self._allow_private)
+
+
+class _PinnedHTTPHandler(request.HTTPHandler):
+    """Route plain-HTTP connections through :class:`_PinnedHTTPConnection`."""
+
+    def __init__(self, allow_private: bool = False) -> None:
+        super().__init__()
+        self._allow_private = allow_private
+
+    def http_open(self, req: Any) -> Any:
+        return self.do_open(
+            _PinnedHTTPConnection, req, allow_private=self._allow_private)
 
 
 #: Verify keys, issuer documents, and revocation lists are all small JSON/PEM
@@ -314,8 +352,10 @@ def download_file(url: str, allow_insecure: bool = False,
     list, an OB2 badge/issuer/revocationList URL), fetching a private/loopback/
     link-local target would be a server-side request forgery (SSRF) sink. Pass
     ``allow_private=True`` to permit internal hosts (e.g. a private deployment).
-    The check is re-applied to redirect targets. The response body is bounded to
-    MAX_DOWNLOAD_SIZE to limit memory use.
+    The check is re-applied to redirect targets. HTTPS always, and HTTP when
+    ``allow_insecure=True``, pin the socket to the validated IP (DNS
+    rebinding). The response body is bounded to MAX_DOWNLOAD_SIZE to limit
+    memory use.
     """
     u = urlparse(url)
 
@@ -331,11 +371,16 @@ def download_file(url: str, allow_insecure: bool = False,
         _assert_public_host(url)
 
     # _PinnedHTTPSHandler pins the connection to the validated IP (defeats DNS
-    # rebinding); the redirect handler re-applies the scheme/host checks to any
+    # rebinding); the HTTP twin does the same when allow_insecure permits
+    # plain HTTP. The redirect handler re-applies the scheme/host checks to any
     # 30x target (which then also connects through the pinned handler).
-    opener = request.build_opener(
+    handlers: List[Any] = [
         _PinnedHTTPSHandler(allow_private),
-        _HTTPSOnlyRedirectHandler(allow_insecure, allow_private))
+        _HTTPSOnlyRedirectHandler(allow_insecure, allow_private),
+    ]
+    if allow_insecure:
+        handlers.insert(0, _PinnedHTTPHandler(allow_private))
+    opener = request.build_opener(*handlers)
     deadline = time.monotonic() + MAX_DOWNLOAD_SECONDS
     with opener.open(url, timeout=30) as response:
         chunks = []

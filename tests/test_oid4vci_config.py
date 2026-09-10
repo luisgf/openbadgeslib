@@ -106,6 +106,16 @@ class TestOID4VCIConfigRejections:
         with pytest.raises(ConfigError, match='must be an https URL'):
             oid4vci_config(conf)
 
+    @pytest.mark.parametrize('key', ['credential_endpoint', 'token_endpoint',
+                                     'nonce_endpoint'])
+    def test_plaintext_http_endpoint_is_refused(self, tmp_path, key):
+        # credential_issuer is https, but an explicit override can be anything;
+        # wallets POST secrets to these URLs, so http:// is refused (#328).
+        conf = _config(tmp_path, oid4vci=(
+            '[oid4vci]\n%s = http://issuer.example/%s\n' % (key, key)))
+        with pytest.raises(ConfigError, match='must be an absolute https URL'):
+            oid4vci_config(conf)
+
     def test_no_base_to_derive_from_is_refused(self, tmp_path):
         path = tmp_path / 'config.ini'
         path.write_text('[paths]\nbase = %s\n\n[issuer]\nname = X\n'

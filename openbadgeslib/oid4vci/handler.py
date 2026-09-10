@@ -132,10 +132,11 @@ def handle_token_request(conf: configparser.ConfigParser, *, code: str,
     asking them to rebuild the part that is easy to get wrong.
 
     Raises :class:`OID4VCIError`. Unknown, expired, already-redeemed and
-    invalidated codes all produce the SAME ``invalid_grant`` with the same
+    invalidated codes, and a live PIN-gated offer presented without
+    ``tx_code``, all produce the SAME ``invalid_grant`` with the same
     message and, by way of :func:`~openbadgeslib.oid4vci.codes.
     dummy_tx_verification`, in the same time — otherwise the endpoint becomes
-    an oracle for which codes exist.
+    an oracle for which codes exist and which of them are PIN-gated.
     """
     moment = now or datetime.now(tz=timezone.utc)
     cfg = oid4vci_config(conf)
@@ -167,8 +168,10 @@ def handle_token_request(conf: configparser.ConfigParser, *, code: str,
 
     if grant.requires_tx_code:
         if not tx_code:
-            raise OID4VCIError(INVALID_REQUEST,
-                               'this offer requires a tx_code')
+            # Same invalid_grant as an unknown code: answering invalid_request
+            # here advertised that this live offer is PIN-gated (#328).
+            dummy_tx_verification()
+            raise OID4VCIError(INVALID_GRANT, _GRANT_REJECTED)
         assert grant.tx_code_kdf is not None
         assert grant.tx_code_salt is not None and grant.tx_code_digest is not None
         if not verify_tx_code(tx_code, grant.tx_code_kdf, grant.tx_code_salt,

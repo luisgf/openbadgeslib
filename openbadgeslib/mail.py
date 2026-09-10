@@ -33,6 +33,18 @@ from email.header import Header
 from .badge_model import BadgeImgType   # version-neutral model (was ob1.badge)
 from .errors import BadgeImgFormatUnsupported
 
+#: Per-operation socket timeout for SMTP connect/read/write. smtplib's
+#: default is None (block forever).
+SMTP_TIMEOUT_SECONDS = 30
+
+
+def _smtp_is_loopback(host: str) -> bool:
+    """True for the hostnames/addresses operators use for a local MTA."""
+    name = host.strip().lower()
+    if name.startswith('[') and name.endswith(']'):
+        name = name[1:-1]
+    return name in ('localhost', '127.0.0.1', '::1')
+
 
 class BadgeMail():
     def __init__(self, smtp_server: str = 'localhost', smtp_port: int = 25,
@@ -83,9 +95,17 @@ class BadgeMail():
                 # CERT_NONE), which would let an on-path attacker intercept the
                 # connection and capture the AUTH credentials sent below.
                 smtp = SMTP_SSL(self.smtp_server, self.smtp_port,
+                                timeout=SMTP_TIMEOUT_SECONDS,
                                 context=ssl.create_default_context())
             else:
-                smtp = SMTP(self.smtp_server, self.smtp_port)
+                smtp = SMTP(self.smtp_server, self.smtp_port,
+                            timeout=SMTP_TIMEOUT_SECONDS)
+                # Plain SMTP to a non-loopback host is upgraded with STARTTLS
+                # so the message (and any later AUTH) is not sent in the
+                # clear. localhost is left alone: a local MTA often has no
+                # TLS listener on :25 (#328).
+                if not _smtp_is_loopback(self.smtp_server):
+                    smtp.starttls(context=ssl.create_default_context())
 
             if self.username:
                 smtp.login(self.username, self.password)

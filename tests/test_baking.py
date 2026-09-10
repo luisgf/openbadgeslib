@@ -52,6 +52,38 @@ class TestSvg:
         with pytest.raises(Exception):
             extract_svg(b'<svg><unclosed>')
 
+    def test_script_and_handlers_are_stripped_from_the_carrier(self):
+        # A baked badge is opened as an image; leftover active content in the
+        # source SVG would run in the recipient's browser (#328).
+        src = (
+            b'<svg xmlns="http://www.w3.org/2000/svg">'
+            b'<script>alert(1)</script>'
+            b'<rect id="mark" onclick="alert(1)" opacity="0.5" width="1" height="1"/>'
+            b'<a href="javascript:alert(1)">x</a>'
+            b'<image href="data:image/png;base64,AAAA"/>'
+            b'</svg>'
+        )
+        baked = bake_svg(src, TOKEN)
+        assert b'<script' not in baked.lower()
+        assert b'onclick' not in baked.lower()
+        assert b'javascript:' not in baked.lower()
+        assert b'opacity="0.5"' in baked
+        assert b'data:image/png;base64,AAAA' in baked
+        assert extract_svg(baked) == TOKEN
+
+    def test_foreignobject_and_data_html_are_stripped(self):
+        src = (
+            b'<svg xmlns="http://www.w3.org/2000/svg">'
+            b'<foreignObject><body xmlns="http://www.w3.org/1999/xhtml">'
+            b'<p>x</p></body></foreignObject>'
+            b'<a href="data:text/html,%3Cscript%3Ealert(1)%3C/script%3E">x</a>'
+            b'</svg>'
+        )
+        baked = bake_svg(src, TOKEN)
+        assert b'foreignObject' not in baked and b'foreignobject' not in baked.lower()
+        assert b'data:text/html' not in baked.lower()
+        assert extract_svg(baked) == TOKEN
+
 
 # ── PNG ──────────────────────────────────────────────────────────────────────
 

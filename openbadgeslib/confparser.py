@@ -305,7 +305,15 @@ def oid4vci_config(conf: ConfigParser) -> OID4VCIConfig:
 
     def endpoint(key: str, default_path: str) -> str:
         explicit = (section.get(key) or '').strip() if section else ''
-        return explicit or urljoin(endpoint_base, default_path)
+        url = explicit or urljoin(endpoint_base, default_path)
+        # Derived endpoints inherit https from credential_issuer; an explicit
+        # override can be any string, and a plaintext http URL would advertise
+        # a token/credential/nonce endpoint wallets POST secrets to (#328).
+        if not url.startswith('https://'):
+            raise ConfigError(
+                "[oid4vci] %s must be an absolute https URL, got %r"
+                % (key, url))
+        return url
 
     store_path = (section.get('store_path') if section else None) or \
         os.path.join(conf['paths']['base'], 'oid4vci.sqlite3')

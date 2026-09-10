@@ -29,7 +29,7 @@
 from struct import pack
 from zlib import crc32
 
-from typing import List, Optional, Tuple, Union, cast
+from typing import Any, List, Optional, Tuple, Union, cast
 
 from defusedxml.minidom import parseString
 from png import Reader, signature as _png_signature
@@ -76,6 +76,66 @@ def _bounded_inflate(data: bytes, limit: int = MAX_ITXT_DECOMPRESSED) -> bytes:
 
 # ── SVG ─────────────────────────────────────────────────────────────────────
 
+# Active content stripped from the carrier at bake time. A baked badge is an
+# image a recipient may open in a browser; leaving <script>, on* handlers or
+# javascript: URLs in the source SVG would execute in that context (#328).
+# `opacity` is the one SVG presentation attribute whose local name starts
+# with "on" and is not an event handler.
+_ACTIVE_SVG_ELEMENTS = frozenset({
+    'script', 'foreignobject', 'iframe', 'embed', 'object', 'handler',
+})
+_URL_ATTRS = frozenset({'href', 'src', 'action'})
+_SAFE_DATA_IMAGE_TYPES = (
+    'image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp',
+)
+
+
+def _svg_local_name(node: Any) -> str:
+    return str(node.tagName).split(':')[-1].lower()
+
+
+def _iter_svg_elements(node: Any) -> List[Any]:
+    found: List[Any] = []
+    if getattr(node, 'nodeType', None) == node.ELEMENT_NODE:
+        found.append(node)
+        for child in list(node.childNodes):
+            found.extend(_iter_svg_elements(child))
+    return found
+
+
+def _is_active_url(value: str) -> bool:
+    """True for javascript:/vbscript: and for data: that is not a raster image."""
+    lowered = value.strip().lower()
+    if lowered.startswith('javascript:') or lowered.startswith('vbscript:'):
+        return True
+    if not lowered.startswith('data:'):
+        return False
+    payload = lowered[5:]
+    return not any(payload.startswith(kind) for kind in _SAFE_DATA_IMAGE_TYPES)
+
+
+def _strip_svg_active_content(root: Any) -> None:
+    """Drop script-class elements, on* handlers and active URLs under *root*."""
+    if root is None:
+        return
+    for el in _iter_svg_elements(root):
+        if _svg_local_name(el) in _ACTIVE_SVG_ELEMENTS:
+            parent = el.parentNode
+            if parent is not None:
+                parent.removeChild(el)
+    for el in _iter_svg_elements(root):
+        attrs = el.attributes
+        if attrs is None:
+            continue
+        for name in list(attrs.keys()):
+            local = name.split(':')[-1].lower()
+            if local.startswith('on') and local != 'opacity':
+                el.removeAttribute(name)
+                continue
+            if local in _URL_ATTRS and _is_active_url(attrs[name].value):
+                el.removeAttribute(name)
+
+
 def bake_svg(image_bytes: bytes, token: str, comment: Optional[str] = None, *,
              element: str = SVG_ELEMENT, namespace: str = SVG_NS,
              as_text: bool = False) -> bytes:
@@ -87,10 +147,15 @@ def bake_svg(image_bytes: bytes, token: str, comment: Optional[str] = None, *,
     instead of the ``verify`` attribute — the OB 3.0 carrier for credentials
     secured with a Data Integrity proof, whose payload is a JSON document
     rather than a compact JWT (OB 3.0 §5.3).
+
+    Active content in the source SVG (``<script>``, event-handler attributes,
+    ``javascript:`` / hostile ``data:`` URLs) is stripped before the token is
+    attached, so the baked carrier is not an XSS gadget (#328).
     """
     svg_doc = parseString(image_bytes)
     try:
         svg_tag = svg_doc.getElementsByTagName('svg').item(0)
+        _strip_svg_active_content(svg_tag)
         node = svg_doc.createElement(element)
         node.attributes['xmlns:openbadges'] = namespace
         if as_text:

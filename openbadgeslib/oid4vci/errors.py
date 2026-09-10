@@ -76,7 +76,10 @@ INVALID_NONCE = 'invalid_nonce'
 INVALID_ENCRYPTION_PARAMETERS = 'invalid_encryption_parameters'
 #: The pre-authorized code was unknown, expired, already redeemed or killed.
 INVALID_GRANT = 'invalid_grant'
-#: The token request itself was malformed (missing tx_code, bad grant type).
+#: The token request itself was malformed (bad grant type, empty code).
+#: A live PIN-gated offer missing tx_code is invalid_grant, not this — the
+#: distinct invalid_request was an oracle that the offer exists and is
+#: PIN-gated (#328).
 INVALID_REQUEST = 'invalid_request'
 #: The access token was missing, unknown or expired. Served as HTTP 401 with a
 #: ``WWW-Authenticate: Bearer`` header, per RFC 6750 — not 400.

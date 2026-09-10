@@ -41,13 +41,28 @@ class TestSend:
             smtp = smtp_cls.return_value
             mail.send(_badge())
         smtp.login.assert_not_called()
+        smtp.starttls.assert_not_called()   # localhost: no STARTTLS
         smtp.sendmail.assert_called_once()
         smtp.quit.assert_called_once()
+        assert smtp_cls.call_args.kwargs.get('timeout') == 30
         frm, to, body = smtp.sendmail.call_args.args
         assert frm == 'issuer@example.com' and to == 'r@example.com'
         assert 'Content-Disposition: attachment' in body
         assert 'filename="badge_1_r.svg"' in body or "filename=badge_1_r.svg" in body
         assert '\nBcc:' not in body
+
+    def test_non_loopback_plain_smtp_upgrades_with_starttls(self):
+        import ssl as ssl_mod
+        mail = _ready_mail(smtp_server='mail.example.com')
+        with patch('openbadgeslib.mail.SMTP') as smtp_cls:
+            smtp = smtp_cls.return_value
+            mail.send(_badge())
+        smtp.starttls.assert_called_once()
+        ctx = smtp.starttls.call_args.kwargs.get('context')
+        assert ctx is not None
+        assert ctx.check_hostname is True
+        assert ctx.verify_mode == ssl_mod.CERT_REQUIRED
+        smtp.sendmail.assert_called_once()
 
     def test_ssl_with_auth_logs_in(self):
         mail = _ready_mail(use_ssl=True, username='u', password='p')
@@ -71,6 +86,7 @@ class TestSend:
         assert ctx is not None
         assert ctx.check_hostname is True
         assert ctx.verify_mode == ssl_mod.CERT_REQUIRED
+        assert ssl_cls.call_args.kwargs.get('timeout') == 30
 
     def test_smtp_error_is_reported_not_raised(self, capsys):
         from smtplib import SMTPException

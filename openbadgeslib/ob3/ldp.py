@@ -453,6 +453,29 @@ def _reject_unsigned_ldp_aliases(doc: dict[str, Any]) -> None:
                 "not sign; use BitstringStatusListEntry")
 
 
+def _reject_hidden_sd_lifecycle(doc: dict[str, Any], proof: dict[str, Any]) -> None:
+    """Fail closed when an ecdsa-sd-2023 presentation omits lifecycle claims.
+
+    Selective disclosure lets a holder drop statements the issuer signed.
+    ``validUntil`` and ``credentialStatus`` are the ones that bound a badge's
+    life: hiding them makes an expired or revoked credential look perpetual.
+    eddsa-rdfc-2022 signs the whole document, so this only applies to
+    ecdsa-sd-2023. The low-level ``verify_data_integrity_proof`` does not
+    enforce it (it checks the proof alone); ``OB3LdpVerifier.verify`` does
+    (#328).
+    """
+    if proof.get('cryptosuite') != 'ecdsa-sd-2023':
+        return
+    if 'validUntil' not in doc:
+        raise OB3VerificationError(
+            "ecdsa-sd-2023 presentation omitted validUntil, which a holder "
+            "could hide to un-expire the badge; disclose validUntil")
+    if 'credentialStatus' not in doc:
+        raise OB3VerificationError(
+            "ecdsa-sd-2023 presentation omitted credentialStatus, which a "
+            "holder could hide to un-revoke the badge; disclose credentialStatus")
+
+
 class OB3LdpVerifier:
     """Verifies OpenBadges 3.0 credentials secured with a Data Integrity
     (Linked Data Proof) embedded proof — cryptosuites eddsa-rdfc-2022 and,
@@ -511,7 +534,9 @@ class OB3LdpVerifier:
         own signature is verified too (reusing a pinned key, or resolving the
         issuer DID), unless ``verify_status_list=False``. ``download`` resolves
         a did:web verificationMethod and status list issuer DID (injectable for
-        testing).
+        testing). An ``ecdsa-sd-2023`` presentation that omits ``validUntil``
+        or ``credentialStatus`` is rejected so a holder cannot hide expiry or
+        revocation (#328).
         """
         doc = self._parse_document(document)
 
@@ -528,6 +553,9 @@ class OB3LdpVerifier:
 
         proof = _select_proof(doc)
         _validate_proof(proof, 'assertionMethod')
+        # Before resolving keys or running crypto: an SD presentation that hid
+        # expiry/revocation is already a fail, regardless of the proof.
+        _reject_hidden_sd_lifecycle(doc, proof)
 
         vm = proof['verificationMethod']
         vm_did = vm.partition('#')[0]

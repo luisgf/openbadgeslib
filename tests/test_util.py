@@ -257,6 +257,7 @@ class TestHTTPSOnlyRedirectHandler:
 
     def test_download_file_uses_pinned_and_redirect_handlers(self):
         from openbadgeslib.util import (_HTTPSOnlyRedirectHandler,
+                                        _PinnedHTTPHandler,
                                         _PinnedHTTPSHandler)
         mock_opener = _mock_opener()
         with patch('openbadgeslib.util.request.build_opener', return_value=mock_opener) as m:
@@ -264,6 +265,15 @@ class TestHTTPSOnlyRedirectHandler:
         handlers, _ = m.call_args
         assert any(isinstance(h, _PinnedHTTPSHandler) for h in handlers)
         assert any(isinstance(h, _HTTPSOnlyRedirectHandler) for h in handlers)
+        assert not any(isinstance(h, _PinnedHTTPHandler) for h in handlers)
+
+    def test_insecure_download_pins_http_too(self):
+        from openbadgeslib.util import _PinnedHTTPHandler
+        mock_opener = _mock_opener()
+        with patch('openbadgeslib.util.request.build_opener', return_value=mock_opener) as m:
+            download_file('http://example.com/file.pem', allow_insecure=True)
+        handlers, _ = m.call_args
+        assert any(isinstance(h, _PinnedHTTPHandler) for h in handlers)
 
 
 class TestSSRFProtection:
@@ -367,6 +377,22 @@ class TestDNSRebindingPinning:
             conn.connect()   # must not raise
         (address, *_), _ = conn._create_connection.call_args
         assert address == ('127.0.0.1', 443)
+
+    def test_http_connect_rejects_private_ip(self):
+        from openbadgeslib.util import _PinnedHTTPConnection
+        conn = _PinnedHTTPConnection('example.com')
+        with patch('openbadgeslib.util._resolve_host', return_value=['127.0.0.1']):
+            with pytest.raises(ValueError, match='SSRF / DNS rebinding'):
+                conn.connect()
+
+    def test_http_connect_dials_validated_ip(self):
+        from openbadgeslib.util import _PinnedHTTPConnection
+        conn = _PinnedHTTPConnection('example.com')
+        conn._create_connection = MagicMock(return_value=MagicMock())
+        with patch('openbadgeslib.util._resolve_host', return_value=['93.184.216.34']):
+            conn.connect()
+        (address, *_), _ = conn._create_connection.call_args
+        assert address == ('93.184.216.34', 80)
 
 
 class TestDownloadWallClockDeadline:

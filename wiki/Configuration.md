@@ -38,7 +38,7 @@ base_image   = ${base}/images
 | Key | Example | Meaning |
 | --- | --- | --- |
 | `general` | `general.log` | General log file (key generation, etc.). |
-| `signer` | `signer.log` | Signer audit log; one line per signed badge. The OB3 line includes the credential jti and status index — the identifiers `openbadges-publish --revoke` takes. |
+| `signer` | `signer.log` | Signer audit log; one line per signed badge. The OB3 line includes the credential jti and status index — the identifiers `openbadges-publish --revoke` takes. The file is created and kept at mode `0600` because it names recipients. |
 
 ```ini
 [logs]
@@ -72,7 +72,7 @@ mail_from = no-reply@issuer.badge
 ;password =
 ```
 
-`username` and `password` are read with `.get()`, so omitting (or commenting) them is fine for unauthenticated servers. If `username` is set, `use_ssl` must also be `True` so credentials are not sent over plain SMTP. The recipient address comes from the signer's `-r/--receptor` argument, and the message subject/body come from the badge's `mail` file (see below).
+`username` and `password` are read with `.get()`, so omitting (or commenting) them is fine for unauthenticated servers. If `username` is set, `use_ssl` must also be `True` so credentials are not sent over plain SMTP. Connections time out after 30 seconds. When `use_ssl` is `False` and `smtp_server` is not loopback (`localhost` / `127.0.0.1` / `::1`), the library upgrades the session with STARTTLS using a validating TLS context; a local MTA on `:25` is left on plaintext. The recipient address comes from the signer's `-r/--receptor` argument, and the message subject/body come from the badge's `mail` file (see below).
 
 ### `[oid4vci]`
 
@@ -81,9 +81,9 @@ Optional and entirely opt-in. This library does **not** run the HTTP endpoints; 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `credential_issuer` | `[issuer] publish_url` | HTTPS Credential Issuer Identifier. Every wallet key proof binds `aud` to this exact string. |
-| `credential_endpoint` | `<issuer>/credential` | URL you mount for Credential Requests. |
-| `nonce_endpoint` | `<issuer>/nonce` | URL you mount for `c_nonce`. |
-| `token_endpoint` | `<issuer>/token` | URL you mount for the pre-authorized-code grant. |
+| `credential_endpoint` | `<issuer>/credential` | Absolute `https://` URL you mount for Credential Requests. |
+| `nonce_endpoint` | `<issuer>/nonce` | Absolute `https://` URL you mount for `c_nonce`. |
+| `token_endpoint` | `<issuer>/token` | Absolute `https://` URL you mount for the pre-authorized-code grant. |
 | `store_path` | `${paths:base}/oid4vci.sqlite3` | SQLite state (codes, tokens, spent nonces). Single host; not NFS/SMB. Directory is `0700`. |
 | `offer_ttl_s` | `600` | How long a pre-authorized code stays redeemable. |
 | `nonce_ttl_s` | `120` | Lifetime of a `c_nonce`. |

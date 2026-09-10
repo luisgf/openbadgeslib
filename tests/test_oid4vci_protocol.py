@@ -449,13 +449,18 @@ class TestTokenEndpoint:
             handle_token_request(conf, code=offer.pre_authorized_code,
                                  tx_code=offer.tx_code, store=store)
 
-    def test_missing_tx_code_is_invalid_request(self, conf, store):
+    def test_missing_tx_code_is_invalid_grant(self, conf, store):
+        # A distinct invalid_request advertised that this live offer is
+        # PIN-gated. Same invalid_grant as an unknown code (#328).
         offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
                                        store=store, tx_code=True)
         with pytest.raises(OID4VCIError) as caught:
             handle_token_request(conf, code=offer.pre_authorized_code,
                                  store=store)
-        assert caught.value.error == INVALID_REQUEST
+        assert caught.value.error == INVALID_GRANT
+        with pytest.raises(OID4VCIError) as unknown_caught:
+            handle_token_request(conf, code='no-such-code', store=store)
+        assert caught.value.description == unknown_caught.value.description
 
     def test_unexpected_tx_code_is_invalid_request(self, conf, store):
         offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
