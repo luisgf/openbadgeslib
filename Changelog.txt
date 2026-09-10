@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v4.4.4 - unreleased
+* v4.4.4 - 2026-09-10
 
   - security(baking): SVG baking strips ``<script>`` / ``foreignObject`` /
     event-handler attributes and ``javascript:`` / hostile ``data:`` URLs
