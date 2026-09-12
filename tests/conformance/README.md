@@ -74,7 +74,12 @@ header) so verification needs no DID resolution or outbound network. Results:
 
 - `docker-compose.yml` — both validators as services.
 - `Dockerfile.ob3` — multi-stage (Maven build + runtime) for the OB 3.0
-  validator, whose upstream Dockerfile assumes a pre-built jar.
+  validator, whose upstream Dockerfile assumes a pre-built jar. The Maven
+  stage rewrites `checksumPolicy` on the `danubetech-public` repository to
+  `ignore`: that Nexus serves `verifiable-credentials-java` / `uni-resolver-client`
+  without `.sha1`/`.md5` companions, and the upstream POM pins `fail`, which
+  makes Maven 3.9+ abort the image build.
+- `relax-danubetech-checksums.awk` — the POM rewrite used by `Dockerfile.ob3`.
 - `conftest.py` — service-URL fixtures (skip if down) + an ephemeral static
   file server.
 - `test_official_validators.py` — the opt-in tests.

@@ -9,14 +9,24 @@ ARG VALIDATOR_REF=main
 
 FROM maven:3.9-eclipse-temurin-17 AS build
 ARG VALIDATOR_REF
+COPY relax-danubetech-checksums.awk /tmp/relax-danubetech-checksums.awk
 RUN git clone --depth 1 --branch "${VALIDATOR_REF}" \
         https://github.com/1EdTech/digital-credentials-public-validator.git /src
 WORKDIR /src
 # libsodium is needed by the crypto libs even during test-compile; skip tests
 # for image build speed (we exercise the service through its REST API instead).
+#
+# DanubeTech's public Nexus (verifiable-credentials-java, uni-resolver-client)
+# serves the artifacts but no .sha1/.md5 companions. The upstream POM pins
+# checksumPolicy=fail on that repo, so Maven 3.9+ aborts with
+# "Checksum validation failed, no checksums available". Relax only that
+# repository; 1EdTech's own Nexus stays strict. --lax-checksums is a second
+# belt if a future POM reformats the XML and the awk no longer matches.
 RUN apt-get update && apt-get install -y --no-install-recommends libsodium23 \
     && rm -rf /var/lib/apt/lists/* \
-    && mvn -q -DskipTests package
+    && awk -f /tmp/relax-danubetech-checksums.awk pom.xml > pom.xml.new \
+    && mv pom.xml.new pom.xml \
+    && mvn --lax-checksums -q -DskipTests package
 
 FROM eclipse-temurin:17-jdk
 RUN apt-get update && apt-get install -y --no-install-recommends libsodium23 \
