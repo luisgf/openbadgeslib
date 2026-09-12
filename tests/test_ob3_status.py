@@ -214,6 +214,43 @@ class TestBitOrdering:
         assert _bit_set(b'\x01', 7) is True
 
 
+# ── public encodedList decoder (#322) ────────────────────────────────────────
+
+class TestDecodeEncodedList:
+    def test_round_trip_set_indices(self):
+        from openbadgeslib.ob3 import decode_encoded_list, encode_bitstring, set_indices
+        indices = {0, 9, 94, 4095}
+        encoded = encode_bitstring(indices)
+        assert set_indices(decode_encoded_list(encoded)) == frozenset(indices)
+
+    def test_private_alias_still_works(self):
+        from openbadgeslib.ob3.status import _decode_encoded_list, decode_encoded_list
+        encoded = _encoded_list([7])
+        assert _decode_encoded_list(encoded) == decode_encoded_list(encoded)
+
+    def test_refuse_oversized_inflate(self):
+        from openbadgeslib.ob3 import decode_encoded_list
+        bomb = gzip.compress(b'\x00' * (6 * 1024 * 1024))
+        encoded = 'u' + base64.urlsafe_b64encode(bomb).decode('ascii').rstrip('=')
+        with pytest.raises(OB3VerificationError, match='exceeds'):
+            decode_encoded_list(encoded)
+
+    def test_refuse_garbage(self):
+        from openbadgeslib.ob3 import decode_encoded_list
+        with pytest.raises(ValueError):
+            decode_encoded_list('not-a-valid-encoded-list')
+        with pytest.raises(ValueError):
+            decode_encoded_list('u!!!!')
+        with pytest.raises(ValueError):
+            decode_encoded_list('')
+
+    def test_set_indices_msb_first(self):
+        from openbadgeslib.ob3 import set_indices
+        assert set_indices(b'\x80') == frozenset([0])
+        assert set_indices(b'\x01') == frozenset([7])
+        assert set_indices(b'\x00') == frozenset()
+
+
 # ── model parsing ────────────────────────────────────────────────────────────
 
 class TestCredentialStatusParsing:

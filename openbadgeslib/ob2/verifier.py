@@ -22,7 +22,7 @@
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, List, Optional, Union
+from typing import Any, Callable, List, Optional, Union
 from urllib.parse import urlparse
 
 from .models import Assertion, CryptographicKey, hash_identity, _parse_iso
@@ -67,10 +67,16 @@ class OB2Verifier:
         pubkey_pem: Optional PEM-encoded trusted public key. When supplied it is
                     used to verify SignedBadge assertions and skips resolving the
                     badge-declared key.
+        download: Optional ``url -> bytes`` fetcher used by hosted verification
+                  (assertion id, BadgeClass, issuer Profile, revocation list).
+                  Defaults to :func:`download_file` (HTTPS-only, size-capped).
     """
 
-    def __init__(self, pubkey_pem: Optional[Any] = None) -> None:
+    def __init__(self, pubkey_pem: Optional[Any] = None, *,
+                 download: Optional[Callable[[str], bytes]] = None) -> None:
         self.trusted_pubkey_pem: Optional[Union[str, bytes]] = None
+        self._download: Callable[[str], bytes] = (
+            download if download is not None else download_file)
         if pubkey_pem is not None:
             pem = key_to_pem(pubkey_pem)
             try:
@@ -121,6 +127,67 @@ class OB2Verifier:
             self._check_revocation(assertion)
 
         return assertion
+
+    def verify_hosted(self, document: Union[str, dict[str, Any]], *,
+                      expected_recipient: Optional[str] = None,
+                      check_revocation: bool = False) -> Assertion:
+        """Verify a hosted OB 2.0 assertion JSON document (not a compact JWS).
+
+        *document* is the assertion as a dict or a JSON string. The hosted
+        model is fetch-from-id: the copy served at ``assertion.id`` is the
+        trust anchor (scoped to the issuer Profile), so this does not
+        synthesize a dummy JWS. Defence-in-depth JWS verification inside
+        :meth:`_verify_hosted` is skipped when there is no token.
+
+        ``expected_recipient`` and ``check_revocation`` behave as in
+        :meth:`verify`. Raises :class:`OB2VerificationError` if the document
+        is not a HostedBadge assertion or if any check fails.
+        """
+        parsed = self._hosted_document(document)
+        try:
+            assertion = Assertion.from_dict(parsed)
+        except ValueError as exc:
+            raise OB2VerificationError(
+                "Malformed OB 2.0 assertion: %s" % exc) from exc
+        if assertion.verification.type != "HostedBadge":
+            raise OB2VerificationError(
+                "verify_hosted() requires verification.type HostedBadge, got %r"
+                % assertion.verification.type)
+
+        assertion = self._verify_hosted(assertion, "")
+
+        self._check_expiration(assertion)
+
+        if expected_recipient is not None:
+            self._check_identity(assertion, expected_recipient)
+
+        if check_revocation:
+            self._check_revocation(assertion)
+
+        return assertion
+
+    @staticmethod
+    def _hosted_document(document: Union[str, dict[str, Any]]) -> dict[str, Any]:
+        """Parse a hosted assertion from a dict or JSON string (never a JWS)."""
+        if isinstance(document, str):
+            text = document.strip()
+            if text.count('.') == 2 and not text.startswith('{'):
+                raise OB2VerificationError(
+                    "verify_hosted() expects a hosted assertion JSON document, "
+                    "not a compact JWS; use verify() for SignedBadge tokens")
+            try:
+                parsed = jws_utils.from_json(text)
+            except Exception as exc:
+                raise OB2VerificationError(
+                    "hosted assertion is not valid JSON: %s" % exc) from exc
+        elif isinstance(document, dict):
+            parsed = document
+        else:
+            raise OB2VerificationError(
+                "hosted assertion must be a dict or JSON string")
+        if not isinstance(parsed, dict):
+            raise OB2VerificationError("hosted assertion is not a JSON object")
+        return parsed
 
     # ── signed path ──────────────────────────────────────────────────────────────
 
@@ -255,16 +322,18 @@ class OB2Verifier:
         # verify it, but never fail the hosted verdict on it (a hosted badge is
         # not required to be signed at all). The creator comes from the
         # authoritative copy, so this never dereferences a holder-chosen URL.
-        try:
-            if self.trusted_pubkey_pem is not None:
-                self._verify_jws(token, self.trusted_pubkey_pem)
-            elif authoritative.verification.creator:
-                key = self._resolve_creator(authoritative.verification.creator)
-                self._verify_jws(token, key.public_key_pem.encode('utf-8'))
-        except OB2VerificationError as exc:
-            logger.debug("Hosted assertion %s: baked JWS did not verify (%s); "
-                         "hosted trust comes from the HTTPS fetch, not the signature.",
-                         assertion.id, exc)
+        # verify_hosted() passes an empty token (there is no JWS); skip then.
+        if token:
+            try:
+                if self.trusted_pubkey_pem is not None:
+                    self._verify_jws(token, self.trusted_pubkey_pem)
+                elif authoritative.verification.creator:
+                    key = self._resolve_creator(authoritative.verification.creator)
+                    self._verify_jws(token, key.public_key_pem.encode('utf-8'))
+            except OB2VerificationError as exc:
+                logger.debug("Hosted assertion %s: baked JWS did not verify (%s); "
+                             "hosted trust comes from the HTTPS fetch, not the signature.",
+                             assertion.id, exc)
         return authoritative
 
     def _check_hosted_scope(self, assertion_id: str, issuer: dict[str, Any]) -> None:
@@ -373,7 +442,7 @@ class OB2Verifier:
 
     def _fetch_json(self, url: str, where: str) -> dict[str, Any]:
         try:
-            raw = download_file(url)
+            raw = self._download(url)
         except Exception as exc:
             raise OB2VerificationError(
                 "Could not fetch %s at %s: %s" % (where, url, exc)) from exc

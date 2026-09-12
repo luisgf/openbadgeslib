@@ -117,6 +117,24 @@ class TestBuildStatusListCredential:
         assert subject['statusPurpose'] == 'revocation'
         assert 'statusSize' not in subject          # single-bit only
         assert vc['validFrom'].endswith('Z')
+        assert 'ttl' not in subject
+        assert 'ttl' not in vc
+
+    def test_ttl_on_credential_subject_only(self):
+        vc = build_status_list_credential(
+            ISSUER_ID, LIST_URL, 'revocation', [], ttl=300000)
+        assert vc['credentialSubject']['ttl'] == 300000
+        assert 'ttl' not in vc
+
+    def test_ttl_omitted_when_none(self):
+        vc = build_status_list_credential(ISSUER_ID, LIST_URL, 'revocation', [])
+        assert 'ttl' not in vc['credentialSubject']
+        assert 'ttl' not in vc
+
+    def test_negative_ttl_rejected(self):
+        with pytest.raises(ValueError, match='ttl'):
+            build_status_list_credential(
+                ISSUER_ID, LIST_URL, 'revocation', [], ttl=-1)
 
     def test_unknown_purpose_rejected(self):
         with pytest.raises(ValueError):

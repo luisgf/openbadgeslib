@@ -78,7 +78,8 @@ def build_status_list_credential(issuer_id: str, url: str, purpose: str,
                                  set_indices: Iterable[int],
                                  size_bits: int = DEFAULT_SIZE_BITS,
                                  issued: Optional[datetime] = None,
-                                 valid_until: Optional[datetime] = None
+                                 valid_until: Optional[datetime] = None,
+                                 ttl: Optional[int] = None
                                  ) -> dict[str, Any]:
     """Build an (unsigned) BitstringStatusListCredential document.
 
@@ -96,10 +97,27 @@ def build_status_list_credential(issuer_id: str, url: str, purpose: str,
     authentic older copy (with fewer revocations) passes the window unchecked.
     openbadges-publish warns loudly when it does this; issuers of revocable
     badges should set ``status_validity_days`` and republish on that cadence.
+
+    *ttl*, when given, is Bitstring Status List §2.2's refresh hint in
+    milliseconds. It is written on ``credentialSubject`` (the JSON-LD term is
+    scoped to ``BitstringStatusList``); a top-level copy would be dropped
+    during expansion and would not be covered by a Data Integrity proof.
     """
     if purpose not in STATUS_PURPOSES:
         raise ValueError("statusPurpose must be one of %r, got %r"
                          % (STATUS_PURPOSES, purpose))
+    if ttl is not None and (isinstance(ttl, bool) or not isinstance(ttl, int)
+                            or ttl < 0):
+        raise ValueError("ttl must be a non-negative integer (milliseconds), "
+                         "got %r" % (ttl,))
+    subject: dict[str, Any] = {
+        "id": url + "#list",
+        "type": "BitstringStatusList",
+        "statusPurpose": purpose,
+        "encodedList": encode_bitstring(set_indices, size_bits),
+    }
+    if ttl is not None:
+        subject["ttl"] = ttl
     vc: dict[str, Any] = {
         "@context": [_VC2_CONTEXT],
         "id": url,
@@ -107,12 +125,7 @@ def build_status_list_credential(issuer_id: str, url: str, purpose: str,
         "issuer": issuer_id,
         "validFrom": _iso(issued if issued is not None
                           else datetime.now(tz=timezone.utc)),
-        "credentialSubject": {
-            "id": url + "#list",
-            "type": "BitstringStatusList",
-            "statusPurpose": purpose,
-            "encodedList": encode_bitstring(set_indices, size_bits),
-        },
+        "credentialSubject": subject,
     }
     if valid_until is not None:
         vc["validUntil"] = _iso(valid_until)

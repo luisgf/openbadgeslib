@@ -4,6 +4,33 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v4.5.0 - 2026-09-12
+
+  - feat(ob3): public `decode_encoded_list(encoded) -> bytes` and
+    `set_indices(bitstring) -> frozenset[int]` for a published Bitstring
+    Status List `encodedList` (#322). Same multibase `u` / base64url /
+    bounded-gzip (5 MiB) / MSB-first decode the verifier already uses;
+    the private `_decode_encoded_list` name remains as a thin alias.
+
+  - feat(ob3): `build_status_list_credential(..., ttl=)` writes Bitstring
+    Status List §2.2 `ttl` (milliseconds) on `credentialSubject`, never at
+    the top level — `ttl` is a JSON-LD term scoped to `BitstringStatusList`,
+    so a top-level copy would not be signed (#321). Negative values raise
+    `ValueError`.
+
+  - feat(ob3): native CLR 2.0 `ClrCredential` builder (`build_clr_credential`,
+    `sign_clr_credential`) with the versioned `context-2.0.1.json` bundled
+    and hash-pinned (`CLR_CONTEXT_SHA256`) (#323). Identifier objects and
+    member credentials are copied as given — email hashing and member-count
+    caps stay downstream. Signing injects the pinned context via
+    `extra_contexts` (requires `[ldp]`).
+
+  - feat(ob2): `OB2Verifier.verify_hosted(document)` verifies a hosted
+    assertion JSON document (dict or JSON string) without synthesizing a
+    dummy JWS. The HTTPS fetcher is injectable via
+    `OB2Verifier(..., download=)`.
+
+
 * v4.4.4 - 2026-09-10
 
   - security(baking): SVG baking strips ``<script>`` / ``foreignObject`` /

@@ -51,6 +51,9 @@
 #   https://w3id.org/security/multikey/v1
 #     security-multikey-v1.json
 #     ba2c182de2d92f7e47184bcca8fcf0beaee6d3986c527bf664c195bbc7c58597
+#   https://purl.imsglobal.org/spec/clr/v2p0/context-2.0.1.json  (captured 2026-08-01)
+#     clr_context_2.0.1.json
+#     880f1902d4158f2f33ce06af41b90719977cd1ea337a9de2e41edb3ff5e543d6
 #
 # This module deliberately does NOT import pyld: it only hands out plain dicts
 # in the shape pyld's documentLoader expects, so it works (and is tested)

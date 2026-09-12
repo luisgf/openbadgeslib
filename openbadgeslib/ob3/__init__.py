@@ -27,9 +27,12 @@ from .verifier import (OB3VerificationError, OB3Verifier,
                        verify_endorsement_jwt)
 from .ldp import (OB3LdpSigner, OB3LdpVerifier, add_data_integrity_proof,
                   verify_data_integrity_proof)
-from .status import check_credential_status
+from .status import check_credential_status, decode_encoded_list, set_indices
 from .status_list import (build_status_list_credential, encode_bitstring,
                           sign_status_list_credential, status_entry)
+from .clr import (CLR_CONTEXT_SHA256, CLR_CONTEXT_URL, OB_V3_CONTEXT,
+                  VCDM_V2_CONTEXT, build_clr_credential, bundled_clr_contexts,
+                  sign_clr_credential)
 from .status_registry import StatusRegistry
 from .did import (build_did_document, did_jwk_from_jwk, did_key_from_pem,
                   did_web_from_url, multikey_from_pem, resolve_did,
@@ -68,16 +71,25 @@ __all__ = [
     'verify_data_integrity_proof',
     'StatusRegistry',
     'build_did_document',
+    'build_clr_credential',
     'build_status_list_credential',
+    'bundled_clr_contexts',
     'check_credential_status',
+    'CLR_CONTEXT_SHA256',
+    'CLR_CONTEXT_URL',
+    'decode_encoded_list',
     'did_jwk_from_jwk',
     'did_key_from_pem',
     'did_web_from_url',
     'encode_bitstring',
     'multikey_from_pem',
+    'OB_V3_CONTEXT',
     'resolve_did',
     'resolve_verification_method',
+    'set_indices',
+    'sign_clr_credential',
     'sign_status_list_credential',
     'status_entry',
+    'VCDM_V2_CONTEXT',
     'verify_endorsement_jwt',
 ]

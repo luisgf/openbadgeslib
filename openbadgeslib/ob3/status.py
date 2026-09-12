@@ -142,7 +142,7 @@ def _check_entry(entry: dict[str, Any], download: Callable[[str], bytes],
         encoded = subject.get("encodedList")
         if not isinstance(encoded, str) or not encoded:
             raise OB3VerificationError("status list credential has no encodedList")
-        bitstring = _decode_encoded_list(encoded)
+        bitstring = decode_encoded_list(encoded)
         list_purposes = set(_as_list(subject.get("statusPurpose")))
     except OB3VerificationError:
         raise
@@ -320,18 +320,66 @@ def _b64url_decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value)
 
 
-def _decode_encoded_list(encoded: str) -> bytes:
-    """Decode encodedList: optional multibase base64url ('u') prefix, base64url,
-    then a bounded GZIP inflate to the raw bitstring."""
-    if encoded.startswith('u'):          # multibase base64url-no-pad (Bitstring SL)
-        encoded = encoded[1:]
-    compressed = _b64url_decode(encoded)
-    inflator = zlib.decompressobj(wbits=31)   # 31 => gzip framing
-    out = inflator.decompress(compressed, MAX_STATUS_LIST_BYTES)
+def decode_encoded_list(encoded: str) -> bytes:
+    """Decode a Bitstring Status List ``encodedList`` to the raw bitstring.
+
+    Accepts the multibase base64url prefix ``u`` (Bitstring Status List v1.0)
+    or a bare base64url string, then inflates the GZIP payload. The
+    decompressed bitstring is capped at :data:`MAX_STATUS_LIST_BYTES` (5 MiB)
+    so a crafted gzip bomb cannot exhaust memory — the list is fetched from a
+    URL named in an untrusted credential.
+
+    Raises:
+        ValueError: *encoded* is not a non-empty string, or is not valid
+            base64url / gzip.
+        OB3VerificationError: the inflated bitstring exceeds the 5 MiB cap.
+    """
+    if not isinstance(encoded, str) or not encoded:
+        raise ValueError("encodedList must be a non-empty string")
+    payload = encoded[1:] if encoded.startswith('u') else encoded
+    if not payload:
+        raise ValueError("encodedList is missing base64url data")
+    try:
+        compressed = _b64url_decode(payload)
+        if not compressed:
+            raise ValueError("encodedList is not valid base64url")
+        inflator = zlib.decompressobj(wbits=31)   # 31 => gzip framing
+        out = inflator.decompress(compressed, MAX_STATUS_LIST_BYTES)
+    except OB3VerificationError:
+        raise
+    except Exception as exc:
+        raise ValueError("invalid encodedList: %s" % exc) from exc
     if inflator.unconsumed_tail:
         raise OB3VerificationError(
             "status list bitstring exceeds the %d-byte limit" % MAX_STATUS_LIST_BYTES)
+    if not inflator.eof:
+        raise ValueError("invalid encodedList: truncated gzip")
     return out
+
+
+def _decode_encoded_list(encoded: str) -> bytes:
+    """Private alias of :func:`decode_encoded_list` (kept for existing tests)."""
+    return decode_encoded_list(encoded)
+
+
+def set_indices(bitstring: bytes) -> frozenset[int]:
+    """Return the indices of bits that are set in an MSB-first bitstring.
+
+    The bit order matches :func:`_bit_set` / Bitstring Status List v1.0:
+    index 0 is the high bit of the first byte. Pair with
+    :func:`decode_encoded_list` to recover the set of revoked/suspended
+    indices from a published ``encodedList``.
+    """
+    if not isinstance(bitstring, (bytes, bytearray)):
+        raise ValueError("bitstring must be bytes")
+    total = len(bitstring) * 8
+    rendered = format(int.from_bytes(bitstring, "big"), "0%db" % total)
+    found: set[int] = set()
+    index = rendered.find("1")
+    while index != -1:
+        found.add(index)
+        index = rendered.find("1", index + 1)
+    return frozenset(found)
 
 
 def _bit_set(bitstring: bytes, index: int) -> bool:

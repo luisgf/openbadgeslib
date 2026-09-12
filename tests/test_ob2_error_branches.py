@@ -120,8 +120,9 @@ class TestExtractErrors:
 
 class TestFetchAndRevocation:
     def _fetch(self, rsa_pub_pem, url='https://x/doc.json', **patch_kw):
-        v = OB2Verifier(pubkey_pem=rsa_pub_pem)
+        # Construct inside the patch: OB2Verifier stores download_file at init.
         with patch('openbadgeslib.ob2.verifier.download_file', **patch_kw):
+            v = OB2Verifier(pubkey_pem=rsa_pub_pem)
             v._fetch_json(url, 'thing')
 
     def test_fetch_download_error(self, rsa_pub_pem):

@@ -357,7 +357,62 @@ class TestHosted:
                 OB2Verifier().verify(token, expected_recipient=RECIPIENT)
 
 
-# ── revocation ──────────────────────────────────────────────────────────────────
+# ── hosted JSON (no JWS) ────────────────────────────────────────────────────────
+
+class TestVerifyHosted:
+    def _hosted_assertion(self):
+        return Assertion(
+            id='https://example.com/assertions/x.json',
+            recipient=IdentityObject.create(RECIPIENT, salt='s4lt3d'),
+            badge=BADGE,
+            verification=Verification(type='HostedBadge'),
+            issued_on=NOW,
+        )
+
+    def test_dict_with_injectable_download(self):
+        a = self._hosted_assertion()
+        doc = a.to_dict()
+        url_map = {a.id: doc, BADGE: {'issuer': ISSUER}, ISSUER: {'id': ISSUER}}
+        result = OB2Verifier(download=_dl(url_map)).verify_hosted(
+            doc, expected_recipient=RECIPIENT)
+        assert result.verification.type == 'HostedBadge'
+        assert result.id == a.id
+
+    def test_json_string(self):
+        a = self._hosted_assertion()
+        doc = a.to_dict()
+        url_map = {a.id: doc, BADGE: {'issuer': ISSUER}, ISSUER: {'id': ISSUER}}
+        result = OB2Verifier(download=_dl(url_map)).verify_hosted(json.dumps(doc))
+        assert result.verification.type == 'HostedBadge'
+
+    def test_signed_badge_rejected(self):
+        a = Assertion(
+            id='https://example.com/assertions/x.json',
+            recipient=IdentityObject.create(RECIPIENT, salt='s4lt3d'),
+            badge=BADGE,
+            verification=Verification(type='SignedBadge', creator=KEY),
+            issued_on=NOW,
+        )
+        with pytest.raises(OB2VerificationError, match='HostedBadge'):
+            OB2Verifier(download=_dl({})).verify_hosted(a.to_dict())
+
+    def test_compact_jws_rejected(self, rsa_priv_pem):
+        token, _ = _hosted(rsa_priv_pem)
+        with pytest.raises(OB2VerificationError, match='compact JWS'):
+            OB2Verifier(download=_dl({})).verify_hosted(token)
+
+    def test_does_not_call_module_download_file(self):
+        a = self._hosted_assertion()
+        doc = a.to_dict()
+        url_map = {a.id: doc, BADGE: {'issuer': ISSUER}, ISSUER: {'id': ISSUER}}
+
+        def boom(url, *args, **kwargs):
+            raise AssertionError('module download_file must not be used')
+
+        with patch(PATCH_TARGET, side_effect=boom):
+            result = OB2Verifier(download=_dl(url_map)).verify_hosted(doc)
+        assert result.id == a.id
+
 
 class TestRevocation:
     def _issuer_chain(self, revoked_assertions):
