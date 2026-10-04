@@ -94,13 +94,13 @@ jobs:
         run: pytest
 
   py315:
-    # Advisory pre-release watch (#243). CPython 3.15.0 is final on 2026-10-01;
-    # until then setup-python resolves 3.15.0-beta.N through allow-prereleases,
-    # and `python-version: '3.15'` needs no edit when the GA build lands — the
-    # flag only falls back to a pre-release while a version line has no GA
-    # build. What this leg watches is the interpreter, not the packaging: the
-    # 3.15 changes that reach this code are argparse (`suggest_on_error` on by
-    # default), PEP 686 (UTF-8 mode) and the base64url deprecations.
+    # Advisory pre-release watch (#243). CPython 3.15.0 final slipped to
+    # 2026-10-09 (PEP 790; rc3 on 2026-10-02); until then setup-python resolves
+    # 3.15.0-rc.N through allow-prereleases, and `python-version: '3.15'` needs
+    # no edit when the GA build lands — the flag only falls back to a
+    # pre-release while a version line has no GA build. The 3.15 changes that
+    # reach this code are argparse (`suggest_on_error` on by default), PEP 686
+    # (UTF-8 mode) and the base64url deprecations.
     #
     # Deliberately a SEPARATE job rather than a leg of the `test` matrix, which
     # `publish` gates on (`needs: test`): a pre-release regression — or an
@@ -108,27 +108,16 @@ jobs:
     # release. Advisory twice over, then: continue-on-error, and outside the
     # publish gate. Same stance as the windows job above.
     #
-    # It installs [eudi] plus the tools it actually runs — NOT [dev], and never
-    # [ldp]/[ldp-sd]:
-    #   * pyld declares lxml as a hard dependency, and lxml publishes no cp315
-    #     wheel in any release (pre-releases included), so [ldp]/[ldp-sd] would
-    #     build it from source against libxml2 headers ubuntu-latest does not
-    #     carry. That is exactly how the first run of this same leg died in
-    #     openvc, and a permanently-red advisory leg teaches everyone to ignore
-    #     CI. The Data Integrity suites importorskip here (75 skips), so the
-    #     ecdsa-sd-2023 gate is left unset on purpose — tests read
-    #     OPENBADGES_REQUIRE_LDP_SD by value, so omitting it means skip, not
-    #     fail (the `test` job above is where that extra is demanded, #221).
-    #   * [dev] pulls mypy — whose 2.x line depends on librt, the mypyc runtime:
-    #     C only, no pure-Python fallback, no cp315 wheel, and it compiles
-    #     against private CPython headers — and pdoc -> jinja2 -> MarkupSafe,
-    #     which has never published a pure wheel. `mypy --strict` stays
-    #     authoritative on the 3.10-3.14 matrix; the docs build lives in
-    #     docs.yml. Neither says anything about 3.15 that this leg needs.
-    # `--only-binary :all:` makes a missing wheel a loud install failure instead
-    # of a silent source build. When lxml ships cp315 wheels the extras can
-    # widen; when 3.15.0 is GA, drop continue-on-error and fold this into the
-    # matrix with the trove classifier (that part is a `build:` change, #243).
+    # Otherwise it runs exactly what a `test` leg runs: the same extras, the
+    # same REQUIRE flags (a Data Integrity or OID4VCI suite that skips is a
+    # failure, #221) and the same coverage gate. Until 2026-10 it installed
+    # only [eudi]: lxml (via pyld) had no cp315 wheel, and neither had librt
+    # (mypy) or MarkupSafe (pdoc). lxml 6.1.3, librt 0.16.0 and MarkupSafe
+    # 3.0.4 now ship them. `--only-binary :all:` keeps the next missing wheel a
+    # loud install failure instead of a silent source build.
+    #
+    # When 3.15.0 is GA: add '3.15' to the `test` matrix, delete this job and
+    # add the trove classifier (that part is a `build:` change, #243).
     name: pre-release watch (py3.15, advisory)
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -143,11 +132,10 @@ jobs:
           allow-prereleases: true
           cache: pip
 
-      - name: Install the package with [eudi] and the test tools (wheels only)
+      - name: Install package and dev dependencies (wheels only)
         run: |
           python -m pip install --upgrade pip
-          pip install --only-binary :all: -e ".[eudi]" \
-            pytest flake8 "jsonschema[format-nongpl]>=4.20"
+          pip install --only-binary :all: -e ".[dev,ldp,eudi,ldp-sd,oid4vci]"
 
       - name: Record the resolved interpreter and dependency set
         run: |
@@ -157,13 +145,14 @@ jobs:
       - name: Lint (flake8)
         run: flake8 openbadgeslib tests
 
+      - name: Type check (mypy)
+        run: mypy
+
       - name: Test (pytest)
-        # No --cov on this leg: fail_under = 93 lives in [tool.coverage.report],
-        # so it applies to every `pytest --cov` run, and without the pyld-gated
-        # suites coverage measures 91.98% — the gate would fire for a reason
-        # that has nothing to do with 3.15. Coverage stays enforced in the
-        # `test` job, which installs [ldp,ldp-sd] and measures 94.06%.
-        run: pytest
+        env:
+          OPENBADGES_REQUIRE_LDP_SD: '1'
+          OPENBADGES_REQUIRE_OID4VCI: '1'
+        run: pytest --cov=openbadgeslib --cov-report=term-missing
 
   eudi:
     # Hardening for the optional [eudi] SD-JWT VC track, which delegates its
