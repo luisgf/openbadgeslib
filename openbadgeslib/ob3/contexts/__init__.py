@@ -92,10 +92,15 @@ _URL_TO_RESOURCE: Dict[str, str] = {
     'https://purl.imsglobal.org/spec/ob/v3p0/extensions.json':
         'ob-v3p0-extensions.json',
     # The unversioned OB3 context URL is an internal alias to our latest
-    # bundled revision (3.0.3). We deliberately pin it here rather than mirror
-    # 1EdTech's moving unversioned endpoint (which currently serves an older
-    # revision matching none we ship); the context-drift check skips it for
-    # that reason.
+    # bundled revision (3.0.3); our own issuance never emits it (credential.py
+    # names context-3.0.3.json). We deliberately pin it here rather than mirror
+    # 1EdTech's moving unversioned endpoint (#324). Re-checked 2026-10-04: that
+    # endpoint serves an older revision (sha256 b077fa13…dd48ac10, closest to
+    # 3.0.1 but byte-identical to none of 3.0.1-3.0.3) whose top-level `name`
+    # and `description` redefine terms the VC 2.0 context marks @protected, so
+    # a JSON-LD 1.1 processor cannot even expand a VC 2.0 credential against
+    # it. Mirroring it would make every credential naming this URL fail. The
+    # context-drift check skips it for the same reason.
     'https://purl.imsglobal.org/spec/ob/v3p0/context.json':
         'ob-v3p0-context-3.0.3.json',
     'https://w3id.org/security/data-integrity/v2':
@@ -111,6 +116,16 @@ def load_context(url: str) -> dict[str, Any]:
     Raises UnknownContextError for any URL outside the allowlist — the match
     is an exact string comparison, with no scheme/case/slash normalisation
     (fail closed).
+
+    The unversioned ``https://purl.imsglobal.org/spec/ob/v3p0/context.json``
+    resolves to the bundled 3.0.3 revision, not to what 1EdTech serves at that
+    URL today: an older revision that redefines ``name`` and ``description``,
+    terms the VC 2.0 context protects, so no JSON-LD 1.1 processor can use it
+    with a VC 2.0 credential. A third-party credential naming the unversioned
+    URL therefore verifies only if its issuer signed against definitions
+    equivalent to 3.0.3 for the terms it uses; otherwise verification fails
+    closed with a signature mismatch. Credentials this library issues name
+    ``context-3.0.3.json`` and are unaffected.
     """
     resource = _URL_TO_RESOURCE.get(url)
     if resource is None:
