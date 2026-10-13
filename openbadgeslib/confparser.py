@@ -593,11 +593,14 @@ class ConfParser():
         self.parser = ConfigParser(interpolation=ExtendedInterpolation())
 
         try:
-            self.parser.read(self.config_file)
-        except UnicodeDecodeError:
-            # We should raise an UnicodeDecodeError, but the error message is too cryptic.#
-            raise ConfigError("The encoding of the configuration file and the default encoding of "
-                              "the operating system mismatch") from None
+            # Always UTF-8 (a BOM, as some Windows editors write, is skipped):
+            # the locale encoding would make the same file read differently
+            # across platforms and across 3.10-3.15 (PEP 686).
+            self.parser.read(self.config_file, encoding='utf-8-sig')
+        except UnicodeDecodeError as exc:
+            # The raw UnicodeDecodeError message is too cryptic.
+            raise ConfigError("Configuration file %s is not valid UTF-8: %s"
+                              % (self.config_file, exc)) from None
         except ConfigParserError as exc:
             # Malformed INI syntax (duplicate section/option, a value line
             # with no section header before it, ...) raises directly from

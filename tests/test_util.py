@@ -188,6 +188,20 @@ class TestDownloadFile:
             with pytest.raises(URLError):
                 download_file('https://example.com/file')
 
+    def test_http_error_response_is_closed(self):
+        # An HTTPError owns the response body; callers that swallow the error
+        # (OB1 key fetch) must not leave it open for GC to clean up.
+        import io
+        from urllib.error import HTTPError
+        body = io.BytesIO(b'not found')
+        error = HTTPError('https://example.com/file', 404, 'Not Found', {}, body)
+        mock_opener = _mock_opener(open_side_effect=error)
+        with patch('openbadgeslib.util.request.build_opener', return_value=mock_opener):
+            with pytest.raises(HTTPError) as exc:
+                download_file('https://example.com/file')
+        assert exc.value.code == 404
+        assert body.closed
+
     def test_oversized_response_raises(self):
         from openbadgeslib.util import MAX_DOWNLOAD_SIZE
         chunk = b'x' * 65536

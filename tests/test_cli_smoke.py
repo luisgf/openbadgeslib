@@ -466,10 +466,17 @@ def test_verifier_garbage_pubkey_file_exits_cleanly(tmp_path, svg_rsa_badge, cap
 
     argv = ['openbadges-verifier', '-i', str(badge_file),
             '-r', 'recipient@example.com', '-V', '1', '-k', str(garbage)]
-    with patch.object(sys, 'argv', argv):
+    # Keep the OB1 key/revocation fetches offline: they fail as they would
+    # with no network, instead of reaching the badge's example.com URLs.
+    offline = OSError('offline (test)')
+    with patch.object(sys, 'argv', argv), \
+            patch('openbadgeslib.ob1.badge.download_file', side_effect=offline), \
+            patch('openbadgeslib.ob1.verifier.download_file', side_effect=offline):
         with pytest.raises(SystemExit):
             openbadges_verifier.main()
-    assert '[-]' in capsys.readouterr().out
+    # The key diagnostic itself: a bare '[-]' would also match the offline
+    # revocation failure that a valid key reaches.
+    assert '[-] Unable to guess Key type' in capsys.readouterr().out
 
 
 def test_verifier_local_and_pubkey_are_mutually_exclusive():
@@ -916,6 +923,26 @@ def test_signer_log_is_owner_only_under_permissive_umask(tmp_path):
         os.umask(old)
     mode = stat.S_IMODE(log.stat().st_mode)
     assert mode == 0o600, 'signer.log has mode %o, expected 0600' % mode
+
+
+def test_signer_log_is_utf8(tmp_path, monkeypatch):
+    # A non-ASCII recipient is logged as UTF-8 whatever the locale encoding,
+    # so the append cannot fail after the badge is already written. The
+    # encoding is checked explicitly: under a UTF-8 locale (and on 3.15,
+    # PEP 686) the read-back alone would pass without it.
+    from openbadgeslib import openbadges_signer
+    real_fdopen = openbadges_signer.os.fdopen
+    recorded = {}
+
+    def spy_fdopen(fd, *args, **kwargs):
+        recorded.update(kwargs)
+        return real_fdopen(fd, *args, **kwargs)
+
+    monkeypatch.setattr(openbadges_signer.os, 'fdopen', spy_fdopen)
+    log = tmp_path / 'signer.log'
+    openbadges_signer._append_signer_log(str(log), 'SIGNED for begoña@example.com')
+    assert recorded.get('encoding') == 'utf-8'
+    assert log.read_text(encoding='utf-8') == 'SIGNED for begoña@example.com\n'
 
 
 def test_signer_ob2_mail_badge_sends(tmp_path):

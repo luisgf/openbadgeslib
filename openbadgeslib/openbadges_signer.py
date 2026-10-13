@@ -73,7 +73,9 @@ def _append_signer_log(path: str, line: str) -> None:
     try:
         if hasattr(os, 'fchmod'):
             os.fchmod(fd, 0o600)
-        with os.fdopen(fd, 'a') as f:
+        # UTF-8 so a non-ASCII recipient cannot fail the write under a
+        # legacy locale encoding after the badge is already saved.
+        with os.fdopen(fd, 'a', encoding='utf-8') as f:
             fd = -1
             f.write(line + '\n')
     except Exception:
@@ -213,10 +215,15 @@ def _gather_recipients(args: argparse.Namespace) -> list[str]:
     recipients = list(args.receptor or [])
     if args.recipients_file:
         try:
-            with open(args.recipients_file, encoding='utf-8') as f:
+            # A BOM (some Windows editors write one) would otherwise stick to
+            # the first recipient, which str.strip() does not remove.
+            with open(args.recipients_file, encoding='utf-8-sig') as f:
                 text = f.read()
         except OSError as exc:
             sys.exit("[!] Could not read --recipients-file %s: %s"
+                     % (args.recipients_file, exc))
+        except UnicodeDecodeError as exc:
+            sys.exit("[!] --recipients-file %s is not valid UTF-8: %s"
                      % (args.recipients_file, exc))
         for line in text.splitlines():
             for cell in line.split(','):

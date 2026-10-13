@@ -250,12 +250,26 @@ class SqliteOID4VCIStore:
             conn = sqlite3.connect(self.path, timeout=self._timeout,
                                    isolation_level=None,
                                    check_same_thread=False)
-            self._configure(conn)
-            self._migrate(conn)
         except sqlite3.Error as exc:
             raise OID4VCIStoreError(
                 'could not open the OID4VCI store at %s: %s'
                 % (self.path, exc)) from exc
+        try:
+            self._configure(conn)
+            self._migrate(conn)
+        except BaseException as exc:
+            # Not cached and not in self._conns yet, so close() would never
+            # reach it: close it here rather than leak the handle until GC. A
+            # failing close must not mask the configure/migrate error.
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+            if isinstance(exc, sqlite3.Error):
+                raise OID4VCIStoreError(
+                    'could not open the OID4VCI store at %s: %s'
+                    % (self.path, exc)) from exc
+            raise
         self._local.conn = conn
         self._local.gen = self._generation
         with self._conns_lock:

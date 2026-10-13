@@ -2,6 +2,8 @@ openbadgeslib is driven by a single `config.ini` file (created by `openbadges-in
 
 The parser uses Python's `configparser` with **ExtendedInterpolation**, so values can reference other values with `${...}` (see [[#extendedinterpolation]] below). A working template ships as `openbadgeslib/config.ini.example`.
 
+Save the file (and any mail template it points to) as **UTF-8**: it is read as UTF-8 on every platform and Python version, whatever the system locale, and a leading byte-order mark is ignored. A config file that is not valid UTF-8 is rejected at load time with a `ConfigError`; a mail template that is not valid UTF-8 makes `-M` (OB1, `-V 1`) report a mail error naming the file (the badge is still signed and saved).
+
 ## File structure
 
 A `config.ini` contains these sections:

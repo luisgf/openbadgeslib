@@ -36,6 +36,7 @@ from collections import OrderedDict
 from datetime import timedelta
 from typing import Any, Callable, List, Optional, Union, overload
 from urllib import request
+from urllib.error import HTTPError
 from urllib.parse import urlparse
 
 # A value that is accepted as either text or raw bytes (encoded to UTF-8).
@@ -382,7 +383,14 @@ def download_file(url: str, allow_insecure: bool = False,
         handlers.insert(0, _PinnedHTTPHandler(allow_private))
     opener = request.build_opener(*handlers)
     deadline = time.monotonic() + MAX_DOWNLOAD_SECONDS
-    with opener.open(url, timeout=30) as response:
+    try:
+        resp_cm = opener.open(url, timeout=30)
+    except HTTPError as exc:
+        # The error owns the response's socket; callers that swallow it would
+        # otherwise leave it to GC (a ResourceWarning on recent Pythons).
+        exc.close()
+        raise
+    with resp_cm as response:
         chunks = []
         total = 0
         while True:

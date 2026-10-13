@@ -126,8 +126,15 @@ class BadgeMail():
         """ Return the Subject and Body of the Email. The first line of the file
         is used as Subject """
 
-        with open(file, 'r') as f:
-            data = f.readlines()
+        # UTF-8 on every platform and Python (PEP 686); a BOM is skipped so it
+        # cannot end up in the Subject.
+        try:
+            with open(file, 'r', encoding='utf-8-sig') as f:
+                data = f.readlines()
+        except UnicodeDecodeError as exc:
+            # Name the file: the bare codec message does not say what failed.
+            raise ValueError('Mail template %s is not valid UTF-8: %s'
+                             % (file, exc)) from exc
 
         if data:
             return data[0].strip('\n'), ''.join(data[1:])

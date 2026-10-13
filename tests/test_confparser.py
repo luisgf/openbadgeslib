@@ -301,6 +301,32 @@ class TestUrlUserinfoRejected:
             ConfParser(path).read_conf()
 
 
+class TestEncoding:
+    """The config is read as UTF-8 on every platform and Python, not in the
+    locale encoding — which PEP 686 changes between 3.14 and 3.15."""
+
+    def test_non_ascii_utf8_value_round_trips(self, tmp_path):
+        p = tmp_path / 'config.ini'
+        p.write_bytes('[paths]\nbase = .\n\n[issuer]\nname = Universidad de Córdoba\n'
+                      .encode('utf-8'))
+        conf = ConfParser(str(p)).read_conf()
+        assert conf['issuer']['name'] == 'Universidad de Córdoba'
+
+    def test_utf8_bom_is_skipped(self, tmp_path):
+        # A BOM must not turn the first section header into a parse error.
+        p = tmp_path / 'config.ini'
+        p.write_bytes(b'\xef\xbb\xbf[paths]\nbase = .\n')
+        assert ConfParser(str(p)).read_conf()['paths']['base'] == str(tmp_path)
+
+    def test_non_utf8_file_raises_a_clear_config_error(self, tmp_path):
+        from openbadgeslib.errors import ConfigError
+        p = tmp_path / 'config.ini'
+        p.write_bytes('[paths]\nbase = .\n\n[issuer]\nname = Córdoba\n'
+                      .encode('cp1252'))
+        with pytest.raises(ConfigError, match='not valid UTF-8'):
+            ConfParser(str(p)).read_conf()
+
+
 class TestReadConfigOrExit:
     """read_config_or_exit() is the shared CLI wrapper; a malformed config must
     exit cleanly (SystemExit + '[!] ...'), not leak read_conf()'s ValueError."""

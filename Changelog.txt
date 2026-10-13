@@ -24,6 +24,28 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     (a module-based filter does not match; details on the Installation
     wiki page).
 
+  - fix: configuration files and mail templates are read as UTF-8 (a leading
+    BOM is skipped) and `signer.log` is written as UTF-8 on every platform,
+    instead of in the locale encoding. Python 3.15 made UTF-8 the default
+    (PEP 686), so on Windows the same non-ASCII config used to be read
+    differently (and baked into badges garbled) on 3.10–3.14; a config that
+    is not valid UTF-8 now fails on every version with a `ConfigError` that
+    says so, and such a mail template makes `-M` report a mail error naming
+    the file. `--recipients-file`, already read as UTF-8, now also skips a
+    BOM (it used to stick to the first recipient) and reports a file that is
+    not valid UTF-8 instead of failing with a traceback.
+
+  - fix(oid4vci): `SqliteOID4VCIStore` closes the SQLite connection it opened
+    when configuring or migrating it fails (e.g. an unknown schema version),
+    instead of leaking the handle until garbage collection.
+
+  - fix: `download_file` closes the response held by an `HTTPError` before
+    re-raising it, so a caller that tolerates a failed fetch (the OB1 key and
+    revocation lookups) no longer leaves the socket to garbage collection
+    (a `ResourceWarning` on recent Pythons). The error's body is therefore
+    no longer readable once it propagates; its `.code`, `.headers` and
+    message are unaffected.
+
 
 * v4.5.0 - 2026-09-12
 
