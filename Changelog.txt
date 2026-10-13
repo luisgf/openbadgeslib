@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v4.6.0 - unreleased
+* v4.6.0 - 2026-10-13
 
   - feat: Python 3.15 is officially supported (#243). It joins the
     publish-gating CI test matrix (lint + mypy + the full suite with every
