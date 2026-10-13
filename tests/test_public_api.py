@@ -59,11 +59,16 @@ class TestBareImportIsClean:
     def test_bare_import_does_not_warn(self):
         # A plain `import openbadgeslib` must not drag in (or warn about) the
         # legacy OB1 shims — those stay lazy. The modern facades are imported
-        # eagerly (so pdoc documents them, #267) and warn about nothing.
+        # eagerly (so pdoc documents them, #267) and warn about nothing. The
+        # one exception is Python 3.10's own deprecation (#242), which any
+        # first import on 3.10 emits by design.
         import importlib
         import openbadgeslib
         with warnings.catch_warnings():
             warnings.simplefilter('error', DeprecationWarning)
+            warnings.filterwarnings(
+                'ignore', r'Python 3\.10 is deprecated in openbadgeslib',
+                DeprecationWarning)
             importlib.reload(openbadgeslib)
             assert openbadgeslib.issue_from_conf is not None
             assert openbadgeslib.verify_badge is not None

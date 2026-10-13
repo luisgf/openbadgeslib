@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml/badge.svg)](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/openbadgeslib.svg)](https://pypi.org/project/openbadgeslib/)
-[![Python](https://img.shields.io/badge/python-3.10%E2%80%933.14-blue.svg)](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%E2%80%933.15-blue.svg)](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-LGPLv3%20%2F%20BSD-blue.svg)](#license)
 
 **A production-ready Python library & CLI for the full Open Badges 3.0 issuer
@@ -13,7 +13,7 @@ with W3C Bitstring Status Lists and `did:web`. It also ships strict
 **OpenBadges 2.0** (JWS / hosted assertions) and a frozen **OpenBadges 1.0**
 legacy format, selected with `-V {1,2,3}` (default `3`).
 
-> **4.0.0 is released** (2026-07-22). It groups the breaking changes so upgrades stay rare: every CLI unifies on one `0/1/2` exit-code contract (a valid-but-untrusted badge now exits `2`, and the 255s are gone), and the legacy pycryptodome/python-ecdsa compat shim is removed — a live key **object** from either is no longer accepted, though key *files* are plain PEM and round-trip unchanged. OpenBadges 1.0 and the `openbadges-<command>` scripts stay, and a new unified `openbadges <command>` front-end joins them. **Python 3.10 is still supported** (`requires-python >= 3.10`, tested in CI on 3.10–3.14); dropping it is deferred to its end of life. See **[Upgrading to 4.0](https://github.com/luisgf/openbadgeslib/wiki/Upgrading-to-4.0)** before pinning a major.
+> **4.0.0 is released** (2026-07-22). It groups the breaking changes so upgrades stay rare: every CLI unifies on one `0/1/2` exit-code contract (a valid-but-untrusted badge now exits `2`, and the 255s are gone), and the legacy pycryptodome/python-ecdsa compat shim is removed — a live key **object** from either is no longer accepted, though key *files* are plain PEM and round-trip unchanged. OpenBadges 1.0 and the `openbadges-<command>` scripts stay, and a new unified `openbadges <command>` front-end joins them. **Python 3.10 stays supported throughout 4.x** (`requires-python >= 3.10`; CI tests 3.10–3.15) but is deprecated since 4.6.0, ahead of its 2026-10-31 end of life; 5.0 drops it and requires Python 3.11+. See **[Upgrading to 4.0](https://github.com/luisgf/openbadgeslib/wiki/Upgrading-to-4.0)** before pinning a major.
 
 ## Features
 
@@ -41,7 +41,7 @@ legacy format, selected with `-V {1,2,3}` (default `3`).
   (EdDSA) — *plus* native **W3C Data Integrity / LDP** signing
   (`eddsa-rdfc-2022`, Ed25519, optional `[ldp]` extra). Both proof formats
   issue *and* verify offline, no external service.
-- **Lean and typed** — `mypy --strict`, CI on Python 3.10–3.14, a small
+- **Lean and typed** — `mypy --strict`, CI on Python 3.10–3.15, a small
   dependency set, dataclasses + explicit validation (no Pydantic).
 - **Dual-licensed** LGPLv3 (library) / BSD-2-Clause (CLI tools).
 
@@ -67,7 +67,7 @@ additive EUDI SD-JWT VC wallet track.
 | `did:web` (generate + resolve) | ✅ | — | — | — | resolve only |
 | Image baking (SVG + PNG) | ✅ | unbake only | ✅ | — | — |
 | Form factor | library + CLI (`openbadges` + 5 aliases) | library + CLI | Django server | library | binding |
-| Typing / CI | `mypy --strict`, CI 3.10–3.14 | — | — | Pydantic | — |
+| Typing / CI | `mypy --strict`, CI 3.10–3.15 | — | — | Pydantic | — |
 | License | LGPLv3 / BSD-2 | Apache-2.0 | AGPL-3.0 | MIT/LGPL | Apache-2.0 |
 
 (a) The actively-maintained community fork (open-educational-badges): it
@@ -86,7 +86,10 @@ all three OB versions.
 
 ## Requirements
 
-- Python >= 3.10 (tested on 3.10–3.14)
+- Python >= 3.10 (tested on 3.10–3.15). Python 3.10 is deprecated since
+  4.6.0 — importing openbadgeslib on it emits a `DeprecationWarning` — and
+  openbadgeslib 5.0 will require Python 3.11 or newer
+  ([#242](https://github.com/luisgf/openbadgeslib/issues/242)).
 - [pypng](https://pypi.org/project/pypng/) >= 0.20220715.0
 - [PyJWT[crypto]](https://pypi.org/project/PyJWT/) >= 2.13
 - [cryptography](https://pypi.org/project/cryptography/) >= 45

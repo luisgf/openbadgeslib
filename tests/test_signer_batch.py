@@ -156,6 +156,24 @@ def test_recipients_file_and_dedup(tmp_path, capsys):
         {'a@e.com', 'b@e.com', 'c@e.com', 'd@e.com'}       # a@e.com not doubled
 
 
+def test_recipients_file_skips_a_bom(tmp_path):
+    # A Windows editor's BOM must not stick to the first recipient.
+    import argparse
+    rfile = tmp_path / 'recipients.txt'
+    rfile.write_bytes(b'\xef\xbb\xbf' + 'begoña@e.com\nb@e.com\n'.encode('utf-8'))
+    args = argparse.Namespace(receptor=None, recipients_file=str(rfile))
+    assert openbadges_signer._gather_recipients(args) == ['begoña@e.com', 'b@e.com']
+
+
+def test_recipients_file_not_utf8_exits_cleanly(tmp_path):
+    import argparse
+    rfile = tmp_path / 'recipients.txt'
+    rfile.write_bytes('josé@e.com\n'.encode('cp1252'))
+    args = argparse.Namespace(receptor=None, recipients_file=str(rfile))
+    with pytest.raises(SystemExit, match='is not valid UTF-8'):
+        openbadges_signer._gather_recipients(args)
+
+
 def test_batch_isolates_unsafe_recipient(tmp_path, capsys):
     # An unsafe recipient (path separator) is skipped with a reason; the good
     # one still issues — one bad recipient does not abort the batch.

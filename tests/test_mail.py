@@ -111,6 +111,25 @@ class TestMailContent:
         assert subject == 'Subject line'
         assert body == 'body line 1\nbody line 2\n'
 
+    def test_template_is_read_as_utf8_and_a_bom_is_skipped(self, tmp_path):
+        # UTF-8 on every platform and Python (PEP 686), and a BOM from a
+        # Windows editor must not leak into the Subject.
+        f = tmp_path / 'mail.txt'
+        f.write_bytes(b'\xef\xbb\xbf' + 'Tu insignia, Begoña\nEnhorabuena\n'
+                      .encode('utf-8'))
+        subject, body = BadgeMail().get_mail_content(str(f))
+        assert subject == 'Tu insignia, Begoña'
+        assert body == 'Enhorabuena\n'
+
+    def test_template_not_utf8_names_the_file(self, tmp_path):
+        # A ValueError (which the signer reports) naming the template, not a
+        # bare codec message.
+        f = tmp_path / 'mail.txt'
+        f.write_bytes('Tu insignia, Begoña\n'.encode('cp1252'))
+        with pytest.raises(ValueError, match='Mail template .*mail.txt is not '
+                                             'valid UTF-8'):
+            BadgeMail().get_mail_content(str(f))
+
     def test_empty_file_returns_none_none(self, tmp_path):
         f = tmp_path / 'empty.txt'
         f.write_text('')

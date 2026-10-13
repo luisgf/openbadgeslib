@@ -363,20 +363,27 @@ class TestHumanModeExitCodes:
         assert code == 0
 
     def test_ob1_invalid_exits_nonzero(self, tmp_path, signed_svg_rsa,
-                                       rsa_pub_pem):
+                                       rsa_pub_pem, capsys):
         # A well-formed OB1 badge for test@example.com, verified for a different
         # recipient -> INVALID verdict (the else branch), which must exit
         # non-zero. read_from_file resolves the key via download_file (mocked).
+        # The revocation chain is served offline — the badge JSON, then an
+        # issuer with no revocationList (not revoked) — so the verdict is the
+        # identity check's; a third fetch would raise StopIteration.
         badge = tmp_path / 'badge.svg'
         badge.write_bytes(signed_svg_rsa.signed)
         pub = tmp_path / 'k.pem'
         pub.write_bytes(rsa_pub_pem)
         with patch('openbadgeslib.ob1.badge.download_file',
-                   return_value=rsa_pub_pem):
+                   return_value=rsa_pub_pem), \
+                patch('openbadgeslib.ob1.verifier.download_file',
+                      side_effect=[b'{"issuer": "https://example.com/issuer.json"}',
+                                   b'{}']):
             code = self._code(['openbadges-verifier', '-i', str(badge),
                                '-r', 'wrong@example.com', '-V', '1',
                                '-k', str(pub)])
         assert code == 1                       # invalid -> 1 (was 255, #233)
+        assert 'Identity mismatch for: wrong@example.com' in capsys.readouterr().out
 
     # A valid-but-untrusted badge exits 2 in human mode: pinned by the smoke
     # tests test_verifier_ob2_without_trusted_key_warns and

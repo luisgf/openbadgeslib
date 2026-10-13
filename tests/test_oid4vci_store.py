@@ -621,15 +621,52 @@ class TestSqliteSpecifics:
         finally:
             conn.close()
 
-    def test_an_unknown_schema_version_is_refused(self, tmp_path):
+    def test_an_unknown_schema_version_is_refused(self, tmp_path, monkeypatch):
         path = str(tmp_path / 'state' / 'oid4vci.sqlite3')
         store = SqliteOID4VCIStore(path)
         store.close()
         conn = sqlite3.connect(path)
         conn.execute('PRAGMA user_version = 99')
         conn.close()
+        opened = []
+        real_connect = sqlite3.connect
+
+        def spy_connect(*args, **kwargs):
+            opened.append(real_connect(*args, **kwargs))
+            return opened[-1]
+
+        monkeypatch.setattr(
+            'openbadgeslib.oid4vci.sqlite_store.sqlite3.connect', spy_connect)
         with pytest.raises(OID4VCIStoreError, match='schema version'):
             SqliteOID4VCIStore(path)
+        # The refused connection is closed, not leaked until GC.
+        assert opened
+        for leaked in opened:
+            with pytest.raises(sqlite3.ProgrammingError):
+                leaked.execute('SELECT 1')
+
+    def test_a_file_that_is_not_a_database_is_refused(self, tmp_path,
+                                                      monkeypatch):
+        # The sqlite3.Error from configuring it is wrapped, and the connection
+        # that raised it is closed.
+        path = tmp_path / 'oid4vci.sqlite3'
+        path.write_bytes(b'this is not an SQLite database, just text' * 50)
+        opened = []
+        real_connect = sqlite3.connect
+
+        def spy_connect(*args, **kwargs):
+            opened.append(real_connect(*args, **kwargs))
+            return opened[-1]
+
+        monkeypatch.setattr(
+            'openbadgeslib.oid4vci.sqlite_store.sqlite3.connect', spy_connect)
+        with pytest.raises(OID4VCIStoreError, match='not a database') as info:
+            SqliteOID4VCIStore(str(path))
+        assert isinstance(info.value.__cause__, sqlite3.DatabaseError)
+        assert opened
+        for leaked in opened:
+            with pytest.raises(sqlite3.ProgrammingError):
+                leaked.execute('SELECT 1')
 
     @pytest.mark.skipif(sys.platform == 'win32',
                         reason='POSIX file modes')
@@ -653,7 +690,8 @@ class TestSqliteSpecifics:
         blob = b''
         for suffix in ('', '-wal'):
             try:
-                blob += open(sqlite_store.path + suffix, 'rb').read()
+                with open(sqlite_store.path + suffix, 'rb') as f:
+                    blob += f.read()
             except FileNotFoundError:
                 pass
         # The issuer must know who it issues to, so the address is there...

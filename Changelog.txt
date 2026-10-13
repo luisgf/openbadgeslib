@@ -4,6 +4,49 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v4.6.0 - unreleased
+
+  - feat: Python 3.15 is officially supported (#243). It joins the
+    publish-gating CI test matrix (lint + mypy + the full suite with every
+    optional extra now run on 3.10–3.15) and gets its trove classifier, so it
+    shows as supported on PyPI. Until now 3.15 only ran as an advisory,
+    non-gating pre-release job, which is retired.
+
+  - feat: Python 3.10 is deprecated (CPython end of life: 2026-10-31).
+    Importing openbadgeslib on 3.10 now emits a `DeprecationWarning` (shown
+    by default only for scripts and the installed `openbadges*` console
+    tools, once, on stderr). Nothing else changes in 4.x: `requires-python`,
+    the 3.10 classifier and CI leg stay. 5.0 drops 3.10 and requires Python
+    3.11+ (#242). To silence it, including in a test suite run with
+    `filterwarnings = error`, which otherwise fails at import, add the
+    message filter
+    `ignore:Python 3.10 is deprecated in openbadgeslib:DeprecationWarning`
+    (a module-based filter does not match; details on the Installation
+    wiki page).
+
+  - fix: configuration files and mail templates are read as UTF-8 (a leading
+    BOM is skipped) and `signer.log` is written as UTF-8 on every platform,
+    instead of in the locale encoding. Python 3.15 made UTF-8 the default
+    (PEP 686), so on Windows the same non-ASCII config used to be read
+    differently (and baked into badges garbled) on 3.10–3.14; a config that
+    is not valid UTF-8 now fails on every version with a `ConfigError` that
+    says so, and such a mail template makes `-M` report a mail error naming
+    the file. `--recipients-file`, already read as UTF-8, now also skips a
+    BOM (it used to stick to the first recipient) and reports a file that is
+    not valid UTF-8 instead of failing with a traceback.
+
+  - fix(oid4vci): `SqliteOID4VCIStore` closes the SQLite connection it opened
+    when configuring or migrating it fails (e.g. an unknown schema version),
+    instead of leaking the handle until garbage collection.
+
+  - fix: `download_file` closes the response held by an `HTTPError` before
+    re-raising it, so a caller that tolerates a failed fetch (the OB1 key and
+    revocation lookups) no longer leaves the socket to garbage collection
+    (a `ResourceWarning` on recent Pythons). The error's body is therefore
+    no longer readable once it propagates; its `.code`, `.headers` and
+    message are unaffected.
+
+
 * v4.5.0 - 2026-09-12
 
   - feat(ob3): public `decode_encoded_list(encoded) -> bytes` and

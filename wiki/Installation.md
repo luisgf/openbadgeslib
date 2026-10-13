@@ -2,7 +2,7 @@ This page covers installing **openbadgeslib** with pip or conda, including a dev
 
 ## Requirements
 
-* **Python >= 3.10** (tested in CI on 3.10, 3.11, 3.12, 3.13 and 3.14)
+* **Python >= 3.10** (tested in CI on 3.10–3.15); 3.10 is deprecated since 4.6.0, see [Python 3.10 deprecation](#python-310-deprecation) below.
 * A web server (Apache, Nginx, or IIS) and a valid TLS certificate if you intend to publish badge metadata online
 
 ### Runtime dependencies
@@ -15,6 +15,14 @@ These are resolved automatically when you install via pip:
 | `PyJWT[crypto]` | `>=2.13` | JWS / JWT-VC signing and verification (pulls in `cryptography`; security floor) |
 | `cryptography` | `>=45` | All key generation, PEM handling and signing (RSA, ECC, Ed25519) |
 | `defusedxml` | `>=0.7` | Hardened XML parsing of untrusted SVG badges |
+
+### Python 3.10 deprecation
+
+Python 3.10 reaches end of life on 2026-10-31. Since 4.6.0, importing openbadgeslib on it emits a `DeprecationWarning`; it stays fully supported through 4.x, and openbadgeslib 5.0 will require Python 3.11 or newer ([#242](https://github.com/luisgf/openbadgeslib/issues/242)). See the support policy in [[Contributing]].
+
+* **Where it shows.** Python shows it by default only when a script or one of the installed console tools (`openbadges`, `openbadges-*`) imports openbadgeslib: once per run, on stderr. Stdout, `--json` output and exit codes are unchanged. It stays hidden when another library imports openbadgeslib, and under `python -m openbadgeslib.<tool>` (PEP 565).
+* **Silencing it.** Set `PYTHONWARNINGS='ignore:Python 3.10 is deprecated in openbadgeslib:DeprecationWarning'`, or pass that same filter with `-W`.
+* **Test suites.** A suite that turns warnings into errors (pytest `filterwarnings = error`, `-W error`) fails at import on 3.10 until it adds that same filter to its own. A module-based filter does not match: the warning is attributed to the code that imports openbadgeslib.
 
 ## Install from PyPI
 
