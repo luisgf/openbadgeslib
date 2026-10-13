@@ -48,6 +48,8 @@ import struct
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
+from .._jws.utils import base64url_decode
+
 #: exp (8 bytes, big endian) + 16 random + 16-byte truncated HMAC tag.
 _EXP_BYTES = 8
 _RAND_BYTES = 16
@@ -125,7 +127,7 @@ def _decode(nonce: str) -> Optional[bytes]:
     if not isinstance(nonce, str) or not nonce:
         return None
     try:
-        return base64.urlsafe_b64decode(nonce + '=' * (-len(nonce) % 4))
+        return base64url_decode(nonce)
     except (binascii.Error, ValueError):
         return None
 
