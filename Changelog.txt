@@ -46,6 +46,25 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     no longer readable once it propagates; its `.code`, `.headers` and
     message are unaffected.
 
+  - security(jws): base64url is decoded strictly and canonically (RFC 4648
+    §5): the URL-safe alphabet, then no `=` padding or exactly the canonical
+    amount, with zero unused trailing bits (§3.5). `urlsafe_b64decode`
+    dropped characters outside the alphabet, took `+`/`/` for `-`/`_` and
+    ignored extra `=` and the trailing bits, so the bytes of one signature
+    had many accepted encodings. A JWS (OB1, OB2) whose signature segment is
+    spelled any other way no longer verifies; whitespace around the whole
+    token, such as a trailing newline, is ignored, but not inside a segment.
+    The library's other base64url decode sites reject the same input as
+    malformed: a status list's JWT payload or multibase (`u`) `encodedList`,
+    the SD-JWT VC issuer header read to route `x5c` (`EudiError`), and an
+    OID4VCI `c_nonce` (invalid, not spent). A bare StatusList2021
+    `encodedList` in the standard base64 alphabet (`+`, `/`, `=`), which
+    that spec allows, still decodes. OB3 JWT-VC tokens and status-list
+    proofs are verified by PyJWT and are unchanged. Prompted by Python 3.15,
+    whose `urlsafe_b64decode` warns (`FutureWarning`) that a future version
+    will discard `+` and `/`, so the same input would decode differently
+    across Python versions.
+
 
 * v4.5.0 - 2026-09-12
 

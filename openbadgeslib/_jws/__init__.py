@@ -127,6 +127,10 @@ def verify_block(msg: Union[str, bytes], key: Optional[Any] = None) -> bool:
     """Verify a JWS compact serialization (bytes or str). Returns True or raises SignatureError."""
     if isinstance(msg, str):
         msg = msg.encode('utf-8')
+    # Transport whitespace around the whole token (a trailing newline from a
+    # file or a third-party baker) is not part of any signed segment; inside
+    # a segment it still fails the strict base64url decode.
+    msg = msg.strip()
 
     try:
         head_b64, payload_b64, sig_b64 = msg.split(b'.')

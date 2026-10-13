@@ -1,15 +1,40 @@
 import base64
+import binascii
 import json
+import re
 
 from typing import Any, Union
 
+_B64URL_ALPHABET = re.compile(rb'[A-Za-z0-9_-]*')
 
-def base64url_decode(data: bytes) -> bytes:
-    # JWS/JWT base64url strips the '=' padding; restore it before decoding.
-    # The required pad count is (-len) % 4, which is 0 when the length is
-    # already a multiple of 4 (the old `4 - len % 4` wrongly added 4 there).
-    data += b'=' * (-len(data) % 4)
-    return base64.urlsafe_b64decode(data)
+
+def base64url_decode(data: Union[str, bytes]) -> bytes:
+    # Strict, canonical RFC 4648 §5: the URL-safe alphabet, then either no
+    # padding (JWS/JWT strip it) or exactly the canonical (-len) % 4 '='
+    # characters, with zero unused trailing bits (§3.5). urlsafe_b64decode()
+    # silently drops other characters, takes '+'/'/' as aliases of '-'/'_'
+    # (Python 3.15 warns that this will change), and ignores extra '=' and
+    # the trailing bits, so the same bytes had many accepted encodings. Every
+    # caller feeds it untrusted input, so anything else raises binascii.Error
+    # (a ValueError); a non-str/bytes argument raises TypeError.
+    if isinstance(data, str):
+        if not data.isascii():
+            raise binascii.Error('base64url data must be ASCII')
+        data = data.encode('ascii')
+    elif isinstance(data, (bytearray, memoryview)):
+        data = bytes(data)
+    elif not isinstance(data, bytes):
+        raise TypeError('base64url data must be str or bytes, not %s'
+                        % type(data).__name__)
+    stripped = data.rstrip(b'=')
+    pad = -len(stripped) % 4
+    if (not _B64URL_ALPHABET.fullmatch(stripped) or len(stripped) % 4 == 1
+            or len(data) - len(stripped) not in (0, pad)):
+        raise binascii.Error('invalid base64url data')
+    raw = base64.urlsafe_b64decode(stripped + b'=' * pad)
+    if base64.urlsafe_b64encode(raw).rstrip(b'=') != stripped:
+        raise binascii.Error('non-canonical base64url data (non-zero pad bits)')
+    return raw
 
 
 def base64url_encode(input: bytes) -> bytes:

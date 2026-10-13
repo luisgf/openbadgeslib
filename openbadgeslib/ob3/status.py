@@ -35,7 +35,6 @@
 # verify the list's JWT-VC proof and bind its issuer to the badge's, closing
 # the gap where a compromised status host could silently un-revoke.
 
-import base64
 import json
 import zlib
 
@@ -44,9 +43,11 @@ from typing import Any, Callable, List, Optional, Union
 
 from .credential import OpenBadgeCredential, _parse_iso
 from .verifier import OB3VerificationError
+from .._jws.utils import base64url_decode
 from ..util import CLOCK_SKEW_LEEWAY, download_file
 
 _SUPPORTED_ENTRY_TYPES = {"BitstringStatusListEntry", "StatusList2021Entry"}
+_STANDARD_TO_URLSAFE = str.maketrans('+/', '-_')
 
 #: Upper bound on a decompressed status-list bitstring. A conformant list is at
 #: least 131072 bits (16 KiB); real lists reach a few hundred KiB. Cap well
@@ -204,7 +205,7 @@ def _status_list_document(raw: bytes) -> dict[str, Any]:
                 and isinstance(doc.get("vc"), dict):
             doc = doc["vc"]
     elif text.count('.') == 2:                       # compact JWS: h.p.s
-        payload = json.loads(_b64url_decode(text.split('.')[1]))
+        payload = json.loads(base64url_decode(text.split('.')[1]))
         doc = payload.get("vc", payload)
     else:
         raise OB3VerificationError("status list is neither JSON nor a JWT")
@@ -315,19 +316,17 @@ def _verify_list_proof(raw: bytes, doc: dict[str, Any], list_url: str,
             "status list %s proof is invalid: %s" % (list_url, exc)) from exc
 
 
-def _b64url_decode(value: str) -> bytes:
-    value += '=' * (-len(value) % 4)
-    return base64.urlsafe_b64decode(value)
-
-
 def decode_encoded_list(encoded: str) -> bytes:
     """Decode a Bitstring Status List ``encodedList`` to the raw bitstring.
 
     Accepts the multibase base64url prefix ``u`` (Bitstring Status List v1.0)
-    or a bare base64url string, then inflates the GZIP payload. The
-    decompressed bitstring is capped at :data:`MAX_STATUS_LIST_BYTES` (5 MiB)
-    so a crafted gzip bomb cannot exhaust memory — the list is fetched from a
-    URL named in an untrusted credential.
+    or a bare string (StatusList2021), then inflates the GZIP payload. The
+    ``u`` form must be strict base64url; the bare form may also use the
+    standard alphabet (``+``/``/``), as StatusList2021 only says "base-64
+    encoded [RFC4648]". The decompressed bitstring is capped at
+    :data:`MAX_STATUS_LIST_BYTES` (5 MiB) so a crafted gzip bomb cannot
+    exhaust memory — the list is fetched from a URL named in an untrusted
+    credential.
 
     Raises:
         ValueError: *encoded* is not a non-empty string, or is not valid
@@ -336,11 +335,14 @@ def decode_encoded_list(encoded: str) -> bytes:
     """
     if not isinstance(encoded, str) or not encoded:
         raise ValueError("encodedList must be a non-empty string")
-    payload = encoded[1:] if encoded.startswith('u') else encoded
+    if encoded.startswith('u'):
+        payload = encoded[1:]
+    else:
+        payload = encoded.translate(_STANDARD_TO_URLSAFE)
     if not payload:
         raise ValueError("encodedList is missing base64url data")
     try:
-        compressed = _b64url_decode(payload)
+        compressed = base64url_decode(payload)
         if not compressed:
             raise ValueError("encodedList is not valid base64url")
         inflator = zlib.decompressobj(wbits=31)   # 31 => gzip framing

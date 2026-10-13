@@ -45,6 +45,7 @@ import json
 from typing import Any, Callable, Iterable, Mapping, Optional, Union, cast
 
 from .credential import OpenBadgeCredential
+from .._jws.utils import base64url_decode
 from ..errors import LibOpenBadgesException, UnknownKeyType
 from ..keys import (
     KeyType, detect_key_type, ec_curve_from_pem, public_jwk_from_pem)
@@ -720,8 +721,7 @@ def _issuer_jwt_has_x5c(token: str) -> bool:
     """
     header_b64 = token.split("~", 1)[0].split(".", 1)[0]
     try:
-        padded = header_b64 + "=" * (-len(header_b64) % 4)
-        header = json.loads(base64.urlsafe_b64decode(padded))
+        header = json.loads(base64url_decode(header_b64))
     except (ValueError, TypeError) as exc:
         raise EudiError(
             "could not parse the SD-JWT issuer JWT header: %s" % exc) from exc

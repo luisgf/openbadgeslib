@@ -65,7 +65,8 @@ class Assertion():
     @staticmethod
     def decode(data: bytes) -> 'Assertion':
         try:
-            header, body, signature = data.split(b'.')
+            # Whitespace around the token is transport noise (see verify_block).
+            header, body, signature = data.strip().split(b'.')
             return Assertion(header, body, signature)
         except Exception:
             raise AssertionFormatIncorrect()
