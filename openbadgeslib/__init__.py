@@ -72,6 +72,19 @@ from .issue import (  # noqa: F401
 from .verify import verify_badge  # noqa: F401
 
 
+# ── Supported Python versions ────────────────────────────────────────────────
+# On a deprecated CPython (3.10, dropped in 5.0 — #242) the package's first
+# import emits a DeprecationWarning, whichever entry point triggers it (import
+# openbadgeslib, a submodule, an installed console script). PEP 565 shows it by
+# default only when __main__ is the importer: a script or a console script,
+# not `python -m openbadgeslib.<tool>` or an importlib-based loader (attributed
+# to runpy/importlib, so hidden unless warnings are enabled: -W, -X dev,
+# pytest). It runs after the imports above because a call placed before them
+# would trip flake8's E402.
+from . import _python_support
+_python_support.warn_if_deprecated()
+
+
 # ── OpenBadges 1.0 (legacy) ──────────────────────────────────────────────────
 # The unprefixed OB1 names (Signer, Verifier, Badge, …) stay importable from
 # the top-level package for backward compatibility. They are the legacy

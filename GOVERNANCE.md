@@ -25,7 +25,7 @@ Releases are **CI-driven and credential-less to publish**:
 
 - The version is single-sourced in `openbadgeslib/util.py`; a pushed `vX.Y.Z`
   tag triggers the CI workflow, which runs the full test matrix (Python
-  3.10–3.14) and then publishes to
+  3.10–3.15) and then publishes to
   [PyPI](https://pypi.org/project/openbadgeslib/).
 - Publishing uses **PyPI Trusted Publishing (OIDC)** — there is **no long-lived
   PyPI API token** stored anywhere. The publish job authenticates to PyPI from

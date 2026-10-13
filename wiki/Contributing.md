@@ -17,7 +17,9 @@ pip install -e ".[dev]"
 
 This installs the runtime dependencies (`pypng`, `PyJWT[crypto]`, `cryptography`, `defusedxml`) plus the dev tooling. The unified `openbadges` command and its five aliases (`openbadges-init`, `openbadges-keygenerator`, `openbadges-signer`, `openbadges-verifier`, `openbadges-publish`) are placed on your `PATH` and point at your working tree, so edits take effect immediately. See [[CLI Reference]] for how to use them.
 
-The minimum supported Python version is **3.10**.
+## Supported Python versions
+
+The minimum supported Python version is **3.10** (`requires-python = ">=3.10"`), and CI tests every supported minor, **3.10–3.15**. Python 3.10 is deprecated since 4.6.0 and dropped in **5.0** ([#242](https://github.com/luisgf/openbadgeslib/issues/242)); the full policy is in [CONTRIBUTING.md](https://github.com/luisgf/openbadgeslib/blob/master/CONTRIBUTING.md#supported-python-versions).
 
 ## Running the tests
 
@@ -73,7 +75,7 @@ Use a scope like `ob2`/`ob3` when it helps (e.g. `fix(ob3): …`). The vocabular
 
 A breaking change is marked with `!` after the type/scope (`feat!:`) or a `BREAKING CHANGE:` trailer in the body.
 
-**Curated changelog line (optional but encouraged).** Changelog entries are still written by hand, but you can capture the polished wording *at commit time* with a `Changelog:` trailer in the body. A future generator (and the maintainer) prefer it over the terse subject:
+**Curated changelog line (optional but encouraged).** Changelog entries are still written by hand — in the same commit as the change, under the `* vX.Y.Z - unreleased` heading at the top of `Changelog.txt` — but you can capture the polished wording *at commit time* with a `Changelog:` trailer in the body. A future generator (and the maintainer) prefer it over the terse subject:
 
 ```
 fix: make -d/--debug actually enable debug logging
@@ -136,14 +138,14 @@ Note: `baking.py` is a single shared top-level module (`openbadgeslib.baking`) t
 
 ## Continuous integration
 
-The workflow at `.github/workflows/ci.yml` runs on every **push to `master`**, every **pull request**, every **`vX.Y.Z` tag push**, and when a **release is published**. The `test` job uses a matrix across Python **3.10–3.14** (`fail-fast: false`, so all versions run even if one fails). For each version it:
+The workflow at `.github/workflows/ci.yml` runs on every **push to `master`**, every **pull request**, every **`vX.Y.Z` tag push**, when a **release is published**, and on a manual run (`workflow_dispatch`). The `test` job uses a matrix across Python **3.10–3.15** (`fail-fast: false`, so all versions run even if one fails). For each version it:
 
 1. Installs the package with `pip install -e ".[dev,ldp,eudi,ldp-sd,oid4vci]"`.
 2. Lints with `flake8 openbadgeslib tests`.
 3. Type-checks with `mypy`.
 4. Tests with `pytest --cov=openbadgeslib --cov-report=term-missing`, with `OPENBADGES_REQUIRE_LDP_SD=1` and `OPENBADGES_REQUIRE_OID4VCI=1` so those suites fail rather than skip.
 
-A Windows job runs the core extras on Python 3.12. Separate jobs cover the eudi-floor pin and a Python 3.15 preview.
+A Windows job runs the core extras on Python 3.12, and a separate `eudi` job tests the `[eudi]` extra in isolation against both the pinned openvc-core floor and its latest release. Neither gates the publish.
 
 A separate `publish` job builds the sdist and wheel and uploads to PyPI when a `vX.Y.Z` tag is pushed (or a GitHub Release is published, or via `workflow_dispatch`), and only after the full test matrix passes. That publish flow is documented in [[Releasing]].
 

@@ -1,6 +1,6 @@
 [![CI](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml/badge.svg)](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/openbadgeslib.svg)](https://pypi.org/project/openbadgeslib/)
-[![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue.svg)](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%E2%80%933.15-blue.svg)](https://github.com/luisgf/openbadgeslib/actions/workflows/ci.yml)
 
 **openbadgeslib** is a Python library and CLI for signing and verifying [Open Badges](https://www.imsglobal.org/activity/digital-badges) baked into SVG and PNG image files. It supports strict **OpenBadges 2.0** (JWS / hosted assertions) and **OpenBadges 3.0** (W3C Verifiable Credentials as JWT-VC), plus a frozen **OpenBadges 1.0** legacy format — selected with `-V {1,2,3}` (default `3`).
 
@@ -27,7 +27,9 @@ All dependencies (pypng, PyJWT[crypto], cryptography, defusedxml) are installed 
 
 ## Version
 
-Tested on Python 3.10–3.13 (see the CI badge above). For what's in the current
+Tested on Python 3.10–3.15 (see the CI badge above). Python 3.10 is deprecated
+since 4.6.0 and openbadgeslib 5.0 will require Python 3.11 or newer — see
+[[Installation]]. For what's in the current
 release and the full history, see the
 [Changelog](https://github.com/luisgf/openbadgeslib/blob/master/Changelog.txt);
 for how releases are cut, see [[Releasing]].

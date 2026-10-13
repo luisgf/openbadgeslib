@@ -8,7 +8,7 @@ pip install --upgrade openbadgeslib
 
 4.0.0 was originally timed to **Python 3.10's end of life (2026-10)**. It shipped early, in July, to get a set of security fixes into a release rather than leave them sitting unpublished on `master` — see the [Changelog](https://github.com/luisgf/openbadgeslib/blob/master/Changelog.txt).
 
-One consequence matters for upgraders: **dropping Python 3.10 is deferred**, and is *not* part of this release. It will land in a later major, timed to 3.10's own EOL. See the Python support policy in [[Contributing]].
+One consequence matters for upgraders: **dropping Python 3.10 is deferred**, and is *not* part of this release — nor of any 4.x release. It lands in **5.0** — the first major after 3.10's own EOL (2026-10-31) — which will require Python 3.11 or newer ([#242](https://github.com/luisgf/openbadgeslib/issues/242)). Since 4.6.0, 3.10 is **deprecated**: importing openbadgeslib on it emits a `DeprecationWarning`. See the Python support policy in [[Contributing]].
 
 ## Breaking changes
 
@@ -50,7 +50,7 @@ Every URL in `[issuer]` and `[badge_<name>]` is a public identifier: the tools p
 
 ## What is *not* changing
 
-- **Python 3.10 is still supported.** `requires-python` stays `>=3.10`, and the CI matrix still covers it. The drop is deferred to 3.10's EOL.
+- **Python 3.10 is still supported** throughout 4.x: `requires-python` stays `>=3.10`, and the CI matrix (now 3.10–3.15) still covers it (see [[#timing]]).
 - **OpenBadges 1.0 stays.** It is a supported legacy surface with no removal planned — see the "OpenBadges 1.0 lifecycle" note on [[Python API OB1]].
 - **The `openbadges-<command>` scripts stay.** 4.0.0 also adds a unified `openbadges <command>` front-end, but every standalone script keeps working with the same options and output.
 
@@ -61,3 +61,4 @@ Every URL in `[issuer]` and `[badge_<name>]` is a public identifier: the tools p
 - [ ] If you hand key material to the library as **objects**, use `cryptography` objects (PEM files are unaffected).
 - [ ] Check your `config.ini` for an `@` in any `[issuer]` / `[badge_*]` URL — the config will not load until it is gone.
 - [ ] Lift any pin below PyJWT `2.13` or openvc-core `1.21`.
+- [ ] Still on Python 3.10? 4.x keeps working there (with a `DeprecationWarning` since 4.6.0), but plan the move to Python 3.11+ before 5.0. If your test suite turns warnings into errors, add the filter shown in [[Installation]] meanwhile.

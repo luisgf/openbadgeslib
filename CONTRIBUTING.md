@@ -34,7 +34,7 @@ pip install -e ".[dev]"          # add ,ldp and ,eudi to exercise those tracks
 
 ## The checks a pull request must pass
 
-CI runs these on Python 3.10–3.14; run them locally before opening a PR (via
+CI runs these on Python 3.10–3.15; run them locally before opening a PR (via
 your `.venv`):
 
 ```sh
@@ -73,14 +73,21 @@ page for the full convention.
 openbadgeslib supports **every CPython release that is not end-of-life**. The
 policy is deliberately simple and predictable:
 
+- A version is **deprecated** once it is in its final months before
+  end-of-life (or past it): importing openbadgeslib on it emits a
+  `DeprecationWarning`, and `Changelog.txt` announces the major that drops it.
+  It stays fully supported — `requires-python`, classifier and CI leg
+  unchanged — until that major.
 - A version is **dropped** — from `requires-python`, the classifiers, and the CI
-  matrix — at the next **major** release after it reaches end-of-life. For
-  example, Python **3.10 (EOL 2026-10)** stays supported through 4.x and is
-  dropped at the next major after that EOL (5.0). Grouping drops into majors
-  keeps breaking changes rare.
-- A new CPython minor is **added** to the CI matrix once it has a stable
-  (non-pre) release, so downstreams can adopt it early.
-- The current matrix is **3.10–3.14**, and `requires-python = ">=3.10"`.
+  matrix — at the next **major** release after it reaches end-of-life (for
+  example, 3.10 in 5.0; see below). Grouping drops into majors keeps breaking
+  changes rare.
+- A new CPython minor is **added** to the CI matrix and the classifiers once it
+  has a stable (non-pre) release, so downstreams can adopt it early.
+- The current matrix is **3.10–3.15**, and `requires-python = ">=3.10"`.
+  Python **3.10 is deprecated** since 4.6.0 (EOL 2026-10-31) and is dropped in
+  5.0, which will require Python 3.11+
+  ([#242](https://github.com/luisgf/openbadgeslib/issues/242)).
 
 Security fixes always target the latest release only (see
 [SECURITY.md](SECURITY.md)).

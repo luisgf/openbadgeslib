@@ -8,9 +8,11 @@ steering new work to OB 2.0/3.0; OB1 stays fully functional.
 The warning must fire on the *legacy* surface only — the ob1 package and the
 unprefixed re-exports — while a bare `import openbadgeslib` and the internal
 leaf imports (openbadgeslib.ob1.badge, which OB2/OB3 signing still uses for the
-shared badge model) stay silent. The v4 release dropped the three top-level
-compat shim modules (openbadgeslib.badge/signer/verifier); OB1 stays reachable
-via openbadgeslib.ob1.* and the unprefixed top-level names (#235).
+shared badge model) stay silent about OB1. (On Python 3.10 any first import
+also emits the separate Python-version DeprecationWarning, #242.) The v4
+release dropped the three top-level compat shim modules
+(openbadgeslib.badge/signer/verifier); OB1 stays reachable via
+openbadgeslib.ob1.* and the unprefixed top-level names (#235).
 """
 import argparse
 import subprocess
@@ -31,7 +33,8 @@ class TestImportSilence:
         """A bare package import (what every OB2/OB3 user does) must neither
         warn nor drag in the ob1 subpackage; the modern APIs and the internal
         leaf import stay warning-free too. Run in a child under
-        -W error::DeprecationWarning so any stray warning fails the test."""
+        -W error::DeprecationWarning so any stray warning fails the test —
+        bar Python 3.10's own deprecation (#242), which is not about OB1."""
         code = (
             'import sys\n'
             'import openbadgeslib\n'
@@ -42,7 +45,11 @@ class TestImportSilence:
             'from openbadgeslib.ob1.badge import Badge, BadgeImgType\n'
         )
         result = subprocess.run(
-            [sys.executable, '-W', 'error::DeprecationWarning', '-c', code],
+            [sys.executable, '-W', 'error::DeprecationWarning',
+             # The later -W wins: exempt only the Python 3.10 notice (#242).
+             '-W', 'ignore:Python 3.10 is deprecated in openbadgeslib'
+                   ':DeprecationWarning',
+             '-c', code],
             capture_output=True, text=True)
         assert result.returncode == 0, result.stderr
 
