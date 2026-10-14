@@ -12,13 +12,13 @@ These are resolved automatically when you install via pip:
 | Package | Version | Purpose |
 | --- | --- | --- |
 | `pypng` | `>=0.20220715.0` | PNG image manipulation |
-| `PyJWT[crypto]` | `>=2.13` | JWS / JWT-VC signing and verification (pulls in `cryptography`; security floor) |
+| `PyJWT[crypto]` | `>=2.15.1` | JWS / JWT-VC signing and verification (pulls in `cryptography`; security floor) |
 | `cryptography` | `>=45` | All key generation, PEM handling and signing (RSA, ECC, Ed25519) |
 | `defusedxml` | `>=0.7` | Hardened XML parsing of untrusted SVG badges |
 
 ### Python 3.10 deprecation
 
-Python 3.10 reaches end of life on 2026-10-31. Since 4.6.0, importing openbadgeslib on it emits a `DeprecationWarning`; it stays fully supported through 4.x, and openbadgeslib 5.0 will require Python 3.11 or newer ([#242](https://github.com/luisgf/openbadgeslib/issues/242)). See the support policy in [[Contributing]].
+Python 3.10 reached end of life on 2026-10-01. Since 4.6.0, importing openbadgeslib on it emits a `DeprecationWarning`; it stays fully supported through 4.x, and openbadgeslib 5.0 will require Python 3.11 or newer ([#242](https://github.com/luisgf/openbadgeslib/issues/242)). See the support policy in [[Contributing]].
 
 * **Where it shows.** Python shows it by default only when a script or one of the installed console tools (`openbadges`, `openbadges-*`) imports openbadgeslib: once per run, on stderr. Stdout, `--json` output and exit codes are unchanged. It stays hidden when another library imports openbadgeslib, and under `python -m openbadgeslib.<tool>` (PEP 565).
 * **Silencing it.** Set `PYTHONWARNINGS='ignore:Python 3.10 is deprecated in openbadgeslib:DeprecationWarning'`, or pass that same filter with `-W`.
@@ -50,7 +50,7 @@ pip install openbadgeslib --upgrade
 pip install "openbadgeslib[ldp]"
 ```
 
-The `[ldp]` extra adds [pyld](https://pypi.org/project/PyLD/) and enables
+The `[ldp]` extra adds [pyld](https://pypi.org/project/PyLD/) (>= 3.3.0) and enables
 **issuing and verifying** OB 3.0 credentials secured with a W3C Data Integrity
 proof (cryptosuite `eddsa-rdfc-2022`) — the OB 3.0 Linked Data Proof format.
 Nothing else needs it: the default proof format stays JWT-VC, and without the
@@ -67,7 +67,9 @@ cryptosuite `ecdsa-sd-2023` (W3C vc-di-ecdsa), delegating the crypto to
 both Data Integrity suites to conform to the 1EdTech OB 3.0 certification. It is
 self-contained (pulls its own JSON-LD processor), so it works with or without
 `[ldp]`; **issuing** `ecdsa-sd-2023` is out of scope. Without the extra,
-verifying such a credential fails closed with an install hint.
+verifying such a credential fails closed with an install hint. Verifying needs
+openvc-core >= 1.30.2 (the extra installs >= 1.31.3): an older installed
+release fails closed with `OB3VerificationError`.
 
 ```sh
 pip install "openbadgeslib[eudi]"

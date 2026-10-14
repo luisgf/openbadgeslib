@@ -40,15 +40,38 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "pypng>=0.20220715.0",
-    # PyJWT floor at 2.13: the OB3 JWT-VC verifier decodes an untrusted badge
-    # with signature-verifying jwt.decode() (ob3/verifier.py), so the fixes in
-    # the 2.12/2.13 advisory batch are on a reachable path — RFC 7515 §4.1.11
-    # `crit` validation (2.12.0, CVE-2026-32597) and the b64=false unencoded-
-    # payload DoS (2.13.0, CVE-2026-48525), plus JWK/alg-binding hardening.
-    # 2.13.0 is the minimal floor that carries all of them. (The native _jws
-    # engine is structurally immune — it never calls jwt.decode — but the OB3
-    # path is not.)
-    "PyJWT[crypto]>=2.13",
+    # PyJWT floor at 2.15.1. The OB3 JWT-VC verifier parses an untrusted badge
+    # three ways (ob3/verifier.py, verify.py): jwt.get_unverified_header(), a
+    # jwt.decode(verify_signature=False) peek that reads the issuer before its
+    # key is resolved, and the signature-verifying jwt.decode(). So the PyJWT
+    # advisories on those calls are on a reachable path:
+    #   * 2.12.0/2.13.0: RFC 7515 §4.1.11 `crit` validation (CVE-2026-32597)
+    #     and the b64=false unencoded-payload DoS (CVE-2026-48525);
+    #   * 2.14.0: a deeply nested header escaped as a bare RecursionError
+    #     instead of DecodeError (GHSA-8wjv-2p76-3863, affects 2.13.0, our old
+    #     floor), and compact segments with characters outside the base64url
+    #     alphabet decoded, so one signature verified under many spellings of
+    #     the token (GHSA-hxm8-2xgr-2p9m). Its raw-token revocation bypass needs
+    #     a consumer that indexes revocation by the token text, which
+    #     openbadgeslib does not do, but it is the same malleability v4.6.0
+    #     closed in the native _jws decoder;
+    #   * 2.15.0: the same RecursionError from a deeply nested payload, through
+    #     exactly the verify_signature=False peek above (GHSA-42vr-xj54-vc7v,
+    #     affects <=2.14.0). This one is why 2.14 is not enough.
+    # 2.15.1 rather than 2.15.0: it is the release the suite is tested against,
+    # and it settles which tokens decode. 2.14.0 and 2.15.0 also refused a
+    # segment with the canonical trailing `=` padding (PyJWT #1209); 2.15.1
+    # accepts that again and still rejects non-alphabet bytes and non-zero
+    # trailing bits, the rule the native _jws decoder applies. With the floor
+    # here, what the OB3 verifier accepts does not depend on which 2.15.x the
+    # resolver picks.
+    # The HMAC key-confusion advisories (GHSA-ffc3-869f-jxw9 and its 2.14.0
+    # siblings) are not reachable: the verifier pins its algorithms to the key
+    # type and no HS* algorithm is ever allowed. Neither is the options-dict
+    # mutation (GHSA-gvp8-978c-rx2q: every call passes a fresh dict) nor any
+    # PyJWKClient one (it is not used). The native _jws engine never calls
+    # jwt.decode, but the OB3 path does.
+    "PyJWT[crypto]>=2.15.1",
     # Floor at 45, openvc-core's own core pin — so an install that takes the
     # [eudi]/[ldp-sd] extras resolves one range, not two. It is deliberately
     # BELOW cryptography 47, where loading a key of an unsupported algorithm
@@ -62,20 +85,38 @@ dependencies = [
 [project.optional-dependencies]
 # Issuing and verifying Data Integrity (Linked Data Proof) credentials needs a
 # JSON-LD processor for RDF canonicalization; everything else works without it.
+# Floor at 3.3.0, the release the suite is tested against, because what pyld
+# produces is part of the security contract: OB3LdpVerifier requires the JSON
+# to be exactly the compacted form pyld derives from the signed dataset
+# (context validation, GHSA-rp5q-966c-5592), and pyld 2.x compacts some terms
+# differently (an Address `geo` comes back as `GeoCoordinates`), so genuine
+# credentials such as 1EdTech's "Complete OpenBadgeCredential" example would be
+# refused. pyld before 3.3 also canonicalizes an integral float (3.0) as
+# "3.0E0" where 3.3 and jsonld.js give "3", so a proof made on one did not
+# verify on the other.
 ldp = [
-    "pyld>=2.0.4",
+    "pyld>=3.3.0",
 ]
 # EUDI track: issue/verify badges as SD-JWT VC (the EU wallet / ARF format) via
 # the generic openvc-core library. openvc-core is stable (1.x) with a published
 # SemVer/deprecation contract, so the pin follows SemVer: floor at the version
 # the suite is tested against, ceiling at the next major.
 # See openbadgeslib/ob3/eudi.py.
-# The floor is >=1.22 in substance — IETF Token Status List revocation
+# Functionally the track needs 1.22, where IETF Token Status List revocation
 # (openvc.status.issue.build_token_status_reference, .token_status_list.
-# check_token_status) landed there — and is set at the release the suite is
-# actually tested against, per the rule above.
+# check_token_status) landed. Among the security fixes since, 1.30.0 closes
+# a false key_bound: verify_sd_jwt_vc() hands the caller's audience and nonce
+# to openvc separately, and before 1.30.0 a Key Binding JWT checked against
+# only one of them came back key_bound=True although it was never bound to
+# this verifier. 1.30.0 refuses that half-configured check, and it also
+# bounds untrusted JSON nesting so a deep document fails with a typed error,
+# not a bare RecursionError. Per the rule above, the pin itself sits at
+# 1.31.3, the release the suite is tested against (v4.6.0 CI), which also
+# carries every openvc fix in between. Every extra that pulls openvc-core
+# shares this one floor; the CI `eudi` job checks that they agree and runs
+# the [eudi] and [ldp-sd] suites against it.
 eudi = [
-    "openvc-core>=1.26,<2",
+    "openvc-core>=1.31.3,<2",
 ]
 # ecdsa-sd-2023 (selective disclosure) VERIFY for the OB 3.0 Data Integrity
 # track: credentials secured with the ecdsa-sd-2023 cryptosuite are verified by
@@ -84,8 +125,17 @@ eudi = [
 # trust binding and lifecycle checks. Pulls openvc-core with its RDF
 # canonicalization (pyld). Native eddsa-rdfc-2022 stays under [ldp]; issuance of
 # ecdsa-sd-2023 is out of scope. See openbadgeslib/ob3/ldp.py.
+# openvc-core 1.30.2 closes GHSA-vrxg-57v4-85mc for ecdsa-sd-2023, the suite
+# delegated here: the proof signs the RDF dataset, the checks after it read
+# the JSON, and before 1.30.2 nothing proved the JSON was the compacted form
+# of what was signed, so a member re-keyed to its full IRI or moved under
+# @included escaped them. The pin sits at 1.31.3, the shared tested floor
+# described under [eudi]. OB3LdpVerifier also runs its own context validation
+# (with pyld) before it delegates, and openvc-core[data-integrity] admits
+# pyld 2.x, so this extra carries the same pyld floor as [ldp].
 ldp-sd = [
-    "openvc-core[data-integrity]>=1.26,<2",
+    "openvc-core[data-integrity]>=1.31.3,<2",
+    "pyld>=3.3.0",
 ]
 # OID4VCI issuance: hand a badge to a wallet over the pre-authorized code flow.
 # openbadgeslib owns the offers, the state (codes, tokens, nonces, grants) and
@@ -97,14 +147,17 @@ ldp-sd = [
 # (openbadgeslib/oid4vci/metadata.py and offer.py). 1.26 adds
 # require_key_attestation= on verify_credential_request_proofs, so an
 # issuer that advertises key_attestations_required can refuse a proof
-# without one before the signature and before the nonce is spent.
+# without one before the signature and before the nonce is spent. Those are
+# the feature minimums; the pin is the shared 1.31.3 floor described under
+# [eudi], which also applies 1.30.0's bound on untrusted JSON nesting to the
+# Credential Requests and key proofs this extra hands to openvc.
 #
 # Everything except openbadgeslib/oid4vci/handler.py works without the extra,
 # and the credential-endpoint tests skip themselves when the module is absent —
 # so an install that does not ask for [oid4vci] is never broken by its absence.
 # See openbadgeslib/oid4vci/ and wiki/Issuing-to-Wallets-with-OID4VCI.md.
 oid4vci = [
-    "openvc-core>=1.26,<2",
+    "openvc-core>=1.31.3,<2",
 ]
 dev = [
     "pytest>=8.0",

@@ -207,14 +207,31 @@ already-parsed `dict`; the return value and every failure mode
 `verificationMethod` does not belong to the credential's DID issuer is
 rejected fail-closed.
 
+The proof signs the RDF dataset the document expands to, not its JSON, so
+before it builds the credential or applies any policy, `OB3LdpVerifier`
+requires the JSON to be exactly the compacted form of what was signed under
+the pinned contexts (VC Data Integrity §2.4.1 context validation, since
+4.6.1). A member re-keyed to its IRI or aliased by an inline `@context`, a
+value its term cannot carry (e.g. an untyped `validUntil`, which compaction
+keeps under the full IRI rather than the term the policy reads),
+`@included`, `@reverse`, a top-level `@graph`, a second description of the
+credential's own node, an array nested inside an array, or a term, type or id
+the RDF conversion would drop (undefined, or not an absolute IRI) is rejected
+with `OB3VerificationError`, and so is a `credentialStatus` entry that is not
+a JSON object. See [[Security Model]].
+
 For advanced uses (e.g. non-OB3 Verifiable Credentials or the official W3C
 test vectors) the crypto core is exposed as
 `verify_data_integrity_proof(document, pubkey_pem, *, expected_proof_purpose='assertionMethod', extra_contexts=None)`,
-which checks only the proof itself. `@context` documents are **never fetched
+which checks only the proof itself: it proves the RDF dataset, and for
+`eddsa-rdfc-2022` it does not apply the context validation above, so do not
+read validity, status, subject or issuer from the JSON on the strength of
+this call alone. `@context` documents are **never fetched
 from the network** — canonicalization uses the contexts bundled with the
 library (see [[Security Model]]); `extra_contexts` extends that allowlist per
 call. `ecdsa-sd-2023` (selective disclosure) is verified by delegating to
-`openvc-core` (the `[ldp-sd]` extra); a cryptosuite the library supports
+`openvc-core` (the `[ldp-sd]` extra), which runs its own context validation;
+an openvc-core older than 1.30.2 is refused. A cryptosuite the library supports
 neither natively nor by delegation (e.g. `ecdsa-rdfc-2019`) fails closed naming
 the supported ones. An `ecdsa-sd-2023` presentation that omits `validUntil` or
 `credentialStatus` is rejected: a holder must not be able to hide expiry or
@@ -248,7 +265,10 @@ signer = OB3LdpSigner(priv_pem,
 ```
 
 A non-Ed25519 key raises `ErrorSigningFile` at construction; signing without
-the `[ldp]` extra raises it with the install hint. The schema-agnostic core is
+the `[ldp]` extra raises it with the install hint; and `sign()` raises it
+rather than emit a document whose JSON the proof does not fully cover (an id
+that is not an absolute IRI, or a member no pinned context defines) or whose
+`sign_to_json` text exceeds the 256 KiB verifiers accept. The schema-agnostic core is
 `add_data_integrity_proof(document, privkey_pem, verification_method, *,
 proof_purpose='assertionMethod', created=None, extra_contexts=None)` — the
 mirror of `verify_data_integrity_proof`, able to reproduce the official W3C

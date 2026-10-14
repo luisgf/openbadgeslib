@@ -106,6 +106,10 @@ canonicalization core: the document (without `proof`) and the proof options
 (`SHA-256(config) || SHA-256(document)`), and the Ed25519 signature travels as
 a multibase base58btc `proofValue`. `@context` documents are **never fetched
 from the network** — only the contexts bundled with the library are accepted.
+Because the proof signs the RDF dataset, not the JSON, `OB3LdpVerifier` also
+requires the JSON to be exactly the compacted form of what was signed, and
+`OB3LdpSigner` raises `ErrorSigningFile` rather than emit a document its proof
+would not fully cover (since 4.6.1; see [[Security Model]]).
 
 ```python
 from openbadgeslib.ob3 import OB3LdpSigner, OB3LdpVerifier

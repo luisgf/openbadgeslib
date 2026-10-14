@@ -97,11 +97,14 @@ jobs:
         run: pytest
 
   eudi:
-    # Hardening for the optional [eudi] SD-JWT VC track, which delegates its
-    # crypto to openvc-core (a separate repo). The main `test` job installs the
-    # extra alongside everything else; this job adds two guarantees it can't:
-    #   * isolation — install ONLY [dev,eudi] (no ldp/pyld), proving the track
-    #     stands on openvc-core alone;
+    # Hardening for the optional extras that delegate crypto to openvc-core (a
+    # separate repo): [eudi] (SD-JWT VC) and [ldp-sd] (ecdsa-sd-2023 verify).
+    # The main `test` job installs them alongside everything else; this job
+    # adds two guarantees it can't:
+    #   * isolation — first install ONLY [dev,eudi] (no ldp/pyld), proving the
+    #     EUDI track stands on openvc-core alone; then add [ldp-sd] and nothing
+    #     else (no [ldp], no [oid4vci]), so the ecdsa-sd-2023 path runs on what
+    #     that extra pulls in by itself, pyld included;
     #   * version-drift — run against both the pinned floor and the latest
     #     openvc-core release, so an upstream bump fails here, not in a user's
     #     install.
@@ -124,12 +127,7 @@ jobs:
           python-version: '3.12'
           cache: pip
 
-      - name: Install the package with only the [eudi] extra
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev,eudi]"
-
-      - name: Pin openvc-core to the declared floor
+      - name: Read the declared openvc-core floor
         if: matrix.openvc == 'floor'
         # Read the floor out of pyproject.toml instead of restating it here.
         # The hardcoded "keep 1.18.* in sync" pin did NOT stay in sync: 677f4ed
@@ -137,17 +135,37 @@ jobs:
         # this — the authoritative leg — kept installing 1.18, downgrading below
         # the package's own constraint and leaving the shipped floor untested
         # (#264). Deriving it removes the thing that could drift.
+        # The whole version is read, patch included, and installed exactly: a
+        # patch-level floor names the release we ship against, and the old
+        # `==major.minor.*` pin would install the newest release of that series
+        # instead, so the floor itself would go untested. Every extra that
+        # pulls openvc-core must declare the same floor; [ldp-sd] was once left
+        # behind at >=1.21 while the others moved, so a mismatch fails here.
         run: |
           floor="$(python - <<'PY'
-          import pathlib, re, tomllib
+          import pathlib, re, sys, tomllib
           data = tomllib.loads(pathlib.Path('pyproject.toml').read_text('utf-8'))
-          spec = next(s for s in data['project']['optional-dependencies']['eudi']
-                      if s.startswith('openvc-core'))
-          print(re.search(r'>=\s*(\d+\.\d+)', spec).group(1))
+          extras = data['project']['optional-dependencies']
+          floors = {}
+          for extra in ('eudi', 'ldp-sd', 'oid4vci'):
+              spec = next(s for s in extras[extra] if s.startswith('openvc-core'))
+              floors[extra] = re.search(r'>=\s*(\d+(?:\.\d+)*)', spec).group(1)
+          if len(set(floors.values())) != 1:
+              sys.exit('openvc-core floors disagree across extras: %s' % floors)
+          print(floors['eudi'])
           PY
           )"
-          echo "Declared [eudi] openvc-core floor: $floor"
-          pip install "openvc-core==${floor}.*"
+          echo "Declared openvc-core floor ([eudi], [ldp-sd], [oid4vci]): $floor"
+          echo "OPENVC_FLOOR=$floor" >> "$GITHUB_ENV"
+
+      - name: Install the package with only the [eudi] extra
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,eudi]"
+
+      - name: Pin openvc-core to the declared floor
+        if: matrix.openvc == 'floor'
+        run: pip install "openvc-core==${OPENVC_FLOOR}"
 
       - name: Take the latest openvc-core release
         if: matrix.openvc == 'latest'
@@ -164,6 +182,29 @@ jobs:
         run: |
           pytest tests/test_ob3_eudi_sd_jwt.py tests/test_ob3_eudi_x5c.py -v
           mypy openbadgeslib/ob3/eudi.py
+
+      - name: Add the [ldp-sd] extra, keeping openvc-core at the floor
+        if: matrix.openvc == 'floor'
+        # The extra and the pin go in one resolve, so pip cannot satisfy
+        # [ldp-sd] by moving openvc-core off the version under test; it also
+        # fails here if the floor is outside the range [ldp-sd] declares.
+        run: pip install -e ".[dev,eudi,ldp-sd]" "openvc-core[data-integrity]==${OPENVC_FLOOR}"
+
+      - name: Add the [ldp-sd] extra on the latest openvc-core release
+        if: matrix.openvc == 'latest'
+        run: pip install -e ".[dev,eudi,ldp-sd]" "openvc-core[data-integrity]<2"
+
+      - name: Record the resolved openvc-core and pyld versions
+        run: pip show openvc-core pyld | grep -E '^(Name|Version):'
+
+      - name: Test the ecdsa-sd-2023 delegate and type-check it
+        # The [ldp-sd] suite FAILs (not skips) if openvc or pyld stops
+        # importing here, as in the main test job (#221).
+        env:
+          OPENBADGES_REQUIRE_LDP_SD: '1'
+        run: |
+          pytest tests/test_ob3_ldp_ecdsa_sd.py -v
+          mypy openbadgeslib/ob3/ldp.py
 
   publish:
     name: Publish to PyPI

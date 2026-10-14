@@ -156,7 +156,9 @@ def issuer_did_from_document(document: str) -> str:
     from .ob3 import OB3VerificationError
     try:
         doc = json.loads(document)
-    except ValueError as exc:
+    except (ValueError, RecursionError) as exc:
+        # RecursionError: a document nested deeper than the parser recurses
+        # (untrusted input) fails like any other unreadable one.
         raise OB3VerificationError(
             'could not read credential issuer: %s' % exc) from exc
     issuer = doc.get('issuer') if isinstance(doc, dict) else None

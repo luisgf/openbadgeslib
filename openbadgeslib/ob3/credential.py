@@ -24,7 +24,7 @@ import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 
 # Shared JSON helpers live in openbadgeslib._jsonmodel now (deduplicated with
 # ob2.models). Re-exported (X as X) so the ob3 modules and tests that do
@@ -361,7 +361,7 @@ class Achievement:
         if self.achievement_type:
             d["achievementType"] = self.achievement_type
         if self.credits_available is not None:
-            d["creditsAvailable"] = self.credits_available
+            d["creditsAvailable"] = _json_number(self.credits_available)
         if self.image_url:
             d["image"] = {"id": self.image_url, "type": "Image"}
         if self.tags:
@@ -454,7 +454,7 @@ class OpenBadgeCredential:
         if self.recipient_id is not None:
             subject["id"] = self.recipient_id
         if self.credits_earned is not None:
-            subject["creditsEarned"] = self.credits_earned
+            subject["creditsEarned"] = _json_number(self.credits_earned)
         if self.identifiers:
             subject["identifier"] = [i.to_dict() for i in self.identifiers]
         if self.results:
@@ -677,6 +677,23 @@ class OpenBadgeCredential:
 def _as_dict_or_empty(value: Any) -> dict[str, Any]:
     """Return value if it is a dict, else an empty dict (optional sub-objects)."""
     return value if isinstance(value, dict) else {}
+
+
+def _json_number(value: float) -> Union[int, float]:
+    """An integral float as an int (``3.0`` -> ``3``), anything else as is.
+
+    creditsAvailable/creditsEarned are ``xsd:float`` terms. JSON-LD gives an
+    integral number the integer lexical form (``"3"^^xsd:float``), which is
+    what jsonld.js signs for ``3.0`` (JavaScript has no separate float). pyld
+    before 3.3 rendered a Python float ``3.0`` as ``"3.0E0"`` instead, so the
+    same credential canonicalized -- and its Data Integrity proof verified --
+    differently across pyld versions. Emitting the int gives every processor
+    the same statement. Magnitudes of 1e21 and above keep the float: JSON-LD
+    renders those in the double form whatever their fraction."""
+    if (isinstance(value, float) and value.is_integer()
+            and abs(value) < 1e21):
+        return int(value)
+    return value
 
 
 def _float_or_none(value: Any) -> Optional[float]:

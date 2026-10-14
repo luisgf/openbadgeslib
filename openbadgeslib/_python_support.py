@@ -20,12 +20,13 @@
 """
 
 # The runtime side of the "Supported Python versions" policy (CONTRIBUTING.md):
-# a CPython that is still supported but nearing (or past) end of life is
-# deprecated — importing openbadgeslib on it emits a DeprecationWarning — and
-# is dropped only at the next major release.
+# a CPython that is still supported but past (or in its final months before)
+# end of life is deprecated — importing openbadgeslib on it emits a
+# DeprecationWarning — and is dropped only at the next major release.
 #
-# Python 3.10 is deprecated since 4.6.0 and dropped in 5.0 (#242). That drop
-# raises requires-python, the mypy python_version and DEPRECATED_BELOW together,
+# Python 3.10 reached CPython end of life on 2026-10-01 (PEP 619); it is
+# deprecated since 4.6.0 and dropped in 5.0 (#242). That drop raises
+# requires-python, the mypy python_version and DEPRECATED_BELOW together,
 # rewording DEPRECATION_MESSAGE for the next deprecated version — or deletes
 # this module (and its call in __init__) if none is pending removal.
 
@@ -38,7 +39,7 @@ DEPRECATED_BELOW = (3, 11)
 
 DEPRECATION_MESSAGE = (
     'Python 3.10 is deprecated in openbadgeslib (CPython end of life: '
-    '2026-10-31); openbadgeslib 5.0 will require Python 3.11 or newer.')
+    '2026-10-01); openbadgeslib 5.0 will require Python 3.11 or newer.')
 
 
 def warn_if_deprecated(version_info: Tuple[object, ...] = sys.version_info) -> None:

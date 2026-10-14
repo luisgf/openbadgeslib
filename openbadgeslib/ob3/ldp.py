@@ -41,6 +41,15 @@
 # SHA-256(document); the 64-byte Ed25519 signature over hashData travels as
 # a multibase base58btc proofValue.
 #
+# What is signed is the RDF DATASET the JSON expands to, while the model and
+# every policy check read the JSON. OB3LdpVerifier therefore runs context
+# validation (VC Data Integrity 2.4.1, ob3/_context_validation.py) before it
+# reads anything: the JSON must be exactly the compacted form of what was
+# signed, every member a pinned context defines spelled by its term.
+# OB3LdpSigner applies the same check to what it emits. The
+# schema-agnostic verify_data_integrity_proof / add_data_integrity_proof
+# building blocks do NOT (they also serve the W3C vectors and CLR).
+#
 # JSON-LD canonicalization needs a JSON-LD processor, so this module depends
 # on the optional [ldp] extra (pyld) — imported lazily with an actionable
 # error, everything else in the package works without it. @context documents
@@ -50,6 +59,7 @@
 import copy
 import hashlib
 import json
+import re
 
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Mapping, Optional, Union
@@ -58,6 +68,7 @@ from .. import baking
 from ..errors import ErrorSigningFile
 from ..keys import KeyType, detect_key_type, key_to_pem
 from ..util import __version__
+from ._context_validation import validate_document
 from .contexts import UnknownContextError, bundled_contexts, document_loader
 from .credential import OpenBadgeCredential, _iso, _parse_iso
 from .did import (_b58btc_decode, _b58btc_encode, _public_key_to_pem,
@@ -72,6 +83,13 @@ from .verifier import (OB3VerificationError, _check_recipient,
 MAX_LDP_DOCUMENT_BYTES = 256 * 1024
 
 
+#: Oldest openvc-core the delegated ecdsa-sd-2023 verify accepts: earlier
+#: releases do not validate the JSON-LD form of the documents they verify (see
+#: ob3/_context_validation.py), so the JSON they report could differ from what
+#: the issuer signed.
+_OPENVC_MIN_VERSION = (1, 30, 2)
+
+
 def _require_jsonld() -> Any:
     """Import pyld lazily, failing with an actionable message without it."""
     try:
@@ -82,6 +100,36 @@ def _require_jsonld() -> Any:
             "optional 'pyld' dependency; install it with: "
             "pip install openbadgeslib[ldp]") from exc
     return jsonld
+
+
+def _check_json_ld_form(document: dict[str, Any], proof: dict[str, Any],
+                        loader: Any) -> None:
+    """Context validation (VC Data Integrity 2.4.1) of a secured document.
+
+    The RDF-canonicalized cryptosuites sign the RDF dataset the JSON expands
+    to, while every OB3 policy check reads the JSON. This requires the
+    document (without ``proof``) and *proof*'s configuration to be exactly the
+    compacted form of what they expand to under the pinned contexts, with
+    nothing dropped by the RDF conversion — see ob3/_context_validation.py.
+    Raises :class:`OB3VerificationError`.
+
+    It does not bound the size: the verifier has already bounded the
+    untrusted input as received (``_parse_document``), and the signer bounds
+    the text it emits — re-measuring a parsed document here would measure a
+    different serialization than either.
+    """
+    jsonld = _require_jsonld()
+    try:
+        json.dumps(document)
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise OB3VerificationError(
+            "credential document is not plain JSON: %s" % exc) from exc
+    unsecured = {k: v for k, v in document.items() if k != 'proof'}
+    proof_config = {k: v for k, v in proof.items() if k != 'proofValue'}
+    # As in canonicalization: the proof options are read in the context of
+    # the secured document.
+    proof_config['@context'] = document.get('@context')
+    validate_document(unsecured, proof_config, loader, jsonld)
 
 
 def _select_proof(document: dict[str, Any]) -> dict[str, Any]:
@@ -240,6 +288,7 @@ def _require_openvc_ecdsa_sd() -> tuple[Any, Any]:
     with an actionable hint. The selective-disclosure crypto is delegated, not
     reimplemented — see the module docstring."""
     try:
+        import openvc
         from openvc.proof.ecdsa_sd import EcdsaSdProofSuite
         from openvc.proof.errors import ProofError
     except ImportError as exc:
@@ -247,6 +296,17 @@ def _require_openvc_ecdsa_sd() -> tuple[Any, Any]:
             "verifying ecdsa-sd-2023 (selective-disclosure) Data Integrity "
             "proofs requires the optional openvc-core dependency; install it "
             "with: pip install openbadgeslib[ldp-sd]") from exc
+    # Fail closed on an openvc-core too old to validate the JSON-LD form of
+    # what it verifies (read at call time: the installed package can change).
+    version = getattr(openvc, '__version__', None)
+    match = re.match(r'(\d+)\.(\d+)\.(\d+)', version) \
+        if isinstance(version, str) else None
+    if match is None or tuple(int(g) for g in match.groups()) < _OPENVC_MIN_VERSION:
+        raise OB3VerificationError(
+            "verifying ecdsa-sd-2023 Data Integrity proofs requires "
+            "openvc-core >= %s, found %r; upgrade it with: "
+            "pip install -U openbadgeslib[ldp-sd]"
+            % ('.'.join(map(str, _OPENVC_MIN_VERSION)), version))
     return EcdsaSdProofSuite, ProofError
 
 
@@ -335,6 +395,16 @@ def verify_data_integrity_proof(
     ecdsa-sd-2023 cryptosuite, which is delegated to openvc-core with the
     bundled pinned contexts only. Raises :class:`OB3VerificationError` on any
     failure.
+
+    .. warning:: The proof covers the **RDF dataset** the document expands
+       to, not its JSON. Two different JSON documents can expand to the same
+       dataset (a member re-keyed to its IRI, an inline alias, a node under
+       ``@included``, a term or node id the RDF conversion drops, ...), so a
+       successful call proves nothing about any particular JSON member. Do
+       not read policy (validity dates, status, subject, issuer) from the
+       JSON after this call alone: :class:`OB3LdpVerifier` additionally
+       validates that the JSON is the compacted form of what was signed
+       before it reads anything.
     """
     if not isinstance(document, dict):
         raise OB3VerificationError("credential document must be a JSON object")
@@ -368,6 +438,13 @@ def add_data_integrity_proof(
     Fails closed with :class:`ErrorSigningFile` on a non-Ed25519 key, a
     document that already carries a proof (never produce a proof set the
     verifier would reject as ambiguous), or a missing [ldp] extra.
+
+    .. warning:: The proof signs the **RDF dataset** the document expands to,
+       not its JSON: a member whose term no pinned context defines, or whose
+       IRI the RDF conversion drops, is silently left unsigned, and this
+       low-level function does not check for it. :class:`OB3LdpSigner`
+       refuses to emit such a document (and :class:`OB3LdpVerifier` refuses
+       to accept one).
     """
     from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
@@ -433,6 +510,12 @@ def _reject_unsigned_ldp_aliases(doc: dict[str, Any]) -> None:
     (un-expire / un-revoke) with the proof still verifying. Here a credential
     must use the VC 2.0 terms (validUntil/validFrom, BitstringStatusListEntry);
     fail closed on the legacy shapes.
+
+    Every ``credentialStatus`` entry must also be a JSON object: the model and
+    the status checker read only objects, so an entry spelled any other way
+    (a bare IRI reference, or an object wrapped in a nested array, which
+    expansion flattens into the very same signed dataset) would be skipped —
+    a status the checker cannot read must not pass as "no status".
     """
     for alias in ("expirationDate", "issuanceDate"):
         if alias in doc:
@@ -440,10 +523,15 @@ def _reject_unsigned_ldp_aliases(doc: dict[str, Any]) -> None:
                 "Data Integrity credential carries %r, which the RDF-"
                 "canonicalized proof does not sign; use validUntil/validFrom"
                 % alias)
-    status = doc.get("credentialStatus")
+    if "credentialStatus" not in doc:
+        return
+    status = doc["credentialStatus"]
     for entry in (status if isinstance(status, list) else [status]):
         if not isinstance(entry, dict):
-            continue
+            raise OB3VerificationError(
+                "Data Integrity credential has a credentialStatus entry that "
+                "is not a JSON object (%s); the status checker could not read "
+                "it" % type(entry).__name__)
         types = entry.get("type")
         types = types if isinstance(types, list) else [types]
         if "StatusList2021Entry" in types:
@@ -537,6 +625,16 @@ class OB3LdpVerifier:
         testing). An ``ecdsa-sd-2023`` presentation that omits ``validUntil``
         or ``credentialStatus`` is rejected so a holder cannot hide expiry or
         revocation (#328).
+
+        Before reading anything from the JSON, the document must be exactly
+        the compacted form of the RDF dataset its proof signs, under the
+        pinned contexts (context validation): a member re-keyed to its IRI
+        or aliased by an inline ``@context``, a value its term cannot carry
+        (an untyped ``validUntil``, kept under the full IRI by compaction
+        itself), ``@included``/``@reverse``/a
+        top-level ``@graph``, a re-description of the credential's own node,
+        or anything the RDF conversion drops (relative or malformed IRIs,
+        undefined terms) is rejected.
         """
         doc = self._parse_document(document)
 
@@ -545,17 +643,31 @@ class OB3LdpVerifier:
         # legacy StatusList2021Entry) are unsigned in this path — reject them so
         # a holder cannot un-expire / un-revoke a signed credential (#205).
         _reject_unsigned_ldp_aliases(doc)
-        try:
-            credential = OpenBadgeCredential.from_vc_document(doc)
-        except (KeyError, ValueError, TypeError) as exc:
-            raise OB3VerificationError(
-                "Malformed credential document: %s" % exc) from exc
 
         proof = _select_proof(doc)
         _validate_proof(proof, 'assertionMethod')
         # Before resolving keys or running crypto: an SD presentation that hid
         # expiry/revocation is already a fail, regardless of the proof.
         _reject_hidden_sd_lifecycle(doc, proof)
+
+        # The proof signs the RDF dataset; the model and every policy check
+        # below read the JSON. Require the JSON to be exactly the compacted
+        # form of what is signed (no re-keyed or aliased member, no dropped
+        # node or term, no @included/@reverse/re-described credential node)
+        # BEFORE reading anything from it — for both cryptosuites, ahead of
+        # the ecdsa-sd-2023 delegation too. It also runs before the key is
+        # resolved, deliberately: a malformed document never triggers a
+        # did:web fetch. The cost is CPU on unauthenticated input, bounded by
+        # MAX_LDP_DOCUMENT_BYTES and _MAX_EMBEDDED_DEPTH and near-linear in
+        # the document (a few expand/compact passes, one per embedded
+        # credential), below that of the canonicalization that follows.
+        _check_json_ld_form(doc, proof, document_loader())
+
+        try:
+            credential = OpenBadgeCredential.from_vc_document(doc)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise OB3VerificationError(
+                "Malformed credential document: %s" % exc) from exc
 
         vm = proof['verificationMethod']
         vm_did = vm.partition('#')[0]
@@ -627,9 +739,16 @@ class OB3LdpVerifier:
 
     @staticmethod
     def _parse_document(document: Union[str, bytes, dict[str, Any]]) -> dict[str, Any]:
-        """Normalize/parse the input document, bounding its size first."""
+        """Normalize/parse the input document, bounding its size first.
+
+        A document nested deeper than the interpreter can recurse fails with
+        :class:`OB3VerificationError`, never a bare ``RecursionError``."""
         if isinstance(document, dict):
-            raw_len = len(json.dumps(document))
+            try:
+                raw_len = len(json.dumps(document))
+            except (TypeError, ValueError, RecursionError) as exc:
+                raise OB3VerificationError(
+                    "credential document is not plain JSON: %s" % exc) from exc
         else:
             raw_len = len(document)
         if raw_len > MAX_LDP_DOCUMENT_BYTES:
@@ -638,11 +757,18 @@ class OB3LdpVerifier:
                 % MAX_LDP_DOCUMENT_BYTES)
 
         if isinstance(document, dict):
-            return copy.deepcopy(document)
+            try:
+                return copy.deepcopy(document)
+            except RecursionError as exc:
+                raise OB3VerificationError(
+                    "credential document is nested too deeply") from exc
         try:
             text = document.decode('utf-8') if isinstance(document, bytes) \
                 else document
             parsed = json.loads(text)
+        except RecursionError as exc:
+            raise OB3VerificationError(
+                "credential document is nested too deeply") from exc
         except (ValueError, UnicodeDecodeError) as exc:
             raise OB3VerificationError(
                 "credential document is not valid JSON: %s" % exc) from exc
@@ -712,10 +838,31 @@ class OB3LdpSigner:
              created: Optional[datetime] = None) -> dict[str, Any]:
         """Sign a credential and return the secured VC document (dict) —
         the credential JSON with the DataIntegrityProof embedded under
-        ``proof``. *created* defaults to now (UTC)."""
-        return add_data_integrity_proof(
+        ``proof``. *created* defaults to now (UTC).
+
+        Raises :class:`ErrorSigningFile` rather than emit a document whose
+        JSON the proof does not fully cover (e.g. an id that is not an
+        absolute IRI, or a member no pinned context defines) — the same
+        context validation :class:`OB3LdpVerifier` applies — or one larger,
+        as :meth:`sign_to_json` serializes it, than the
+        ``MAX_LDP_DOCUMENT_BYTES`` verifiers accept."""
+        signed = add_data_integrity_proof(
             credential.to_vc(), self.privkey_pem, self.verification_method,
             created=created)
+        # Measure exactly the text sign_to_json emits (and baking embeds), so
+        # anything issued here is within the limit the verifier applies to it.
+        size = len(json.dumps(signed, sort_keys=True, ensure_ascii=True))
+        if size > MAX_LDP_DOCUMENT_BYTES:
+            raise ErrorSigningFile(
+                'credential exceeds the %d-byte limit verifiers accept '
+                '(%d bytes serialized)' % (MAX_LDP_DOCUMENT_BYTES, size))
+        try:
+            _check_json_ld_form(signed, signed['proof'], document_loader())
+        except OB3VerificationError as exc:
+            raise ErrorSigningFile(
+                'refusing to issue a Data Integrity credential whose JSON its '
+                'proof does not cover: %s' % exc) from exc
+        return signed
 
     def sign_to_json(self, credential: OpenBadgeCredential, *,
                      created: Optional[datetime] = None) -> str:

@@ -85,7 +85,7 @@ policy is deliberately simple and predictable:
 - A new CPython minor is **added** to the CI matrix and the classifiers once it
   has a stable (non-pre) release, so downstreams can adopt it early.
 - The current matrix is **3.10–3.15**, and `requires-python = ">=3.10"`.
-  Python **3.10 is deprecated** since 4.6.0 (EOL 2026-10-31) and is dropped in
+  Python **3.10 is deprecated** since 4.6.0 (EOL 2026-10-01) and is dropped in
   5.0, which will require Python 3.11+
   ([#242](https://github.com/luisgf/openbadgeslib/issues/242)).
 

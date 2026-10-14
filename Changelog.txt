@@ -4,6 +4,128 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v4.6.1 - unreleased
+
+  - security(ldp): `OB3LdpVerifier` reads only JSON its Data Integrity proof
+    actually covers (GHSA-rp5q-966c-5592; affects 3.2.0–4.6.0, the native
+    eddsa-rdfc-2022 path). The proof signs the RDF dataset the credential
+    expands to, while the returned credential and every policy check
+    (validity window, `credentialStatus`, recipient, issuer binding,
+    `proof.expires`) read the JSON, and nothing tied the two together. Many
+    JSON documents expand to the same dataset, so an expired or revoked
+    badge, or one showing forged content, verified with its genuine
+    signature, including on the DID-resolved, issuer-bound path. `verify`
+    now applies VC Data Integrity §2.4.1 context validation before it builds
+    the credential or applies any policy, for both cryptosuites and ahead of
+    the ecdsa-sd-2023 delegation: `@context` starts with the VC 2.0 URL and
+    names only bundled contexts (an inline object may carry nothing but an
+    absolute-IRI `@vocab`); the document and its proof configuration must
+    each be the compacted form of their own expansion, with every member a
+    bundled context defines spelled by its term; and nothing may be dropped
+    on the way to RDF ("safe mode"). That refuses a member re-keyed to its
+    IRI or aliased by an inline context, a value its term cannot carry (an
+    untyped `validUntil`/`validFrom` or proof `expires`, or a literal
+    `credentialStatus`: compaction itself keeps such a value under the full
+    IRI or an inline-`@vocab` suffix, out of sight of the policy, which
+    reads the term), `@included`, `@reverse`, `@index`, `@direction`, a
+    top-level `@graph`, a second description of the credential's own node,
+    an array nested inside an array (expansion flattens `[[S]]` into the
+    same signed dataset as `S`, while the status checker reads only objects,
+    so a wrapped `credentialStatus` skipped the revocation check), and any
+    term, type or node id that is undefined or not an absolute IRI. Every
+    `credentialStatus` entry must also be a JSON object: a bare status
+    reference, which no checker can read, is refused rather than treated as
+    no status. Embedded endorsement credentials are validated against their
+    own `@context`. `OB3LdpSigner.sign` checks what it produced and raises
+    `ErrorSigningFile` rather than emit a document its proof does not fully
+    cover (e.g. a recipient id without a scheme), or one whose
+    `sign_to_json` text exceeds the 256 KiB verifiers accept. Now refused
+    because part of them was never signed: credentials with an undefined
+    term or type, or a relative or malformed id (pyld >= 3.1 signed an
+    undefined type or a relative id as `http://example.org/base/...`),
+    including the shape openbadgeslib 3.6.0 to 3.14.0 issued, a
+    `credentialSchema` typed `1EdTechJsonSchemaValidator2019` without the
+    extensions context (#239): re-issue such badges. The size limit is still
+    applied once, to the document as received. The low-level
+    `verify_data_integrity_proof` / `add_data_integrity_proof` are unchanged
+    for eddsa-rdfc-2022 (CLR and the W3C vectors use them): they verify or
+    sign the RDF dataset only, so do not read validity, status, subject or
+    issuer from the JSON after `verify_data_integrity_proof` alone; verify
+    OB 3.0 credentials with `OB3LdpVerifier`.
+
+  - security(deps): raise the `[ldp]` pyld floor to `>=3.3.0`, the release
+    the suite is tested against, and declare the same floor in `[ldp-sd]`
+    (openvc-core's own `[data-integrity]` extra admits pyld 2.x, and
+    `OB3LdpVerifier` validates with pyld before it delegates). Context
+    validation compares the JSON with the compacted form pyld derives, and
+    pyld 2.x compacts some terms differently (an `Address.geo` comes back as
+    `GeoCoordinates`), so genuine credentials such as 1EdTech's "Complete
+    OpenBadgeCredential" example would be refused. pyld before 3.3 also
+    canonicalizes an integral float (`3.0`) as `"3.0E0"`, where 3.3 and
+    jsonld.js give `"3"`, so a Data Integrity proof made on one did not
+    verify on the other.
+
+  - security(deps): raise the openvc-core floors to `>=1.31.3` in the
+    `[eudi]`, `[ldp-sd]` and `[oid4vci]` extras, the release the suite is
+    tested against. openvc-core 1.30.2 closes the same JSON-vs-dataset gap
+    in the ecdsa-sd-2023 suite `[ldp-sd]` delegates to
+    (GHSA-vrxg-57v4-85mc), and the ecdsa-sd-2023 verify (`OB3LdpVerifier`
+    and `verify_data_integrity_proof` alike) now also refuses, at run time,
+    an installed openvc-core older than 1.30.2 or with no readable version
+    (`OB3VerificationError`), so a stale environment fails closed. Behaviour
+    the new floor brings: `verify_badge_sd_jwt` on a presentation carrying a
+    Key Binding JWT, called with only `audience` or only `nonce` (or one of
+    them empty), raises `EudiError` instead of reporting `key_bound=True`
+    for a KB-JWT never bound to this verifier (openvc-core 1.30.0); and an
+    ecdsa-sd-2023 document with an undefined term or an inline `@context`
+    that defines terms is rejected. CI's `eudi` job now runs the `[eudi]`
+    and `[ldp-sd]` suites at that exact floor and fails if the extras'
+    floors disagree.
+
+  - security(deps): raise the PyJWT[crypto] floor to `>=2.15.1`. The OB3
+    JWT-VC verifier hands an untrusted token to
+    `jwt.get_unverified_header()`, to an unverified `jwt.decode()` peek that
+    reads the issuer before its key is resolved, and to the
+    signature-verifying `jwt.decode()`, so these PyJWT advisories are on a
+    reachable path: a deeply nested header (2.14.0, GHSA-8wjv-2p76-3863,
+    which affects the old 2.13 floor) or payload (2.15.0,
+    GHSA-42vr-xj54-vc7v, through the unverified peek) escaped as a bare
+    `RecursionError` instead of an `OB3VerificationError`; and characters
+    outside the base64url alphabet were accepted in a segment, so one
+    signature verified under many spellings of a token (2.14.0,
+    GHSA-hxm8-2xgr-2p9m; its revocation bypass needs a consumer that indexes
+    revocation by token text, which openbadgeslib does not do). 2.15.1
+    rather than 2.15.0 because 2.14.0 and 2.15.0 also refused canonical `=`
+    padding (PyJWT #1209). The HMAC key-confusion, options-dict and
+    `PyJWKClient` advisories are not reachable: no HS* algorithm is ever
+    allowed, every call passes a fresh options dict, and `PyJWKClient` is
+    not used. `environment.yml`, the README and the Installation page
+    follow, and a docs test now pins their PyJWT floor to `pyproject.toml`.
+
+  - fix: the Python 3.10 deprecation gives the real CPython end-of-life
+    date, 2026-10-01 (PEP 619); v4.6.0 said 2026-10-31. The
+    `DeprecationWarning` now reads "(CPython end of life: 2026-10-01)", and
+    the README, Installation, Upgrading and contributing docs follow. Its
+    prefix is unchanged, so the documented
+    `ignore:Python 3.10 is deprecated in openbadgeslib:DeprecationWarning`
+    filter still matches, and 3.10 stays supported through 4.x.
+
+  - fix(ob3): integral `creditsAvailable` / `creditsEarned` values are
+    emitted as JSON integers (`3`, not `3.0`). Both are `xsd:float` terms,
+    and JSON-LD gives an integral number the integer lexical form (`"3"`),
+    which jsonld.js and pyld 3.3 sign; pyld before 3.3 signed the float
+    `3.0` as `"3.0E0"`, so a Data Integrity badge issued with integral float
+    credits verified only on the pyld version it was signed with. New badges
+    now canonicalize the same everywhere. Data Integrity badges already
+    issued with integral float credits on pyld <= 3.1 do not verify on pyld
+    3.3 or jsonld.js-based verifiers; re-issue them. The model still reads
+    the values back as floats.
+
+  - fix(ldp): a deeply nested Data Integrity document fails with
+    `OB3VerificationError` instead of escaping `OB3LdpVerifier.verify` (and
+    the issuer-DID peek in `verify_badge`) as a bare `RecursionError`.
+
+
 * v4.6.0 - 2026-10-13
 
   - feat: Python 3.15 is officially supported (#243). It joins the

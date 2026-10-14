@@ -543,6 +543,22 @@ class TestBroadenedModel:
         again = OpenBadgeCredential.from_vc_document(cred.to_vc())
         assert again.credits_earned == 3.5
 
+    def test_integral_credits_are_emitted_as_integers(self):
+        # xsd:float terms: an integral value gets the integer lexical form in
+        # JSON-LD, so emitting 3 (not 3.0) signs the same statement on every
+        # JSON-LD processor version. Non-integral values stay floats.
+        cred = self._credential(credits_available=3.0)
+        cred.credits_earned = 2.0
+        vc = cred.to_vc()
+        assert type(vc['credentialSubject']['creditsEarned']) is int
+        assert type(vc['credentialSubject']['achievement']['creditsAvailable']) is int
+        assert vc['credentialSubject']['creditsEarned'] == 2
+        again = OpenBadgeCredential.from_vc_document(vc)
+        assert again.credits_earned == 2.0
+        assert again.achievement.credits_available == 3.0
+        cred.credits_earned = 1e21
+        assert type(cred.to_vc()['credentialSubject']['creditsEarned']) is float
+
     def test_single_alignment_object_is_parsed(self):
         # The schema lets `alignment` be a single object, not only an array;
         # _alignment_list handles both so a lone alignment is not dropped.

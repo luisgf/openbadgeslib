@@ -13,7 +13,7 @@ with W3C Bitstring Status Lists and `did:web`. It also ships strict
 **OpenBadges 2.0** (JWS / hosted assertions) and a frozen **OpenBadges 1.0**
 legacy format, selected with `-V {1,2,3}` (default `3`).
 
-> **4.0.0 is released** (2026-07-22). It groups the breaking changes so upgrades stay rare: every CLI unifies on one `0/1/2` exit-code contract (a valid-but-untrusted badge now exits `2`, and the 255s are gone), and the legacy pycryptodome/python-ecdsa compat shim is removed — a live key **object** from either is no longer accepted, though key *files* are plain PEM and round-trip unchanged. OpenBadges 1.0 and the `openbadges-<command>` scripts stay, and a new unified `openbadges <command>` front-end joins them. **Python 3.10 stays supported throughout 4.x** (`requires-python >= 3.10`; CI tests 3.10–3.15) but is deprecated since 4.6.0, ahead of its 2026-10-31 end of life; 5.0 drops it and requires Python 3.11+. See **[Upgrading to 4.0](https://github.com/luisgf/openbadgeslib/wiki/Upgrading-to-4.0)** before pinning a major.
+> **4.0.0 is released** (2026-07-22). It groups the breaking changes so upgrades stay rare: every CLI unifies on one `0/1/2` exit-code contract (a valid-but-untrusted badge now exits `2`, and the 255s are gone), and the legacy pycryptodome/python-ecdsa compat shim is removed — a live key **object** from either is no longer accepted, though key *files* are plain PEM and round-trip unchanged. OpenBadges 1.0 and the `openbadges-<command>` scripts stay, and a new unified `openbadges <command>` front-end joins them. **Python 3.10 stays supported throughout 4.x** (`requires-python >= 3.10`; CI tests 3.10–3.15) but is deprecated since 4.6.0 (it reached end of life on 2026-10-01); 5.0 drops it and requires Python 3.11+. See **[Upgrading to 4.0](https://github.com/luisgf/openbadgeslib/wiki/Upgrading-to-4.0)** before pinning a major.
 
 ## Features
 
@@ -91,7 +91,7 @@ all three OB versions.
   openbadgeslib 5.0 will require Python 3.11 or newer
   ([#242](https://github.com/luisgf/openbadgeslib/issues/242)).
 - [pypng](https://pypi.org/project/pypng/) >= 0.20220715.0
-- [PyJWT[crypto]](https://pypi.org/project/PyJWT/) >= 2.13
+- [PyJWT[crypto]](https://pypi.org/project/PyJWT/) >= 2.15.1
 - [cryptography](https://pypi.org/project/cryptography/) >= 45
 - [defusedxml](https://pypi.org/project/defusedxml/) >= 0.7
 

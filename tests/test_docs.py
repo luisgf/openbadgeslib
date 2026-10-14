@@ -129,9 +129,11 @@ def test_ci_does_not_restate_the_openvc_floor():
     pyproject.toml, leaving CI installing 1.18, below the package's own
     constraint, so the shipped floor went untested (#264)."""
     ci = (REPO / '.github' / 'workflows' / 'ci.yml').read_text(encoding='utf-8')
-    # The derived pin is `openvc-core==${floor}.*`; a literal one starts with a
-    # digit, which is what must never come back.
-    literal = re.findall(r'openvc-core==\d[^"\'\s]*', ci)
+    # The derived pins are `openvc-core==${OPENVC_FLOOR}` and, for the [ldp-sd]
+    # suite, `openvc-core[data-integrity]==${OPENVC_FLOOR}`; a literal one
+    # starts with a digit, with or without the extras bracket, and must never
+    # come back.
+    literal = re.findall(r'openvc-core(?:\[[^\]]*\])?==\d[^"\'\s]*', ci)
     assert not literal, \
         f"ci.yml pins openvc-core literally ({literal}); derive it from pyproject.toml"
 
@@ -155,6 +157,26 @@ def test_docs_cryptography_floor_matches_pyproject():
         compact = path.read_text(encoding='utf-8').replace(' ', '')
         assert ('>=%s' % floor) in compact, \
             '%s does not document cryptography>=%s' % (path.name, floor)
+
+
+def test_docs_pyjwt_floor_matches_pyproject():
+    """README and Installation state the PyJWT[crypto] security floor exactly
+    as pyproject.toml declares it: 4.6.1 raised it to 2.15.1 while both still
+    said 2.13, and the cryptography check above only looks for a substring."""
+    pyproject = (REPO / 'pyproject.toml').read_text(encoding='utf-8')
+    match = re.search(r'"PyJWT\[crypto\]>=(\d+(?:\.\d+)*)"', pyproject)
+    assert match, 'could not find the PyJWT[crypto] floor in pyproject.toml'
+    floor = match.group(1)
+    for path in (REPO / 'README.md', WIKI / 'Installation.md'):
+        lines = [line.replace(' ', '').replace('`', '')
+                 for line in path.read_text(encoding='utf-8').splitlines()
+                 if 'PyJWT' in line and '>=' in line]
+        assert lines, '%s does not document the PyJWT floor' % path.name
+        for line in lines:
+            stated = re.findall(r'>=(\d+(?:\.\d+)*)', line)
+            assert stated and set(stated) == {floor}, \
+                '%s states PyJWT >=%s, pyproject.toml >=%s' % (
+                    path.name, ', '.join(stated), floor)
 
 
 @pytest.mark.parametrize('name', CLI_TOOLS)

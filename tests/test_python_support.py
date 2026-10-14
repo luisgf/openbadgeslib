@@ -20,7 +20,7 @@ from openbadgeslib import _python_support
 # The canonical text (Changelog, README and the wiki paraphrase it): spelled
 # out here so a change to the user-facing message is a deliberate one.
 MESSAGE = ('Python 3.10 is deprecated in openbadgeslib (CPython end of life: '
-           '2026-10-31); openbadgeslib 5.0 will require Python 3.11 or newer.')
+           '2026-10-01); openbadgeslib 5.0 will require Python 3.11 or newer.')
 MARKER = 'Python 3.10 is deprecated in openbadgeslib'
 ON_PY310 = sys.version_info < (3, 11)
 
