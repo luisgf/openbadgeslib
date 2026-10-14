@@ -108,12 +108,19 @@ def _check_entry(entry: dict[str, Any], download: Callable[[str], bytes],
                  *, badge_issuer: Optional[str] = None,
                  verify_list: bool = False,
                  list_pubkey_pem: Optional[Union[str, bytes]] = None) -> None:
-    types = set(_as_list(entry.get("type")))
+    # Only string members can name a type or a purpose. A holder may respell
+    # a signed one as a one-element array (the same RDF dataset), and an
+    # issuer may sign a language-tagged value: neither is hashable, so each
+    # must fail closed here as a verification error, not as a TypeError.
+    types = {t for t in _as_list(entry.get("type")) if isinstance(t, str)}
     if not (types & _SUPPORTED_ENTRY_TYPES):
         raise OB3VerificationError(
             "unsupported credentialStatus type: %r" % (entry.get("type"),))
 
     purpose = entry.get("statusPurpose", "revocation")
+    if not isinstance(purpose, str):
+        raise OB3VerificationError(
+            "invalid statusPurpose in credentialStatus entry: %r" % (purpose,))
     list_url = entry.get("statusListCredential")
     if not isinstance(list_url, str) or not list_url:
         raise OB3VerificationError(

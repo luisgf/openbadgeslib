@@ -55,29 +55,70 @@
 # validate_document() closes all of them with one invariant: the document and
 # its proof configuration must each be the COMPACTED FORM of their own
 # expansion under a context the verifier trusts -- the VC 2.0 base context
-# first, then only URLs the fail-closed bundled loader serves (or an inline
-# object carrying nothing but an absolute-IRI @vocab, which can neither alias,
-# re-map nor drop a term: a defined term always wins over @vocab when
-# compacting) -- and the expansion must carry no statement the RDF conversion
-# would drop (JSON-LD "safe mode"). The comparison tolerates exactly the two
-# spellings JSON-LD treats as identical -- a one-element array vs its element
-# (as a property value; never an array inside an array, which expansion
-# flattens but JSON readers do not), and a node reference {"id": X} vs X --
-# compared as canonical JSON so true/1 and 1/1.0 stay distinct.
+# first, then only URLs the fail-closed bundled loader serves, each context
+# document once and at most eight entries, so the JSON-LD processor's
+# per-entry cost stays bounded -- and the expansion must carry no statement
+# the RDF conversion would drop (JSON-LD "safe mode"). Those context bounds
+# hold for every @context the processor applies, and are checked before it
+# runs (_check_nested_contexts): below the top level only an embedded
+# endorsement credential may carry one (adaptation (a)), and the credentials
+# embedded are bounded in number, depth and total size, since each is
+# expanded and compacted again on its own. Any other nested @context (outside
+# an @json literal) would be refused by the comparison below anyway --
+# compaction never re-emits one -- but only after the processor had spent the
+# CPU to apply it, on unauthenticated input. No inline context object is
+# accepted, not even one carrying only an @vocab (which openvc
+# tolerates): OB 3.0 credentials name only published contexts, and an inline
+# @vocab is a holder-chosen vocabulary that respells any IRI as a bare key
+# (``Until`` under {"@vocab": ".../credentials#valid"}), so it could only add
+# spellings to refuse. The comparison tolerates exactly the two spellings
+# JSON-LD treats as identical -- a one-element array vs its element (as a
+# property value; never an array inside an array, which expansion flattens
+# but JSON readers do not), and a node reference {"id": X} vs X -- compared
+# as canonical JSON so true/1 and 1/1.0 stay distinct.
 #
 # Being the compacted form is necessary but not sufficient. Compaction only
 # folds a statement into a term when the value matches the term's definition;
-# otherwise it keeps the predicate's absolute IRI (or a compact IRI, or a
-# suffix relative to an inline @vocab) as the key -- and that spelling IS the
-# compacted form. So a validUntil, validFrom or proof ``expires`` written as a
-# plain (untyped) string under its absolute IRI, or as ``Until`` under
-# {"@vocab": ".../credentials#valid"}, signs an untyped literal, survives the
-# comparison unchanged, and is invisible to the reader of ``validUntil``: an
-# issuer-signed expired credential would verify as never expiring. Hence the
-# second rule (_misspelled_key): in the compacted form, a key whose IRI some
+# otherwise it keeps the predicate's absolute IRI (or a compact IRI) as the
+# key -- and that spelling IS the compacted form. So a validUntil, validFrom
+# or proof ``expires`` written as a plain (untyped) string under its absolute
+# IRI signs an untyped literal, survives the comparison unchanged, and is
+# invisible to the reader of ``validUntil``: an issuer-signed expired
+# credential would verify as never expiring. Hence the second rule
+# (_misspelled_key): in the compacted form, a key -- or a ``type`` value,
+# which compaction spells the same vocabulary-relative way -- whose IRI some
 # pinned context defines a term for must be one of those terms. A conforming
 # document always uses the terms, so only such shapes are refused; extension
 # IRIs no pinned context defines are left alone.
+#
+# Above that rule, an IRI the checks after the proof read (_POLICY_TERMS: the
+# validity window of both VC data models, the proof's ``expires``,
+# credentialStatus, credentialSchema, credentialSubject, issuer, and the
+# status entry types and members of both status-list families) may only be
+# spelled by the one key (or type) the policy reads it under, whether or not
+# a pinned context defines it, and whatever term a pinned context gives it.
+# issuanceDate / expirationDate have a term only in the VC 1.1 context and
+# StatusList2021Entry and its members only in the StatusList2021 one, and
+# neither is bundled. OB 3.0 was first published on VCDM 1.1, so issuers
+# signed such badges, which are refused under their own @context; but a
+# holder can re-compact one onto [VC 2.0, OB 3.0]: the dataset and the
+# signature stay the same, compaction spells those members by full IRI, and
+# the model, which reads validUntil / validFrom (then issuanceDate /
+# expirationDate), saw no expiry, no not-before and no status entry type it
+# knew.
+#
+# Third (_check_status_in_place), a credentialStatus entry is described where
+# the status check reads it. RDF lets a node referenced from two properties be
+# described under either, so when the issuer also names its status entry from
+# another property (relatedResource: [{"id": S}], an endorsement's own
+# credentialStatus, ...), a holder can move a signed member -- a statusSize
+# of 2, say -- out from under credentialStatus with the dataset and the
+# signature unchanged, and the status check then reads the wrong bit. So a
+# node directly under the top-level credentialStatus whose @id is described
+# anywhere else in the expanded document (any member besides @id) is
+# refused, but see adaptation (d). The cost, as in openvc: an issuer-signed
+# credential that describes its status node under a second property with
+# more than its id is refused too.
 #
 # OB 3.0 adaptations (the 1EdTech "Complete OpenBadgeCredential" example must
 # validate):
@@ -92,7 +133,11 @@
 #     safe-mode walk still covers the whole expanded outer document, so
 #     @included, a dropped node or a re-description of the credential inside
 #     an endorsement is still refused. An ``endorsement`` entry without its own
-#     @context (or that is not an EndorsementCredential) is refused.
+#     @context (or that is not an EndorsementCredential) is refused. Any other
+#     @context below the top level is refused before expansion, even one
+#     inside an @json literal (``_sd``), whose keys are data the processor
+#     never applies: telling those apart before expansion would mean
+#     resolving terms, and no OB 3.0 credential needs the shape.
 # (b) ``type`` values are compared by the IRI they name, not by their
 #     spelling: compaction picks the shortest term for an IRI, so
 #     ``GeoCoordinates`` comes back as ``geo`` and ``AchievementCredential`` as
@@ -111,12 +156,21 @@
 # (c) A ``refreshService`` whose id is the credential's own id is tolerated
 #     only when that object is exactly {id, type} (the 1EdTech example does
 #     that); anything more is a re-description of the credential and refused.
+# (d) A description of a credentialStatus entry elsewhere is tolerated when it
+#     is an exact copy of the entry (equal expanded node objects): an
+#     embedded endorsement may carry the outer credential's credentialStatus
+#     verbatim, as in the credential the tests model on the 1EdTech example.
+#     RDF merges the two into the same statements, so a copy carries nothing
+#     the entry lacks; moving any member out of the entry makes the two
+#     differ, and is refused.
 
 import functools
 import json
 import re
 
-from typing import Any, Callable, Dict, FrozenSet, List, Optional, Set, Tuple, Union
+from types import MappingProxyType
+from typing import (Any, Callable, Dict, FrozenSet, Iterable, List, Mapping,
+                    Optional, Set, Tuple, Union)
 
 from .contexts import UnknownContextError, bundled_contexts
 from .verifier import OB3VerificationError
@@ -136,7 +190,47 @@ _REFUSED_KEYWORDS = ("@included", "@reverse", "@index", "@direction")
 # blank-node ("_:") predicates. Mirrored verbatim, not "fixed" to RFC 3987.
 _RDF_IRI = re.compile(r"^([A-Za-z][A-Za-z0-9+-.]*|_):[^\s]*$")
 
-_REFRESH_SERVICE = "https://www.w3.org/2018/credentials#refreshService"
+_CRED = "https://www.w3.org/2018/credentials#"
+_REFRESH_SERVICE = _CRED + "refreshService"
+_CREDENTIAL_STATUS = _CRED + "credentialStatus"
+_STATUS = "https://www.w3.org/ns/credentials/status#"
+_STATUS_LIST_2021 = "https://w3id.org/vc/status-list#"
+
+# The IRIs the checks after the proof read, each with the one key (or type
+# value) they read it under: the validity window (credential.py, both VC data
+# models; _check_validity_window), the proof's expiry (_validate_proof), the
+# status entries of both status-list families (status.py and
+# _reject_unsigned_ldp_aliases), credentialSchema, and the issuer and subject
+# the model, the issuer binding and _check_recipient read. In the compacted
+# form such an IRI may only be spelled by that key, whatever a pinned context
+# defines (see the module comment): a static table, not one derived from the
+# bundled contexts, because the VC 1.1 and StatusList2021 contexts that give
+# some of them a term are deliberately not bundled.
+_POLICY_TERMS: Mapping[str, str] = MappingProxyType({
+    _CRED + "validFrom": "validFrom",
+    _CRED + "validUntil": "validUntil",
+    _CRED + "issuanceDate": "issuanceDate",                 # VC 1.1 only
+    _CRED + "expirationDate": "expirationDate",             # VC 1.1 only
+    _CREDENTIAL_STATUS: "credentialStatus",
+    _CRED + "credentialSchema": "credentialSchema",
+    _CRED + "credentialSubject": "credentialSubject",
+    _CRED + "issuer": "issuer",
+    "https://w3id.org/security#expiration": "expires",
+    _STATUS + "BitstringStatusListEntry": "BitstringStatusListEntry",
+    _STATUS + "statusPurpose": "statusPurpose",
+    _STATUS + "statusListIndex": "statusListIndex",
+    _STATUS + "statusListCredential": "statusListCredential",
+    _STATUS + "statusSize": "statusSize",
+    _STATUS_LIST_2021 + "StatusList2021Entry": "StatusList2021Entry",
+    _STATUS_LIST_2021 + "statusPurpose": "statusPurpose",
+    _STATUS_LIST_2021 + "statusListIndex": "statusListIndex",
+    _STATUS_LIST_2021 + "statusListCredential": "statusListCredential",
+})
+
+# The keys of the compacted form whose values are type IRIs: "type" is the
+# VC 2.0 (and OB 3.0) alias of @type.
+_TYPE_KEYS = ("type", "@type")
+
 _ENDORSEMENT = "endorsement"
 _ENDORSEMENT_CREDENTIAL = "EndorsementCredential"
 
@@ -147,6 +241,25 @@ _EMBEDDED = object()
 # Embedded credentials may nest (an endorsement's issuer Profile can carry
 # endorsements); real documents stop at one or two levels.
 _MAX_EMBEDDED_DEPTH = 8
+
+# At most this many embedded credentials in all, at any depth: each costs its
+# own expansion and compaction. The 1EdTech "Complete OpenBadgeCredential"
+# example embeds five.
+_MAX_EMBEDDED_CREDENTIALS = 64
+
+# Each embedded credential is expanded and compacted again on its own, so
+# JSON nested k credentials deep is processed k + 1 times: without a bound a
+# chain of eight endorsements made a document cost nine times its size. The
+# embedded credentials' compact JSON, each counted in full (a nested one once
+# per credential that holds it), may total at most this many characters --
+# the size the verifier caps the whole document at
+# (ldp.MAX_LDP_DOCUMENT_BYTES), so endorsements one level deep, which never
+# overlap, fit.
+_MAX_EMBEDDED_SIZE = 256 * 1024
+
+# A conforming OB 3.0 credential lists two to four contexts (VC 2.0, OB 3.0,
+# the extensions, perhaps a Data Integrity one).
+_MAX_CONTEXT_ENTRIES = 8
 
 _Path = Tuple[Union[str, int], ...]
 _Loader = Callable[..., Any]
@@ -179,6 +292,10 @@ def validate_document(unsecured: dict[str, Any], proof_config: dict[str, Any],
 def _check_form(document: dict[str, Any], loader: _Loader, jsonld: Any, *,
                 what: str, depth: int) -> None:
     _check_context(document.get("@context"), loader, what)
+    if depth == 0:
+        # The expansion below also applies every nested @context, those of
+        # the embedded credentials validated after it included.
+        _check_nested_contexts(document, loader, what)
     expanded = _jsonld_call(jsonld.expand, what, document,
                             {"documentLoader": loader})
     if not (isinstance(expanded, list) and len(expanded) == 1
@@ -190,6 +307,7 @@ def _check_form(document: dict[str, Any], loader: _Loader, jsonld: Any, *,
         raise OB3VerificationError(
             "the %s uses a top-level @graph, which is not accepted" % what)
     _check_expanded(node, node.get("@id"), what, top=True)
+    _check_status_in_place(node, what)
 
     compacted = _jsonld_call(jsonld.compact, what, expanded,
                              document["@context"], {"documentLoader": loader})
@@ -211,13 +329,15 @@ def _check_form(document: dict[str, Any], loader: _Loader, jsonld: Any, *,
         theirs = _detach(_jsonld_call(jsonld.compact, what, stubbed,
                                       document["@context"],
                                       {"documentLoader": loader}), (), None)
-    where = _misspelled_key(theirs, (), _inline_vocabs(document["@context"]))
+    where = _misspelled_key(theirs, ())
     if where is not None:
         raise OB3VerificationError(
-            "the %s spells a property a pinned context defines other than by "
-            "its term (at %s): its value does not match the term's definition "
-            "(an untyped date, a literal for a node, ...), so the member the "
-            "policy reads does not carry what was signed" % (what, _pointer(where)))
+            "the %s spells a property (or a type) a pinned context defines, or "
+            "one the policy reads, other than by its term (at %s): its value "
+            "does not match the term's definition (an untyped date, a literal "
+            "for a node, ...) or the context defining the term is not bundled "
+            "(VC 1.1, StatusList2021), so the member the policy reads does not "
+            "carry what was signed" % (what, _pointer(where)))
 
     for path, credential in embedded:
         _check_embedded(credential, path, loader, jsonld, what=what,
@@ -226,11 +346,9 @@ def _check_form(document: dict[str, Any], loader: _Loader, jsonld: Any, *,
 
 def _check_embedded(credential: dict[str, Any], path: _Path, loader: _Loader,
                     jsonld: Any, *, what: str, depth: int) -> None:
-    """Validate an embedded EndorsementCredential against its own @context."""
-    where = "endorsement at %s of the %s" % (_pointer(path), what)
-    if depth > _MAX_EMBEDDED_DEPTH:
-        raise OB3VerificationError("%s nests embedded credentials too deeply"
-                                   % where)
+    """Validate an embedded EndorsementCredential against its own @context
+    (already bounded, as its nesting, by _check_nested_contexts)."""
+    where = _embedded_where(path, what)
     types = credential.get("type")
     types = [types] if isinstance(types, str) else types
     if not (isinstance(types, list) and _ENDORSEMENT_CREDENTIAL in types):
@@ -240,9 +358,13 @@ def _check_embedded(credential: dict[str, Any], path: _Path, loader: _Loader,
 
 
 def _check_context(context: Any, loader: _Loader, what: str) -> None:
-    """The VC 2.0 base context first, then only bundled URLs (or an
-    absolute-IRI ``@vocab``-only object). Runs before any expansion, so an
-    inline term definition never reaches the JSON-LD processor."""
+    """The VC 2.0 base context first, then only bundled URLs -- no inline
+    context object -- each context document once and at most
+    _MAX_CONTEXT_ENTRIES entries in all. Runs before any expansion, so an
+    inline definition or @vocab never reaches the JSON-LD processor -- nor
+    does a padded list: pyld re-processes a context once per entry, so a
+    pinned URL repeated thousands of times cost seconds of CPU per pass, on
+    unauthenticated input, before any key was resolved."""
     entries = [context] if isinstance(context, str) else context
     if not isinstance(entries, list) or not entries:
         raise OB3VerificationError(
@@ -251,22 +373,100 @@ def _check_context(context: Any, loader: _Loader, what: str) -> None:
         raise OB3VerificationError(
             "the first @context entry of the %s must be the VC 2.0 base "
             "context %r" % (what, VC2_CONTEXT))
-    for entry in entries:
-        if isinstance(entry, str) and entry:
-            try:
-                loader(entry)            # fail-closed allowlist, no network
-            except UnknownContextError as exc:
-                raise OB3VerificationError(str(exc)) from exc
-            continue
-        if isinstance(entry, dict) and set(entry) == {"@vocab"}:
-            if _is_predicate(entry["@vocab"]):
-                continue
-            raise OB3VerificationError(
-                "an inline @vocab in the %s must be an absolute IRI" % what)
+    if len(entries) > _MAX_CONTEXT_ENTRIES:
         raise OB3VerificationError(
-            "the %s carries an inline @context object; only the pinned "
-            "context URLs (and an inline {\"@vocab\": <absolute IRI>}) are "
-            "accepted" % what)
+            "the %s @context lists %d entries; at most %d are accepted"
+            % (what, len(entries), _MAX_CONTEXT_ENTRIES))
+    documents: Set[str] = set()
+    for entry in entries:
+        if not (isinstance(entry, str) and entry):
+            # An object (term definitions, an @vocab, ...), null, a number:
+            # OB 3.0 credentials name only published contexts.
+            raise OB3VerificationError(
+                "the %s carries an inline @context object (or another entry "
+                "that is not a context URL: %s); only the pinned context URLs "
+                "are accepted" % (what, _brief(entry)))
+        try:
+            loaded = loader(entry)       # fail-closed allowlist, no network
+        except UnknownContextError as exc:
+            raise OB3VerificationError(str(exc)) from exc
+        # By document, not URL: an alias (context.json) of a listed URL
+        # (context-3.0.3.json) applies the very same definitions again.
+        document = _canonical(loaded.get("document")
+                              if isinstance(loaded, dict) else loaded)
+        if document in documents:
+            raise OB3VerificationError(
+                "the %s @context lists the context %r when the same "
+                "context document is already listed" % (what, entry))
+        documents.add(document)
+
+
+def _check_nested_contexts(document: dict[str, Any], loader: _Loader,
+                           what: str) -> None:
+    """Bound, before any JSON-LD processing, every @context below the top
+    level of *document* (whose own @context _check_context has bounded): an
+    embedded endorsement credential's -- an ``endorsement`` entry carrying
+    one, exactly as _detach picks them -- is held to _check_context, and the
+    embedded credentials to _MAX_EMBEDDED_DEPTH, _MAX_EMBEDDED_CREDENTIALS
+    and _MAX_EMBEDDED_SIZE; any other is refused. Iterative, so a deeply
+    nested document reaches the processor's own recursion limit, not this.
+
+    pyld applies a nested @context, entry by entry, as it reaches it, so
+    checking only the top-level one let a padded @context on
+    credentialSubject (refused only afterwards, by the comparison) cost
+    seconds of CPU on unauthenticated input."""
+    embedded = 0
+    size = 0
+    # (value, its path inside the innermost document holding it, that
+    #  document's description, its embedding depth, whether value is an
+    #  ``endorsement`` entry)
+    stack: List[Tuple[Any, _Path, str, int, bool]] = [
+        (document, (), what, 0, False)]
+    while stack:
+        value, path, where, depth, entry = stack.pop()
+        if isinstance(value, list):
+            stack.extend((item, path + (index,), where, depth, False)
+                         for index, item in reversed(list(enumerate(value))))
+            continue
+        if not isinstance(value, dict):
+            continue
+        if "@context" in value and value is not document:
+            if not entry:
+                raise OB3VerificationError(
+                    "the %s carries an @context below its top level (at %s): "
+                    "only an embedded endorsement credential may carry its "
+                    "own" % (where, _pointer(path + ("@context",))))
+            where, depth, path = _embedded_where(path, where), depth + 1, ()
+            embedded += 1
+            if depth > _MAX_EMBEDDED_DEPTH:
+                raise OB3VerificationError(
+                    "%s nests embedded credentials too deeply" % where)
+            if embedded > _MAX_EMBEDDED_CREDENTIALS:
+                raise OB3VerificationError(
+                    "the %s embeds more than %d credentials (endorsements, "
+                    "at any depth)" % (what, _MAX_EMBEDDED_CREDENTIALS))
+            size += len(json.dumps(value, ensure_ascii=False,
+                                   separators=(",", ":")))
+            if size > _MAX_EMBEDDED_SIZE:
+                raise OB3VerificationError(
+                    "the credentials embedded in the %s total more than %d "
+                    "characters of JSON, a nested one counted once per "
+                    "credential that holds it (each is validated again on "
+                    "its own)" % (what, _MAX_EMBEDDED_SIZE))
+            _check_context(value["@context"], loader, where)
+        for key, item in reversed(list(value.items())):
+            if key == "@context":
+                continue                # bounded above, or the top level's
+            if key == _ENDORSEMENT and isinstance(item, list):
+                stack.extend((member, path + (key, index), where, depth, True)
+                             for index, member in reversed(list(enumerate(item))))
+            else:
+                stack.append((item, path + (key,), where, depth,
+                              key == _ENDORSEMENT))
+
+
+def _embedded_where(path: _Path, what: str) -> str:
+    return "endorsement at %s of the %s" % (_pointer(path), what)
 
 
 def _jsonld_call(function: Callable[..., Any], what: str, *args: Any) -> Any:
@@ -339,6 +539,73 @@ def _check_expanded(value: Any, top_id: Any, what: str, *, top: bool = False,
         if key not in ("@id", "@type"):
             _check_expanded(item, top_id, what,
                             via=None if key.startswith("@") else key)
+
+
+def _check_status_in_place(node: dict[str, Any], what: str) -> None:
+    """Refuse a ``credentialStatus`` entry of the top-level *node* (expanded
+    form) whose ``@id`` is also described -- given any member besides
+    ``@id`` -- anywhere else in it, unless that description is an exact copy
+    of the entry (see adaptation (d) in the module comment). The whole
+    expanded node is walked: embedded endorsements, ``@list`` and ``@graph``
+    values, and a nested node's own ``credentialStatus`` included."""
+    entries: Dict[str, Set[str]] = {}
+    for entry in _as_items(node.get(_CREDENTIAL_STATUS)):
+        if isinstance(entry, dict) and isinstance(entry.get("@id"), str):
+            entries.setdefault(entry["@id"], set()).add(_canonical(entry))
+    if not entries:
+        return
+    moved = _status_described_elsewhere(node, entries, top=True)
+    if moved is not None:
+        raise OB3VerificationError(
+            "the %s's credentialStatus entry %s is described outside "
+            "credentialStatus, where the status check does not read it"
+            % (what, _brief(moved)))
+
+
+def _as_items(value: Any) -> List[Any]:
+    if isinstance(value, dict) and "@list" in value:
+        value = value["@list"]
+    return value if isinstance(value, list) else [] if value is None else [value]
+
+
+def _status_described_elsewhere(value: Any, entries: Dict[str, Set[str]], *,
+                                top: bool = False,
+                                in_status: bool = False) -> Optional[str]:
+    """The ``@id`` of the first node object outside the top-level
+    ``credentialStatus`` that describes one of *entries* (``@id`` -> the
+    canonical forms of its entries there) other than as an exact copy, or
+    None. *in_status* marks the entries themselves, which are not checked
+    but are walked: a description nested inside one is elsewhere too."""
+    if isinstance(value, list):
+        for item in value:
+            found = _status_described_elsewhere(item, entries)
+            if found is not None:
+                return found
+        return None
+    if not isinstance(value, dict) or "@value" in value:
+        return None                     # a literal (even an @json one) is data
+    if "@list" in value:
+        return _status_described_elsewhere(value["@list"], entries,
+                                           in_status=in_status)
+    node_id = value.get("@id")
+    if (not in_status and isinstance(node_id, str) and node_id in entries
+            and set(value) - {"@id"}
+            and _canonical(value) not in entries[node_id]):
+        return node_id
+    for key, item in value.items():
+        if key in ("@id", "@type"):
+            continue
+        if top and key == _CREDENTIAL_STATUS:
+            for entry in _as_items(item):
+                found = _status_described_elsewhere(entry, entries,
+                                                    in_status=True)
+                if found is not None:
+                    return found
+            continue
+        found = _status_described_elsewhere(item, entries)
+        if found is not None:
+            return found
+    return None
 
 
 # ── compacted-form comparison ───────────────────────────────────────────────
@@ -520,45 +787,65 @@ def _stub_json_literals(value: Any) -> Any:
     return copied if changed else value
 
 
-def _inline_vocabs(context: Any) -> List[str]:
-    entries = context if isinstance(context, list) else [context]
-    return [entry["@vocab"] for entry in entries
-            if isinstance(entry, dict) and isinstance(entry.get("@vocab"), str)]
-
-
-def _misspelled_key(value: Any, path: _Path, vocabs: List[str]) -> Optional[_Path]:
-    """Path of the first key of the compacted form *value* that stands for an
-    IRI some pinned context defines a term for without being one of those
-    terms, or None (see the module comment)."""
+def _misspelled_key(value: Any, path: _Path) -> Optional[_Path]:
+    """Path of the first key -- or ``type`` value -- of the compacted form
+    *value* that stands for an IRI some pinned context defines a term for
+    without being one of those terms, or for an IRI the policy reads
+    (_POLICY_TERMS) without being the key it reads, or None (see the module
+    comment)."""
     if isinstance(value, list):
         for index, item in enumerate(value):
-            where = _misspelled_key(item, path + (index,), vocabs)
+            where = _misspelled_key(item, path + (index,))
             if where is not None:
                 return where
         return None
     if not isinstance(value, dict) or "@value" in value:
         return None                  # a literal is data, not properties
-    spellings = _term_spellings()
     for key, item in value.items():
         if key == "@context":
             continue
-        if not key.startswith("@"):
-            for iri in _key_iris(key, vocabs):
-                if iri in spellings and key not in spellings[iri]:
-                    return path + (key,)
-        where = _misspelled_key(item, path + (key,), vocabs)
+        if not key.startswith("@") and _is_misspelled(key):
+            return path + (key,)
+        if key in _TYPE_KEYS:
+            # A type is vocabulary-relative like a key, so compaction keeps an
+            # IRI no term in scope names (StatusList2021Entry) in full, on
+            # both sides of the comparison: the status check, for one, then
+            # skips an entry whose type it does not know.
+            many = isinstance(item, list)
+            for index, spelling in enumerate(item if many else [item]):
+                if (isinstance(spelling, str) and not spelling.startswith("@")
+                        and _is_misspelled(spelling)):
+                    return path + (key,) + ((index,) if many else ())
+        where = _misspelled_key(item, path + (key,))
         if where is not None:
             return where
     return None
 
 
-def _key_iris(key: str, vocabs: List[str]) -> List[str]:
-    """The IRIs a non-keyword key of the compacted form may stand for. With a
-    colon: itself, or a compact IRI over a term. Without one: a term (checked
-    by spelling, not resolved) or a suffix of an inline ``@vocab`` -- no
-    pinned context sets one. A superset, so the check fails closed."""
+def _is_misspelled(spelling: str) -> bool:
+    """Whether *spelling* (a non-keyword key or type of the compacted form)
+    may stand for an IRI in _POLICY_TERMS without being the one key the
+    policy reads it under, or for another IRI some pinned context defines a
+    term for without being one of those terms."""
+    spellings = _term_spellings()
+    for iri in _key_iris(spelling):
+        policy_term = _POLICY_TERMS.get(iri)
+        terms = (frozenset((policy_term,)) if policy_term is not None
+                 else spellings.get(iri))
+        if terms and spelling not in terms:
+            return True
+    return False
+
+
+def _key_iris(key: str) -> Iterable[str]:
+    """The IRIs a non-keyword key (or type) of the compacted form may stand
+    for. Without a colon: every IRI some pinned context defines that term as,
+    in any scope (no pinned context sets @vocab and no inline context is
+    accepted, so a bare key that is no term is dropped by expansion, which
+    the comparison refuses). With one: itself, or a compact IRI over a term.
+    A superset, so the check fails closed."""
     if ":" not in key:
-        return [vocab + key for vocab in vocabs]
+        return _type_synonyms().get(key, frozenset())
     prefix, _, suffix = key.partition(":")
     iris = [key]
     if not suffix.startswith("//"):

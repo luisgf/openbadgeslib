@@ -62,7 +62,7 @@ import json
 import re
 
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Mapping, Optional, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple, Union
 
 from .. import baking
 from ..errors import ErrorSigningFile
@@ -509,7 +509,9 @@ def _reject_unsigned_ldp_aliases(doc: dict[str, Any]) -> None:
     contexts, so in the LDP path they are UNSIGNED: a holder could rewrite them
     (un-expire / un-revoke) with the proof still verifying. Here a credential
     must use the VC 2.0 terms (validUntil/validFrom, BitstringStatusListEntry);
-    fail closed on the legacy shapes.
+    fail closed on the legacy shapes. (Their full-IRI spellings, which a VC
+    1.1 badge re-compacted onto the VC 2.0 context carries, are refused by
+    context validation: see _POLICY_TERMS in ob3/_context_validation.py.)
 
     Every ``credentialStatus`` entry must also be a JSON object: the model and
     the status checker read only objects, so an entry spelled any other way
@@ -545,15 +547,23 @@ def _reject_hidden_sd_lifecycle(doc: dict[str, Any], proof: dict[str, Any]) -> N
     """Fail closed when an ecdsa-sd-2023 presentation omits lifecycle claims.
 
     Selective disclosure lets a holder drop statements the issuer signed.
-    ``validUntil`` and ``credentialStatus`` are the ones that bound a badge's
-    life: hiding them makes an expired or revoked credential look perpetual.
-    eddsa-rdfc-2022 signs the whole document, so this only applies to
-    ecdsa-sd-2023. The low-level ``verify_data_integrity_proof`` does not
-    enforce it (it checks the proof alone); ``OB3LdpVerifier.verify`` does
-    (#328).
+    ``validFrom``, ``validUntil`` and ``credentialStatus`` are the ones that
+    bound a badge's life: hiding them makes a not-yet-valid, expired or
+    revoked credential look valid (the model takes a missing ``validFrom``
+    as "now"). eddsa-rdfc-2022 signs the whole document, so this only
+    applies to ecdsa-sd-2023. The low-level ``verify_data_integrity_proof``
+    does not enforce it (it checks the proof alone); ``OB3LdpVerifier.verify``
+    does (#328). A key that is there may still hold only part of what the
+    issuer signed: _reject_selective_sd_lifecycle covers that, once the
+    proof has verified.
     """
     if proof.get('cryptosuite') != 'ecdsa-sd-2023':
         return
+    if 'validFrom' not in doc:
+        raise OB3VerificationError(
+            "ecdsa-sd-2023 presentation omitted validFrom, which a holder "
+            "could hide to make a not-yet-valid badge look valid; disclose "
+            "validFrom")
     if 'validUntil' not in doc:
         raise OB3VerificationError(
             "ecdsa-sd-2023 presentation omitted validUntil, which a holder "
@@ -564,13 +574,128 @@ def _reject_hidden_sd_lifecycle(doc: dict[str, Any], proof: dict[str, Any]) -> N
             "holder could hide to un-revoke the badge; disclose credentialStatus")
 
 
+_CRED = 'https://www.w3.org/2018/credentials#'
+_SD_STATUS = '<%scredentialStatus>' % _CRED
+_SD_LIFECYCLE = frozenset({_SD_STATUS, '<%svalidFrom>' % _CRED,
+                           '<%svalidUntil>' % _CRED})
+
+
+def _reject_selective_sd_lifecycle(doc: dict[str, Any], proof: dict[str, Any]) -> None:
+    """Fail closed unless every disclosed ecdsa-sd-2023 statement about the
+    credential's lifecycle is MANDATORY.
+
+    _reject_hidden_sd_lifecycle only sees that the ``validFrom``,
+    ``validUntil`` and ``credentialStatus`` keys are there. A holder can
+    disclose any subset of the statements the issuer left selective, so with
+    status selective a presentation could reveal one ``credentialStatus``
+    entry of two (the clear one), or an entry without its ``statusSize``,
+    and pass the status check; and an issuer that left ``validFrom``
+    selective lets a holder hide a future one from any presentation. A
+    verifier cannot count the statements a holder withheld; it can only rely
+    on those the issuer's base signature covers as a whole, the mandatory
+    ones. So every disclosed statement with the credential as subject and
+    ``credentialStatus``, ``validFrom`` or ``validUntil`` as predicate, and
+    every statement about one of its status entries, must be mandatory:
+    issuers mark ``/validFrom``, ``/validUntil`` and ``/credentialStatus`` as
+    mandatory pointers. Runs after the proof verified (the mandatory indexes
+    are then the issuer's).
+
+    Limit: a statement the issuer left selective and the holder withheld is
+    invisible here. An issuer who marks only ``/credentialStatus/0`` (or only
+    some members of an entry) mandatory leaves the rest hideable, and no
+    verifier can detect it: mark ``/credentialStatus`` whole.
+    """
+    if proof.get('cryptosuite') != 'ecdsa-sd-2023':
+        return
+    statements, mandatory = _sd_disclosed_statements(doc, proof)
+    credential_id = doc.get('id')
+    subject = '<%s>' % credential_id if isinstance(credential_id, str) else None
+    terms = [statement.split(' ', 2) for statement in statements]
+    if subject is None or not any(t[0] == subject for t in terms):
+        raise OB3VerificationError(
+            "cannot find the statements about the credential (id %r) among "
+            "those the ecdsa-sd-2023 proof discloses; its id must be an IRI"
+            % (credential_id,))
+    status_nodes = {_nquad_node(t[2]) for t in terms
+                    if len(t) == 3 and t[0] == subject and t[1] == _SD_STATUS}
+    for index, term in enumerate(terms):
+        lifecycle = len(term) != 3 or term[0] in status_nodes or (
+            term[0] == subject and term[1] in _SD_LIFECYCLE)
+        if lifecycle and index not in mandatory:
+            raise OB3VerificationError(
+                "ecdsa-sd-2023 credential discloses validFrom, validUntil or "
+                "credentialStatus statements its issuer did not make "
+                "mandatory, so a holder could have withheld others (a "
+                "status entry, or a member of one such as statusSize) "
+                "undetected; the issuer must list /validFrom, /validUntil "
+                "and /credentialStatus as mandatory pointers")
+
+
+def _nquad_node(rest: str) -> Optional[str]:
+    """The object of an N-Quad (everything after its predicate) when it is
+    a node -- ``<iri>`` or a ``_:label`` -- spelled as in the subject
+    position, else None (a literal)."""
+    if rest.startswith('<'):
+        return rest[:rest.find('>') + 1]
+    if rest.startswith('_:'):
+        return rest.split(' ', 1)[0]
+    return None
+
+
+def _sd_disclosed_statements(doc: dict[str, Any], proof: dict[str, Any]
+                             ) -> Tuple[List[str], Set[int]]:
+    """The statements a derived ecdsa-sd-2023 proof discloses, exactly as
+    openvc-core's verify indexes them (canonical N-Quads, blank nodes
+    relabeled through the proof's label map, sorted), and the indexes of
+    the mandatory ones. openvc's own helpers, so the indexes cannot drift
+    from what its verify checked; if it stops exposing them, fail closed."""
+    _require_openvc_ecdsa_sd()
+    try:
+        from openvc.proof import ecdsa_sd
+        from openvc.proof.contexts import document_loader as openvc_loader
+        decode = ecdsa_sd.decode_derived_proof
+        to_nquads = ecdsa_sd._to_nquads
+        deskolemize = ecdsa_sd._deskolemize_nquads
+        canonicalize = ecdsa_sd._canonicalize
+        relabel = ecdsa_sd._relabel
+    except (ImportError, AttributeError) as exc:
+        raise OB3VerificationError(
+            "this openvc-core does not expose the ecdsa-sd-2023 statement "
+            "indexing the mandatory-statement check needs (%s); install a "
+            "supported release: pip install -U openbadgeslib[ldp-sd]"
+            % (exc,)) from exc
+    try:
+        parsed = decode(proof['proofValue'])
+        unsecured = {k: v for k, v in doc.items() if k != 'proof'}
+        loader = openvc_loader(bundled_contexts())
+        lines, _ = canonicalize(deskolemize(to_nquads(unsecured, loader)))
+        statements = list(relabel(lines, {
+            '_:' + k: '_:' + v for k, v in parsed['label_map'].items()}))
+        mandatory = set(parsed['mandatory_indexes'])
+        signatures = len(parsed['signatures'])
+    except Exception as exc:
+        raise OB3VerificationError(
+            "cannot read the mandatory statements of the ecdsa-sd-2023 "
+            "proof: %s" % (str(exc)[:300],)) from exc
+    # The delegate verified the mandatory statements by index and one
+    # signature per other statement: a view with an index outside it, or
+    # that disagrees on that count, is not the one it verified.
+    if (not all(isinstance(i, int) and 0 <= i < len(statements)
+                for i in mandatory)
+            or len(statements) - len(mandatory) != signatures):
+        raise OB3VerificationError(
+            "the ecdsa-sd-2023 statements do not match what the proof signs")
+    return statements, mandatory
+
+
 class OB3LdpVerifier:
     """Verifies OpenBadges 3.0 credentials secured with a Data Integrity
     (Linked Data Proof) embedded proof — cryptosuites eddsa-rdfc-2022 and,
     for selective-disclosure credentials, ecdsa-sd-2023 (verify delegated to
     openvc-core). A derived ecdsa-sd-2023 proof reveals only the mandatory plus
     holder-disclosed statements, so the reconstructed credential reflects just
-    what the holder chose to show.
+    what the holder chose to show -- except for ``validFrom``, ``validUntil``
+    and ``credentialStatus``, which must be disclosed and mandatory.
 
     Mirrors :class:`OB3Verifier` (the JWT-VC verifier) in API and trust
     model, for the other proof format OB 3.0 allows:
@@ -622,16 +747,23 @@ class OB3LdpVerifier:
         own signature is verified too (reusing a pinned key, or resolving the
         issuer DID), unless ``verify_status_list=False``. ``download`` resolves
         a did:web verificationMethod and status list issuer DID (injectable for
-        testing). An ``ecdsa-sd-2023`` presentation that omits ``validUntil``
-        or ``credentialStatus`` is rejected so a holder cannot hide expiry or
-        revocation (#328).
+        testing). An ``ecdsa-sd-2023`` presentation that omits ``validFrom``,
+        ``validUntil`` or ``credentialStatus`` is rejected so a holder cannot
+        hide a future start, expiry or revocation (#328), and so is one whose
+        disclosed ``validFrom``, ``validUntil`` or ``credentialStatus``
+        statements the issuer did not make mandatory: a holder could
+        otherwise withhold them, one status entry, or a member of one,
+        undetected. Issuers must list ``/validFrom``, ``/validUntil`` and
+        ``/credentialStatus`` as mandatory pointers.
 
         Before reading anything from the JSON, the document must be exactly
         the compacted form of the RDF dataset its proof signs, under the
-        pinned contexts (context validation): a member re-keyed to its IRI
-        or aliased by an inline ``@context``, a value its term cannot carry
+        pinned contexts alone (context validation): an inline ``@context``
+        object, a member re-keyed to its IRI, a value its term cannot carry
         (an untyped ``validUntil``, kept under the full IRI by compaction
-        itself), ``@included``/``@reverse``/a
+        itself), a member the policy reads spelled by its IRI because its
+        context is not bundled (a VC 1.1 ``expirationDate``, a
+        ``StatusList2021Entry``), ``@included``/``@reverse``/a
         top-level ``@graph``, a re-description of the credential's own node,
         or anything the RDF conversion drops (relative or malformed IRIs,
         undefined terms) is rejected.
@@ -647,7 +779,8 @@ class OB3LdpVerifier:
         proof = _select_proof(doc)
         _validate_proof(proof, 'assertionMethod')
         # Before resolving keys or running crypto: an SD presentation that hid
-        # expiry/revocation is already a fail, regardless of the proof.
+        # its start/expiry/revocation is already a fail, regardless of the
+        # proof.
         _reject_hidden_sd_lifecycle(doc, proof)
 
         # The proof signs the RDF dataset; the model and every policy check
@@ -658,9 +791,11 @@ class OB3LdpVerifier:
         # the ecdsa-sd-2023 delegation too. It also runs before the key is
         # resolved, deliberately: a malformed document never triggers a
         # did:web fetch. The cost is CPU on unauthenticated input, bounded by
-        # MAX_LDP_DOCUMENT_BYTES and _MAX_EMBEDDED_DEPTH and near-linear in
-        # the document (a few expand/compact passes, one per embedded
-        # credential), below that of the canonicalization that follows.
+        # MAX_LDP_DOCUMENT_BYTES and near-linear in the document: every
+        # @context the JSON-LD processor applies, at any depth, is bounded
+        # before it runs, and the embedded credentials, each validated again
+        # on its own, by number, depth and total size (_context_validation),
+        # so at most about twice the passes over the document itself.
         _check_json_ld_form(doc, proof, document_loader())
 
         try:
@@ -707,6 +842,10 @@ class OB3LdpVerifier:
             pem = self._resolve_vm(vm, download)
 
         verify_data_integrity_proof(doc, pem)
+        # ecdsa-sd-2023: the disclosed lifecycle statements must be ones the
+        # base signature covers as a whole, or a holder could have withheld
+        # part of them (a status entry, a statusSize) undetected.
+        _reject_selective_sd_lifecycle(doc, proof)
 
         _check_validity_window(credential)
 

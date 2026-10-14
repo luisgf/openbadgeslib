@@ -211,9 +211,15 @@ The proof signs the RDF dataset the document expands to, not its JSON, so
 before it builds the credential or applies any policy, `OB3LdpVerifier`
 requires the JSON to be exactly the compacted form of what was signed under
 the pinned contexts (VC Data Integrity §2.4.1 context validation, since
-4.6.1). A member re-keyed to its IRI or aliased by an inline `@context`, a
-value its term cannot carry (e.g. an untyped `validUntil`, which compaction
-keeps under the full IRI rather than the term the policy reads),
+4.6.1). An inline `@context` object (OB 3.0 credentials name only
+published contexts), a `@context` below the top level other than an
+embedded endorsement credential's own, more than 64 embedded credentials,
+more than 8 levels of them or more than 256 KiB of their JSON in all, a
+member re-keyed to its IRI, a value its term cannot carry (e.g. an untyped
+`validUntil`, which compaction keeps under the full IRI rather than the term
+the policy reads), a member the policy reads spelled by its IRI because its
+context is not bundled (a VC 1.1 badge's `expirationDate`, re-compacted onto
+VC 2.0),
 `@included`, `@reverse`, a top-level `@graph`, a second description of the
 credential's own node, an array nested inside an array, or a term, type or id
 the RDF conversion would drop (undefined, or not an absolute IRI) is rejected
@@ -233,10 +239,15 @@ call. `ecdsa-sd-2023` (selective disclosure) is verified by delegating to
 `openvc-core` (the `[ldp-sd]` extra), which runs its own context validation;
 an openvc-core older than 1.30.2 is refused. A cryptosuite the library supports
 neither natively nor by delegation (e.g. `ecdsa-rdfc-2019`) fails closed naming
-the supported ones. An `ecdsa-sd-2023` presentation that omits `validUntil` or
-`credentialStatus` is rejected: a holder must not be able to hide expiry or
-revocation. `verify_data_integrity_proof` does not apply that check (it
-verifies the proof alone).
+the supported ones. An `ecdsa-sd-2023` presentation that omits `validFrom`,
+`validUntil` or `credentialStatus` is rejected: a holder must not be able to
+hide a future start, expiry or revocation. So is one whose disclosed
+`validFrom`, `validUntil` or `credentialStatus` statements the issuer did not
+make mandatory, since a holder could then withhold them, one status entry, or
+a member of one, undetected: issuers list `/validFrom`, `/validUntil` and
+`/credentialStatus` as mandatory pointers.
+`verify_data_integrity_proof` does not apply these checks (it verifies the
+proof alone).
 
 ## Issuing Data Integrity (LDP) credentials — `OB3LdpSigner`
 

@@ -16,6 +16,7 @@ need [ldp-sd] (openvc-core) and follow its skip/fail policy (#221).
 import copy
 import json
 import re
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -36,6 +37,7 @@ from openbadgeslib.ob3.contexts import document_loader  # noqa: E402
 from openbadgeslib.ob3.credential import (  # noqa: E402
     Alignment, Evidence, IdentityObject, Result, ResultDescription)
 from openbadgeslib.ob3.did import _b58btc_encode, did_key_from_pem  # noqa: E402
+from test_ob3_status import _encoded_list  # noqa: E402
 
 UTC = timezone.utc
 VC = 'https://www.w3.org/2018/credentials#'
@@ -96,6 +98,21 @@ def _rejected(document, match, verifier=None, **kwargs):
 def _check(document):
     """Context validation alone, as OB3LdpVerifier runs it."""
     ldp._check_json_ld_form(document, document['proof'], document_loader())
+
+
+def _status_lists(set_bits):
+    """A download stub serving, for each URL of *set_bits*, a revocation
+    Bitstring Status List with those bits set. Unsigned: the tests pass
+    verify_status_list=False only to keep the fixture small."""
+    def download(url, *args, **kwargs):
+        return json.dumps({
+            '@context': ['https://www.w3.org/ns/credentials/v2'], 'id': url,
+            'type': ['VerifiableCredential', 'BitstringStatusListCredential'],
+            'credentialSubject': {
+                'id': url + '#list', 'type': 'BitstringStatusList',
+                'statusPurpose': 'revocation',
+                'encodedList': _encoded_list(set_bits[url])}}).encode()
+    return download
 
 
 @pytest.fixture()
@@ -229,12 +246,17 @@ class TestDefinedTermSpelling:
     under its predicate's absolute IRI or an inline-@vocab suffix -- which IS
     its compacted form -- so it hides from the member the policy reads. Each
     document here is freshly signed: the issuer's own key (a self-asserted
-    did:key, or a signer that emits the shape) over an out-of-policy value."""
+    did:key, or a signer that emits the shape) over an out-of-policy value.
+    The full IRI is refused by the term rule; an inline @vocab is refused
+    outright, before it can respell anything."""
 
     SPELLINGS = {
-        'iri': (None, lambda field: VC + field),
-        'iri-with-vocab': (VC, lambda field: VC + field),
-        'vocab-suffix': (VC + 'valid', lambda field: field[len('valid'):]),
+        # spelling: (inline @vocab, the key, refused with)
+        'iri': (None, lambda field: VC + field, 'credential spells a property'),
+        'iri-with-vocab': (VC, lambda field: VC + field,
+                           'credential carries an inline @context object'),
+        'vocab-suffix': (VC + 'valid', lambda field: field[len('valid'):],
+                         'credential carries an inline @context object'),
     }
 
     @pytest.mark.parametrize('spelling', sorted(SPELLINGS))
@@ -257,15 +279,15 @@ class TestDefinedTermSpelling:
         body = _credential(issuer_id, **dates).to_vc()
         _rejected(add_data_integrity_proof(dict(body), priv, vm), outside, verifier)
 
-        vocab, spell = self.SPELLINGS[spelling]
+        vocab, spell, match = self.SPELLINGS[spelling]
         if vocab:
             body['@context'] = list(body['@context']) + [{'@vocab': vocab}]
         body[spell(field)] = body.pop(field)
         doc = add_data_integrity_proof(body, priv, vm)
         verify_data_integrity_proof(doc, pub)
-        with pytest.raises(OB3VerificationError, match='spells a property'):
+        with pytest.raises(OB3VerificationError, match=match):
             _check(doc)                       # the signer guard's check, too
-        _rejected(doc, 'credential spells a property', verifier)
+        _rejected(doc, match, verifier)
 
     def test_language_tagged_date(self, issuer):
         priv, _, did, vm = issuer
@@ -273,12 +295,12 @@ class TestDefinedTermSpelling:
         body[VC + 'validUntil'] = {'@value': body.pop('validUntil'), '@language': 'en'}
         _rejected(add_data_integrity_proof(body, priv, vm), 'spells a property')
 
-    @pytest.mark.parametrize('vocab, key', [
-        (None, SEC + 'expiration'),
-        (SEC + 'expira', 'tion'),
+    @pytest.mark.parametrize('vocab, key, match', [
+        (None, SEC + 'expiration', 'the proof spells a property'),
+        (SEC + 'expira', 'tion', 'carries an inline @context object'),
     ], ids=['iri', 'vocab-suffix'])
     @pytest.mark.parametrize('pinned', [False, True], ids=['did', 'pinned'])
-    def test_expired_proof(self, issuer, pinned, vocab, key):
+    def test_expired_proof(self, issuer, pinned, vocab, key, match):
         priv, pub, did, vm = issuer
         if pinned:
             issuer_id, vm = 'https://issuer.example/i', 'did:example:issuer#k1'
@@ -294,7 +316,7 @@ class TestDefinedTermSpelling:
         doc = _sign_with_proof_options(unsecured, priv, vm,
                                        **{key: '2000-01-01T00:00:00Z'})
         verify_data_integrity_proof(doc, pub)
-        _rejected(doc, 'the proof spells a property', verifier)
+        _rejected(doc, match, verifier)
 
     def test_status_as_a_literal(self, issuer):
         # credentialStatus takes a node; a plain string under its IRI is a
@@ -338,6 +360,159 @@ class TestDefinedTermSpelling:
         assert spellings[VC + 'validUntil'] == {'validUntil'}
         assert spellings[SEC + 'expiration'] == {'expires'}
         assert spellings[VC + 'credentialStatus'] == {'credentialStatus'}
+
+
+V1_CONTEXT = 'https://www.w3.org/2018/credentials/v1'
+DI_CONTEXT = 'https://w3id.org/security/data-integrity/v2'
+SL2021 = 'https://w3id.org/vc/status-list#'
+SL2021_CONTEXT_URL = 'https://w3id.org/vc/status-list/2021/v1'
+SL2021_CONTEXT = {'@context': {
+    '@protected': True,
+    'StatusList2021Entry': {'@id': SL2021 + 'StatusList2021Entry', '@context': {
+        '@protected': True, 'id': '@id', 'type': '@type',
+        'statusPurpose': SL2021 + 'statusPurpose',
+        'statusListIndex': SL2021 + 'statusListIndex',
+        'statusListCredential': {'@id': SL2021 + 'statusListCredential',
+                                 '@type': '@id'}}}}}
+
+
+def _vc11_signing_contexts():
+    """The VC 1.1 base context (pyld bundles a copy; openbadgeslib does not
+    serve it, and must not) and a StatusList2021 one: for SIGNING the
+    issuer's VC 1.1 badge in these tests only."""
+    frozen = pytest.importorskip('pyld.documentloader.frozen')
+    path = frozen.BUNDLED_CONTEXTS.get(V1_CONTEXT)
+    if path is None:
+        pytest.skip('this pyld does not bundle the VC 1.1 context')
+    return {V1_CONTEXT: json.loads(Path(path).read_text('utf-8')),
+            SL2021_CONTEXT_URL: SL2021_CONTEXT}
+
+
+class TestVc11Rebased:
+    """OB 3.0 was first published on VCDM 1.1, so issuers signed badges under
+    the VC 1.1 base context: issuanceDate / expirationDate, perhaps a
+    StatusList2021Entry. Such a badge is refused as issued (VC 1.1 is not
+    bundled), but a holder can re-compact it onto [VC 2.0, OB 3.0]: the
+    dataset, and so the signature, stay the same, and compaction spells those
+    members by full IRI, since no bundled context has a term for them. The
+    model reads validUntil / validFrom (then issuanceDate / expirationDate),
+    so it saw no expiry and no not-before, and the status entry's type was
+    an IRI. Every IRI the policy reads must now be spelled by the one key it
+    reads it under (_POLICY_TERMS), whether or not a bundled context
+    defines it."""
+
+    CASES = {
+        # case: (VC 1.1 members, where the rebased form is refused)
+        'expired': ({'expirationDate': '2021-01-01T00:00:00Z'},
+                    '/' + VC + 'expirationDate'),
+        'not-yet-valid': ({'issuanceDate': '2099-01-01T00:00:00Z'},
+                          '/' + VC + 'issuanceDate'),
+        'sl2021-status': ({'credentialStatus': {
+            'id': 'https://issuer.example/status/1#5',
+            'type': 'StatusList2021Entry', 'statusPurpose': 'revocation',
+            'statusListIndex': '5',
+            'statusListCredential': 'https://issuer.example/status/1'}},
+            '/credentialStatus/type'),
+    }
+
+    @staticmethod
+    def _issue(issuer_id, priv, vm, members):
+        """A VC 1.1-shaped OB 3.0 badge, signed by its issuer with the
+        low-level signer and the VC 1.1 context."""
+        extra = _vc11_signing_contexts()
+        body = _credential(issuer_id).to_vc()
+        body['@context'] = [V1_CONTEXT] + body['@context'][1:] + [DI_CONTEXT]
+        if 'credentialStatus' in members:
+            body['@context'].append(SL2021_CONTEXT_URL)
+        body['issuanceDate'] = body.pop('validFrom')
+        body.update(members)
+        return add_data_integrity_proof(body, priv, vm, extra_contexts=extra), extra
+
+    @staticmethod
+    def _rebased(signed, extra):
+        """What the holder does: expand the badge under its own contexts and
+        compact it onto the bundled ones, keeping the issuer's proof."""
+        jsonld = ldp._require_jsonld()
+        context = [cv.VC2_CONTEXT] + [
+            url for url in signed['@context'][1:]
+            if url not in (DI_CONTEXT, SL2021_CONTEXT_URL)]
+        unsecured = {k: v for k, v in signed.items() if k != 'proof'}
+        expanded = jsonld.expand(unsecured, {'documentLoader': document_loader(extra)})
+        rebased = jsonld.compact(expanded, context, {'documentLoader': document_loader()})
+        rebased['proof'] = signed['proof']
+        return rebased
+
+    def _verifiers(self, issuer, pinned):
+        priv, pub, did, vm = issuer
+        if pinned:
+            return 'https://issuer.example/i', 'did:example:issuer#k1', [
+                OB3LdpVerifier(pubkey_pem=pub)]
+        return did, vm, [OB3LdpVerifier(), OB3LdpVerifier.for_issuer_did(did)]
+
+    @pytest.mark.parametrize('case', sorted(CASES))
+    @pytest.mark.parametrize('pinned', [False, True], ids=['did', 'pinned'])
+    def test_rebased_badge_is_refused(self, issuer, pinned, case):
+        priv, pub, _, _ = issuer
+        issuer_id, vm, verifiers = self._verifiers(issuer, pinned)
+        members, where = self.CASES[case]
+        signed, extra = self._issue(issuer_id, priv, vm, members)
+        verify_data_integrity_proof(signed, pub, extra_contexts=extra)
+        # as issued: refused, since VC 1.1 is not bundled
+        _rejected(signed, "carries '(issuanceDate|expirationDate)'", verifiers[0])
+        with pytest.raises(OB3VerificationError, match='VC 2.0 base context'):
+            _check(signed)
+
+        rebased = self._rebased(signed, extra)
+        assert rebased['@context'][0] == cv.VC2_CONTEXT
+        assert V1_CONTEXT not in rebased['@context']
+        verify_data_integrity_proof(rebased, pub)      # same dataset, bundled contexts
+        with pytest.raises(OB3VerificationError,
+                           match='spells a property .*at %s\\)' % re.escape(where)):
+            _check(rebased)                            # the signer guard's check, too
+        for verifier in verifiers:
+            _rejected(rebased, 'credential spells a property', verifier,
+                      check_status=True, download=_no_fetch)
+
+    def test_rebased_badge_verified_before_the_fix(self, issuer, monkeypatch):
+        # What the table closes, pinned so the tests above cannot pass for
+        # another reason: without it, the rebased badges verified as never
+        # expiring, already valid, and with a status entry no checker knows.
+        priv, pub, did, vm = issuer
+        monkeypatch.setattr(cv, '_POLICY_TERMS', {})
+        verified = {}
+        for case, (members, _) in self.CASES.items():
+            signed, extra = self._issue(did, priv, vm, members)
+            verified[case] = OB3LdpVerifier().verify(self._rebased(signed, extra))
+        assert verified['expired'].expiration_date is None
+        assert verified['not-yet-valid'].issuance_date < datetime(2099, 1, 1, tzinfo=UTC)
+        assert verified['sl2021-status'].credential_status[0]['type'] == \
+            SL2021 + 'StatusList2021Entry'
+
+    def test_policy_terms_agree_with_the_pinned_contexts(self):
+        # A context bump that gave a policy IRI another term (an alias the
+        # policy never reads) shows up here; the table refuses it anyway.
+        spellings = cv._term_spellings()
+        for iri, term in cv._POLICY_TERMS.items():
+            assert spellings.get(iri, frozenset()) <= {term}, iri
+        for iri in (VC + 'issuanceDate', VC + 'expirationDate',
+                    SL2021 + 'StatusList2021Entry', SL2021 + 'statusListIndex'):
+            assert iri not in spellings               # no bundled term at all
+
+    @pytest.mark.parametrize('iri, term', sorted(cv._POLICY_TERMS.items()))
+    def test_policy_iris_are_refused_under_any_other_spelling(
+            self, iri, term, monkeypatch):
+        assert cv._is_misspelled(iri)                 # its full IRI
+        assert not cv._is_misspelled(term)            # the key the policy reads
+        namespace, _, local = iri.rpartition('#')
+        # an alias, and a prefix for a compact IRI, a pinned context could add
+        synonyms = dict(cv._type_synonyms(), alias=frozenset({iri}),
+                        ns=frozenset({namespace + '#'}))
+        monkeypatch.setattr(cv, '_type_synonyms', lambda: synonyms)
+        assert cv._is_misspelled('alias')
+        assert cv._is_misspelled('ns:' + local)
+        assert not cv._is_misspelled(term)
+        where = cv._misspelled_key({'credentialStatus': {'type': ['x', 'ns:' + local]}}, ())
+        assert where == ('credentialStatus', 'type', 1)
 
 
 class TestRefusedShapes:
@@ -424,9 +599,14 @@ class TestRefusedShapes:
         with pytest.raises(OB3VerificationError, match='not plain JSON'):
             _check(doc)
 
-    def test_nested_context(self, expired):
+    def test_nested_context(self, expired, monkeypatch):
+        # Refused before expansion (see TestNestedContextBound) ...
         doc = self._doc(expired)
         doc['credentialSubject']['@context'] = list(doc['@context'])
+        _rejected(doc, r'@context below its top level \(at '
+                       r'/credentialSubject/@context\)')
+        # ... and by the comparison, which runs after it, on its own.
+        monkeypatch.setattr(cv, '_check_nested_contexts', lambda *args: None)
         _rejected(doc, r'compacted form .*credentialSubject/@context')
 
     @pytest.mark.parametrize('context, match', [
@@ -447,10 +627,13 @@ class TestRefusedShapes:
         doc['@context'] = list(doc['@context']) + ['https://evil.example/ctx']
         _rejected(doc, 'allowlist')
 
-    def test_relative_inline_vocab(self, expired):
+    @pytest.mark.parametrize('entry', [
+        {'@vocab': 'relative/'}, {'@vocab': 'https://example.org/v#'},
+        {'@vocab': VC}, {'@vocab': None}, {}, None, 1, ''])
+    def test_inline_or_non_url_context_entry(self, expired, entry):
         doc = self._doc(expired)
-        doc['@context'] = list(doc['@context']) + [{'@vocab': 'relative/'}]
-        _rejected(doc, 'absolute IRI')
+        doc['@context'] = list(doc['@context']) + [entry]
+        _rejected(doc, 'inline @context object')
 
     def test_oversized_document(self, expired):
         # Bounded once, on the input as received (_parse_document).
@@ -578,6 +761,337 @@ class TestNestedArrays:
         _check(add_data_integrity_proof(document, priv, vm))
 
 
+class TestStatusDescribedElsewhere:
+    """RDF lets a node referenced from two properties be described under
+    either. When the issuer also names its status entry from another
+    property, a holder can move a signed member out from under
+    credentialStatus with the dataset, and the signature, unchanged: a
+    statusSize of 2 moved away made the checker read bit 5 where entry 5 is
+    bits 10-11. A node under the top-level credentialStatus described
+    anywhere else (other than as an exact copy) is refused."""
+
+    def test_moved_status_size_is_refused(self, issuer):
+        priv, pub, did, vm = issuer
+        entry = dict(STATUS_ENTRY, statusSize=2)
+        document = _credential(did, credential_status=[entry]).to_vc()
+        document['relatedResource'] = [{'id': entry['id']}]   # issuer names it too
+        signed = add_data_integrity_proof(document, priv, vm)
+        # entry 5 occupies bits 10-11; bit 5 belongs to another entry
+        download = _status_lists({entry['statusListCredential']: [10, 11]})
+        _rejected(signed, 'unsupported statusSize', check_status=True,
+                  download=download, verify_status_list=False)      # control
+
+        moved = copy.deepcopy(signed)
+        size = moved['credentialStatus'].pop('statusSize')
+        moved['relatedResource'] = [{'id': entry['id'],
+                                     'type': 'BitstringStatusListEntry',
+                                     'statusSize': size}]
+        verify_data_integrity_proof(moved, pub)                      # same dataset
+        with pytest.raises(OB3VerificationError,
+                           match='described outside credentialStatus'):
+            _check(moved)
+        _rejected(moved, 'described outside credentialStatus', check_status=True,
+                  download=download, verify_status_list=False)
+
+    def test_typeless_stub_is_refused_by_the_validator(self, issuer):
+        # Not only by the checker ("unsupported credentialStatus type"): the
+        # entry left under credentialStatus is an {"id": S} stub.
+        priv, pub, did, vm = issuer
+        document = _credential(did, credential_status=[dict(STATUS_ENTRY)]).to_vc()
+        document['relatedResource'] = [{'id': STATUS_ENTRY['id']}]
+        signed = add_data_integrity_proof(document, priv, vm)
+        moved = copy.deepcopy(signed)
+        moved['relatedResource'] = [moved['credentialStatus']]
+        moved['credentialStatus'] = {'id': STATUS_ENTRY['id']}
+        verify_data_integrity_proof(moved, pub)
+        with pytest.raises(OB3VerificationError,
+                           match='described outside credentialStatus'):
+            _check(moved)
+
+    def test_moved_into_a_nested_credential_status(self, issuer):
+        # A nested node's own credentialStatus is never read by the checker.
+        priv, pub, did, vm = issuer
+        entry = dict(STATUS_ENTRY, statusSize=2)
+        document = _credential(did, credential_status=[entry]).to_vc()
+        subject = document['credentialSubject']
+        subject['type'] = ['AchievementSubject', 'VerifiableCredential']
+        subject['credentialStatus'] = {'id': entry['id']}
+        signed = add_data_integrity_proof(document, priv, vm)
+        moved = copy.deepcopy(signed)
+        moved['credentialSubject']['credentialStatus'] = moved['credentialStatus']
+        moved['credentialStatus'] = {'id': entry['id']}
+        verify_data_integrity_proof(moved, pub)
+        _rejected(moved, 'described outside credentialStatus', check_status=True,
+                  download=_no_fetch)
+
+    def test_member_moved_into_an_endorsement_copy(self, ed25519_keypair):
+        # Each embedded endorsement of the complete example carries the outer
+        # credential's credentialStatus verbatim (adaptation (d)): an exact
+        # copy adds nothing, but one the outer entry no longer matches does.
+        priv, pub = ed25519_keypair
+        _, vm = _did_vm(pub)
+        document = _complete_document()
+        for status in _status_entries(document):
+            status['statusSize'] = 2
+        signed = add_data_integrity_proof(document, priv, vm)
+        verifier = OB3LdpVerifier(pubkey_pem=pub)
+        download = _status_lists({COMPLETE_STATUS['statusListCredential']: [46, 47]})
+        _rejected(signed, 'unsupported statusSize', verifier, check_status=True,
+                  download=download, verify_status_list=False)      # control
+        moved = copy.deepcopy(signed)
+        del moved['credentialStatus']['statusSize']
+        verify_data_integrity_proof(moved, pub)                      # same dataset
+        _rejected(moved, 'described outside credentialStatus', verifier,
+                  check_status=True, download=download, verify_status_list=False)
+
+
+def _status_entries(value):
+    """Every object in *value* with the complete example's status id."""
+    if isinstance(value, list):
+        return [found for item in value for found in _status_entries(item)]
+    if not isinstance(value, dict):
+        return []
+    here = [value] if value.get('id') == COMPLETE_STATUS['id'] else []
+    return here + [found for item in value.values()
+                   for found in _status_entries(item)]
+
+
+class TestContextEntryBound:
+    """pyld re-processes a context once per @context entry: a pinned URL
+    repeated thousands of times cost seconds of CPU per validation pass,
+    before any key was resolved. Each context document may be listed once,
+    with eight entries in all, and no inline object (so no pile of inline
+    @vocab objects either)."""
+
+    @pytest.mark.parametrize('extra', [
+        ['https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json'],
+        # an alias of the 3.0.3 URL the signer lists: the same document
+        ['https://purl.imsglobal.org/spec/ob/v3p0/context.json'],
+        ['https://www.w3.org/ns/credentials/v2'],
+        [{'@vocab': 'https://x.example/%d/' % i} for i in range(64)],
+        [{'@vocab': 'https://x.example/a/'}, {'@vocab': 'https://x.example/b/'}],
+        ['https://w3id.org/security/data-integrity/v2'] * 6,
+    ], ids=['duplicate', 'alias', 'base-again', 'vocabs', 'two-vocabs', 'cap'])
+    def test_context_entries_are_bounded(self, issuer, extra):
+        priv, _, did, _ = issuer
+        doc = OB3LdpSigner(priv).sign(_credential(did))
+        assert 'https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json' \
+            in doc['@context']
+        doc['@context'] = doc['@context'] + extra
+        with pytest.raises(OB3VerificationError, match='@context'):
+            _check(doc)
+        _rejected(doc, '@context')
+
+    def test_padded_context_is_refused_before_expansion(self, expired, monkeypatch):
+        # The malformed, unsigned shape of the report: refused by counting,
+        # with no JSON-LD processing at all.
+        def expand(*args, **kwargs):
+            raise AssertionError('nothing must be expanded')
+
+        monkeypatch.setattr(ldp._require_jsonld(), 'expand', expand)
+        doc = copy.deepcopy(expired)
+        doc['@context'] = [doc['@context'][0]] + [
+            'https://purl.imsglobal.org/spec/ob/v3p0/context.json'] * 4000
+        _rejected(doc, 'at most 8')
+
+    def test_endorsement_context_is_bounded(self, complete):
+        signed, verifier, _ = complete
+        doc = copy.deepcopy(signed)
+        endorsement = doc['issuer']['endorsement'][0]
+        endorsement['@context'] = endorsement['@context'] + [endorsement['@context'][1]]
+        _rejected(doc, '@context', verifier)
+
+    @pytest.mark.parametrize('entry', [
+        {'@vocab': 'https://x.example/v#'},
+        {'vu': {'@id': VC + 'validUntil', '@type': XSD_DATETIME}}])
+    def test_inline_objects_are_refused_before_expansion(self, expired, entry,
+                                                         monkeypatch):
+        # Not even one inline @vocab reaches the JSON-LD processor (openvc
+        # tolerates that one shape; OB 3.0 credentials need none of it).
+        def expand(*args, **kwargs):
+            raise AssertionError('nothing must be expanded')
+
+        monkeypatch.setattr(ldp._require_jsonld(), 'expand', expand)
+        doc = copy.deepcopy(expired)
+        doc['@context'] = list(doc['@context']) + [entry]
+        _rejected(doc, 'inline @context object')
+
+
+def _forbid_expansion(monkeypatch):
+    def expand(*args, **kwargs):
+        raise AssertionError('nothing must be expanded')
+
+    monkeypatch.setattr(ldp._require_jsonld(), 'expand', expand)
+
+
+PADDED = [cv.VC2_CONTEXT] + [
+    'https://purl.imsglobal.org/spec/ob/v3p0/context.json'] * 4000
+
+
+def _bare_endorsement(context=None, **members):
+    """The shape of an embedded endorsement credential, unsigned: everything
+    here is refused (or bounded) before any JSON-LD processing."""
+    return dict({'@context': list(context or OB3_CONTEXT),
+                 'type': ['VerifiableCredential', 'EndorsementCredential']},
+                **members)
+
+
+class TestNestedContextBound:
+    """pyld applies a nested @context, entry by entry, when expansion reaches
+    it, and only the top-level one was bounded before expansion: a padded
+    @context on credentialSubject (or on an embedded endorsement) was refused
+    only afterwards, by the comparison (or the endorsement's own check), after
+    seconds of CPU on unauthenticated input -- 0.76 s at 57 KB, 3 s at 225 KB.
+    Every @context below the top level is now bounded first: an embedded
+    endorsement's like the top level's, any other refused; and the embedded
+    credentials, each validated again on its own, by number, depth and total
+    size."""
+
+    @pytest.mark.parametrize('context', [PADDED, list(OB3_CONTEXT)],
+                             ids=['padded', 'plain'])
+    @pytest.mark.parametrize('path', [
+        ('credentialSubject',), ('credentialSubject', 'achievement'),
+        ('credentialSubject', 'achievement', 'criteria'), ('issuer',),
+        ('credentialSchema', 0)],
+        ids=['subject', 'achievement', 'criteria', 'issuer', 'schema-entry'])
+    def test_nested_context_is_refused_before_expansion(
+            self, expired, monkeypatch, context, path):
+        _forbid_expansion(monkeypatch)
+        doc = copy.deepcopy(expired)
+        node = doc
+        for step in path:
+            node = node[step]
+        node['@context'] = context
+        _rejected(doc, r'credential carries an @context below its top level '
+                       r'\(at %s/@context\)' % re.escape(cv._pointer(path)))
+
+    def test_nested_context_in_the_proof_is_refused_before_expansion(
+            self, expired, monkeypatch):
+        jsonld = ldp._require_jsonld()
+        expand = jsonld.expand
+
+        def expand_credential_only(document, *args, **kwargs):
+            assert 'nonce' not in document, 'the proof must not be expanded'
+            return expand(document, *args, **kwargs)
+
+        monkeypatch.setattr(jsonld, 'expand', expand_credential_only)
+        doc = copy.deepcopy(expired)
+        doc['proof']['nonce'] = {'@context': PADDED, 'value': 'x'}
+        _rejected(doc, r'the proof carries an @context below its top level '
+                       r'\(at /nonce/@context\)')
+
+    @pytest.mark.parametrize('entries, where', [
+        ([_bare_endorsement(PADDED)], '/credentialSubject/achievement/endorsement/0'),
+        (_bare_endorsement(PADDED), '/credentialSubject/achievement/endorsement'),
+    ], ids=['list', 'single'])
+    def test_padded_endorsement_context_is_refused_before_expansion(
+            self, expired, monkeypatch, entries, where):
+        _forbid_expansion(monkeypatch)
+        doc = copy.deepcopy(expired)
+        doc['credentialSubject']['achievement']['endorsement'] = entries
+        _rejected(doc, r'endorsement at %s of the credential @context lists '
+                       r'4001 entries; at most 8' % where)
+
+    def test_context_nested_inside_an_endorsement(self, expired, monkeypatch):
+        _forbid_expansion(monkeypatch)
+        doc = copy.deepcopy(expired)
+        doc['issuer']['endorsement'] = [_bare_endorsement(
+            credentialSubject={'@context': PADDED, 'id': 'did:example:1'})]
+        _rejected(doc, r'the endorsement at /issuer/endorsement/0 of the '
+                       r'credential carries an @context below its top level '
+                       r'\(at /credentialSubject/@context\)')
+
+    def test_endorsement_entry_nested_in_an_array(self, expired, monkeypatch):
+        # Not an entry _detach validates on its own, so not one here either.
+        _forbid_expansion(monkeypatch)
+        doc = copy.deepcopy(expired)
+        doc['endorsement'] = [[_bare_endorsement()]]
+        _rejected(doc, r'credential carries an @context below its top level '
+                       r'\(at /endorsement/0/0/@context\)')
+
+    def test_context_inside_a_json_literal_is_refused(self, issuer):
+        # A deliberate narrowing: the keys of an @json literal are data the
+        # processor never applies, but telling them apart before expansion
+        # would mean resolving terms. Issuer-signed, and still refused.
+        priv, _, did, vm = issuer
+        body = _credential(did).to_vc()
+        body['_sd'] = [{'@context': ['https://example.org/data'], 'x': 1}]
+        _rejected(add_data_integrity_proof(body, priv, vm),
+                  r'@context below its top level \(at /_sd/0/@context\)')
+
+    def test_embedded_credentials_are_counted(self, expired, monkeypatch):
+        doc = copy.deepcopy(expired)
+        limit = cv._MAX_EMBEDDED_CREDENTIALS
+        # Spread over two levels: counted at any depth.
+        inner = [_bare_endorsement() for _ in range(limit - 1)]
+        doc['endorsement'] = [_bare_endorsement(
+            issuer={'id': 'https://accreditor.example/1', 'endorsement': inner})]
+        unsecured = {k: v for k, v in doc.items() if k != 'proof'}
+        cv._check_nested_contexts(unsecured, document_loader(), 'credential')
+        inner.append(_bare_endorsement())
+        _forbid_expansion(monkeypatch)
+        _rejected(doc, 'credential embeds more than %d credentials' % limit)
+
+    def test_embedded_credentials_are_bounded_in_size(self, expired, monkeypatch):
+        # A chain of endorsements is re-validated level by level: four
+        # levels over 80 KB made an 80 KB document cost about 400 KB.
+        doc = copy.deepcopy(expired)
+        holder = doc
+        for level in range(4):
+            entry = _bare_endorsement()
+            holder['endorsement'] = [entry]
+            holder = entry
+        holder['description'] = 'x' * 80000
+        assert len(json.dumps(doc)) < ldp.MAX_LDP_DOCUMENT_BYTES
+        _forbid_expansion(monkeypatch)
+        _rejected(doc, 'credentials embedded in the credential total more '
+                       'than %d characters' % cv._MAX_EMBEDDED_SIZE)
+
+    def test_one_level_of_endorsements_always_fits(self, expired):
+        # One level deep the embedded credentials never overlap, so a
+        # document within the size limit is within the embedded one too.
+        doc = copy.deepcopy(expired)
+        del doc['proof']
+        doc['endorsement'] = [_bare_endorsement(description='x' * 120000),
+                              _bare_endorsement(description='y' * 120000)]
+        assert len(json.dumps(doc)) < ldp.MAX_LDP_DOCUMENT_BYTES
+        cv._check_nested_contexts(doc, document_loader(), 'credential')
+
+
+class TestStatusMemberShapes:
+    """Status members respelled as non-strings fail closed as a verification
+    error, never as a bare TypeError from verify()."""
+
+    def test_one_element_status_purpose_fails_closed(self, issuer):
+        priv, _, did, _ = issuer
+        doc = OB3LdpSigner(priv).sign(_credential(did, credential_status=[dict(STATUS_ENTRY)]))
+        doc['credentialStatus']['statusPurpose'] = ['revocation']   # same dataset
+        _rejected(doc, 'invalid statusPurpose', check_status=True,
+                  download=_no_fetch, verify_status_list=False)
+
+    def test_language_tagged_status_purpose_fails_closed(self, issuer):
+        priv, _, did, vm = issuer
+        body = _credential(did, credential_status=[dict(STATUS_ENTRY)]).to_vc()
+        body['credentialStatus']['statusPurpose'] = {'@value': 'revocation',
+                                                     '@language': 'en'}
+        doc = add_data_integrity_proof(body, priv, vm)
+        _rejected(doc, 'invalid statusPurpose', check_status=True,
+                  download=_no_fetch, verify_status_list=False)
+
+    @pytest.mark.parametrize('types', [[['BitstringStatusListEntry']],
+                                       {'@id': 'BitstringStatusListEntry'}])
+    def test_unhashable_status_type_fails_closed(self, types):
+        from openbadgeslib.ob3 import status
+        with pytest.raises(OB3VerificationError, match='unsupported credentialStatus type'):
+            status._check_entry(dict(STATUS_ENTRY, type=types), _no_fetch)
+
+    def test_unhashable_credential_type_fails_closed(self):
+        document = {'@context': [cv.VC2_CONTEXT],
+                    'type': [['VerifiableCredential', 'OpenBadgeCredential']]}
+        _rejected(document, 'not an OpenBadgeCredential')
+        _rejected(json.dumps(document), 'not an OpenBadgeCredential')
+
+
 class TestSizeLimit:
     """The size is bounded once, on the input as received; re-measuring the
     parsed document (ensure_ascii escapes, spaced separators) refused genuine
@@ -683,13 +1197,19 @@ class TestSignerOutputs:
         signed = add_data_integrity_proof(document, priv, vm)
         assert OB3LdpVerifier().verify(signed).issuer.id == did
 
-    def test_inline_absolute_vocab_is_tolerated(self, issuer):
-        # An inline {"@vocab": <absolute IRI>} can neither alias, re-map nor
-        # drop a defined term, so appending one changes nothing signed.
-        priv, _, did, _ = issuer
+    def test_inline_absolute_vocab_is_refused(self, issuer):
+        # An inline {"@vocab": <absolute IRI>} appended to a genuine badge
+        # changes nothing signed (a defined term wins over @vocab), and was
+        # tolerated until 4.6.1; OB 3.0 credentials name only published
+        # contexts, so it is now refused like any inline object.
+        priv, pub, did, _ = issuer
         doc = OB3LdpSigner(priv).sign(_credential(did))
         doc['@context'] = list(doc['@context']) + [{'@vocab': 'https://example.org/v#'}]
-        OB3LdpVerifier().verify(doc)
+        verify_data_integrity_proof(doc, pub)          # the dataset is unchanged
+        with pytest.raises(OB3VerificationError, match='inline @context object'):
+            _check(doc)
+        _rejected(doc, 'inline @context object')
+        _rejected(doc, 'inline @context object', OB3LdpVerifier(pubkey_pem=pub))
 
 
 class TestSignerGuard:
@@ -703,6 +1223,21 @@ class TestSignerGuard:
         status = dict(STATUS_ENTRY, statusListIndexX='9')
         with pytest.raises(ErrorSigningFile, match='does not cover'):
             OB3LdpSigner(priv).sign(_credential(did, credential_status=[status]))
+
+    def test_inline_context_object_is_not_issued(self, issuer, monkeypatch):
+        # The signer guard runs the verifier's check, inline objects included.
+        priv, _, did, _ = issuer
+        to_vc = OpenBadgeCredential.to_vc
+
+        def with_vocab(self):
+            document = to_vc(self)
+            document['@context'] = document['@context'] + [
+                {'@vocab': 'https://example.org/v#'}]
+            return document
+
+        monkeypatch.setattr(OpenBadgeCredential, 'to_vc', with_vocab)
+        with pytest.raises(ErrorSigningFile, match='inline @context object'):
+            OB3LdpSigner(priv).sign(_credential(did))
 
     def test_low_level_signer_is_unchanged(self, issuer):
         # add_data_integrity_proof stays schema-agnostic (CLR, W3C vectors):
@@ -1010,7 +1545,7 @@ class TestCompleteExample:
                                           '@type': XSD_DATETIME}
         _rejected(doc, 'endorsement at /issuer/endorsement/0', verifier)
 
-    def test_embedded_credentials_nest_too_deeply(self, complete):
+    def test_embedded_credentials_nest_too_deeply(self, complete, monkeypatch):
         signed, verifier, _ = complete
         doc = copy.deepcopy(signed)
         holder = doc['issuer']['endorsement'][0]
@@ -1020,6 +1555,7 @@ class TestCompleteExample:
                 'id': 'https://accreditor.example/issuers/%d' % level,
                 'type': ['Profile'], 'name': 'Accreditor', 'endorsement': [inner]}
             holder = inner
+        _forbid_expansion(monkeypatch)       # bounded before any processing
         _rejected(doc, 'nests embedded credentials too deeply', verifier)
 
     def test_endorsement_literal_entry(self, complete):
@@ -1050,8 +1586,8 @@ class TestEcdsaSd:
     def test_rekeyed_member_refused_before_delegation(self, derived, monkeypatch):
         document, pub, _ = derived
         doc = copy.deepcopy(document)
-        doc[VC + 'validFrom'] = {'@value': doc.pop('validFrom'),
-                                 '@type': XSD_DATETIME}
+        # Not a lifecycle member: hiding one of those fails even earlier.
+        doc['https://schema.org/name'] = doc.pop('name')
 
         def delegate(*args, **kwargs):
             raise AssertionError('the delegate must not run')
@@ -1079,3 +1615,115 @@ class TestEcdsaSd:
         import openvc
         monkeypatch.setattr(openvc, '__version__', version)
         ldp._require_openvc_ecdsa_sd()
+
+
+class TestEcdsaSdPartialStatus:
+    """Selective disclosure lets a holder reveal any subset of what the issuer
+    left non-mandatory, and no verifier can count what was withheld. With
+    credentialStatus selective, revealing one entry of two (the clear one),
+    or an entry without its statusSize, passed the #328 key check and the
+    status check. Disclosed lifecycle statements must be mandatory."""
+
+    @pytest.fixture(autouse=True)
+    def _sd(self):
+        from test_ob3_ldp_ecdsa_sd import _require_ldp_sd
+        _require_ldp_sd()
+
+    @staticmethod
+    def _issue(credential, selective, lax):
+        from test_ob3_ldp_ecdsa_sd import LAX_MANDATORY, _issue_and_derive
+        return _issue_and_derive(credential, selective=selective,
+                                 mandatory=LAX_MANDATORY if lax else None)
+
+    def test_withheld_status_entry_is_refused(self, ob3_credential, monkeypatch):
+        import openvc.proof.ecdsa_sd as sd
+        clear = dict(STATUS_ENTRY, id='https://issuer.example/status/1#3',
+                     statusListIndex='3')
+        revoked = dict(STATUS_ENTRY, id='https://issuer.example/status/2#5',
+                       statusListCredential='https://issuer.example/status/2')
+        credential = replace(ob3_credential,
+                             expiration_date=datetime(2030, 1, 1, tzinfo=UTC),
+                             credential_status=[clear, revoked])
+        download = _status_lists({clear['statusListCredential']: [],
+                                  revoked['statusListCredential']: [5]})
+        # control: an issuer that makes status mandatory, so it is all shown
+        full, pub, _ = self._issue(credential, [], lax=False)
+        assert len(full['credentialStatus']) == 2
+        _rejected(full, "'revocation' is set at index 5", OB3LdpVerifier(pubkey_pem=pub),
+                  check_status=True, download=download, verify_status_list=False)
+
+        # ecdsa-sd-2023 selects with JSON pointers, array indexes included;
+        # openvc's derive helper lacks them, so the holder side is patched
+        # (the verifier never sees the pointers).
+        original = sd._select_path
+
+        def select(tokens, source, selection):
+            if len(tokens) == 2 and tokens[1].isdigit():
+                selection.setdefault(tokens[0], []).append(
+                    copy.deepcopy(source[tokens[0]][int(tokens[1])]))
+                return None
+            return original(tokens, source, selection)
+
+        monkeypatch.setattr(sd, '_select_path', select)
+        document, pub, _ = self._issue(
+            credential, ['/validUntil', '/credentialStatus/0'], lax=True)
+        assert [e['id'] for e in document['credentialStatus']] == [clear['id']]
+        verify_data_integrity_proof(document, pub)
+        for verifier in (OB3LdpVerifier(), OB3LdpVerifier(pubkey_pem=pub)):
+            _rejected(document, 'credentialStatus statements its issuer did not '
+                      'make mandatory', verifier, check_status=True,
+                      download=download, verify_status_list=False)
+
+    def test_withheld_status_size_is_refused(self, ob3_credential):
+        entry = dict(STATUS_ENTRY, statusSize=2)
+        credential = replace(ob3_credential,
+                             expiration_date=datetime(2030, 1, 1, tzinfo=UTC),
+                             credential_status=[entry])
+        download = _status_lists({entry['statusListCredential']: [10, 11]})
+        members = ['/credentialStatus/%s' % member for member in (
+            'type', 'statusPurpose', 'statusListIndex', 'statusListCredential')]
+        # control: with status mandatory the holder cannot leave statusSize out
+        full, pub, _ = self._issue(credential, members, lax=False)
+        assert full['credentialStatus']['statusSize'] == 2
+        _rejected(full, 'unsupported statusSize', OB3LdpVerifier(pubkey_pem=pub),
+                  check_status=True, download=download, verify_status_list=False)
+
+        document, pub, _ = self._issue(credential, ['/validUntil'] + members, lax=True)
+        assert 'statusSize' not in document['credentialStatus']
+        verify_data_integrity_proof(document, pub)
+        for verifier in (OB3LdpVerifier(), OB3LdpVerifier(pubkey_pem=pub)):
+            _rejected(document, 'credentialStatus statements its issuer did not '
+                      'make mandatory', verifier, check_status=True,
+                      download=download, verify_status_list=False)
+
+    def test_mandatory_statements_are_those_openvc_verified(self, ob3_credential):
+        # The check indexes the disclosed statements with openvc's own
+        # helpers: a view whose non-mandatory count differs from the
+        # signatures the delegate verified fails closed.
+        from test_ob3_ldp_ecdsa_sd import _lifecycle_credential
+        document, _, _ = self._issue(_lifecycle_credential(ob3_credential),
+                                     ['/credentialSchema'], lax=False)
+        statements, mandatory = ldp._sd_disclosed_statements(document, document['proof'])
+        assert mandatory and len(mandatory) < len(statements)
+        forged = {k: v for k, v in document.items() if k != 'credentialSchema'}
+        with pytest.raises(OB3VerificationError, match='do not match'):
+            ldp._sd_disclosed_statements(forged, forged['proof'])
+
+    def test_openvc_without_the_helpers_fails_closed(self, ob3_credential, monkeypatch):
+        import openvc.proof.ecdsa_sd as sd
+        from test_ob3_ldp_ecdsa_sd import _lifecycle_credential
+        document, pub, _ = self._issue(_lifecycle_credential(ob3_credential), [], lax=False)
+        OB3LdpVerifier(pubkey_pem=pub).verify(document)
+        monkeypatch.delattr(sd, '_relabel')
+        with pytest.raises(OB3VerificationError, match='does not expose'):
+            ldp._sd_disclosed_statements(document, document['proof'])
+
+    def test_credential_without_an_iri_id_fails_closed(self, ob3_credential, monkeypatch):
+        from test_ob3_ldp_ecdsa_sd import _lifecycle_credential
+        document, _, _ = self._issue(_lifecycle_credential(ob3_credential), [], lax=False)
+        statements, mandatory = ldp._sd_disclosed_statements(document, document['proof'])
+        monkeypatch.setattr(ldp, '_sd_disclosed_statements',
+                            lambda doc, proof: (statements, mandatory))
+        doc = dict(document, id='_:b0')
+        with pytest.raises(OB3VerificationError, match='cannot find the statements'):
+            ldp._reject_selective_sd_lifecycle(doc, doc['proof'])

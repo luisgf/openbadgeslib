@@ -81,7 +81,10 @@ def _check_vc_types(vc: dict[str, Any]) -> None:
         vc_types = [vc_types]
     elif not isinstance(vc_types, list):
         vc_types = []
-    if not ({"OpenBadgeCredential", "AchievementCredential"} & set(vc_types)):
+    # Only strings name a type; anything else (a nested array, an object) is
+    # unhashable and must fail closed below, not raise a bare TypeError.
+    if not ({"OpenBadgeCredential", "AchievementCredential"}
+            & {t for t in vc_types if isinstance(t, str)}):
         raise OB3VerificationError(
             "credential is not an OpenBadgeCredential/AchievementCredential "
             "(type=%r) — this may be an OB 2.0 JWS token, not an OB 3.0 credential"

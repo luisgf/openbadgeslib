@@ -18,16 +18,27 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     now applies VC Data Integrity §2.4.1 context validation before it builds
     the credential or applies any policy, for both cryptosuites and ahead of
     the ecdsa-sd-2023 delegation: `@context` starts with the VC 2.0 URL and
-    names only bundled contexts (an inline object may carry nothing but an
-    absolute-IRI `@vocab`); the document and its proof configuration must
-    each be the compacted form of their own expansion, with every member a
-    bundled context defines spelled by its term; and nothing may be dropped
-    on the way to RDF ("safe mode"). That refuses a member re-keyed to its
-    IRI or aliased by an inline context, a value its term cannot carry (an
-    untyped `validUntil`/`validFrom` or proof `expires`, or a literal
-    `credentialStatus`: compaction itself keeps such a value under the full
-    IRI or an inline-`@vocab` suffix, out of sight of the policy, which
-    reads the term), `@included`, `@reverse`, `@index`, `@direction`, a
+    names only bundled contexts, each context document once and at most
+    eight entries in all, so a padded `@context` cannot buy seconds of
+    JSON-LD processing before any key is resolved, and no inline context
+    object, not even a bare `@vocab` (OB 3.0 credentials name only
+    published contexts; a holder-chosen vocabulary would only add spellings
+    of signed members to refuse). Those bounds hold for every `@context` the
+    JSON-LD processor applies and are checked before it runs: below the top
+    level only an embedded endorsement credential may carry one, held to
+    the same rules, and any other is refused, even inside an `@json`
+    literal such as `_sd`; and since each embedded credential is validated
+    again on its own, at most 64 may be embedded, 8 deep, with at most
+    256 KiB of their JSON in all (a nested one counted once per credential
+    holding it). The document and its proof configuration must each be the
+    compacted form of their own expansion, with every member (and `type`
+    value) a bundled context defines spelled by its term; and nothing may
+    be dropped on the way to RDF ("safe mode"). That
+    refuses a member re-keyed to its IRI or aliased by an inline context, a
+    value its term cannot carry (an untyped `validUntil`/`validFrom` or
+    proof `expires`, or a literal `credentialStatus`: compaction itself
+    keeps such a value under the full IRI, out of sight of the policy,
+    which reads the term), `@included`, `@reverse`, `@index`, `@direction`, a
     top-level `@graph`, a second description of the credential's own node,
     an array nested inside an array (expansion flattens `[[S]]` into the
     same signed dataset as `S`, while the status checker reads only objects,
@@ -52,6 +63,70 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     sign the RDF dataset only, so do not read validity, status, subject or
     issuer from the JSON after `verify_data_integrity_proof` alone; verify
     OB 3.0 credentials with `OB3LdpVerifier`.
+
+  - security(ldp): `OB3LdpVerifier` refuses a member the policy reads
+    spelled by its full IRI even where no bundled context defines a term
+    for it. OB 3.0 was first published on VCDM 1.1, so issuers signed
+    eddsa-rdfc-2022 badges carrying `issuanceDate`/`expirationDate` (and
+    perhaps a `StatusList2021Entry`); those are refused as issued, since the
+    VC 1.1 context is not bundled, but a holder could re-compact one onto
+    `[VC 2.0, OB 3.0]` with the dataset and the signature unchanged:
+    compaction then spelled those members by full IRI, and the model saw no
+    expiry, no not-before and a status entry type it did not know. Every IRI
+    the policy reads (the validity window of both VC data models,
+    `proof.expires`, `credentialStatus`, `credentialSchema`,
+    `credentialSubject`, `issuer`, and the Bitstring and StatusList2021
+    entry types and members) must now be spelled by the one key the policy
+    reads it under, from a fixed table rather than from the bundled
+    contexts, so an alias a future context gave one is refused too. VC 1.1
+    is still not bundled: such badges stay unverifiable; re-issue them on
+    VC 2.0.
+
+  - security(ldp): `OB3LdpVerifier` refuses a `credentialStatus` entry that
+    is also described outside `credentialStatus`. RDF lets a node referenced
+    from two properties be described under either, so when the issuer also
+    named its status entry from another property (`relatedResource`, a
+    nested node's or an embedded endorsement's own `credentialStatus`), a
+    holder could move a signed member such as `statusSize: 2` there with the
+    dataset and the signature unchanged, and the status check read the wrong
+    bit and reported a revoked badge as valid. A node directly under the
+    top-level `credentialStatus` whose id is described anywhere else in the
+    expanded document is now refused, unless that description is an exact
+    copy of the entry (as when an embedded endorsement repeats the outer
+    credential's `credentialStatus` verbatim). An issuer-signed credential
+    that describes its status entry under a second property with more than
+    its id is refused too: re-issue it naming the entry by id only.
+
+  - security(ldp): an ecdsa-sd-2023 presentation passes `OB3LdpVerifier`
+    only if every `validUntil` and `credentialStatus` statement it discloses
+    is mandatory. The #328 check saw only that the two keys were there, so
+    with status left selective a holder could disclose one status entry of
+    two (the clear one), or an entry without its `statusSize`, and pass the
+    status check. A verifier cannot count what a holder withheld, only rely
+    on the mandatory statements the issuer's base signature covers as a
+    whole, so issuers must list `/validUntil` and `/credentialStatus` as
+    mandatory pointers; presentations of credentials that left them
+    selective are now refused even when fully disclosed. The limit no
+    verifier can lift: what an issuer leaves selective stays hideable, so a
+    mandatory `/credentialStatus/0` alone leaves `/credentialStatus/1`
+    hideable; mark `/credentialStatus` whole. The check indexes the
+    disclosed statements with openvc-core's own ecdsa-sd-2023 helpers and
+    fails closed if they are missing. `verify_data_integrity_proof` still
+    checks the proof alone.
+    - `validFrom` is held to the same rule as `validUntil` and
+      `credentialStatus`: a presentation that omits it, or whose issuer
+      left `/validFrom` selective, is refused. Otherwise the holder of a
+      badge that is not valid yet could withhold its `validFrom`, which the
+      model then took as "now", and present it as valid. Issuers list
+      `/validFrom`, `/validUntil` and `/credentialStatus` as mandatory
+      pointers.
+
+  - fix(ob3): a `credentialStatus` entry whose `statusPurpose` or `type`,
+    or a credential whose `type`, is not a string (a holder can respell a
+    signed `"revocation"` as `["revocation"]` in a Data Integrity credential
+    without changing what is signed; an issuer can sign a language-tagged
+    value) fails with `OB3VerificationError` instead of a bare `TypeError`,
+    and before the status list is fetched.
 
   - security(deps): raise the `[ldp]` pyld floor to `>=3.3.0`, the release
     the suite is tested against, and declare the same floor in `[ldp-sd]`

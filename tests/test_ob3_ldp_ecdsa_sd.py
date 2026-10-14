@@ -27,11 +27,20 @@ from openbadgeslib.ob3.ldp import (
 
 # Core fields always revealed; credentialSchema is left non-mandatory so it can
 # be disclosed selectively (exercising the per-statement signatures) or withheld
-# (exercising a genuine selective-disclosure omission). validUntil and
-# credentialStatus are issuer-signed but NOT mandatory: that is what lets a
-# holder hide them, which OB3LdpVerifier.verify must refuse (#328).
+# (exercising a genuine selective-disclosure omission). validFrom, validUntil
+# and credentialStatus are mandatory, as OB3LdpVerifier.verify requires: a
+# verifier cannot count what a holder withheld, so only statements the base
+# signature covers as a whole bound the badge's life.
 MANDATORY = ['/id', '/type', '/name', '/issuer', '/validFrom',
-             '/credentialSubject']
+             '/credentialSubject', '/validUntil', '/credentialStatus']
+
+# An issuer that left validUntil and credentialStatus selective: what lets a
+# holder hide them (#328), or disclose only part of them, both of which
+# OB3LdpVerifier.verify must refuse.
+LAX_MANDATORY = MANDATORY[:-2]
+
+# An issuer that left validFrom selective: a holder can hide a future one.
+LAX_VALID_FROM = [p for p in MANDATORY if p != '/validFrom']
 
 _STATUS_ENTRY = {
     'id': 'https://example.com/status/1#0',
@@ -69,9 +78,10 @@ def _p256_pem_pair():
     )
 
 
-def _issue_and_derive(ob3_credential, *, selective):
+def _issue_and_derive(ob3_credential, *, selective, mandatory=None):
     """openvc issues an ecdsa-sd-2023 base proof over a did:key-issuer OB3
-    credential, then derives a presentation revealing MANDATORY + *selective*.
+    credential with *mandatory* pointers (default MANDATORY), then derives a
+    presentation revealing those + *selective*.
     Returns (derived_doc, p256_pub_pem, issuer_did)."""
     from openvc.keys import P256SigningKey
     from openvc.proof.ecdsa_sd import EcdsaSdProofSuite
@@ -94,7 +104,8 @@ def _issue_and_derive(ob3_credential, *, selective):
     suite = EcdsaSdProofSuite()
     base = suite.add_base_proof(
         doc, signing_key=P256SigningKey.from_pem(priv_pem, kid=vm),
-        verification_method=vm, mandatory_pointers=MANDATORY,
+        verification_method=vm,
+        mandatory_pointers=MANDATORY if mandatory is None else mandatory,
         extra_contexts=ctx)
     derived = suite.derive_proof(base, selective_pointers=selective,
                                  extra_contexts=ctx)
@@ -187,7 +198,7 @@ class TestEcdsaSdVerify:
         _require_ldp_sd()
         derived, pub_pem, _ = _issue_and_derive(
             _lifecycle_credential(ob3_credential),
-            selective=['/credentialStatus'])
+            selective=['/credentialStatus'], mandatory=LAX_MANDATORY)
         assert 'validUntil' not in derived
         with pytest.raises(OB3VerificationError, match='validUntil'):
             OB3LdpVerifier(pubkey_pem=pub_pem).verify(derived)
@@ -196,7 +207,7 @@ class TestEcdsaSdVerify:
         _require_ldp_sd()
         derived, pub_pem, _ = _issue_and_derive(
             _lifecycle_credential(ob3_credential),
-            selective=['/validUntil'])
+            selective=['/validUntil'], mandatory=LAX_MANDATORY)
         assert 'credentialStatus' not in derived
         with pytest.raises(OB3VerificationError, match='credentialStatus'):
             OB3LdpVerifier(pubkey_pem=pub_pem).verify(derived)
@@ -207,9 +218,72 @@ class TestEcdsaSdVerify:
         # failure.
         _require_ldp_sd()
         derived, pub_pem, _ = _issue_and_derive(
-            _lifecycle_credential(ob3_credential), selective=[])
+            _lifecycle_credential(ob3_credential), selective=[],
+            mandatory=LAX_MANDATORY)
         assert 'validUntil' not in derived
         verify_data_integrity_proof(derived, pub_pem)
+
+    def test_selective_lifecycle_is_rejected_even_when_disclosed(
+            self, ob3_credential):
+        # An issuer that left validUntil/credentialStatus selective: even a
+        # presentation disclosing all of it is refused, since a verifier
+        # cannot tell it from one that withheld part (a second status entry,
+        # a statusSize). The low-level entry still verifies the proof.
+        _require_ldp_sd()
+        derived, pub_pem, did = _issue_and_derive(
+            _lifecycle_credential(ob3_credential),
+            selective=['/validUntil', '/credentialStatus'],
+            mandatory=LAX_MANDATORY)
+        verify_data_integrity_proof(derived, pub_pem)
+        for verifier in (OB3LdpVerifier(), OB3LdpVerifier(pubkey_pem=pub_pem)):
+            with pytest.raises(OB3VerificationError,
+                               match='did not make mandatory'):
+                verifier.verify(derived)
+
+    @pytest.mark.parametrize('lax', ['/validFrom', '/validUntil', '/credentialStatus'])
+    def test_each_lifecycle_pointer_must_be_mandatory(self, ob3_credential, lax):
+        _require_ldp_sd()
+        derived, pub_pem, _ = _issue_and_derive(
+            _lifecycle_credential(ob3_credential), selective=[lax],
+            mandatory=[p for p in MANDATORY if p != lax])
+        with pytest.raises(OB3VerificationError, match='did not make mandatory'):
+            OB3LdpVerifier(pubkey_pem=pub_pem).verify(derived)
+
+    def test_omitted_valid_from_is_rejected(self, ob3_credential):
+        _require_ldp_sd()
+        derived, pub_pem, _ = _issue_and_derive(
+            _lifecycle_credential(ob3_credential), selective=[],
+            mandatory=LAX_VALID_FROM)
+        assert 'validFrom' not in derived
+        verify_data_integrity_proof(derived, pub_pem)
+        with pytest.raises(OB3VerificationError, match='omitted validFrom'):
+            OB3LdpVerifier(pubkey_pem=pub_pem).verify(derived)
+
+    def test_future_valid_from_cannot_be_hidden(self, ob3_credential):
+        # An issuer that left validFrom selective: the holder of a badge
+        # that is not valid yet withholds validFrom, and the model took the
+        # missing date as "now" -- the badge verified as already valid.
+        from dataclasses import replace
+        from datetime import datetime, timezone
+        _require_ldp_sd()
+        future = replace(
+            _lifecycle_credential(ob3_credential),
+            issuance_date=datetime(2099, 1, 1, tzinfo=timezone.utc),
+            expiration_date=datetime(2100, 1, 1, tzinfo=timezone.utc))
+        # control: an issuer that made validFrom mandatory (the delegate
+        # checks the disclosed validFrom too)
+        full, pub_pem, _ = _issue_and_derive(future, selective=[])
+        assert full['validFrom'] == '2099-01-01T00:00:00Z'
+        with pytest.raises(OB3VerificationError, match='not valid before'):
+            OB3LdpVerifier(pubkey_pem=pub_pem).verify(full)
+
+        hidden, pub_pem, _ = _issue_and_derive(future, selective=[],
+                                               mandatory=LAX_VALID_FROM)
+        assert 'validFrom' not in hidden
+        verify_data_integrity_proof(hidden, pub_pem)        # a valid proof
+        for verifier in (OB3LdpVerifier(), OB3LdpVerifier(pubkey_pem=pub_pem)):
+            with pytest.raises(OB3VerificationError, match='omitted validFrom'):
+                verifier.verify(hidden)
 
     def test_registered_in_cryptosuites(self):
         from openbadgeslib.ob3.ldp import _CRYPTOSUITES
