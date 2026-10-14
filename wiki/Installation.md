@@ -68,7 +68,7 @@ both Data Integrity suites to conform to the 1EdTech OB 3.0 certification. It is
 self-contained (pulls its own JSON-LD processor), so it works with or without
 `[ldp]`; **issuing** `ecdsa-sd-2023` is out of scope. Without the extra,
 verifying such a credential fails closed with an install hint. Verifying needs
-openvc-core >= 1.30.2 (the extra installs >= 1.31.3): an older installed
+openvc-core >= 1.33.2 (the extra installs it): an older installed
 release fails closed with `OB3VerificationError`.
 
 ```sh

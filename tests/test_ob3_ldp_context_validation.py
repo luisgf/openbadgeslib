@@ -1595,22 +1595,22 @@ class TestEcdsaSd:
         monkeypatch.setitem(ldp._CRYPTOSUITES, 'ecdsa-sd-2023', delegate)
         _rejected(doc, 'not in compacted form', OB3LdpVerifier(pubkey_pem=pub))
 
-    @pytest.mark.parametrize('version', ['1.30.1', '1.29.9', '0.9', 'dev', None])
+    @pytest.mark.parametrize('version', ['1.33.1', '1.33.0', '1.30.2', '0.9', 'dev', None])
     def test_old_openvc_fails_closed(self, derived, monkeypatch, version):
         import openvc
         monkeypatch.setattr(openvc, '__version__', version, raising=False)
-        with pytest.raises(OB3VerificationError, match=r'openvc-core >= 1\.30\.2'):
+        with pytest.raises(OB3VerificationError, match=r'openvc-core >= 1\.33\.2'):
             ldp._require_openvc_ecdsa_sd()
         document, pub, _ = derived
-        _rejected(document, r'openvc-core >= 1\.30\.2', OB3LdpVerifier(pubkey_pem=pub))
+        _rejected(document, r'openvc-core >= 1\.33\.2', OB3LdpVerifier(pubkey_pem=pub))
 
     def test_missing_openvc_version_fails_closed(self, derived, monkeypatch):
         import openvc
         monkeypatch.delattr(openvc, '__version__')
-        with pytest.raises(OB3VerificationError, match=r'openvc-core >= 1\.30\.2'):
+        with pytest.raises(OB3VerificationError, match=r'openvc-core >= 1\.33\.2'):
             ldp._require_openvc_ecdsa_sd()
 
-    @pytest.mark.parametrize('version', ['1.30.2', '1.31.3', '2.0.0rc1'])
+    @pytest.mark.parametrize('version', ['1.33.2', '1.34.0', '2.0.0rc1'])
     def test_supported_openvc_accepted(self, derived, monkeypatch, version):
         import openvc
         monkeypatch.setattr(openvc, '__version__', version)

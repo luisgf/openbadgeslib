@@ -237,7 +237,7 @@ from the network** — canonicalization uses the contexts bundled with the
 library (see [[Security Model]]); `extra_contexts` extends that allowlist per
 call. `ecdsa-sd-2023` (selective disclosure) is verified by delegating to
 `openvc-core` (the `[ldp-sd]` extra), which runs its own context validation;
-an openvc-core older than 1.30.2 is refused. A cryptosuite the library supports
+an openvc-core older than 1.33.2 is refused. A cryptosuite the library supports
 neither natively nor by delegation (e.g. `ecdsa-rdfc-2019`) fails closed naming
 the supported ones. An `ecdsa-sd-2023` presentation that omits `validFrom`,
 `validUntil` or `credentialStatus` is rejected: a holder must not be able to

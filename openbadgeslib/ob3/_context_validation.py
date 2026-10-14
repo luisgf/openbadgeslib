@@ -22,8 +22,9 @@
 # JSON-LD context validation for the RDF-canonicalized Data Integrity
 # cryptosuites (eddsa-rdfc-2022 natively, ecdsa-sd-2023 before delegating).
 #
-# Ported from openvc (openvc.proof._context_validation, openvc-core 1.30.2;
-# same author, LGPL-3.0-or-later), with the OB 3.0 adaptations listed below.
+# Ported from openvc (openvc.proof._context_validation, openvc-core 1.30.2,
+# with the rules 1.33.2 added; same author, LGPL-3.0-or-later), with the
+# OB 3.0 adaptations listed below.
 #
 # Those suites sign the RDF DATASET a document expands to, not its JSON. Every
 # policy check after the signature -- the validity window, credentialStatus,

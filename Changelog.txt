@@ -140,13 +140,15 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     jsonld.js give `"3"`, so a Data Integrity proof made on one did not
     verify on the other.
 
-  - security(deps): raise the openvc-core floors to `>=1.31.3` in the
+  - security(deps): raise the openvc-core floors to `>=1.33.2` in the
     `[eudi]`, `[ldp-sd]` and `[oid4vci]` extras, the release the suite is
     tested against. openvc-core 1.30.2 closes the same JSON-vs-dataset gap
     in the ecdsa-sd-2023 suite `[ldp-sd]` delegates to
-    (GHSA-vrxg-57v4-85mc), and the ecdsa-sd-2023 verify (`OB3LdpVerifier`
+    (GHSA-vrxg-57v4-85mc), and 1.33.2 its follow-ups (GHSA-h9rq-wxcw-4rjc:
+    nested arrays, re-spelled policy terms, a derived proof that merges
+    blank nodes). The ecdsa-sd-2023 verify (`OB3LdpVerifier`
     and `verify_data_integrity_proof` alike) now also refuses, at run time,
-    an installed openvc-core older than 1.30.2 or with no readable version
+    an installed openvc-core older than 1.33.2 or with no readable version
     (`OB3VerificationError`), so a stale environment fails closed. Behaviour
     the new floor brings: `verify_badge_sd_jwt` on a presentation carrying a
     Key Binding JWT, called with only `audience` or only `nonce` (or one of

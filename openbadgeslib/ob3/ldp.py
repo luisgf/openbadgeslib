@@ -84,10 +84,12 @@ MAX_LDP_DOCUMENT_BYTES = 256 * 1024
 
 
 #: Oldest openvc-core the delegated ecdsa-sd-2023 verify accepts: earlier
-#: releases do not validate the JSON-LD form of the documents they verify (see
-#: ob3/_context_validation.py), so the JSON they report could differ from what
-#: the issuer signed.
-_OPENVC_MIN_VERSION = (1, 30, 2)
+#: releases do not validate the JSON-LD form of the documents they verify, or
+#: let nested arrays, re-spelled policy terms or a derived proof that merges
+#: blank nodes through (GHSA-vrxg-57v4-85mc, GHSA-h9rq-wxcw-4rjc; see
+#: ob3/_context_validation.py), so the JSON they report could differ from
+#: what the issuer signed.
+_OPENVC_MIN_VERSION = (1, 33, 2)
 
 
 def _require_jsonld() -> Any:

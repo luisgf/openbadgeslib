@@ -38,7 +38,7 @@ The 3.7 port already moved every key path onto [`cryptography`](https://cryptogr
 
 ### Dependency floors raised
 
-PyJWT rises to `>=2.13` and openvc-core (the `[eudi]` / `[ldp-sd]` extras) to `>=1.21` (4.6.1 raises them again, to `>=2.15.1` and `>=1.31.3`). The OB3 JWT-VC verifier decodes untrusted input with a signature-verifying `jwt.decode()`, so the PyJWT 2.12/2.13 advisory batch — RFC 7515 §4.1.11 `crit` validation (CVE-2026-32597) and the `b64=false` unencoded-payload DoS (CVE-2026-48525) — sits on a reachable path.
+PyJWT rises to `>=2.13` and openvc-core (the `[eudi]` / `[ldp-sd]` extras) to `>=1.21` (4.6.1 raises them again, to `>=2.15.1` and `>=1.33.2`). The OB3 JWT-VC verifier decodes untrusted input with a signature-verifying `jwt.decode()`, so the PyJWT 2.12/2.13 advisory batch — RFC 7515 §4.1.11 `crit` validation (CVE-2026-32597) and the `b64=false` unencoded-payload DoS (CVE-2026-48525) — sits on a reachable path.
 
 **Action:** only if you pinned below those floors alongside openbadgeslib.
 
@@ -60,5 +60,5 @@ Every URL in `[issuer]` and `[badge_<name>]` is a public identifier: the tools p
 - [ ] Repoint imports of `openbadgeslib.badge` / `.signer` / `.verifier` to `openbadgeslib.ob1.<module>`.
 - [ ] If you hand key material to the library as **objects**, use `cryptography` objects (PEM files are unaffected).
 - [ ] Check your `config.ini` for an `@` in any `[issuer]` / `[badge_*]` URL — the config will not load until it is gone.
-- [ ] Lift any pin below PyJWT `2.13` or openvc-core `1.21` (4.6.1 raises these to PyJWT `>=2.15.1` and openvc-core `>=1.31.3`, and `[ldp]` to pyld `>=3.3.0`; see the Changelog).
+- [ ] Lift any pin below PyJWT `2.13` or openvc-core `1.21` (4.6.1 raises these to PyJWT `>=2.15.1` and openvc-core `>=1.33.2`, and `[ldp]` to pyld `>=3.3.0`; see the Changelog).
 - [ ] Still on Python 3.10? 4.x keeps working there (with a `DeprecationWarning` since 4.6.0), but plan the move to Python 3.11+ before 5.0. If your test suite turns warnings into errors, add the filter shown in [[Installation]] meanwhile.
