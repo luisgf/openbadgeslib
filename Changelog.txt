@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v4.6.1 - unreleased
+* v4.6.1 - 2026-10-14
 
   - security(ldp): `OB3LdpVerifier` reads only JSON its Data Integrity proof
     actually covers (GHSA-rp5q-966c-5592; affects 3.2.0–4.6.0, the native
