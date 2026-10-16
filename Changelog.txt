@@ -4,6 +4,20 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v4.6.2 - unreleased
+
+  - security(deps): the openvc-core floor of `[eudi]`, `[ldp-sd]` and
+    `[oid4vci]` rises to 1.35.0. Two behaviours below it reach this
+    library's public API. An SD-JWT VC whose issuer JWT carries `aud`
+    verified for any relying party, so a badge its issuer restricted to one
+    verifier was honoured by all (RFC 7519 §4.1.3); 1.35.0 enforces it, and
+    `verify_badge_sd_jwt(audience=…)` now also gates it. And
+    `status_list_token_resolver(leeway_s=…)` took any number, so an infinite
+    leeway made an expired status-list token verify as current; 1.35.0
+    accepts whole seconds from 0 to 86400 only. Neither is an advisory in
+    openvc-core. The run-time guard of the ecdsa-sd-2023 verify path stays at
+    1.33.2, the security minimum of that path.
+
 * v4.6.1 - 2026-10-14
 
   - security(ldp): `OB3LdpVerifier` reads only JSON its Data Integrity proof

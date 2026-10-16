@@ -88,7 +88,11 @@ MAX_LDP_DOCUMENT_BYTES = 256 * 1024
 #: let nested arrays, re-spelled policy terms or a derived proof that merges
 #: blank nodes through (GHSA-vrxg-57v4-85mc, GHSA-h9rq-wxcw-4rjc; see
 #: ob3/_context_validation.py), so the JSON they report could differ from
-#: what the issuer signed.
+#: what the issuer signed. This is the security minimum of the delegated
+#: verify path, deliberately below the ``>=1.35.0`` the extras declare (that
+#: floor adds the SD-JWT VC issuer-JWT ``aud`` check, which this path does not
+#: use): it refuses a hand-installed release that is unsafe here, not one that
+#: is merely older than the tested pin.
 _OPENVC_MIN_VERSION = (1, 33, 2)
 
 
