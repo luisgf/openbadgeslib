@@ -258,12 +258,44 @@ def _fetch_did_web_document(did: str, fetch: Any) -> dict[str, Any]:
             "could not fetch DID document %s: %s" % (url, exc)) from exc
     try:
         doc = json.loads(raw.decode('utf-8'))
-    except (ValueError, UnicodeDecodeError) as exc:
+    except (ValueError, UnicodeDecodeError, RecursionError) as exc:
+        # RecursionError: the host serves a document nested deeper than the
+        # parser recurses, which is untrusted input like any other malformed one.
         raise OB3VerificationError(
             "malformed DID document at %s: %s" % (url, exc)) from exc
     if not isinstance(doc, dict):
         raise OB3VerificationError("DID document is not a JSON object")
+    if _nested_deeper_than(doc, MAX_DID_DOCUMENT_DEPTH):
+        raise OB3VerificationError(
+            "DID document at %s is nested more than %d levels deep"
+            % (url, MAX_DID_DOCUMENT_DEPTH))
     return doc
+
+
+#: A DID document is shallow (a handful of levels). json.loads accepts nesting
+#: far past what anything that later walks, repr()s or re-serialises the document
+#: survives (on CPython 3.14 and later its limit is a C stack budget, well beyond
+#: the recursion limit), and the host serving it is the one party the verifier
+#: does not control.
+MAX_DID_DOCUMENT_DEPTH = 64
+
+
+def _nested_deeper_than(value: Any, limit: int) -> bool:
+    """True if *value* (parsed JSON) has containers nested more than *limit*
+    deep. Iterative: the point is to survive input a recursive walk would not."""
+    stack: list[Tuple[Any, int]] = [(value, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if isinstance(node, dict):
+            children: Any = node.values()
+        elif isinstance(node, list):
+            children = node
+        else:
+            continue
+        if depth > limit:
+            return True
+        stack.extend((child, depth + 1) for child in children)
+    return False
 
 
 def fetch_did_web_document(did: str, download: Any = None) -> dict[str, Any]:

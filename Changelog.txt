@@ -57,6 +57,14 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     as a bare `RecursionError`, and a window value too long to be a timestamp
     is not echoed back in the error.
 
+  - fix(did): a `did:web` document nested deeper than the JSON parser
+    recurses, or deeper than 64 levels (a DID document is a handful), is
+    reported as the usual `OB3VerificationError` instead of escaping
+    `resolve_did`, `fetch_did_web_document` and the verifiers that resolve an
+    issuer's DID as a bare `RecursionError`. CPython 3.14 and later parse
+    nesting far past the recursion limit, so the parser alone no longer bounds
+    what the later `repr()` and `json.dumps` of the document survive.
+
 * v4.6.1 - 2026-10-14
 
   - security(ldp): `OB3LdpVerifier` reads only JSON its Data Integrity proof

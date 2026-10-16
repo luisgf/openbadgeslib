@@ -495,3 +495,35 @@ class TestForIssuerDidKid:
         with pytest.raises(OB3VerificationError, match='different DID'):
             OB3Verifier.for_issuer_did(
                 did, download=_doc_download(doc)).verify(token)
+
+
+def test_a_did_document_nested_past_the_parser_is_a_typed_failure():
+    # 200 000 `[`: json.loads raises RecursionError, which is neither a
+    # ValueError nor caught as one, and used to escape the fetch raw.
+    from openbadgeslib.ob3.did import fetch_did_web_document
+    with pytest.raises(OB3VerificationError, match='malformed DID document'):
+        fetch_did_web_document('did:web:example.com',
+                               download=lambda url: b'[' * 200000)
+
+
+@pytest.mark.parametrize('depth', [65, 5000, 90000])
+def test_a_did_document_nested_past_the_bound_is_refused(depth):
+    # Balanced and valid JSON. Depends on the interpreter whether json.loads
+    # takes it (3.14 parses ~100 000 levels, older ones stop near the recursion
+    # limit); either way it must come out as a typed failure, never as the
+    # RecursionError that repr() or json.dumps raise later on what it parsed.
+    from openbadgeslib.ob3.did import fetch_did_web_document
+    body = b'{"a":' * depth + b'1' + b'}' * depth
+    with pytest.raises(OB3VerificationError, match='nested|malformed DID document'):
+        fetch_did_web_document('did:web:example.com', download=lambda url: body)
+
+
+def test_an_ordinary_did_document_is_far_below_the_depth_bound():
+    from openbadgeslib.ob3.did import (MAX_DID_DOCUMENT_DEPTH,
+                                       _nested_deeper_than)
+    doc = {'id': 'did:web:example.com',
+           'verificationMethod': [{'id': '#k', 'publicKeyJwk': {'kty': 'OKP'}}],
+           'service': [{'serviceEndpoint': {'uris': ['https://a', ['b']]}}]}
+    assert not _nested_deeper_than(doc, MAX_DID_DOCUMENT_DEPTH)
+    assert _nested_deeper_than(doc, 3)
+    assert not _nested_deeper_than([], 1) and not _nested_deeper_than('x', 0)
