@@ -16,7 +16,11 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     leeway made an expired status-list token verify as current; 1.35.0
     accepts whole seconds from 0 to 86400 only. Neither is an advisory in
     openvc-core. The run-time guard of the ecdsa-sd-2023 verify path stays at
-    1.33.2, the security minimum of that path.
+    1.33.2, the security minimum of that path. `[ldp]` and `[ldp-sd]` also cap
+    pyld below 4: pyld 4.0 (unreleased, breaking) drops statements from the
+    signed dataset that 3.x keeps, an IRI with two `#` or a literal with an
+    invalid `@language`, which context validation does not refuse, so the
+    credential would still show what the proof no longer covers.
 
   - security(eudi): `verify_badge_sd_jwt` enforces the badge's own
     `validFrom` and `validUntil` on both trust paths (pinned key and X.509

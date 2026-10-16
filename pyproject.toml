@@ -94,8 +94,14 @@ dependencies = [
 # refused. pyld before 3.3 also canonicalizes an integral float (3.0) as
 # "3.0E0" where 3.3 and jsonld.js give "3", so a proof made on one did not
 # verify on the other.
+# Ceiling below 4: pyld 4.0 is unreleased and breaking, and its toRDF drops
+# statements 3.x keeps (an IRI with two `#`, a literal with an invalid
+# @language). Context validation is written against 3.x's absolute-IRI test and
+# reads the JSON, not the dataset, so a statement pyld 4 drops would still read
+# as present in the credential while the proof never signed it
+# (GHSA-rp5q-966c-5592). Lift the ceiling only with that reworked and tested.
 ldp = [
-    "pyld>=3.3.0",
+    "pyld>=3.3.0,<4",
 ]
 # EUDI track: issue/verify badges as SD-JWT VC (the EU wallet / ARF format) via
 # the generic openvc-core library. openvc-core is stable (1.x) with a published
@@ -138,10 +144,11 @@ eudi = [
 # at 1.35.0, the shared tested floor
 # described under [eudi]. OB3LdpVerifier also runs its own context validation
 # (with pyld) before it delegates, and openvc-core[data-integrity] admits
-# pyld 2.x, so this extra carries the same pyld floor as [ldp].
+# pyld 2.x (and, unbounded above, pyld 4), so this extra carries the same pyld
+# range as [ldp].
 ldp-sd = [
     "openvc-core[data-integrity]>=1.35.0,<2",
-    "pyld>=3.3.0",
+    "pyld>=3.3.0,<4",
 ]
 # OID4VCI issuance: hand a badge to a wallet over the pre-authorized code flow.
 # openbadgeslib owns the offers, the state (codes, tokens, nonces, grants) and
