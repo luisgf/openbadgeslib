@@ -25,7 +25,7 @@ jobs:
       - name: Install the package (with extras) and pip-audit
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,ldp,eudi]"
+          pip install -e ".[dev,ldp,eudi,ldp-sd,oid4vci]"
           pip install pip-audit
 
       - name: Audit installed dependencies
