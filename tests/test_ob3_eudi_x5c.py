@@ -82,8 +82,10 @@ def _chain(*, leaf_not_before=_PAST, leaf_not_after=_FUTURE, leaf_crldp=False):
     return [der_b64(leaf), der_b64(inter)], root, leaf_key
 
 
-def _sd_jwt_with_x5c(leaf_key, x5c, *, iss=ISS, vct=OB3_SD_JWT_VCT, status=None):
-    """A minimal badge SD-JWT (no disclosures) whose issuer JWT carries *x5c*."""
+def _sd_jwt_with_x5c(leaf_key, x5c, *, iss=ISS, vct=OB3_SD_JWT_VCT, status=None,
+                     extra=None):
+    """A minimal badge SD-JWT (no disclosures) whose issuer JWT carries *x5c*.
+    *extra* adds payload claims (e.g. ``validUntil``, ``aud``)."""
     from openvc.keys import P256SigningKey
     from openvc.proof._jws import sign_compact
     header = {'alg': 'ES256', 'typ': 'dc+sd-jwt', 'kid': 'leaf',
@@ -93,6 +95,8 @@ def _sd_jwt_with_x5c(leaf_key, x5c, *, iss=ISS, vct=OB3_SD_JWT_VCT, status=None)
                'achievement': {'id': 'https://ex/b/1', 'name': 'Python 101'}}
     if status is not None:
         payload.update(status)
+    if extra:
+        payload.update(extra)
     return sign_compact(
         header, payload, signing_key=P256SigningKey(leaf_key, kid='leaf')) + '~'
 
@@ -273,6 +277,82 @@ class TestX5cTrustBoundary:
         result = verify_badge_sd_jwt(_sd_jwt_with_x5c(leaf_key, x5c),
                                      x5c_trust_anchors=[root])
         assert result.issuer == ISS   # verified despite the revocation pointer
+
+
+class TestX5cBadgeBoundary:
+    """What this library enforces on a badge whose issuer chain the delegate
+    has already accepted: the badge's own validity window, and what the floor
+    (openvc-core >=1.35.0) enforces on the issuer JWT's ``aud``."""
+
+    @pytest.fixture(autouse=True)
+    def _needs_openvc(self):
+        pytest.importorskip('openvc')
+
+    def _verify(self, extra, **kwargs):
+        x5c, root, leaf_key = _chain()
+        return verify_badge_sd_jwt(
+            _sd_jwt_with_x5c(leaf_key, x5c, extra=extra),
+            x5c_trust_anchors=[root], **kwargs)
+
+    def test_a_third_party_badge_past_its_validuntil_is_refused(self):
+        # No `exp`: the flat `validUntil` is the only expiry this badge has.
+        with pytest.raises(EudiError, match='expired'):
+            self._verify({'validUntil': '2021-01-01T00:00:00Z'})
+
+    def test_a_third_party_badge_not_yet_valid_is_refused(self):
+        with pytest.raises(EudiError, match='not yet valid'):
+            self._verify({'validFrom': '2099-01-01T00:00:00Z'})
+
+    @pytest.mark.parametrize('value', [None, 4102444800, 'tomorrow', '2099-01-01'])
+    def test_a_malformed_validuntil_fails_closed(self, value):
+        with pytest.raises(EudiError, match='malformed'):
+            self._verify({'validUntil': value})
+
+    def test_a_current_window_verifies(self):
+        result = self._verify({'validFrom': '2020-01-01T00:00:00Z',
+                               'validUntil': '2099-01-01T00:00:00Z'})
+        assert result.issuer == ISS
+
+    def test_issuer_jwt_aud_is_enforced(self):
+        # openvc-core 1.35.0 (#227): the floor of the extras. Before it, a badge
+        # restricted to another relying party verified for everyone.
+        aud = {'aud': 'https://rp.example'}
+        with pytest.raises(EudiError, match='aud'):
+            self._verify(aud)
+        with pytest.raises(EudiError, match='aud'):
+            self._verify(aud, audience='https://other.example')
+        assert self._verify(aud, audience='https://rp.example').issuer == ISS
+
+    def test_a_plain_jwt_is_not_an_sd_jwt_on_this_path_either(self):
+        # openvc-core's verify_credential also takes a plain VC-JWT, ignoring
+        # expected_vct and require_key_binding and returning another type; a JWT
+        # an anchored issuer signed must not pass as a badge here, as it does not
+        # on the pinned-key path.
+        from openvc.keys import P256SigningKey
+        from openvc.proof._jws import sign_compact
+        x5c, root, leaf_key = _chain()
+        header = {'alg': 'ES256', 'typ': 'JWT', 'kid': 'leaf', 'x5c': list(x5c)}
+        payload = {'iss': ISS, 'jti': 'urn:x', 'nbf': int(time.time()) - 5,
+                   'vc': {'type': ['VerifiableCredential', 'DriversLicense']}}
+        token = sign_compact(header, payload,
+                             signing_key=P256SigningKey(leaf_key, kid='leaf'))
+        assert '~' not in token
+        for kwargs in ({}, {'expected_vct': 'https://other.example/vct'},
+                       {'require_key_binding': True}):
+            with pytest.raises(EudiError, match='not an SD-JWT'):
+                verify_badge_sd_jwt(token, x5c_trust_anchors=[root], **kwargs)
+
+    @pytest.mark.parametrize('token', [None, 123, b'a.b.c~', ['a~']])
+    def test_a_non_string_token_is_a_typed_failure(self, token):
+        with pytest.raises(EudiError, match='not an SD-JWT'):
+            verify_badge_sd_jwt(token, x5c_trust_anchors=['anchor'])
+
+    def test_a_deeply_nested_header_is_a_typed_failure(self):
+        # `[[[…` in the (unauthenticated) JOSE header used to escape this
+        # library's x5c probe as a bare RecursionError.
+        header = base64.urlsafe_b64encode(b'[' * 300000).rstrip(b'=').decode()
+        with pytest.raises(EudiError, match='could not parse'):
+            verify_badge_sd_jwt('%s.e30.c2ln~' % header, x5c_trust_anchors=['anchor'])
 
 
 def test_x5c_path_needs_the_extra(monkeypatch):

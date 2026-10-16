@@ -478,3 +478,319 @@ class TestTokenStatusList:
             resolve_status_list_token=self._resolver(
                 self._list_token(ed25519_priv_pem), ed25519_pub_pem))
         assert result.issuer == ob3_credential.issuer.id
+
+
+# ── validity window, never-disclosable claims, leeway, issuer-JWT aud ─────────
+
+def _payload_of(token):
+    """The issuer JWT's payload — what is disclosed unconditionally."""
+    import base64
+    import json
+    body = token.split("~", 1)[0].split(".")[1]
+    return json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+
+
+def _third_party_token(priv_pem, **claims):
+    """A badge SD-JWT as another implementation could issue it: a flat payload
+    built straight on openvc-core, with exactly the claims given (no ``exp``
+    unless one is passed), so what this library checks is what it must check on
+    a token it did not make."""
+    from openvc.keys import Ed25519SigningKey
+    from openvc.proof.sd_jwt import SdJwtVcProofSuite
+    payload = {
+        "iss": "https://issuer.example",
+        "name": "Python 101",
+        "achievement": {"id": "https://ex/b/1", "name": "Python 101"},
+    }
+    payload.update(claims)
+    return SdJwtVcProofSuite().issue(
+        payload, signing_key=Ed25519SigningKey.from_pem(priv_pem, kid="k"),
+        vct=OB3_SD_JWT_VCT)
+
+
+class TestSdJwtValidityWindow:
+    """validFrom/validUntil are a flat IETF payload's only expiry on this track,
+    and the delegate does not read them as a bound there: the badge's own
+    window is this library's to enforce, on issue (exp) and on verify."""
+
+    @pytest.fixture(autouse=True)
+    def _needs_openvc(self):
+        pytest.importorskip("openvc")
+
+    @staticmethod
+    def _credential(base, *, issued, expires=None):
+        import dataclasses
+        return dataclasses.replace(base, issuance_date=issued, expiration_date=expires)
+
+    def test_exp_is_derived_from_the_credential_expiry(self, ob3_credential,
+                                                       ed25519_priv_pem,
+                                                       ed25519_pub_pem):
+        from datetime import datetime, timezone
+        expires = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        cred = self._credential(ob3_credential, issued=ob3_credential.issuance_date,
+                                expires=expires)
+        token = issue_badge_sd_jwt(cred, privkey_pem=ed25519_priv_pem)
+        assert _payload_of(token)["exp"] == int(expires.timestamp())
+        assert verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem).issuer \
+            == cred.issuer.id
+
+    def test_a_badge_that_does_not_expire_has_no_exp(self, ob3_credential,
+                                                     ed25519_priv_pem):
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem)
+        assert "exp" not in _payload_of(token)
+
+    def test_an_expired_badge_is_refused(self, ob3_credential, ed25519_priv_pem,
+                                         ed25519_pub_pem):
+        # The wrong-accept this guards: a 2021 expiry used to verify, because
+        # nothing turned the flat `validUntil` into an `exp`.
+        from datetime import datetime, timezone
+        cred = self._credential(
+            ob3_credential, issued=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            expires=datetime(2021, 1, 1, tzinfo=timezone.utc))
+        token = issue_badge_sd_jwt(cred, privkey_pem=ed25519_priv_pem)
+        with pytest.raises(EudiError, match="expired"):
+            verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem)
+
+    def test_the_earlier_of_validuntil_and_expires_in_s_wins(self, ob3_credential,
+                                                             ed25519_priv_pem):
+        import time
+        from datetime import datetime, timezone
+        far = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        issued = ob3_credential.issuance_date
+        # a short explicit expiry shortens a long validUntil ...
+        short = issue_badge_sd_jwt(
+            self._credential(ob3_credential, issued=issued, expires=far),
+            privkey_pem=ed25519_priv_pem, expires_in_s=3600)
+        assert abs(_payload_of(short)["exp"] - (int(time.time()) + 3600)) <= 5
+        # ... but a long explicit one cannot outlive validUntil.
+        soon = datetime.fromtimestamp(int(time.time()) + 600, timezone.utc)
+        capped = issue_badge_sd_jwt(
+            self._credential(ob3_credential, issued=issued, expires=soon),
+            privkey_pem=ed25519_priv_pem, expires_in_s=10 ** 7)
+        assert _payload_of(capped)["exp"] == int(soon.timestamp())
+        # with no validUntil, expires_in_s alone still works as before
+        alone = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   expires_in_s=3600)
+        assert abs(_payload_of(alone)["exp"] - (int(time.time()) + 3600)) <= 5
+
+    def test_a_not_yet_valid_badge_is_refused(self, ob3_credential,
+                                              ed25519_priv_pem, ed25519_pub_pem):
+        from datetime import datetime, timezone
+        cred = self._credential(
+            ob3_credential, issued=datetime(2099, 1, 1, tzinfo=timezone.utc))
+        token = issue_badge_sd_jwt(cred, privkey_pem=ed25519_priv_pem)
+        # refused by the delegate on the nbf this library now sets ...
+        with pytest.raises(EudiError, match="nbf|not yet valid"):
+            verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem)
+
+    def test_nbf_is_set_only_for_a_validfrom_still_ahead(self, ob3_credential,
+                                                         ed25519_priv_pem):
+        # A verifier that does not know validFrom still refuses a badge that
+        # has not started; but not when it starts now or earlier, where nbf
+        # would only turn a verifier's clock skew into a refusal.
+        from datetime import datetime, timedelta, timezone
+        future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        ahead = issue_badge_sd_jwt(self._credential(ob3_credential, issued=future),
+                                   privkey_pem=ed25519_priv_pem)
+        assert _payload_of(ahead)["nbf"] == int(future.timestamp())
+        for issued in (datetime.now(timezone.utc),
+                       datetime.now(timezone.utc) - timedelta(days=30)):
+            current = issue_badge_sd_jwt(self._credential(ob3_credential, issued=issued),
+                                         privkey_pem=ed25519_priv_pem)
+            assert "nbf" not in _payload_of(current)
+
+    def test_validfrom_inside_the_leeway_verifies_and_outside_is_refused(
+            self, ed25519_priv_pem, ed25519_pub_pem):
+        from datetime import datetime, timedelta, timezone
+        from openbadgeslib.util import CLOCK_SKEW_LEEWAY
+
+        def at(delta):
+            return (datetime.now(timezone.utc) + delta).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        verify_badge_sd_jwt(
+            _third_party_token(ed25519_priv_pem,
+                               validFrom=at(CLOCK_SKEW_LEEWAY - timedelta(seconds=20))),
+            pubkey_pem=ed25519_pub_pem)
+        with pytest.raises(EudiError, match="not yet valid"):
+            verify_badge_sd_jwt(
+                _third_party_token(ed25519_priv_pem,
+                                   validFrom=at(CLOCK_SKEW_LEEWAY + timedelta(seconds=20))),
+                pubkey_pem=ed25519_pub_pem)
+
+    @pytest.mark.parametrize("bad", [True, "10", [], float("inf"),
+                                     float("nan"), 10 ** 11, -10 ** 11, 10 ** 309])
+    def test_expires_in_s_is_a_bounded_number(self, bad, ob3_credential,
+                                              ed25519_priv_pem):
+        with pytest.raises(EudiError, match="expires_in_s"):
+            issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                               expires_in_s=bad)
+
+    @pytest.mark.parametrize("ok", [0, 1, -60, 3600, 3600.0, 3600.5, 10 ** 10])
+    def test_expires_in_s_accepts_the_numbers_it_always_did(self, ok, ob3_credential,
+                                                            ed25519_priv_pem):
+        import time
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   expires_in_s=ok)
+        assert abs(_payload_of(token)["exp"] - (time.time() + ok)) <= 5
+
+    def test_an_oversized_or_mistyped_window_value_is_not_echoed(
+            self, ed25519_priv_pem, ed25519_pub_pem):
+        token = _third_party_token(ed25519_priv_pem, validUntil="9" * 100000)
+        with pytest.raises(EudiError, match="malformed") as caught:
+            verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem)
+        assert len(str(caught.value)) < 300
+        token = _third_party_token(ed25519_priv_pem, validUntil=[[["x"]]])
+        with pytest.raises(EudiError, match="got a list"):
+            verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem)
+
+    # ── a token this library did not make ────────────────────────────────────
+
+    def test_third_party_validuntil_without_exp_is_refused(self, ed25519_priv_pem,
+                                                           ed25519_pub_pem):
+        token = _third_party_token(ed25519_priv_pem, validUntil="2021-01-01T00:00:00Z")
+        assert "exp" not in _payload_of(token)
+        with pytest.raises(EudiError, match="expired"):
+            verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem)
+
+    def test_third_party_validfrom_in_the_future_is_refused(self, ed25519_priv_pem,
+                                                            ed25519_pub_pem):
+        token = _third_party_token(ed25519_priv_pem, validFrom="2099-01-01T00:00:00Z")
+        with pytest.raises(EudiError, match="not yet valid"):
+            verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem)
+
+    def test_a_window_that_is_current_verifies(self, ed25519_priv_pem, ed25519_pub_pem):
+        token = _third_party_token(ed25519_priv_pem,
+                                   validFrom="2020-01-01T00:00:00Z",
+                                   validUntil="2099-01-01T00:00:00Z")
+        assert verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem).claims[
+            "validUntil"] == "2099-01-01T00:00:00Z"
+
+    @pytest.mark.parametrize("name", ["validFrom", "validUntil"])
+    @pytest.mark.parametrize("value", [None, 4102444800, "tomorrow", "2099-01-01",
+                                       "2099-01-01T00:00:00", ["2099-01-01T00:00:00Z"],
+                                       {"a": 1}])
+    def test_a_malformed_validity_value_fails_closed(self, name, value,
+                                                     ed25519_priv_pem,
+                                                     ed25519_pub_pem):
+        token = _third_party_token(ed25519_priv_pem, **{name: value})
+        with pytest.raises(EudiError, match="malformed"):
+            verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem)
+
+    def test_the_leeway_matches_the_other_verifiers(self, ed25519_priv_pem,
+                                                    ed25519_pub_pem):
+        from datetime import datetime, timedelta, timezone
+        from openbadgeslib.util import CLOCK_SKEW_LEEWAY
+
+        def at(delta):
+            return (datetime.now(timezone.utc) + delta).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        inside = _third_party_token(
+            ed25519_priv_pem, validUntil=at(-CLOCK_SKEW_LEEWAY + timedelta(seconds=20)))
+        verify_badge_sd_jwt(inside, pubkey_pem=ed25519_pub_pem)
+        outside = _third_party_token(
+            ed25519_priv_pem, validUntil=at(-CLOCK_SKEW_LEEWAY - timedelta(seconds=20)))
+        with pytest.raises(EudiError, match="expired"):
+            verify_badge_sd_jwt(outside, pubkey_pem=ed25519_pub_pem)
+
+
+class TestNeverDisclosableClaims:
+    """A holder may withhold any disclosure undetected, so the claims a verifier
+    judges the badge by cannot be made disclosable."""
+
+    @pytest.fixture(autouse=True)
+    def _needs_openvc(self):
+        pytest.importorskip("openvc")
+
+    @pytest.mark.parametrize("claim", ["name", "achievement", "validFrom", "validUntil"])
+    def test_issuance_refuses_a_disclosable_judging_claim(self, claim, ob3_credential,
+                                                          ed25519_priv_pem):
+        with pytest.raises(EudiError, match="cannot be selectively disclosable"):
+            issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                               disclosable=("credentialSubject", claim))
+
+    def test_it_is_refused_even_when_the_claim_is_absent(self, ob3_credential,
+                                                         ed25519_priv_pem):
+        # The badge has no validUntil, but asking for one to be disclosable is a
+        # misconfiguration that would bite the first badge that has one.
+        assert "validUntil" not in badge_to_sd_jwt_claims(ob3_credential)
+        with pytest.raises(EudiError, match="validUntil"):
+            issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                               disclosable=("validUntil",))
+
+    @pytest.mark.parametrize("bare", ["credentialSubject", b"credentialSubject", "validUntil"])
+    def test_a_bare_string_is_not_read_one_character_at_a_time(
+            self, bare, ob3_credential, ed25519_priv_pem):
+        with pytest.raises(EudiError, match="iterable of claim names"):
+            issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                               disclosable=bare)
+
+    def test_the_recipient_stays_disclosable(self, ob3_credential, ed25519_priv_pem):
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   disclosable=("credentialSubject",))
+        assert "credentialSubject" not in _payload_of(token)       # moved to a disclosure
+
+    def test_a_stripped_presentation_still_carries_the_validity_window(
+            self, ob3_credential, ed25519_priv_pem, ed25519_pub_pem):
+        import dataclasses
+        from datetime import datetime, timezone
+        cred = dataclasses.replace(
+            ob3_credential, expiration_date=datetime(2099, 1, 1, tzinfo=timezone.utc))
+        token = issue_badge_sd_jwt(cred, privkey_pem=ed25519_priv_pem)
+        stripped = token.split("~", 1)[0] + "~"          # holder drops every disclosure
+        claims = verify_badge_sd_jwt(stripped, pubkey_pem=ed25519_pub_pem).claims
+        assert claims["validUntil"] == "2099-01-01T00:00:00Z"
+        assert claims["validFrom"] and claims["achievement"] and claims["name"]
+
+
+class TestStatusListLeeway:
+    @pytest.fixture(autouse=True)
+    def _needs_openvc(self):
+        pytest.importorskip("openvc")
+
+    @pytest.mark.parametrize("bad", [float("inf"), float("nan"), -1, 86401, 10 ** 12,
+                                     1.5, True, None, "60"])
+    def test_a_leeway_the_delegate_rejects_fails_when_the_resolver_is_built(self, bad):
+        # Before openvc-core 1.35.0 an infinite leeway made an EXPIRED status
+        # list verify as current; now neither layer takes it.
+        from openbadgeslib.ob3.eudi import status_list_token_resolver
+        with pytest.raises(EudiError, match="leeway_s"):
+            status_list_token_resolver(pubkey_pem="unused", leeway_s=bad)
+
+    @pytest.mark.parametrize("ok", [0, 60, 86400])
+    def test_the_accepted_range_builds(self, ok, ed25519_pub_pem):
+        from openbadgeslib.ob3.eudi import status_list_token_resolver
+        assert callable(status_list_token_resolver(pubkey_pem=ed25519_pub_pem,
+                                                   leeway_s=ok))
+
+
+class TestIssuerJwtAudience:
+    """openvc-core 1.35.0 enforces the issuer JWT's own ``aud`` (RFC 7519 §4.1.3).
+    Below it, a badge its issuer restricted to one relying party verified for
+    all of them; this pins the behaviour the floor (>=1.35.0) buys, so the
+    floor/latest drift job (#236) notices if the delegate moves it."""
+
+    RP = "https://rp.example"
+
+    @pytest.fixture(autouse=True)
+    def _needs_openvc(self):
+        pytest.importorskip("openvc")
+
+    def test_a_badge_restricted_to_another_party_is_refused(self, ed25519_priv_pem,
+                                                            ed25519_pub_pem):
+        token = _third_party_token(ed25519_priv_pem, aud="https://someone-else.example")
+        with pytest.raises(EudiError, match="aud"):
+            verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem)
+        with pytest.raises(EudiError, match="aud"):
+            verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem, audience=self.RP)
+
+    def test_a_badge_restricted_to_this_party_verifies(self, ed25519_priv_pem,
+                                                       ed25519_pub_pem):
+        token = _third_party_token(ed25519_priv_pem, aud=self.RP)
+        result = verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem,
+                                     audience=self.RP)
+        assert result.claims["aud"] == self.RP
+
+    def test_a_badge_without_aud_is_unaffected(self, ed25519_priv_pem, ed25519_pub_pem):
+        token = _third_party_token(ed25519_priv_pem)
+        verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem)
+        verify_badge_sd_jwt(token, pubkey_pem=ed25519_pub_pem, audience=self.RP)

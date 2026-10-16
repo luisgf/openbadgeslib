@@ -337,7 +337,9 @@ An **additive** track — it does not touch the VC-JWT or Data Integrity issuanc
 pip install "openbadgeslib[eudi]"
 ```
 
-The achievement is always disclosed; the recipient identity (`credentialSubject`) is *selectively disclosable*, so a holder can present the badge while withholding who they are.
+The achievement is always disclosed; the recipient identity (`credentialSubject`) is *selectively disclosable*, so a holder can present the badge while withholding who they are. It is the **only** claim that can be: `issue_badge_sd_jwt` raises `EudiError` if `disclosable` names `name`, `achievement`, `validFrom` or `validUntil`, because a holder can withhold a disclosure without a verifier being able to tell, and a badge whose expiry the holder can hide is a badge that never expires.
+
+**Expiry and validity.** The credential's `validUntil` is also written as the issuer JWT's `exp` (the claim every SD-JWT VC verifier enforces), and a `validFrom` still ahead as `nbf`; `expires_in_s` can only shorten the expiry, never extend it. `verify_badge_sd_jwt` enforces the badge's own `validFrom` / `validUntil` on both trust paths, with the same clock-skew leeway as the other OB 3.0 verifiers, so a badge issued by another implementation that carries only a `validUntil` is refused once it has passed. A value that is not an ISO 8601 timestamp with an offset (as Python's `datetime.fromisoformat` reads it: stricter before 3.11, where some fractional-second spellings are refused) is refused, not skipped. What no verifier can catch is a `validUntil` that a third-party issuer made selectively disclosable and the holder withheld. Badges issued by 4.6.1 or earlier carry no `exp`, so only this library's verifier refuses them once expired: re-issue those, and any issued with a non-default `disclosable=`.
 
 **Keys:** Ed25519 (EdDSA), NIST P-256 (ES256), or NIST P-384 (ES384) — the signing algorithms `openvc-core` accepts for this track; RSA keys are rejected. The OpenID4VC High Assurance Interoperability Profile (HAIP) that EUDI wallets adopt restricts algorithms to the **P-256 (ES256)** family, so prefer a P-256 key for wallet interoperability; Ed25519 / P-384 work where HAIP-strict acceptance is not required.
 
@@ -367,6 +369,8 @@ result = verify_badge_sd_jwt(presentation, pubkey_pem=pub_pem,
                              require_key_binding=True)
 assert result.key_bound
 ```
+
+`audience` also gates the **issuer JWT's own `aud`** (openvc-core ≥ 1.35.0, RFC 7519 §4.1.3): a badge its issuer restricted to one relying party is refused by every other verifier, and by this one when `audience` is unset.
 
 This module maps a badge to and from SD-JWT VC claims and runs the crypto through `openvc-core`. To hand one of these to a wallet over **OID4VCI**, see [[Issuing to Wallets with OID4VCI]] — `openbadgeslib.oid4vci` owns the offers and the protocol state, and delegates the wallet key-proof verification to openvc-core. The **OID4VP** presentation side stays entirely in openvc-core.
 

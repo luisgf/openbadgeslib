@@ -42,6 +42,19 @@ class TestTypeMetadataDocument:
         # the recipient identity is selectively disclosable -> not mandatory
         assert not by_path[('credentialSubject',)].get('mandatory')
 
+    def test_the_published_bytes_do_not_change(self):
+        # vct#integrity pins the exact bytes an issuer serves. A badge issued
+        # with the pin of an older document stops resolving the moment the
+        # issuer republishes different bytes (openbadges-publish does it on
+        # every run), so this document is an interoperability contract: a
+        # change to it is a breaking one, not a patch. These are the pins of
+        # the 4.6.1 document.
+        assert type_metadata_integrity(
+            badge_type_metadata('https://issuer.example/vct/badge')) == \
+            'sha256-lHnInNa8OVZuWdDZ+0JBly84EVVY78vs/IhMLsRAep4='
+        assert type_metadata_integrity(badge_type_metadata()) == \
+            'sha256-lNLdZw58mEODTOsvJg3zi8YA3ayjplHCJHdqOHZvicc='
+
     def test_default_vct(self):
         assert badge_type_metadata()['vct'] == OB3_SD_JWT_VCT
 

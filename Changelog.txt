@@ -18,6 +18,45 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     openvc-core. The run-time guard of the ecdsa-sd-2023 verify path stays at
     1.33.2, the security minimum of that path.
 
+  - security(eudi): `verify_badge_sd_jwt` enforces the badge's own
+    `validFrom` and `validUntil` on both trust paths (pinned key and X.509
+    trust anchors), and `issue_badge_sd_jwt` writes the credential's
+    `validUntil` as the issuer JWT's `exp`, and a `validFrom` still ahead as
+    `nbf`. A badge is a flat IETF SD-JWT VC, and openvc-core reads
+    `validFrom` / `validUntil` as a validity window only for a W3C VCDM
+    payload, so a badge past its `validUntil` verified as unexpired unless
+    `expires_in_s` happened to be passed; badges issued by other
+    implementations with only a `validUntil` were affected the same way. The
+    earlier of `validUntil` and `expires_in_s` wins, a window value that is
+    not an ISO 8601 timestamp with an offset (as `datetime.fromisoformat`
+    reads it, which is stricter before Python 3.11) fails closed, and the
+    leeway is the 60 seconds the other OB 3.0 verifiers use.
+    `issue_badge_sd_jwt` now refuses, with `EudiError`, to make `name`,
+    `achievement`, `validFrom` or `validUntil` selectively disclosable: a
+    holder could withhold the disclosure and present an expired badge as one
+    that never expires, and the stripped presentation still verified. Only
+    the recipient (`credentialSubject`) is meant to be withheld. A bare string
+    for `disclosable=` is refused too (it was read one character at a time,
+    which left the recipient in the clear), and `expires_in_s` must be a
+    number within about 317 years of now. Nothing can detect a withheld
+    disclosure on a badge that already exists, and an existing badge has no
+    `exp`/`nbf` for other verifiers: re-issue badges issued with a
+    `disclosable=` that named one of those claims, and any badge that must
+    stop verifying at its `validUntil` everywhere. The Type Metadata document
+    is unchanged, byte for byte (a change would break the `vct#integrity` pin
+    of every badge already issued), and a test now pins its hash.
+    With `x5c_trust_anchors`, `verify_badge_sd_jwt` no longer accepts a plain
+    JWT (a token with no `~`): openvc-core's `verify_credential` takes one
+    and then ignored `expected_vct` and `require_key_binding` and returned
+    another type, so a JWT signed by an anchored issuer passed as a badge;
+    the pinned-key path always refused it. `status_list_token_resolver`
+    validates `leeway_s` when it is built, so a bad value fails there rather
+    than on the first status check of a later badge. A hostile issuer JWT
+    header nested deeper than the JSON parser recurses now fails as
+    `EudiError` instead of escaping `verify_badge_sd_jwt(x5c_trust_anchors=…)`
+    as a bare `RecursionError`, and a window value too long to be a timestamp
+    is not echoed back in the error.
+
 * v4.6.1 - 2026-10-14
 
   - security(ldp): `OB3LdpVerifier` reads only JSON its Data Integrity proof
