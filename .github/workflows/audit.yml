@@ -35,6 +35,14 @@ jobs:
         # the dependency itself (the cryptography port, #167).
         run: pip-audit
 
+      - name: Canonicalization guard still fits the newest allowed pyld
+        # ob3/_canon_guard.py meters pyld 3.x's URDNA2015 and fails CLOSED (all
+        # Data Integrity verification refused) when a pyld release changes how
+        # it hashes or permutes. The install above resolves the newest pyld
+        # below 4, so this is where such a release shows up, before a user's
+        # `pip install -U` does.
+        run: pytest tests/test_ob3_ldp_canon_guard.py -q
+
   pip-audit-floors:
     # The job above audits what a fresh install resolves TODAY, which is the
     # newest release of everything. A declared floor is a promise that an

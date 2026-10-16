@@ -69,6 +69,8 @@ from .._safejson import JSONTooDeepError, check as check_json, loads as loads_un
 from ..errors import ErrorSigningFile
 from ..keys import KeyType, detect_key_type, key_to_pem
 from ..util import __version__
+from ._canon_guard import (CanonicalizationGuardUnavailable,
+                           CanonicalizationWorkExceeded, WorkBudget, canonize)
 from ._context_validation import validate_document
 from .contexts import UnknownContextError, bundled_contexts, document_loader
 from .credential import OpenBadgeCredential, _iso, _parse_iso
@@ -77,10 +79,12 @@ from .did import (_b58btc_decode, _b58btc_encode, _public_key_to_pem,
 from .verifier import (OB3VerificationError, _check_recipient,
                        _check_validity_window, _check_vc_types)
 
-#: Upper bound on a Data Integrity credential document. RDF canonicalization
-#: cost grows super-linearly on hostile blank-node graphs ("poison graphs"),
-#: and the document is untrusted input — cap it well above any real badge
-#: (coherent with baking.MAX_ITXT_DECOMPRESSED).
+#: Upper bound on a Data Integrity credential document. It bounds the input
+#: of every linear pass (parsing, context validation, RDF conversion) and is
+#: coherent with baking.MAX_ITXT_DECOMPRESSED. It does NOT bound RDF
+#: canonicalization, whose cost on hostile blank-node graphs ("poison graphs")
+#: is factorial in the size of the input: a few KB suffice. That is bounded by
+#: its own work budget, ob3/_canon_guard.py (MAX_CANON_WORK).
 MAX_LDP_DOCUMENT_BYTES = 256 * 1024
 
 
@@ -223,19 +227,28 @@ def _decode_proof_value(value: Any) -> bytes:
     return signature
 
 
-def _canonize(document: dict[str, Any], loader: Any) -> str:
-    """RDFC-1.0-canonicalize a JSON-LD document to N-Quads via pyld.
+def _canonize(document: dict[str, Any], loader: Any,
+              budget: Optional[WorkBudget] = None) -> str:
+    """RDFC-1.0-canonicalize a JSON-LD document to N-Quads via pyld, within a
+    work budget (ob3/_canon_guard.py).
 
     pyld implements the algorithm under its pre-standardisation name
-    URDNA2015; the W3C renamed it RDFC-1.0 with unchanged output.
+    URDNA2015; the W3C renamed it RDFC-1.0 with unchanged output. The input
+    is untrusted when verifying: RDFC-1.0 is factorial on groups of blank
+    nodes it cannot tell apart, so a few KB of hostile JSON-LD would pin a CPU
+    for minutes. *budget* is shared by the canonicalizations of one signature
+    check; omitted, this call gets a fresh one. A document over budget, and a
+    pyld the guard cannot meter, both fail closed.
     """
     jsonld = _require_jsonld()
     try:
-        return str(jsonld.normalize(document, {
-            'algorithm': 'URDNA2015',
-            'format': 'application/n-quads',
-            'documentLoader': loader,
-        }))
+        return canonize(jsonld, document, loader, budget)
+    except CanonicalizationWorkExceeded as exc:
+        raise OB3VerificationError(
+            "refusing to canonicalize the credential: %s" % exc) from exc
+    except CanonicalizationGuardUnavailable as exc:
+        raise OB3VerificationError(
+            "cannot canonicalize safely: %s" % exc) from exc
     except Exception as exc:
         cause: Optional[BaseException] = exc
         while cause is not None:                    # unwrap pyld's JsonLdError
@@ -247,11 +260,15 @@ def _canonize(document: dict[str, Any], loader: Any) -> str:
 
 
 def _hash_data(unsecured_doc: dict[str, Any], proof_config: dict[str, Any], loader: Any) -> bytes:
-    """hashData per vc-di-eddsa: SHA-256(proof config) || SHA-256(document)."""
+    """hashData per vc-di-eddsa: SHA-256(proof config) || SHA-256(document).
+
+    Both canonicalizations draw on one work budget: what a signature check may
+    spend is bounded as a whole, not twice."""
+    budget = WorkBudget()
     config_hash = hashlib.sha256(
-        _canonize(proof_config, loader).encode('utf-8')).digest()
+        _canonize(proof_config, loader, budget).encode('utf-8')).digest()
     doc_hash = hashlib.sha256(
-        _canonize(unsecured_doc, loader).encode('utf-8')).digest()
+        _canonize(unsecured_doc, loader, budget).encode('utf-8')).digest()
     return config_hash + doc_hash
 
 
@@ -349,6 +366,28 @@ def _p256_pem_to_jwk(pubkey_pem: bytes) -> dict[str, str]:
             'x': _b64u(numbers.x), 'y': _b64u(numbers.y)}
 
 
+def _prescreen_canonicalization(document: dict[str, Any], proof: dict[str, Any],
+                                loader: Any) -> None:
+    """Refuse, before openvc-core spends it, a document whose RDF
+    canonicalization is over the work budget.
+
+    openvc-core's ecdsa-sd-2023 suite canonicalizes the credential and the
+    proof options with pyld directly, without a work bound (the poison-graph
+    cost of ob3/_canon_guard.py). Canonicalizing the same document and proof
+    options here first, discarding the result, costs about as much as one of
+    openvc's own passes for a document that is cheap and refuses one that is
+    not. It is a screen, not a bound: openvc also canonicalizes the
+    mandatory and selectively disclosed subsets under its own blank-node
+    labels, and a different labelling prunes a different part of the
+    permutation search. The bound has to come from openvc-core itself."""
+    budget = WorkBudget()
+    proof_config = {k: v for k, v in proof.items() if k != 'proofValue'}
+    proof_config['@context'] = document.get('@context')
+    _canonize(proof_config, loader, budget)
+    _canonize({k: v for k, v in document.items() if k != 'proof'}, loader,
+              budget)
+
+
 def _verify_ecdsa_sd_2023(document: dict[str, Any], proof: dict[str, Any],
                           pubkey_pem: bytes, loader: Any) -> None:
     """Verify one ecdsa-sd-2023 derived proof by delegating to openvc-core.
@@ -357,12 +396,13 @@ def _verify_ecdsa_sd_2023(document: dict[str, Any], proof: dict[str, Any],
     canonicalization plus the base and per-statement P-256 signatures;
     openbadgeslib only resolves/pins the key and feeds its pinned OB3 @context
     allowlist, so canonicalization is fail-closed and never touches the network.
-    *loader* (openbadgeslib's own pyld loader) is unused here — the delegate
-    canonicalizes with its engine.
+    The delegate canonicalizes with pyld's unbounded URDNA2015, so before
+    handing the document over it is canonicalized HERE, within the work budget
+    (:func:`_prescreen_canonicalization`).
     """
-    del loader
     EcdsaSdProofSuite, ProofError = _require_openvc_ecdsa_sd()
     public_key_jwk = _p256_pem_to_jwk(pubkey_pem)
+    _prescreen_canonicalization(document, proof, loader)
     try:
         EcdsaSdProofSuite().verify(
             document,
@@ -815,7 +855,9 @@ class OB3LdpVerifier:
         # @context the JSON-LD processor applies, at any depth, is bounded
         # before it runs, and the embedded credentials, each validated again
         # on its own, by number, depth and total size (_context_validation),
-        # so at most about twice the passes over the document itself.
+        # so at most about twice the passes over the document itself. (RDF
+        # canonicalization, which verify_data_integrity_proof runs below, is
+        # NOT near-linear: it has its own work budget, _canon_guard.py.)
         _check_json_ld_form(doc, proof, document_loader())
 
         try:

@@ -144,6 +144,45 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     against it. pip-audit runs in its own environment, so the advisories of
     its own dependencies are not counted against the package.
 
+  - security(ldp): RDF canonicalization of a Data Integrity document runs
+    under a work budget. RDFC-1.0 resolves blank nodes its first-degree hash
+    cannot tell apart by trying their permutations, recursively, and the
+    verifier runs it BEFORE it can check the signature, on a document nobody
+    has authenticated. The 256 KiB document cap did not bound that and pyld
+    3.3.0 has no cap of its own: a credential of 2 to 3 KB that passes context
+    validation (an `evidence` clique of eight labelled blank nodes, a tree of
+    eight identical children two deep, two identical parents with nine
+    identical children each, a ring of 400 labelled nodes) cost one
+    verification between 13 and 40 seconds of CPU, and a slightly larger one
+    minutes; the proof options, canonicalized too, are attacker input as
+    well. `OB3LdpVerifier`, `verify_data_integrity_proof`, `OB3LdpSigner` and
+    `add_data_integrity_proof` now canonicalize through
+    `ob3/_canon_guard.py`: pyld's own URDNA2015, run with a per-call subclass
+    that charges every Hash N-Degree Quads call and every permutation step to
+    one budget shared by the document and its proof options (about 0.4 s of
+    CPU on a laptop), refusing before the work when a group of
+    indistinguishable nodes cannot fit. No pyld state is patched, so threads
+    and other users of pyld are unaffected. Each of the shapes above is now
+    refused in under half a second with `OB3VerificationError` ("refusing to
+    canonicalize the credential"; `ErrorSigningFile` on the signing side),
+    and the whole suite, including the W3C vectors and a credential modelled
+    on 1EdTech's "Complete OpenBadgeCredential" example, spends at most 0.06%
+    of the budget with byte-identical canonical output. The same release
+    bounds the duplicate checks pyld's JSON-LD to RDF conversion makes per
+    node property, which grow with the square of the number of values (8,000
+    `tag` values, 72 KB, took 12 s); a node property may now hold about 1,400
+    values. The guard is fitted to pyld 3.x and fails closed with
+    `OB3VerificationError` if the installed pyld is not the one it
+    was calibrated on (another major version, a changed hook, a canary
+    document that no longer canonicalizes to the known output and the known
+    work), which is why `[ldp]` and `[ldp-sd]` require `pyld<4` (since 4.6.2):
+    pyld 4.0 is unreleased and breaking, and its toRDF drops statements 3.x
+    keeps.
+    ecdsa-sd-2023 is delegated to openvc-core, which canonicalizes with an
+    unbounded pyld of its own: the document is first canonicalized here
+    within the same budget, which refuses the shapes above before the
+    delegate runs; it is a screen, not a bound.
+
 * v4.6.2 - 2026-10-16
 
   - security(deps): the openvc-core floor of `[eudi]`, `[ldp-sd]` and

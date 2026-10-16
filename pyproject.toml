@@ -128,12 +128,17 @@ dependencies = [
 # refused. pyld before 3.3 also canonicalizes an integral float (3.0) as
 # "3.0E0" where 3.3 and jsonld.js give "3", so a proof made on one did not
 # verify on the other.
-# Ceiling below 4: pyld 4.0 is unreleased and breaking, and its toRDF drops
-# statements 3.x keeps (an IRI with two `#`, a literal with an invalid
-# @language). Context validation is written against 3.x's absolute-IRI test and
-# reads the JSON, not the dataset, so a statement pyld 4 drops would still read
-# as present in the credential while the proof never signed it
-# (GHSA-rp5q-966c-5592). Lift the ceiling only with that reworked and tested.
+# Ceiling below 4. RDF canonicalization of an untrusted document is factorial
+# on a crafted blank-node graph and pyld 3.x has no work cap, so
+# ob3/_canon_guard.py meters pyld's URDNA2015 itself; that guard is fitted to
+# the 3.x implementation (it checks pyld's major version and canonicalizes a
+# canary document at first use, and fails closed on a mismatch). pyld 4.0 is
+# unreleased and breaking: it moves canon.py and the RDF types to rdflib, and
+# toRDF starts dropping statements 3.x keeps (an IRI with two `#`, a literal
+# with an invalid @language), which context validation, written against 3.x's
+# absolute-IRI test, does not refuse: the signed dataset would lose what the
+# JSON still says (GHSA-rp5q-966c-5592). Lift the ceiling only with both
+# reworked and tested.
 ldp = [
     "pyld>=3.3.0,<4",
 ]

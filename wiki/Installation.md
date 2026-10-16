@@ -52,7 +52,7 @@ pip install openbadgeslib --upgrade
 pip install "openbadgeslib[ldp]"
 ```
 
-The `[ldp]` extra adds [pyld](https://pypi.org/project/PyLD/) (>= 3.3.0) and enables
+The `[ldp]` extra adds [pyld](https://pypi.org/project/PyLD/) (>= 3.3.0, < 4) and enables
 **issuing and verifying** OB 3.0 credentials secured with a W3C Data Integrity
 proof (cryptosuite `eddsa-rdfc-2022`) — the OB 3.0 Linked Data Proof format.
 Nothing else needs it: the default proof format stays JWT-VC, and without the
