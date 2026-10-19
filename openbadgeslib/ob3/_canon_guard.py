@@ -124,6 +124,9 @@
 # What it does not cover: canonicalization performed by other libraries on the
 # same document, notably the ecdsa-sd-2023 suite delegated to openvc-core,
 # which calls pyld on its own (outside PYLD_LOCK, and without a work bound).
+# That path is only screened here, before the delegate runs (poison-graph work
+# and the statement count, ldp._prescreen_canonicalization); the statements the
+# lifecycle check indexes after the signature are canonicalized under the guard.
 import functools
 import math
 import os
