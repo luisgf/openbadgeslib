@@ -58,15 +58,20 @@ by ``ldp._canonize``). It never falls back to an unmetered
 or how it permutes therefore stops verification until this module is
 recalibrated (``_CANARY_SPENT``): that is the intended failure mode.
 
-The JSON-LD to RDF conversion that precedes canonicalization has a cost of its
-own that no hook can meter: pyld builds each node's property array with a
-linear duplicate check per value, so a node holding N values for one property
-costs N^2/2 comparisons (8,000 two-letter ``tag`` values, 72 KB, spend 12 s)
-and N values spread over many occurrences of the same ``@id`` cost the same.
-:func:`canonize` therefore counts those comparisons on the expanded document
-first (:func:`node_map_pairs`) and refuses a document over
-``MAX_NODE_MAP_PAIRS``; a real badge has at most a few dozen values per
-property.
+The JSON-LD to RDF conversion that precedes canonicalization has a cost of
+its own that no hook can meter: pyld builds each node's property array with a
+linear duplicate check per value, so a node property holding N distinct values
+costs N^2/2 comparisons (8,000 distinct ``tag`` values, 57 KB, spend 12 s),
+N values spread over many occurrences of the same ``@id`` cost the same, and so
+do N node objects that all reverse into one node (``@reverse``: 6,000 children
+spread over 80 parents, about 240 KB, 18 million comparisons and 6 to 11 s).
+:func:`node_map_pairs` counts those comparisons on the expanded document first,
+the way pyld makes them, and :func:`canonize` refuses a document whose count is
+over the allowance of ``MAX_NODE_MAP_PAIRS``, which is shared by the document
+and the proof options of one signature check and is a SUM over every property
+of every node, because pyld's cost is the sum of those quadratics. A value
+repeated is compared once (pyld stops at the first match), so only distinct
+values count towards the square.
 
 What it does not cover: canonicalization performed by other libraries on the
 same document, notably the ecdsa-sd-2023 suite delegated to openvc-core, which
@@ -76,7 +81,7 @@ import functools
 import math
 import time
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 #: Work one signature check may spend canonicalizing (the proof options and
 #: the document share it). ~0.2 us per unit on CPython 3.13-3.15 on an
@@ -91,9 +96,12 @@ MAX_CANON_WORK = 2_000_000
 MAX_CANON_SECONDS = 10.0
 
 #: Cap on the duplicate-check comparisons pyld's JSON-LD to RDF conversion
-#: makes building the node map (see :func:`node_map_pairs`): ~0.3 us each,
-#: so ~0.35 s, the same as the canonicalization budget. A node property may
-#: hold up to ~1,400 values.
+#: makes building the node map (see :func:`node_map_pairs`), summed over every
+#: node property of the document AND the proof options of one signature check.
+#: pyld spends 0.35 to 0.5 microseconds per comparison (CPython 3.10 to 3.15),
+#: so a document at the cap (one property of 1,414 distinct values, or two of
+#: about 1,000) takes 0.35 to 0.5 s of CPU to convert, and a refusal costs the
+#: expansion only.
 MAX_NODE_MAP_PAIRS = 1_000_000
 
 # Cost model, in units. A hash_n_degree_quads call: fixed overhead plus a unit
@@ -143,14 +151,17 @@ class CanonicalizationGuardUnavailable(Exception):
 class WorkBudget:
     """Work allowance of one signature check, shared by every canonicalization
     it performs. ``limit`` and ``seconds`` default to the module constants,
-    read at construction."""
+    read at construction; so does ``pairs``, the allowance of JSON-LD to RDF
+    duplicate checks (:data:`MAX_NODE_MAP_PAIRS`), shared in the same way."""
 
-    __slots__ = ('limit', 'spent', 'deadline')
+    __slots__ = ('limit', 'spent', 'deadline', 'pairs_left')
 
     def __init__(self, limit: Optional[int] = None,
-                 seconds: Optional[float] = None) -> None:
+                 seconds: Optional[float] = None,
+                 pairs: Optional[int] = None) -> None:
         self.limit = MAX_CANON_WORK if limit is None else limit
         self.spent = 0
+        self.pairs_left = MAX_NODE_MAP_PAIRS if pairs is None else pairs
         self.deadline = time.monotonic() + (
             MAX_CANON_SECONDS if seconds is None else seconds)
 
@@ -166,6 +177,15 @@ class WorkBudget:
         if time.monotonic() > self.deadline:
             raise CanonicalizationWorkExceeded(
                 "RDF canonicalization exceeded its time limit")
+
+    def take_pairs(self, pairs: int, detail: str = '') -> None:
+        """Charge the duplicate checks of one JSON-LD to RDF conversion."""
+        if pairs > self.pairs_left:
+            raise CanonicalizationWorkExceeded(
+                "the document puts too many values on its node properties "
+                "for RDF conversion (%d duplicate checks, %d allowed%s)"
+                % (pairs, self.pairs_left, detail))
+        self.pairs_left -= pairs
 
 
 class _MeteredGroup(List[str]):
@@ -304,30 +324,113 @@ def _run(jsonld: Any, bounded: Any, document: Any, loader: Any,
         dataset, {'format': 'application/n-quads'}))
 
 
-def node_map_pairs(expanded: Any) -> int:
-    """Duplicate-check comparisons pyld makes building the node map of an
-    *expanded* JSON-LD document: for every node (nodes sharing an ``@id`` are
-    one) and property, n values cost n*(n-1)/2. (A ``@list`` is not checked
-    for duplicates: 8,000 entries convert in 26 ms.)"""
-    counts: Dict[Any, int] = {}
+def _node_key(node: Dict[str, Any]) -> Tuple[str, Any]:
+    """Identity of a node object in pyld's node map: its ``@id`` (a blank node
+    label included), else a node of its own."""
+    ident = node.get('@id')
+    return ('i', ident) if isinstance(ident, str) else ('u', id(node))
+
+
+def _value_key(item: Any) -> Any:
+    """What ``compare_values`` compares in pyld: two values with an equal key
+    are one entry of a node property. Finer than pyld's equality is safe (the
+    count only grows), coarser is not."""
+    if not isinstance(item, dict):
+        return ('p', item) if isinstance(item, (str, int, float)) else (
+            'u', id(item))
+    if '@value' in item:
+        try:
+            key = ('v', item['@value'], item.get('@type'),
+                   item.get('@language'), item.get('@index'))
+            hash(key)
+            return key
+        except TypeError:                           # an @json object or array
+            pass
+        try:
+            return ('j', _dumps(item), None)
+        except Exception:
+            return ('u', id(item))
+    if '@list' in item:
+        return ('u', id(item))                      # appended, never compared
+    return _node_key(item)                          # a reference: its @id
+
+
+def _dumps(value: Any) -> str:
+    import json
+    return json.dumps(value, sort_keys=True)
+
+
+def _tally(cells: Dict[Any, List[Any]], cell: Any, keys: List[Any]) -> None:
+    slot = cells.get(cell)
+    if slot is None:
+        slot = cells[cell] = [0, set()]
+    slot[0] += len(keys)
+    slot[1].update(keys)
+
+
+def _scan_node_map(expanded: Any) -> Tuple[int, int, str]:
+    """(pairs, the largest property's value count, its name) for an
+    *expanded* JSON-LD document; see :func:`node_map_pairs`."""
+    cells: Dict[Any, List[Any]] = {}
     todo = [expanded]
     while todo:
         item = todo.pop()
         if isinstance(item, list):
             todo.extend(item)
-        elif isinstance(item, dict) and '@list' in item:
+        elif not isinstance(item, dict) or '@value' in item:
+            continue
+        elif '@list' in item:
             todo.extend(item['@list'])              # a list keeps duplicates
-        elif isinstance(item, dict) and '@value' not in item:
-            node = item.get('@id')
-            if not isinstance(node, str):
-                node = id(item)                     # a blank node: its own
+        else:
+            node = _node_key(item)
             for key, value in item.items():
                 if key == '@id':
                     continue
+                if key == '@reverse':
+                    # Each reverse entry adds a reference to THIS node to the
+                    # property of the node that reverses into it.
+                    if isinstance(value, dict):
+                        for prop, targets in value.items():
+                            if not isinstance(targets, list):
+                                continue
+                            for target in targets:
+                                if isinstance(target, dict) and (
+                                        '@value' not in target
+                                        and '@list' not in target):
+                                    _tally(cells, (_node_key(target), prop),
+                                           [node])
+                            todo.extend(targets)
+                    continue
                 if isinstance(value, list):
-                    counts[(node, key)] = counts.get((node, key), 0) + len(value)
-                todo.append(value)
-    return sum(n * (n - 1) // 2 for n in counts.values())
+                    if key not in ('@graph', '@included'):
+                        _tally(cells, (node, key),
+                               [_value_key(v) for v in value])
+                    todo.extend(value)
+                else:
+                    todo.append(value)
+    pairs = 0
+    widest = (0, '')
+    for (node, key), (total, distinct) in cells.items():
+        d = len(distinct)
+        # The d-th distinct value is compared with the d-1 before it, a value
+        # already there with at most d (pyld stops at the first match): an
+        # upper bound whatever order pyld meets the values in.
+        pairs += d * (d - 1) // 2 + (total - d) * d
+        if total > widest[0]:
+            widest = (total, '%s of %s' % (str(key)[:60], str(node[1])[:60]))
+    return pairs, widest[0], widest[1]
+
+
+def node_map_pairs(expanded: Any) -> int:
+    """Duplicate-check comparisons pyld makes building the node map of an
+    *expanded* JSON-LD document. For every node (nodes sharing an ``@id`` are
+    one) and property, with ``n`` occurrences of ``d`` distinct values:
+    ``d(d-1)/2 + (n-d)d``, i.e. n(n-1)/2 for distinct values and only n-1 for
+    one value repeated. Counted the way pyld does it: a ``@reverse`` entry
+    adds a reference to the *reversed-into* node's property, ``@graph`` and
+    ``@included`` entries are not compared at all, and a ``@list`` keeps its
+    duplicates (8,000 entries convert in 26 ms)."""
+    return _scan_node_map(expanded)[0]
 
 
 def canonize(jsonld: Any, document: Any, loader: Any,
@@ -335,19 +438,17 @@ def canonize(jsonld: Any, document: Any, loader: Any,
     """RDFC-1.0-canonicalize *document* to N-Quads, byte-identical to
     ``jsonld.normalize(document, {'algorithm': 'URDNA2015', 'format':
     'application/n-quads', 'documentLoader': loader})`` but bounded by
-    *budget* (a fresh :class:`WorkBudget` by default) and by
-    ``MAX_NODE_MAP_PAIRS``.
+    *budget* (a fresh :class:`WorkBudget` by default): its work units and its
+    allowance of JSON-LD to RDF duplicate checks.
 
     Raises :class:`CanonicalizationWorkExceeded` over either bound and
     :class:`CanonicalizationGuardUnavailable` when the guard cannot meter the
     installed pyld; anything else is pyld's own error."""
     bounded = _bounded_class()
+    if budget is None:
+        budget = WorkBudget()
     options = {} if loader is None else {'documentLoader': loader}
-    pairs = node_map_pairs(jsonld.expand(document, options))
-    if pairs > MAX_NODE_MAP_PAIRS:
-        raise CanonicalizationWorkExceeded(
-            "the document puts too many values on one node property for "
-            "RDF conversion (%d duplicate checks, over %d)"
-            % (pairs, MAX_NODE_MAP_PAIRS))
-    return _run(jsonld, bounded, document, loader,
-                WorkBudget() if budget is None else budget)
+    pairs, widest, where = _scan_node_map(jsonld.expand(document, options))
+    budget.take_pairs(pairs, "; the largest property holds %d values: %s"
+                      % (widest, where))
+    return _run(jsonld, bounded, document, loader, budget)

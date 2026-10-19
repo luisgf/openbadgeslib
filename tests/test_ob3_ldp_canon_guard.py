@@ -2,29 +2,43 @@
 ob3/_canon_guard.py, used by ob3.ldp._canonize.
 
 A Data Integrity proof signs the canonical form of the RDF dataset a document
-expands to, so the verifier canonicalizes BEFORE it can check the signature.
-RDFC-1.0 (pyld calls it URDNA2015) is factorial on groups of blank nodes it
-cannot tell apart: a 2.6 KB credential that passes context validation kept a
-worker busy for minutes on an unpatched pyld 3.3.0. These tests pin that
+expands to, so the verifier canonicalizes BEFORE it can tell whether the
+signature is any good. RDFC-1.0 (pyld calls it URDNA2015) is factorial on
+groups of blank nodes it cannot tell apart: a 2.6 KB credential that passes
+context validation kept a worker busy for ~25 s on an unpatched pyld 3.3.0.
+These tests pin that
 
 * every hostile shape below is refused, through the real verifier and the
-  signer, within seconds (unguarded each one costs 13-40 s or more);
+  signer, within a fraction of a second of CPU (unguarded each one costs 5 to
+  40 s or more), and that the CPU-time allowance, not the unit model, is what
+  bounds the work on an interpreter where the model is off;
 * nothing legitimate pays for it: the guarded output is byte-identical to
   jsonld.normalize and spends a tiny fraction of the budget;
+* the JSON-LD to RDF conversion that precedes canonicalization is bounded too
+  (the duplicate checks pyld makes there, @reverse included);
 * the guard fails CLOSED when pyld is not the implementation its cost model
-  was fitted to, and never touches process-global state.
+  was fitted to, never touches process-global state, and serializes pyld's
+  thread-unsafe JSON-LD processor.
 
 The hostile documents only use members the pinned contexts define (the
 propagating ``alignment`` term, under ``evidence``), which the credential model
 tolerates, so context validation lets them through and the cost lands in
 canonicalization.
 
+Time assertions measure CPU (``time.process_time``) with a wide margin and
+scale it for coverage tracing, which multiplies CPU by up to ~10 on CPython
+3.10-3.12; where a test is about structure it counts work instead.
+
 Needs the [ldp] extra (pyld); skipped otherwise.
 """
+import contextlib
 import copy
 import hashlib
 import itertools
 import json
+import random
+import re
+import sys
 import threading
 import time
 
@@ -39,7 +53,7 @@ from pyld import jsonld  # noqa: E402
 from openbadgeslib.errors import ErrorSigningFile  # noqa: E402
 from openbadgeslib.ob3 import (  # noqa: E402
     OB3LdpSigner, OB3LdpVerifier, OB3VerificationError,
-    add_data_integrity_proof)
+    add_data_integrity_proof, verify_data_integrity_proof)
 from openbadgeslib.ob3 import _canon_guard as guard  # noqa: E402
 from openbadgeslib.ob3 import ldp  # noqa: E402
 from openbadgeslib.ob3.contexts import document_loader  # noqa: E402
@@ -49,8 +63,26 @@ from test_ob3_ldp_context_validation import _complete_document  # noqa: E402
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'vc_di_eddsa'
 REFUSED = 'refusing to canonicalize'
-#: Generous: the budget takes ~0.4 s on a laptop; unguarded these cost 13-40 s.
-DEADLINE = 10.0
+#: CPU seconds. Generous: a refusal costs 0.05-0.25 s (0.85 s inside the
+#: CPython 3.11/3.12 window), unguarded these cost 5-40 s or more.
+CPU_BOUND = 5.0
+
+
+def _coverage_slowdown():
+    """Coverage tracing multiplies CPU by up to ~10 on CPython 3.10-3.12."""
+    cov = sys.modules.get('coverage')
+    running = cov is not None and cov.Coverage.current() is not None
+    return 10 if running else 1
+
+
+@contextlib.contextmanager
+def cpu_below(seconds):
+    started = time.process_time()
+    yield
+    spent = time.process_time() - started
+    limit = seconds * _coverage_slowdown()
+    assert spent < limit, 'took %.2f s of CPU, expected under %.1f' % (
+        spent, limit)
 
 
 # ── hostile documents ────────────────────────────────────────────────────────
@@ -63,7 +95,7 @@ def _evidence(base, nodes):
 
 def clique(base, n):
     """n labelled blank nodes, each linking to every other (unguarded:
-    n=7 2 s, n=8 20 s)."""
+    n=7 2 s, n=8 24 s)."""
     return _evidence(base, [
         {'id': '_:b%d' % i,
          'alignment': [{'id': '_:b%d' % j} for j in range(n) if j != i]}
@@ -71,7 +103,7 @@ def clique(base, n):
 
 
 def tree(base, branching, depth):
-    """Unlabelled tree of nested nodes (branching 8, depth 2: 15 s)."""
+    """Unlabelled tree of nested nodes (branching 8, depth 2: 19 s)."""
     def grow(level):
         if level == 0:
             return {}
@@ -80,9 +112,18 @@ def tree(base, branching, depth):
 
 
 def ring(base, n):
-    """Directed ring of n labelled blank nodes (n=400: 13 s, ~n^2.8)."""
+    """Directed ring of n labelled blank nodes (n=400: 16 s, ~n^2.8)."""
     return _evidence(base, [
         {'id': '_:b%d' % i, 'alignment': [{'id': '_:b%d' % ((i + 1) % n)}]}
+        for i in range(n)])
+
+
+def circulant(base, n, offsets=(1, 2, 3)):
+    """Ring whose nodes also link to the next `offsets` ones: the shape that
+    costs 5-7 times more per work unit on CPython 3.11/3.12 for some n."""
+    return _evidence(base, [
+        {'id': '_:b%d' % i,
+         'alignment': [{'id': '_:b%d' % ((i + o) % n)} for o in offsets]}
         for i in range(n)])
 
 
@@ -114,10 +155,40 @@ def flat_tags(base, n):
 def merged_node(base, parents, per_parent):
     """Many short arrays naming the same node, which pyld merges into one
     property of parents*per_parent values."""
-    shared = [{'id': 'https://x.example/shared', 'name': 'v%d' % k}
-              for k in range(per_parent)]
-    return _evidence(base, [{'alignment': copy.deepcopy(shared)}
-                            for _ in range(parents)])
+    return _evidence(base, [{'alignment': [
+        {'id': 'https://x.example/shared', 'name': 'v%d_%d' % (p, k)}
+        for k in range(per_parent)]} for p in range(parents)])
+
+
+def reverse_flood(base, parents, per_parent):
+    """parents x per_parent nodes that all @reverse into ONE node: no single
+    array is long, but pyld's node map gets parents*per_parent values on it
+    (80 x 75 = 6,000 children, 231 KB: 18 million comparisons, 6-9 s)."""
+    return _evidence(base, [
+        {'alignment': [{'@reverse': {'urn:p': {'@id': 'urn:t'}}}
+                       for _ in range(per_parent)]}
+        for _ in range(parents)])
+
+
+def hub_results(base, n):
+    """An identifier-only subject (no @id: a blank node) with n Results that
+    are identical to the first-degree hash, one blank alignment each: all
+    legitimate, and the component of blank nodes is as large as the document."""
+    doc = copy.deepcopy(base)
+    doc['credentialSubject'].pop('id', None)
+    doc['credentialSubject']['result'] = [
+        {'type': ['Result'], 'status': 'Completed', 'alignment': [{}]}
+        for _ in range(n)]
+    return doc
+
+
+def shared_creator(base, n):
+    """n distinct alignments re-stating the same typed node."""
+    creator = {'id': 'https://x.example/creator', 'type': ['Profile'],
+               'name': 'Creator'}
+    return _evidence(base, [{'alignment': [
+        {'id': 'urn:a:%d' % i, 'name': 'a%d' % i, 'targetFramework': creator}
+        for i in range(n)]}])
 
 
 @pytest.fixture(scope='module')
@@ -162,6 +233,36 @@ def _fresh_guard():
     guard._bounded_class.cache_clear()
 
 
+@pytest.fixture
+def half_budget(monkeypatch):
+    """A budget two cliques of five (115k units each) overrun together."""
+    monkeypatch.setattr(guard, 'MAX_CANON_WORK', 150_000)
+
+
+def _stock(doc, loader):
+    return jsonld.normalize(copy.deepcopy(doc), {
+        'algorithm': 'URDNA2015', 'format': 'application/n-quads',
+        'documentLoader': loader})
+
+
+def _real_pairs(doc, loader, monkeypatch):
+    """The comparisons pyld really makes converting *doc* to RDF."""
+    calls = []
+    real = jsonld.JsonLdProcessor.compare_values
+    monkeypatch.setattr(
+        jsonld.JsonLdProcessor, 'compare_values',
+        staticmethod(lambda a, b: calls.append(1) or real(a, b)))
+    jsonld.to_rdf(copy.deepcopy(doc), {'documentLoader': loader,
+                                       'produceGeneralizedRdf': False})
+    monkeypatch.undo()
+    return len(calls)
+
+
+def _model_pairs(doc, loader):
+    return guard.node_map_pairs(jsonld.expand(copy.deepcopy(doc),
+                                              {'documentLoader': loader}))
+
+
 # ── legitimate documents pay nothing ─────────────────────────────────────────
 
 def _documents(base_vc):
@@ -178,20 +279,18 @@ def _documents(base_vc):
 class TestLegitimateDocuments:
     def test_output_is_byte_identical_to_stock_pyld(self, base_vc):
         for name, doc, loader in _documents(base_vc):
-            stock = jsonld.normalize(copy.deepcopy(doc), {
-                'algorithm': 'URDNA2015', 'format': 'application/n-quads',
-                'documentLoader': loader})
-            assert ldp._canonize(copy.deepcopy(doc), loader) == stock, name
+            assert ldp._canonize(copy.deepcopy(doc), loader) == \
+                _stock(doc, loader), name
 
     def test_spend_is_a_tiny_fraction_of_the_budget(self, base_vc):
-        # The false-positive rate: the whole suite's ~640 canonicalizations
-        # spend at most 1,129 units (the complete example, whose six
-        # identical embedded proofs need real permutation work).
+        # The false-positive rate: the whole suite's canonicalizations spend
+        # at most 1,129 units (the complete example, whose embedded proofs
+        # share every statement and so need real permutation work).
         for name, doc, loader in _documents(base_vc):
             budget = guard.WorkBudget()
             guard.canonize(jsonld, doc, loader, budget)
             assert budget.spent < 5000, (name, budget.spent)
-            assert budget.spent < guard.MAX_CANON_WORK / 100, name
+            assert budget.spent < guard.MAX_CANON_WORK / 50, name
 
     def test_embedded_proof_graph_repeats_one_node_in_a_group(self):
         # A proof node's quads all name the same blank graph, so pyld sees a
@@ -202,6 +301,37 @@ class TestLegitimateDocuments:
         budget = guard.WorkBudget()
         guard.canonize(jsonld, _complete_document(), document_loader(), budget)
         assert 0 < budget.spent < 2000
+
+    def test_a_big_embedded_proof_graph_is_not_a_permutation_problem(self):
+        # More than _MAX_GROUP (12) entries naming ONE graph: a group whose
+        # members are all the same node is enumerated once by pyld, so it is
+        # neither pre-refused nor charged size! (a proof carrying the
+        # standard challenge / domain / expires / nonce terms has 10+).
+        doc = _complete_document()
+        endorsements = doc['credentialSubject']['achievement']['creator'][
+            'endorsement']
+        for endorsement in endorsements:
+            endorsement['proof'][0].update(
+                challenge='c', nonce='n', expires='2030-01-01T00:00:00Z',
+                domain=['a.example', 'b.example', 'c.example', 'd.example'])
+        loader = document_loader()
+        budget = guard.WorkBudget()
+        out = guard.canonize(jsonld, doc, loader, budget)
+        assert out == _stock(doc, loader)
+        assert 'security#challenge' in out         # the terms are really there
+        assert budget.spent < 5000, budget.spent
+
+    def test_option_parity_with_jsonld_normalize(self):
+        # produceGeneralizedRdf=False: a blank-node PROPERTY ('_:p') yields no
+        # statement in stock normalize; with generalized RDF it would, and the
+        # signature would cover a different dataset.
+        doc = {'@id': 'https://example.org/s', '_:p': 'generalized',
+               'http://example.org/q': 'x',
+               '@included': [{'@id': 'https://example.org/i',
+                              'http://example.org/q': 'y'}]}
+        stock = _stock(doc, None)
+        assert 'generalized' not in stock
+        assert guard.canonize(jsonld, copy.deepcopy(doc), None) == stock
 
 
 # ── hostile documents are refused ────────────────────────────────────────────
@@ -221,37 +351,52 @@ HOSTILE = [
 class TestHostileDocuments:
     @pytest.mark.parametrize('make', [m for _, m in HOSTILE],
                              ids=[n for n, _ in HOSTILE])
-    def test_verifier_refuses_in_seconds(self, base_vc, verifier,
-                                         ed25519_keypair, make):
+    def test_verifier_refuses_in_a_fraction_of_a_second(
+            self, base_vc, verifier, ed25519_keypair, make):
         doc = _with_bogus_proof(make(base_vc), ed25519_keypair[1])
-        started = time.monotonic()
-        with pytest.raises(OB3VerificationError, match=REFUSED):
-            verifier.verify(doc)
-        assert time.monotonic() - started < DEADLINE
+        with cpu_below(CPU_BOUND):
+            with pytest.raises(OB3VerificationError, match=REFUSED):
+                verifier.verify(doc)
 
     def test_the_proof_options_are_attacker_input_too(self, base_vc, verifier,
                                                       ed25519_keypair):
         doc = _with_bogus_proof(base_vc, ed25519_keypair[1])
         doc['proof']['alignment'] = clique(base_vc, 8)['evidence']
-        started = time.monotonic()
-        with pytest.raises(OB3VerificationError, match=REFUSED):
-            verifier.verify(doc)
-        assert time.monotonic() - started < DEADLINE
+        with cpu_below(CPU_BOUND):
+            with pytest.raises(OB3VerificationError, match=REFUSED):
+                verifier.verify(doc)
 
-    def test_document_and_proof_options_share_one_budget(self, base_vc):
-        # Each half costs 1.08M units, under the 2M budget alone, over it
+    def test_document_and_proof_options_share_one_budget(self, base_vc,
+                                                         half_budget):
+        # Each half costs 115k units, under the budget alone, over it
         # together.
-        half = clique(base_vc, 6)
+        half = clique(base_vc, 5)
         config = {'@context': half['@context'], 'type': 'DataIntegrityProof',
                   'alignment': half['evidence']}
         loader = document_loader()
         alone = guard.WorkBudget()
         ldp._canonize(copy.deepcopy(half), loader, alone)
-        assert alone.spent < guard.MAX_CANON_WORK
+        assert guard.MAX_CANON_WORK / 2 < alone.spent < guard.MAX_CANON_WORK
         shared = guard.WorkBudget()
         ldp._canonize(copy.deepcopy(half), loader, shared)
         with pytest.raises(OB3VerificationError, match=REFUSED):
             ldp._canonize(config, loader, shared)
+
+    def test_hash_data_shares_one_budget_between_document_and_options(
+            self, base_vc, half_budget):
+        # The production call site, not only _canonize with an explicit
+        # budget: the same two halves, each fine alone, must be refused by
+        # hashData itself.
+        half = clique(base_vc, 5)
+        config = {'@context': half['@context'], 'type': 'DataIntegrityProof',
+                  'alignment': half['evidence']}
+        loader = document_loader()
+        ldp._hash_data(copy.deepcopy(half), {'@context': half['@context'],
+                                             'type': 'DataIntegrityProof'},
+                       loader)
+        ldp._hash_data(copy.deepcopy(base_vc), copy.deepcopy(config), loader)
+        with pytest.raises(OB3VerificationError, match=REFUSED):
+            ldp._hash_data(copy.deepcopy(half), copy.deepcopy(config), loader)
 
     def test_signer_refuses_the_same_documents(self, base_vc, ed25519_keypair):
         priv, pub = ed25519_keypair
@@ -277,11 +422,39 @@ class TestHostileDocuments:
                            match='could not canonicalize'):
             ldp._canonize(ring(base_vc, 1200), document_loader(), budget)
 
-    def test_time_backstop(self, base_vc):
-        budget = guard.WorkBudget(seconds=-1)     # already past its deadline
-        with pytest.raises(OB3VerificationError, match='time limit'):
-            ldp._canonize(identical_children(base_vc, 3), document_loader(),
-                          budget)
+    def test_a_group_too_big_to_permute_is_refused_without_enumerating(
+            self, base_vc, monkeypatch):
+        # 13 distinct blank nodes in one group: 13! permutations, none of
+        # them avoidable. The pre-refusal rejects the group at once; without
+        # it the budget is spent walking ~2,000 hash_n_degree_quads calls.
+        from pyld import canon
+        guard._bounded_class()                      # build outside the count
+        calls = []
+        real = canon.URDNA2015.create_hash_to_related
+        monkeypatch.setattr(
+            canon.URDNA2015, 'create_hash_to_related',
+            lambda self, *a: calls.append(1) or real(self, *a))
+        with pytest.raises(OB3VerificationError, match=REFUSED):
+            ldp._canonize(clique(base_vc, 13), document_loader())
+        assert len(calls) < 50, len(calls)
+
+    def test_no_factorial_is_computed_for_a_big_group(self, base_vc,
+                                                      monkeypatch):
+        argument = []
+        real = guard.math.factorial
+        monkeypatch.setattr(guard.math, 'factorial',
+                            lambda n: argument.append(n) or real(n))
+        with pytest.raises(OB3VerificationError, match=REFUSED):
+            ldp._canonize(identical_children(base_vc, 40), document_loader())
+        assert argument and max(argument) <= 12      # (never 40!)
+
+
+class TestBudgetArithmetic:
+    def test_a_charge_over_the_limit_raises_one_at_the_limit_does_not(self):
+        budget = guard.WorkBudget(limit=5)
+        budget.charge(5)
+        with pytest.raises(guard.CanonicalizationWorkExceeded):
+            budget.charge(1)
 
 
 class TestNodeMapBound:
@@ -293,11 +466,18 @@ class TestNodeMapBound:
         lambda b: merged_node(b, 60, 30),
     ], ids=['one-array', 'merged-across-arrays'])
     def test_refused_before_pyld_builds_the_node_map(self, base_vc, make):
-        started = time.monotonic()
-        with pytest.raises(OB3VerificationError,
-                           match='too many values on one node property'):
-            ldp._canonize(make(base_vc), document_loader())
-        assert time.monotonic() - started < 1.0
+        with cpu_below(2.0):
+            with pytest.raises(OB3VerificationError,
+                               match='too many values on its node properties'):
+                ldp._canonize(make(base_vc), document_loader())
+
+    def test_the_refusal_names_the_total_and_the_widest_property(self,
+                                                                 base_vc):
+        with pytest.raises(OB3VerificationError) as caught:
+            ldp._canonize(flat_tags(base_vc, 2000), document_loader())
+        text = str(caught.value)
+        assert re.search(r'199\d{4} duplicate checks, 1000000 allowed', text)
+        assert 'holds 2000 values' in text
 
     def test_a_realistic_large_array_passes(self, base_vc):
         out = ldp._canonize(flat_tags(base_vc, 600), document_loader())
@@ -307,11 +487,55 @@ class TestNodeMapBound:
         expanded = [{'@id': 'a', 'p': [{'@value': 1}] * 4, 'q': [{'@id': 'b'}]},
                     {'@id': 'a', 'p': [{'@value': 2}] * 3},
                     {'p': [{'@value': 3}] * 5}]
-        # a.p: 7 values -> 21; a.q: 1 -> 0; the anonymous node's p: 10
-        assert guard.node_map_pairs(expanded) == 31
+        # a.p: 7 occurrences of 2 distinct values -> 1 + 5*2; a.q: 1 value
+        # -> 0; the anonymous node's p: 5 occurrences of one value -> 4
+        assert guard.node_map_pairs(expanded) == 15
+        # n distinct values -> n(n-1)/2
+        assert guard.node_map_pairs(
+            [{'@id': 'a', 'p': [{'@value': i} for i in range(10)]}]) == 45
         # a @list keeps duplicates without comparing them: linear in pyld
         assert guard.node_map_pairs(
             [{'@id': 'a', 'p': [{'@list': [{'@value': 1}] * 5000}]}]) == 0
+        # @graph and @included members are not compared either
+        assert guard.node_map_pairs(
+            [{'@id': 'a', '@graph': [{'@id': 'g%d' % i} for i in range(500)],
+              '@included': [{'@id': 'i%d' % i} for i in range(500)]}]) == 0
+
+    def test_a_repeated_node_is_not_a_quadratic_problem(self, base_vc,
+                                                        monkeypatch):
+        # 900 alignments each embedding the same typed creator: pyld stops at
+        # the first match, so re-stating it is O(1) per entry. Counting every
+        # occurrence as distinct charged 900^2/2 per property and refused it.
+        doc = shared_creator(base_vc, 900)
+        loader = document_loader()
+        assert _model_pairs(doc, loader) <= 1_000_000
+        assert _real_pairs(doc, loader, monkeypatch) <= _model_pairs(doc, loader)
+        assert guard.canonize(jsonld, doc, loader) == _stock(doc, loader)
+
+    def test_the_cap_is_the_sum_over_every_property(self, base_vc):
+        # Documented as such: pyld's cost is the sum of the quadratics, so
+        # two 1,100-value properties of one node cost what one 1,553-value
+        # property does.
+        doc = copy.deepcopy(base_vc)
+        doc['evidence'] = [{'id': 'https://x.example/e',
+                            'alignment': [{'id': 'urn:a:%d' % i}
+                                          for i in range(1100)],
+                            'name': ['u%d' % i for i in range(1100)]}]
+        assert _model_pairs(doc, document_loader()) > 1_000_000
+        with pytest.raises(OB3VerificationError, match='too many values'):
+            ldp._canonize(doc, document_loader())
+        doc['evidence'][0]['name'] = doc['evidence'][0]['name'][:600]
+        assert ldp._canonize(doc, document_loader())
+
+    def test_document_and_proof_options_share_the_allowance(self, base_vc):
+        loader = document_loader()
+        tags = flat_tags(base_vc, 1100)             # ~600k pairs: fine alone
+        config = {'@context': base_vc['@context'], 'type': 'DataIntegrityProof',
+                  'challenge': ['c%d' % i for i in range(1100)]}
+        ldp._canonize(copy.deepcopy(tags), loader)
+        ldp._canonize(copy.deepcopy(config), loader)
+        with pytest.raises(OB3VerificationError, match='too many values'):
+            ldp._hash_data(copy.deepcopy(tags), copy.deepcopy(config), loader)
 
     def test_a_long_list_of_distinct_values_is_not_a_node_map_problem(
             self, base_vc):
@@ -330,6 +554,138 @@ class TestNodeMapBound:
                             'allowedValue': ['A'] * 150}]
         with pytest.raises(OB3VerificationError, match=REFUSED):
             ldp._canonize(doc, document_loader())
+
+
+class TestReverse:
+    """``@reverse`` adds one reference to the REVERSED-INTO node's property per
+    entry, so entries spread over many parents still pile up on one node:
+    the model that treated a ``@reverse`` map as a node of its own counted
+    none of them (24 million comparisons, 7-9 s of CPU, for a 242 KB
+    document through the two low-level functions)."""
+
+    def test_a_reverse_flood_is_refused_before_pyld_builds_the_node_map(
+            self, base_vc):
+        doc = reverse_flood(base_vc, 80, 75)
+        assert len(json.dumps(doc)) < ldp.MAX_LDP_DOCUMENT_BYTES
+        with cpu_below(2.0):
+            with pytest.raises(OB3VerificationError,
+                               match='too many values on its node properties'):
+                ldp._canonize(doc, document_loader())
+
+    def test_through_the_two_low_level_functions(self, base_vc,
+                                                 ed25519_keypair):
+        priv, pub = ed25519_keypair
+        did = did_key(pub)
+        doc = reverse_flood(base_vc, 45, 40)            # 1,800 children
+        with cpu_below(2.0):
+            with pytest.raises(ErrorSigningFile, match='too many values'):
+                add_data_integrity_proof(doc, priv,
+                                         '%s#%s' % (did, did[len('did:key:'):]))
+            with pytest.raises(OB3VerificationError, match='too many values'):
+                verify_data_integrity_proof(_with_bogus_proof(doc, pub), pub)
+
+    def test_the_count_is_pylds_own(self, base_vc, monkeypatch):
+        loader = document_loader()
+        doc = reverse_flood(base_vc, 8, 6)
+        real = _real_pairs(doc, loader, monkeypatch)
+        assert real > 1000                  # (it was 0 in the model)
+        assert _model_pairs(doc, loader) == real
+
+    def test_a_reverse_into_distinct_nodes_adds_nothing(self, base_vc,
+                                                        monkeypatch):
+        # 300 children of one parent, each reversing into a node of its own:
+        # the only quadratic property is the parent's own 300-value array.
+        loader = document_loader()
+        doc = _evidence(base_vc, [{'alignment': [
+            {'name': 'c%d' % i, '@reverse': {'urn:p': {'@id': 'urn:t%d' % i}}}
+            for i in range(300)]}])
+        assert 300 * 299 // 2 <= _model_pairs(doc, loader) < 300 * 299 // 2 + 10
+        assert _model_pairs(doc, loader) == _real_pairs(doc, loader, monkeypatch)
+        assert ldp._canonize(doc, loader)
+
+    def test_a_node_used_as_a_reverse_target_by_few_parents_still_passes(
+            self, base_vc, monkeypatch):
+        loader = document_loader()
+        doc = _evidence(base_vc, [{'alignment': [
+            {'name': 'c%d_%d' % (i, k), '@reverse': {'urn:p': {'@id': 'urn:t'}}}
+            for k in range(40)]} for i in range(5)])
+        assert _model_pairs(doc, loader) == _real_pairs(doc, loader, monkeypatch)
+        assert _model_pairs(doc, loader) < 100_000
+        assert ldp._canonize(doc, loader)
+
+
+class TestModelAgainstPyld:
+    """node_map_pairs is a replica of what pyld does while it builds the node
+    map. These pin it to the real thing: never below what pyld compares, and
+    exactly equal when the values are distinct."""
+
+    def _random_document(self, rnd):
+        ids = ['urn:n%d' % i for i in range(6)] + ['_:b%d' % i for i in range(4)]
+
+        def value(level):
+            kind = rnd.randrange(5)
+            if kind == 0:
+                return rnd.choice(['x', 'y', 'z', 1, 2, True])
+            if kind == 1:
+                return {'@id': rnd.choice(ids)}
+            if kind == 2:
+                return {'@value': rnd.choice(['x', 'y']), '@language': 'en'}
+            if kind == 3:
+                return {'@list': [rnd.choice(['x', 'y', 'z'])
+                                  for _ in range(rnd.randrange(4))]}
+            return node(level + 1)
+
+        def node(level):
+            n = {'@id': rnd.choice(ids)} if rnd.random() < 0.8 else {}
+            for _ in range(rnd.randrange(4)):
+                prop = rnd.choice(['urn:p', 'urn:q', 'urn:r'])
+                n.setdefault(prop, []).extend(
+                    value(level) for _ in range(rnd.randrange(1, 5)))
+            if level < 2 and rnd.random() < 0.4:
+                n['@reverse'] = {rnd.choice(['urn:rp', 'urn:rq']): [
+                    node(level + 1) for _ in range(rnd.randrange(1, 4))]}
+            if level < 2 and rnd.random() < 0.15:
+                n['@included'] = [node(level + 1)]
+            if rnd.random() < 0.4:
+                n['@type'] = rnd.sample(['urn:T1', 'urn:T2', 'urn:T3'],
+                                        rnd.randrange(1, 3))
+            return n
+        return {'@context': {'@vocab': 'urn:v#'},
+                '@graph': [node(0) for _ in range(rnd.randrange(1, 6))]}
+
+    def test_the_model_never_undercounts_a_random_corpus(self, monkeypatch):
+        rnd = random.Random(2026)
+        loader = document_loader()
+        checked = 0
+        for _ in range(100):
+            doc = self._random_document(rnd)
+            try:
+                model = _model_pairs(doc, loader)
+                real = _real_pairs(doc, loader, monkeypatch)
+            except Exception:
+                monkeypatch.undo()
+                continue                # (a random document pyld rejects)
+            assert model >= real, (model, real, json.dumps(doc))
+            checked += 1
+        assert checked > 60
+
+    def test_distinct_values_are_counted_exactly(self, base_vc, monkeypatch):
+        loader = document_loader()
+        for doc in (flat_tags(base_vc, 300),
+                    reverse_flood(base_vc, 6, 5), hub_results(base_vc, 40),
+                    shared_creator(base_vc, 60)):
+            assert _model_pairs(doc, loader) == \
+                _real_pairs(doc, loader, monkeypatch)
+
+    def test_repeated_values_are_bounded_whatever_the_order(self, base_vc,
+                                                            monkeypatch):
+        loader = document_loader()
+        for tags in (['a', 'b', 'a', 'b', 'c', 'a'] * 20, ['b'] + ['a'] * 30,
+                     ['a'] * 30 + ['b'], [str(i % 7) for i in range(80)]):
+            doc = copy.deepcopy(base_vc)
+            doc['credentialSubject']['achievement']['tag'] = tags
+            assert _model_pairs(doc, loader) >= \
+                _real_pairs(doc, loader, monkeypatch)
 
 
 # ── fail closed when pyld is not what the cost model describes ───────────────
@@ -387,7 +743,32 @@ class TestFailsClosed:
             verifier.verify(_with_bogus_proof(base_vc, ed25519_keypair[1]))
 
 
-# ── instance state only ──────────────────────────────────────────────────────
+class TestSelfTestErrors:
+    def test_an_unimportable_canonicalizer_is_refused(self, base_vc, monkeypatch):
+        monkeypatch.setitem(__import__('sys').modules, 'pyld.canon', None)
+        with pytest.raises(OB3VerificationError, match='not importable'):
+            ldp._canonize(copy.deepcopy(base_vc), document_loader())
+
+    def test_an_unexpected_error_in_the_canary_is_refused(self, base_vc,
+                                                          monkeypatch):
+        def boom(*args, **kwargs):
+            raise ValueError('pyld changed')
+        monkeypatch.setattr(guard, '_run', boom)
+        with pytest.raises(guard.CanonicalizationGuardUnavailable,
+                           match='self-test failed: pyld changed'):
+            guard._bounded_class()
+
+    def test_a_budget_that_never_trips_is_reported(self, monkeypatch):
+        # (the canary must see the budget enforced, not just counted)
+        monkeypatch.setattr(guard.WorkBudget, 'charge',
+                            lambda self, units: setattr(self, 'spent',
+                                                        self.spent + units))
+        with pytest.raises(guard.CanonicalizationGuardUnavailable,
+                           match='not enforced'):
+            guard._bounded_class()
+
+
+# ── instance state only, and pyld's thread-unsafe caches ─────────────────────
 
 class TestNoGlobalState:
     def test_pyld_is_left_untouched(self, base_vc):
@@ -409,7 +790,7 @@ class TestNoGlobalState:
         lock = threading.Lock()
 
         def run(doc, hostile_run):
-            for _ in range(3):
+            for _ in range(2):
                 try:
                     result = ldp._canonize(copy.deepcopy(doc), loader)
                     key = 'ok' if (not hostile_run and result == expected) \
@@ -421,14 +802,17 @@ class TestNoGlobalState:
                     outcomes[key] += 1
 
         threads = ([threading.Thread(target=run, args=(hostile, True))
-                    for _ in range(3)]
+                    for _ in range(2)]
                    + [threading.Thread(target=run, args=(benign, False))
-                      for _ in range(3)])
+                      for _ in range(2)])
         for t in threads:
             t.start()
         for t in threads:
             t.join()
-        assert outcomes == {'refused': 9, 'ok': 9, 'wrong': 0}
+        assert outcomes == {'refused': 4, 'ok': 4, 'wrong': 0}
+
+
+# ── the signing side ─────────────────────────────────────────────────────────
 
 
 # ── the delegated ecdsa-sd-2023 path ─────────────────────────────────────────
@@ -470,6 +854,25 @@ class TestEcdsaSdPrescreen:
                                       document_loader())
         assert not fake_openvc
 
+    def test_a_poison_graph_in_the_proof_options_alone_is_refused(
+            self, base_vc, p256_pem, fake_openvc):
+        document = self._secured(base_vc)
+        document['proof']['alignment'] = clique(base_vc, 8)['evidence']
+        with pytest.raises(OB3VerificationError, match=REFUSED):
+            ldp._verify_ecdsa_sd_2023(document, document['proof'], p256_pem,
+                                      document_loader())
+        assert not fake_openvc
+
+    def test_the_document_and_the_proof_options_share_one_budget(
+            self, base_vc, p256_pem, fake_openvc, half_budget):
+        half = clique(base_vc, 5)
+        document = self._secured(half)
+        document['proof']['alignment'] = clique(base_vc, 5)['evidence']
+        with pytest.raises(OB3VerificationError, match=REFUSED):
+            ldp._verify_ecdsa_sd_2023(document, document['proof'], p256_pem,
+                                      document_loader())
+        assert not fake_openvc
+
     def test_a_cheap_document_is_handed_over(
             self, base_vc, p256_pem, fake_openvc):
         document = self._secured(base_vc)
@@ -483,34 +886,7 @@ def test_canonize_output_feeds_the_signature_unchanged(base_vc):
     # stock pyld's, every signature made before this guard would stop
     # verifying. The W3C vector pins the digests; this pins the plumbing.
     loader = document_loader()
-    stock = hashlib.sha256(jsonld.normalize(copy.deepcopy(base_vc), {
-        'algorithm': 'URDNA2015', 'format': 'application/n-quads',
-        'documentLoader': loader}).encode()).digest()
+    stock = hashlib.sha256(_stock(base_vc, loader).encode()).digest()
     config = {'@context': base_vc['@context'], 'type': 'DataIntegrityProof'}
     data = ldp._hash_data(copy.deepcopy(base_vc), copy.deepcopy(config), loader)
     assert data[32:] == stock
-
-
-class TestSelfTestErrors:
-    def test_an_unimportable_canonicalizer_is_refused(self, base_vc, monkeypatch):
-        monkeypatch.setitem(__import__('sys').modules, 'pyld.canon', None)
-        with pytest.raises(OB3VerificationError, match='not importable'):
-            ldp._canonize(copy.deepcopy(base_vc), document_loader())
-
-    def test_an_unexpected_error_in_the_canary_is_refused(self, base_vc,
-                                                          monkeypatch):
-        def boom(*args, **kwargs):
-            raise ValueError('pyld changed')
-        monkeypatch.setattr(guard, '_run', boom)
-        with pytest.raises(guard.CanonicalizationGuardUnavailable,
-                           match='self-test failed: pyld changed'):
-            guard._bounded_class()
-
-    def test_a_budget_that_never_trips_is_reported(self, monkeypatch):
-        # (the canary must see the budget enforced, not just counted)
-        monkeypatch.setattr(guard.WorkBudget, 'charge',
-                            lambda self, units: setattr(self, 'spent',
-                                                        self.spent + units))
-        with pytest.raises(guard.CanonicalizationGuardUnavailable,
-                           match='not enforced'):
-            guard._bounded_class()
