@@ -226,7 +226,47 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     ecdsa-sd-2023 is delegated to openvc-core, which canonicalizes with an
     unbounded pyld of its own: the document is first canonicalized here
     within the same budget, which refuses the shapes above before the
-    delegate runs; it is a screen, not a bound.
+    delegate runs, and the number of statements is capped too (below). Both
+    screen what the delegate is handed; neither bounds what it then spends.
+
+  - security(ldp): the statements an ecdsa-sd-2023 credential discloses are
+    indexed under the work budget, on the graph openvc-core verified.
+    `OB3LdpVerifier` checks that the `validFrom`, `validUntil` and
+    `credentialStatus` statements of a presentation are mandatory, and to
+    index them it canonicalized the document once more, after the signature
+    check, with openvc-core's private helpers: an unmetered pyld, and on a
+    different dataset than the one openvc-core's verify reads. A crafted
+    credential of a few KB, signed with a key of the attacker's own (the
+    default `OB3LdpVerifier()` accepts any did:key issuer), cost tens of
+    seconds of CPU and more, and the screen above never saw it. The pass now
+    goes through the same guard as every other canonicalization of this
+    library, on the document as presented, with its own budget, so it also
+    indexes the statements that were signed where the two datasets differed,
+    and a credential whose issuer made the lifecycle statements mandatory is
+    no longer refused for it. A legitimate verification is slightly cheaper
+    than before.
+
+  - security(ldp): an ecdsa-sd-2023 credential of more than 2,500 statements
+    (`ob3.ldp.MAX_DELEGATED_QUADS`) is refused with `OB3VerificationError`
+    before openvc-core sees it. openvc-core 1.35 and 1.36 parse the dataset
+    back from N-Quads text before the signature is checked, which pyld does in
+    time quadratic in the number of statements and whatever the graph looks
+    like: a 110 KB document of 12,000 statements cost about 14 s of CPU, a
+    160 KB one 80 s, and neither is a poison graph, so the screen above let
+    them through. The library's own presentations hold 28 to 273 statements
+    and a credential with 100 alignments and 100 pieces of evidence 1,428;
+    at 2,500 the delegate costs 0.6 to 1.0 s of CPU (CPython 3.10 to 3.15),
+    and a document just under the limit 0.9 to 2.0 s in all. The limit goes
+    when openvc-core canonicalizes the dataset directly or takes a bound.
+
+  - fix(ldp): the `proofValue` of an ecdsa-sd-2023 proof is checked for its
+    shape (a multibase `u` string that starts with the suite's CBOR tag)
+    before the document is canonicalized, so a missing or foreign value is
+    refused without the screen's cost; and a credential whose `proof` is an
+    array of one entry now verifies for ecdsa-sd-2023 as it already did for
+    eddsa-rdfc-2022 (it was refused with "credential has no proof object"
+    by the delegate, which was handed the array). Several supported proofs
+    are still refused as ambiguous.
 
   - security(ldp): the structure of a Data Integrity document is bounded
     before any JSON-LD processing. pyld applies a type-scoped `@context` once
