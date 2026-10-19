@@ -773,18 +773,22 @@ def _nquad_node(rest: str) -> Optional[str]:
 def _sd_disclosed_statements(doc: dict[str, Any], proof: dict[str, Any]
                              ) -> Tuple[List[str], Set[int]]:
     """The statements a derived ecdsa-sd-2023 proof discloses, exactly as
-    openvc-core's verify indexes them (canonical N-Quads, blank nodes
-    relabeled through the proof's label map, sorted), and the indexes of
-    the mandatory ones. openvc's own helpers, so the indexes cannot drift
-    from what its verify checked; if it stops exposing them, fail closed."""
+    openvc-core's verify indexes them (the document as presented, canonical
+    N-Quads, blank nodes relabeled through the proof's label map, sorted), and
+    the indexes of the mandatory ones.
+
+    The document is canonicalized HERE, through the guard of
+    ob3/_canon_guard.py and within its own work budget, and never
+    deskolemized: verify reads a ``urn:bnid:`` IRI of the presented document
+    as an IRI, so the statements indexed here are those whose signatures it
+    checked, and the graph canonicalized is the one that was screened. Only
+    the relabeling and the proof-value decoder are openvc's own, so the
+    indexes cannot drift from what its verify checked; if it stops exposing
+    them, fail closed."""
     _require_openvc_ecdsa_sd()
     try:
         from openvc.proof import ecdsa_sd
-        from openvc.proof.contexts import document_loader as openvc_loader
         decode = ecdsa_sd.decode_derived_proof
-        to_nquads = ecdsa_sd._to_nquads
-        deskolemize = ecdsa_sd._deskolemize_nquads
-        canonicalize = ecdsa_sd._canonicalize
         relabel = ecdsa_sd._relabel
     except (ImportError, AttributeError) as exc:
         raise OB3VerificationError(
@@ -795,12 +799,14 @@ def _sd_disclosed_statements(doc: dict[str, Any], proof: dict[str, Any]
     try:
         parsed = decode(proof['proofValue'])
         unsecured = {k: v for k, v in doc.items() if k != 'proof'}
-        loader = openvc_loader(bundled_contexts())
-        lines, _ = canonicalize(deskolemize(to_nquads(unsecured, loader)))
+        canonical = _canonize(unsecured, document_loader(), WorkBudget())
+        lines = sorted({ln for ln in canonical.split('\n') if ln})
         statements = list(relabel(lines, {
             '_:' + k: '_:' + v for k, v in parsed['label_map'].items()}))
         mandatory = set(parsed['mandatory_indexes'])
         signatures = len(parsed['signatures'])
+    except OB3VerificationError:
+        raise
     except Exception as exc:
         raise OB3VerificationError(
             "cannot read the mandatory statements of the ecdsa-sd-2023 "
