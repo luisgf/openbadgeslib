@@ -142,6 +142,15 @@ def _named_clique(size):
             for i in range(size)]
 
 
+def _blank_clique(size):
+    """The same graph spelled with blank nodes: the poison graph the work
+    budget exists for."""
+    return [{'id': e['id'].replace('urn:bnid:', '_:'),
+             'alignment': [{'id': a['id'].replace('urn:bnid:', '_:')}
+                           for a in e['alignment']]}
+            for e in _named_clique(size)]
+
+
 def _dense(nodes, values):
     """*nodes* evidence nodes of 3 + *values* statements each, no poison
     graph: the cost is the number of statements alone."""
@@ -216,11 +225,7 @@ class TestNamedNodesAreNotBlankNodes:
         # the budget exists for, and the screen refuses it before the delegate.
         document, pub_pem, _ = derived
         hostile = copy.deepcopy(document)
-        hostile['evidence'] = [
-            {'id': e['id'].replace('urn:bnid:', '_:'),
-             'alignment': [{'id': a['id'].replace('urn:bnid:', '_:')}
-                           for a in e['alignment']]}
-            for e in _named_clique(9)]
+        hostile['evidence'] = _blank_clique(9)
         with _within(30), pytest.raises(OB3VerificationError,
                                         match='refusing to canonicalize'):
             OB3LdpVerifier(pubkey_pem=pub_pem).verify(hostile)
@@ -299,6 +304,39 @@ class TestNamedNodesAreNotBlankNodes:
                                   mandatory=lambda s: not lifecycle(s))
         with pytest.raises(OB3VerificationError, match='did not make mandatory'):
             OB3LdpVerifier(pubkey_pem=issuer.pub_pem).verify(secured)
+
+
+class TestStatementIndexingRefusals:
+    """What ``_sd_disclosed_statements`` refuses, and how."""
+
+    def test_a_graph_over_the_work_budget_is_refused(self, derived):
+        # (the screen would have refused it first; this is the pass after the
+        # signature, called by itself)
+        document, _, _ = derived
+        hostile = copy.deepcopy(document)
+        hostile['evidence'] = _blank_clique(8)
+        with _within(20), pytest.raises(OB3VerificationError,
+                                        match='refusing to canonicalize'):
+            ldp._sd_disclosed_statements(hostile, hostile['proof'])
+
+    def test_a_refusal_of_the_guard_keeps_its_message(self, derived,
+                                                      monkeypatch):
+        document, _, _ = derived
+
+        def refuse(*args, **kwargs):
+            raise OB3VerificationError('refusing to canonicalize: over budget')
+
+        monkeypatch.setattr(ldp, '_canonize', refuse)
+        with pytest.raises(OB3VerificationError) as caught:
+            ldp._sd_disclosed_statements(document, document['proof'])
+        assert str(caught.value) == 'refusing to canonicalize: over budget'
+
+    def test_a_proof_value_that_does_not_decode_is_refused(self, derived):
+        document, _, _ = derived
+        proof = dict(document['proof'], proofValue='u2V0BAAAA')
+        with pytest.raises(OB3VerificationError,
+                           match='cannot read the mandatory statements'):
+            ldp._sd_disclosed_statements(document, proof)
 
 
 class TestStatementViewsParity:
