@@ -24,6 +24,7 @@
 __version__ = '4.6.2'
 
 import contextlib
+import functools
 import hashlib
 import http.client
 import io
@@ -258,6 +259,96 @@ def _pinned_dial(conn: http.client.HTTPConnection, default_port: int,
         setattr(conn, '_create_connection', original)
 
 
+#: The timeout of one network operation (a connect, one recv). It does not
+#: bound a download: the budget below does.
+_SOCKET_TIMEOUT = 30
+
+
+class _DownloadBudgetExceeded(ValueError):
+    """The wall-clock budget of a download ran out mid-response; download_file
+    turns it into the ValueError that names the URL."""
+
+
+class _BudgetReader(io.RawIOBase):
+    """A raw reader over a connected socket that spends one wall-clock budget.
+
+    ``socket.settimeout`` bounds a single recv, and ``http.client`` reads a
+    response through a buffered file that loops recv until it has what it asked
+    for: a status line, a header line, 64 KiB of body. A server that sends a
+    byte every few seconds never trips the per-recv timeout and holds that loop
+    open indefinitely, in the response headers as much as in the body. Here
+    every recv is capped by what is left of the budget, and checked before it
+    starts, so the loop cannot outlive it.
+    """
+
+    def __init__(self, raw: Any, sock: Any, deadline: float) -> None:
+        super().__init__()
+        self._raw = raw
+        self._sock = sock
+        self._deadline = deadline
+
+    def readable(self) -> bool:
+        return True
+
+    def fileno(self) -> int:
+        return int(self._raw.fileno())
+
+    def readinto(self, buffer: Any) -> Optional[int]:
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise _DownloadBudgetExceeded()
+        self._sock.settimeout(min(_SOCKET_TIMEOUT, remaining))
+        try:
+            return self._raw.readinto(buffer)       # type: ignore[no-any-return]
+        except OSError:
+            # The recv ran into the budget (a timeout, or an SSL error that
+            # reports one): that is the budget, not a network fault.
+            if time.monotonic() >= self._deadline:
+                raise _DownloadBudgetExceeded() from None
+            raise
+
+    def close(self) -> None:
+        if not self.closed:
+            self._raw.close()
+        super().close()
+
+
+class _BudgetSocket:
+    """What http.client.HTTPResponse asks of its socket: ``makefile('rb')``,
+    here a buffered reader that spends the budget (:class:`_BudgetReader`).
+    ``makefile(buffering=0)`` of the real socket keeps its close accounting:
+    urllib closes the socket object after getresponse(), and the file object
+    is what keeps the connection open until the body is read."""
+
+    def __init__(self, sock: Any, deadline: float) -> None:
+        self._sock = sock
+        self._deadline = deadline
+
+    def makefile(self, mode: str = 'rb', *args: Any, **kwargs: Any) -> Any:
+        raw = self._sock.makefile('rb', buffering=0)
+        return io.BufferedReader(_BudgetReader(raw, self._sock, self._deadline))
+
+
+class _BudgetResponse(http.client.HTTPResponse):
+    """An HTTPResponse whose status line, headers and body all spend one
+    download budget (see :class:`_BudgetReader`)."""
+
+    def __init__(self, sock: Any, *args: Any, deadline: float,
+                 **kwargs: Any) -> None:
+        # Duck-typed: HTTPResponse only ever calls sock.makefile('rb').
+        stand_in: Any = _BudgetSocket(sock, deadline)
+        super().__init__(stand_in, *args, **kwargs)
+
+
+def _bound_response(conn: http.client.HTTPConnection,
+                    deadline: Optional[float]) -> None:
+    """Make *conn* read its responses under *deadline* (a time.monotonic()
+    value); None leaves the stock behaviour."""
+    if deadline is not None:
+        setattr(conn, 'response_class',
+                functools.partial(_BudgetResponse, deadline=deadline))
+
+
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     """An HTTPSConnection that resolves and SSRF-validates the host *at connect
     time* and dials the validated IP, while still presenting the original
@@ -272,9 +363,11 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     """
 
     def __init__(self, host: str, *args: Any,
-                 allow_private: bool = False, **kwargs: Any) -> None:
+                 allow_private: bool = False,
+                 deadline: Optional[float] = None, **kwargs: Any) -> None:
         super().__init__(host, *args, **kwargs)
         self._allow_private = allow_private
+        _bound_response(self, deadline)
 
     def connect(self) -> None:
         with _pinned_dial(self, 443, self._allow_private):
@@ -290,9 +383,11 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
     """
 
     def __init__(self, host: str, *args: Any,
-                 allow_private: bool = False, **kwargs: Any) -> None:
+                 allow_private: bool = False,
+                 deadline: Optional[float] = None, **kwargs: Any) -> None:
         super().__init__(host, *args, **kwargs)
         self._allow_private = allow_private
+        _bound_response(self, deadline)
 
     def connect(self) -> None:
         with _pinned_dial(self, 80, self._allow_private):
@@ -305,25 +400,31 @@ class _PinnedHTTPSHandler(request.HTTPSHandler):
     socket connect share one DNS resolution (no rebinding window). TLS still
     uses urllib's default verifying context (verify + hostname check)."""
 
-    def __init__(self, allow_private: bool = False) -> None:
+    def __init__(self, allow_private: bool = False,
+                 deadline: Optional[float] = None) -> None:
         super().__init__()
         self._allow_private = allow_private
+        self._deadline = deadline
 
     def https_open(self, req: Any) -> Any:
         return self.do_open(
-            _PinnedHTTPSConnection, req, allow_private=self._allow_private)
+            _PinnedHTTPSConnection, req, allow_private=self._allow_private,
+            deadline=self._deadline)
 
 
 class _PinnedHTTPHandler(request.HTTPHandler):
     """Route plain-HTTP connections through :class:`_PinnedHTTPConnection`."""
 
-    def __init__(self, allow_private: bool = False) -> None:
+    def __init__(self, allow_private: bool = False,
+                 deadline: Optional[float] = None) -> None:
         super().__init__()
         self._allow_private = allow_private
+        self._deadline = deadline
 
     def http_open(self, req: Any) -> Any:
         return self.do_open(
-            _PinnedHTTPConnection, req, allow_private=self._allow_private)
+            _PinnedHTTPConnection, req, allow_private=self._allow_private,
+            deadline=self._deadline)
 
 
 #: Verify keys, issuer documents, and revocation lists are all small JSON/PEM
@@ -375,32 +476,42 @@ def download_file(url: str, allow_insecure: bool = False,
     # rebinding); the HTTP twin does the same when allow_insecure permits
     # plain HTTP. The redirect handler re-applies the scheme/host checks to any
     # 30x target (which then also connects through the pinned handler).
+    # The budget starts now and is shared by every connection of this call (a
+    # redirect opens another), which spend it as they read: the response
+    # headers and body (see _BudgetReader). Connecting, the TLS handshake and
+    # DNS resolution are bounded per operation (_SOCKET_TIMEOUT), not by it.
+    deadline = time.monotonic() + MAX_DOWNLOAD_SECONDS
     handlers: List[Any] = [
-        _PinnedHTTPSHandler(allow_private),
+        _PinnedHTTPSHandler(allow_private, deadline),
         _HTTPSOnlyRedirectHandler(allow_insecure, allow_private),
     ]
     if allow_insecure:
-        handlers.insert(0, _PinnedHTTPHandler(allow_private))
+        handlers.insert(0, _PinnedHTTPHandler(allow_private, deadline))
     opener = request.build_opener(*handlers)
-    deadline = time.monotonic() + MAX_DOWNLOAD_SECONDS
+    over_budget = ('Refusing to download %s: exceeded the %d-second time budget '
+                   '(slow-drip response)' % (url, MAX_DOWNLOAD_SECONDS))
     try:
-        resp_cm = opener.open(url, timeout=30)
+        resp_cm = opener.open(url, timeout=_SOCKET_TIMEOUT)
     except HTTPError as exc:
         # The error owns the response's socket; callers that swallow it would
         # otherwise leave it to GC (a ResourceWarning on recent Pythons).
         exc.close()
         raise
+    except _DownloadBudgetExceeded:
+        raise ValueError(over_budget) from None
     with resp_cm as response:
         chunks = []
         total = 0
         while True:
             # A per-socket timeout does not bound total time: a slow-drip server
-            # can keep resetting it. Enforce a wall-clock budget too.
+            # can keep resetting it. The budget does (and bounds each recv of
+            # the read below, so a drip inside a single read cannot outlast it).
             if time.monotonic() > deadline:
-                raise ValueError(
-                    'Refusing to download %s: exceeded the %d-second time budget '
-                    '(slow-drip response)' % (url, MAX_DOWNLOAD_SECONDS))
-            chunk = response.read(65536)
+                raise ValueError(over_budget)
+            try:
+                chunk = response.read(65536)
+            except _DownloadBudgetExceeded:
+                raise ValueError(over_budget) from None
             if not chunk:
                 break
             total += len(chunk)

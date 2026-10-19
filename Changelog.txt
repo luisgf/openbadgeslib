@@ -99,6 +99,18 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     IssuanceError before it reserves a status slot (sqlite3 refused the str at
     `save_grant`).
 
+  - security(util): `download_file` enforces its documented 60-second budget.
+    `MAX_DOWNLOAD_SECONDS` was checked only between reads, and a read of 64 KiB
+    loops recv until it is satisfied, so a server that sent one byte every few
+    seconds of the body, of a response header or of the status line (each recv
+    inside the 30-second socket timeout) held the call open for as long as it
+    liked, and with it every caller that fetches an attacker-chosen URL: a
+    did:web issuer, a credentialStatus list, the OB1/OB2 badge, issuer and
+    revocation URLs. Every recv of the response, headers included and across
+    redirects, now spends the one budget, and the call raises the ValueError it
+    always documented. Connecting, the TLS handshake and DNS resolution are
+    still bounded per operation (30 seconds), not by the budget.
+
 * v4.6.2 - 2026-10-16
 
   - security(deps): the openvc-core floor of `[eudi]`, `[ldp-sd]` and

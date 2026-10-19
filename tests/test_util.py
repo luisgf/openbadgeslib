@@ -560,3 +560,206 @@ class TestCachingDownloader:
     def test_defaults_to_download_file(self):
         from openbadgeslib import util
         assert util.CachingDownloader()._download is util.download_file
+
+
+# ── the wall-clock budget, on the wire ───────────────────────────────────────
+
+class _DripServer:
+    """A loopback server that answers every connection with *behaviour*(conn).
+
+    The point is bytes that arrive just often enough to keep the socket's own
+    timeout from ever firing; ``stop`` ends every handler."""
+
+    def __init__(self, behaviour, tls_context=None):
+        import socket
+        import threading
+        self.stop = threading.Event()
+        self._behaviour = behaviour
+        self._tls = tls_context
+        self._listener = socket.socket()
+        self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._listener.bind(('127.0.0.1', 0))
+        self._listener.listen(8)
+        self._listener.settimeout(0.2)
+        self.port = self._listener.getsockname()[1]
+        self._thread = threading.Thread(target=self._accept_loop, daemon=True)
+        self._thread.start()
+
+    def _accept_loop(self):
+        import socket
+        import threading
+        while not self.stop.is_set():
+            try:
+                conn, _ = self._listener.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+            threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
+
+    def _serve(self, conn):
+        try:
+            conn.settimeout(5)
+            if self._tls is not None:
+                conn = self._tls.wrap_socket(conn, server_side=True)
+            request = b''
+            while b'\r\n\r\n' not in request:
+                chunk = conn.recv(4096)
+                if not chunk:
+                    return
+                request += chunk
+            self._behaviour(conn, self.stop)
+        except OSError:
+            pass
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass
+
+    def close(self):
+        self.stop.set()
+        self._listener.close()
+
+
+def _drip(conn, stop, prefix, piece, interval=0.15):
+    conn.sendall(prefix)
+    while not stop.is_set():
+        conn.sendall(piece)
+        stop.wait(interval)
+
+
+def _body_drip(conn, stop):
+    _drip(conn, stop, b'HTTP/1.1 200 OK\r\nContent-Length: 1000000\r\n'
+                      b'Connection: close\r\n\r\n', b'x')
+
+
+def _header_drip(conn, stop):
+    _drip(conn, stop, b'HTTP/1.1 200 OK\r\nX-Pad: ', b'a')
+
+
+def _status_drip(conn, stop):
+    _drip(conn, stop, b'', b'H')
+
+
+def _prompt_response(conn, stop):
+    conn.sendall(b'HTTP/1.1 200 OK\r\nContent-Length: 200000\r\n'
+                 b'Connection: close\r\n\r\n' + b'y' * 200000)
+
+
+def _download(url, **kwargs):
+    """download_file in a thread, so a call that never ends fails the test
+    instead of hanging it. Returns (outcome, finished)."""
+    import threading
+    outcome = {}
+
+    def run():
+        try:
+            outcome['value'] = download_file(url, **kwargs)
+        except BaseException as exc:                     # noqa: BLE001
+            outcome['error'] = exc
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(timeout=10)
+    return outcome, not thread.is_alive()
+
+
+@pytest.fixture()
+def one_second_budget(monkeypatch):
+    from openbadgeslib import util
+    monkeypatch.setattr(util, 'MAX_DOWNLOAD_SECONDS', 1)
+
+
+class TestDownloadBudgetOnTheWire:
+    """F7: MAX_DOWNLOAD_SECONDS was checked between reads only, and a read of
+    64 KiB loops recv, so a body dripped a byte at a time, or response headers
+    dripped the same way, held download_file open for as long as the server
+    liked (the 30 s socket timeout never fired)."""
+
+    @pytest.mark.parametrize('behaviour', [_body_drip, _header_drip, _status_drip],
+                             ids=['body', 'header', 'status-line'])
+    def test_a_dripping_server_hits_the_budget(self, one_second_budget, behaviour):
+        server = _DripServer(behaviour)
+        try:
+            outcome, finished = _download(
+                'http://127.0.0.1:%d/' % server.port,
+                allow_insecure=True, allow_private=True)
+        finally:
+            server.close()
+        assert finished, 'download_file is still waiting on the server'
+        assert isinstance(outcome.get('error'), ValueError), outcome
+        assert 'time budget' in str(outcome['error'])
+
+    def test_a_prompt_response_is_untouched(self, one_second_budget):
+        server = _DripServer(_prompt_response)
+        try:
+            outcome, finished = _download(
+                'http://127.0.0.1:%d/' % server.port,
+                allow_insecure=True, allow_private=True)
+        finally:
+            server.close()
+        assert finished and outcome.get('value') == b'y' * 200000
+
+    def test_a_redirect_spends_the_same_budget(self, one_second_budget):
+        target = _DripServer(_body_drip)
+
+        def redirect(conn, stop):
+            conn.sendall(b'HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:%d/\r\n'
+                         b'Content-Length: 0\r\nConnection: close\r\n\r\n'
+                         % target.port)
+
+        server = _DripServer(redirect)
+        try:
+            outcome, finished = _download(
+                'http://127.0.0.1:%d/' % server.port,
+                allow_insecure=True, allow_private=True)
+        finally:
+            server.close()
+            target.close()
+        assert finished and 'time budget' in str(outcome.get('error'))
+
+    def test_over_tls(self, one_second_budget, tmp_path, monkeypatch):
+        """The production path: a verifying TLS client against a server whose
+        certificate it trusts, prompt and dripping."""
+        import ssl
+        import datetime as dt
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.x509.oid import NameOID
+        import ipaddress
+
+        key = ec.generate_private_key(ec.SECP256R1())
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, '127.0.0.1')])
+        now = dt.datetime.now(dt.timezone.utc)
+        cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
+                .public_key(key.public_key()).serial_number(x509.random_serial_number())
+                .not_valid_before(now - dt.timedelta(minutes=5))
+                .not_valid_after(now + dt.timedelta(hours=1))
+                .add_extension(x509.SubjectAlternativeName(
+                    [x509.IPAddress(ipaddress.ip_address('127.0.0.1'))]), False)
+                .sign(key, hashes.SHA256()))
+        cert_pem = cert.public_bytes(serialization.Encoding.PEM)
+        (tmp_path / 'cert.pem').write_bytes(cert_pem)
+        (tmp_path / 'key.pem').write_bytes(key.private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption()))
+        server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        server_ctx.load_cert_chain(str(tmp_path / 'cert.pem'), str(tmp_path / 'key.pem'))
+        client_ctx = ssl.create_default_context(cadata=cert_pem.decode())
+        monkeypatch.setattr(ssl, '_create_default_https_context',
+                            lambda *a, **k: client_ctx)
+
+        prompt = _DripServer(_prompt_response, tls_context=server_ctx)
+        drip = _DripServer(_body_drip, tls_context=server_ctx)
+        try:
+            ok, ok_finished = _download('https://127.0.0.1:%d/' % prompt.port,
+                                        allow_private=True)
+            slow, slow_finished = _download('https://127.0.0.1:%d/' % drip.port,
+                                            allow_private=True)
+        finally:
+            prompt.close()
+            drip.close()
+        assert ok_finished and ok.get('value') == b'y' * 200000, ok
+        assert slow_finished and 'time budget' in str(slow.get('error')), slow
