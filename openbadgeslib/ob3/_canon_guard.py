@@ -147,7 +147,7 @@ PYLD_LOCK = threading.RLock()
 #: allowance below stops it anyway (161,000 units; 700 spend 80,500).
 #:
 #: Measured, CPython 3.10 to 3.15rc3 on an Apple-silicon laptop: a unit costs
-#: 0.15 to 0.45 microseconds on the poison graphs (cliques, trees, rings,
+#: 0.15 to 0.4 microseconds on the poison graphs (cliques, trees, rings,
 #: grids, bipartite graphs, ladders, twins, random digraphs, circulants), so a
 #: document that exhausts the budget is refused after 0.05 to 0.22 s of CPU
 #: in all, expansion included (0.16 to 0.22 s at most, per interpreter);
@@ -188,6 +188,11 @@ _PERM_UNITS = 6
 #: An all-distinct group this large has size! permutations: more than any
 #: budget (13! = 6.2 billion) without computing the factorial.
 _MAX_GROUP = 12
+
+#: The only pyld major version the cost model describes. pyproject.toml's
+#: ``pyld>=3.3.0,<4`` (both extras) must say the same; pip does not enforce a
+#: dependency range after install, this check does at run time.
+_SUPPORTED_PYLD_MAJOR = 3
 
 #: The deadline is read every this many charges (a clock read is a system
 #: call on some platforms).
@@ -402,10 +407,11 @@ def _build_bounded_class() -> Any:
         raise CanonicalizationGuardUnavailable(
             "pyld's canonicalizer is not importable: %s" % exc) from exc
     pyld_version = str(pyld_version)
-    if pyld_version.split('.')[0] != '3':
+    if pyld_version.split('.')[0] != str(_SUPPORTED_PYLD_MAJOR):
         raise CanonicalizationGuardUnavailable(
             "pyld %s is not supported by the canonicalization guard "
-            "(it meters pyld 3.x; install pyld>=3.3.0,<4)" % pyld_version)
+            "(it meters pyld %d.x; install pyld>=3.3.0,<%d)"
+            % (pyld_version, _SUPPORTED_PYLD_MAJOR, _SUPPORTED_PYLD_MAJOR + 1))
     for name in ('main', 'create_hash_to_related', 'hash_n_degree_quads'):
         if not callable(getattr(URDNA2015, name, None)):
             raise CanonicalizationGuardUnavailable(

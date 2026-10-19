@@ -160,6 +160,26 @@ def test_docs_cryptography_floor_matches_pyproject():
             '%s does not document cryptography>=%s' % (path.name, floor)
 
 
+def test_pyld_range_is_the_one_the_canonicalization_guard_meters():
+    """Both extras that pull pyld carry one range, and its ceiling is the
+    guard's supported major version plus one: pip checks a dependency range
+    only when it resolves (an upgrade of pyld alone installs 4.x without a
+    word), so a ceiling dropped from one extra would leave only the run-time
+    refusal of ob3/_canon_guard.py -- and the documented range stale."""
+    from openbadgeslib.ob3 import _canon_guard
+    pyproject = (REPO / 'pyproject.toml').read_text(encoding='utf-8')
+    ranges = re.findall(r'"(pyld>=[^"]*)"', pyproject)
+    assert len(ranges) == 2 and len(set(ranges)) == 1, \
+        'the [ldp] and [ldp-sd] extras must both carry the same pyld range: %s' % ranges
+    match = re.fullmatch(r'pyld>=(\d+)\.(\d+)\.(\d+),<(\d+)', ranges[0])
+    assert match, 'pyld range %r is not >=X.Y.Z,<N' % ranges[0]
+    major = _canon_guard._SUPPORTED_PYLD_MAJOR
+    assert int(match.group(1)) == major and int(match.group(4)) == major + 1
+    installation = (WIKI / 'Installation.md').read_text(encoding='utf-8')
+    floor = '.'.join(match.group(i) for i in (1, 2, 3))
+    assert '(>= %s, < %s)' % (floor, match.group(4)) in installation
+
+
 def _audit_floors_script():
     """The python heredoc the audit workflow's 'Read the declared floors' step
     runs, with the workflow's indentation stripped."""
