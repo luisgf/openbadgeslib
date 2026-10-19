@@ -131,14 +131,20 @@ dependencies = [
 # Ceiling below 4. RDF canonicalization of an untrusted document is factorial
 # on a crafted blank-node graph and pyld 3.x has no work cap, so
 # ob3/_canon_guard.py meters pyld's URDNA2015 itself; that guard is fitted to
-# the 3.x implementation (it checks pyld's major version and canonicalizes a
-# canary document at first use, and fails closed on a mismatch). pyld 4.0 is
-# unreleased and breaking: it moves canon.py and the RDF types to rdflib, and
-# toRDF starts dropping statements 3.x keeps (an IRI with two `#`, a literal
-# with an invalid @language), which context validation, written against 3.x's
-# absolute-IRI test, does not refuse: the signed dataset would lose what the
-# JSON still says (GHSA-rp5q-966c-5592). Lift the ceiling only with both
-# reworked and tested.
+# the 3.x implementation (it checks pyld's major version and canonicalizes
+# canary documents at first use, and fails closed on a mismatch). pip checks
+# this range only when it resolves, not on a later `pip install -U pyld`: past
+# the ceiling the guard refuses to verify or sign (OB3GuardUnavailable) rather
+# than run unmetered. pyld 4.0 is unreleased and breaking: it moves canon.py
+# and the RDF types to rdflib, and its toRDF drops statements 3.x keeps, which
+# context validation, written against 3.x's absolute-IRI test, does not
+# refuse, so the signed dataset would lose what the JSON still says
+# (GHSA-rp5q-966c-5592): an IRI containing any of < > " { } | \ ^ ` or two `#`
+# (as a subject, object, predicate, @type, graph name or @list member), a
+# literal whose @language is not shaped like a BCP 47 tag
+# (^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$); and it changes the bytes of literals
+# (an xsd:token is whitespace-folded, a TAB is no longer escaped as \t). Lift
+# the ceiling only with context validation and the guard reworked and tested.
 ldp = [
     "pyld>=3.3.0,<4",
 ]

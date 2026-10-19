@@ -144,40 +144,85 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     against it. pip-audit runs in its own environment, so the advisories of
     its own dependencies are not counted against the package.
 
-  - security(ldp): RDF canonicalization of a Data Integrity document runs
-    under a work budget. RDFC-1.0 resolves blank nodes its first-degree hash
+  - security(ldp): RDF canonicalization of a Data Integrity document is
+    bounded in work, in CPU time and in the cost of the JSON-LD to RDF
+    conversion before it. RDFC-1.0 resolves blank nodes its first-degree hash
     cannot tell apart by trying their permutations, recursively, and the
     verifier runs it BEFORE it can check the signature, on a document nobody
     has authenticated. The 256 KiB document cap did not bound that and pyld
-    3.3.0 has no cap of its own: a credential of 2 to 3 KB that passes context
-    validation (an `evidence` clique of eight labelled blank nodes, a tree of
-    eight identical children two deep, two identical parents with nine
-    identical children each, a ring of 400 labelled nodes) cost one
-    verification between 13 and 40 seconds of CPU, and a slightly larger one
-    minutes; the proof options, canonicalized too, are attacker input as
-    well. `OB3LdpVerifier`, `verify_data_integrity_proof`, `OB3LdpSigner` and
+    3.3.0 has no cap of its own: a credential of 1.2 to 2.2 KB that passes
+    context validation (an `evidence` clique of eight labelled blank nodes,
+    a tree of eight identical children two deep, two identical parents with
+    nine identical children each) cost one verification 15 to 40 seconds of
+    CPU (CPython 3.14, a quiet laptop), a ring of 400 labelled nodes (21 KB)
+    13 s, and a slightly larger one minutes; the proof options,
+    canonicalized too, are attacker input as well. `OB3LdpVerifier`,
+    `verify_data_integrity_proof`, `OB3LdpSigner` and
     `add_data_integrity_proof` now canonicalize through
     `ob3/_canon_guard.py`: pyld's own URDNA2015, run with a per-call subclass
     that charges every Hash N-Degree Quads call and every permutation step to
-    one budget shared by the document and its proof options (about 0.4 s of
-    CPU on a laptop), refusing before the work when a group of
-    indistinguishable nodes cannot fit. No pyld state is patched, so threads
-    and other users of pyld are unaffected. Each of the shapes above is now
-    refused in under half a second with `OB3VerificationError` ("refusing to
-    canonicalize the credential"; `ErrorSigningFile` on the signing side),
-    and the whole suite, including the W3C vectors and a credential modelled
-    on 1EdTech's "Complete OpenBadgeCredential" example, spends at most 0.06%
-    of the budget with byte-identical canonical output. The same release
-    bounds the duplicate checks pyld's JSON-LD to RDF conversion makes per
-    node property, which grow with the square of the number of values (8,000
-    `tag` values, 72 KB, took 12 s); a node property may now hold about 1,400
-    values. The guard is fitted to pyld 3.x and fails closed with
-    `OB3VerificationError` if the installed pyld is not the one it
-    was calibrated on (another major version, a changed hook, a canary
-    document that no longer canonicalizes to the known output and the known
-    work), which is why `[ldp]` and `[ldp-sd]` require `pyld<4` (since 4.6.2):
+    one budget shared by the document and its proof options, refusing before
+    the work when a group of indistinguishable nodes cannot fit. The budget
+    is 250,000 model units, about 100 times what a real credential spends
+    (at most ~2,400 over 53 real documents; the repo's copy of 1EdTech's
+    "Complete OpenBadgeCredential" example spends 1,124) and 1.5 times the
+    largest legitimate shape known (an identifier-only subject with 1,400
+    identical blank Results). Symmetry on purpose is where it stops: two
+    identical blank parents with five identical blank children each pass
+    (48,000 units), with six they are refused (297,000), and so is a clique
+    of six labelled blank nodes (1.08 million; five pass, 115,000). The
+    budget comes with one CPU-time allowance of 1.0 s inside URDNA2015, read
+    from the thread's own CPU clock (a request queued behind another, or a
+    loaded host, is not charged for waiting). The clock is the bound that
+    holds everywhere: on CPython 3.11 and 3.12 a window of
+    document sizes (a circulant graph of 80 to 160 nodes, 8 to 15 KB, moving
+    with the caller's stack depth) costs 5 to 10 times more CPU per unit than
+    the model says. Each of the shapes above is refused with
+    `OB3VerificationError` ("refusing to canonicalize the credential";
+    `ErrorSigningFile` on the signing side) after 0.05 to 0.22 s of CPU on
+    CPython 3.10 to 3.15, 0.85 s at most inside that window, and 1.05 to
+    1.12 s on 3.11/3.12 with the unit budget out of the way. The whole suite,
+    including the W3C vectors and the Complete example, spends at most 0.5%
+    of the budget with byte-identical canonical output. The conversion
+    before it has a cost no hook can meter: pyld compares every new value of
+    a node property with the ones already there, N^2/2 comparisons for N
+    distinct values (8,000 `tag` values, 57 KB, took 12 s), and the same for
+    N nodes that all `@reverse` into one node (6,000 spread over 80 parents,
+    about 240 KB, took 6 to 11 s). The comparisons are counted on the
+    expanded document the way pyld makes them, `@reverse` and repeated values
+    included, and a document over 1,000,000 of them, summed over every
+    property of every node of the document and its proof options (one
+    property of 1,414 distinct values, or two of about 1,000), is refused
+    before pyld builds the node map (0.35 to 0.5 s of CPU at the limit).
+    No pyld state is patched, so other users of pyld are unaffected; but
+    pyld's JSON-LD processor keeps its context caches in plain LRU caches
+    that are not thread-safe (concurrent verifications corrupted them and,
+    once corrupted, every later verification or signature in the process
+    failed), so every pyld call of the Data Integrity path now runs under one
+    process-wide lock, which is released while URDNA2015 runs, so a poison
+    graph burning its allowance does not hold up other threads. The guard
+    is fitted to pyld 3.3.0 and fails closed if the installed pyld is not the
+    one it was calibrated on (another major version, a changed hook, a
+    canary document that no longer canonicalizes to the known output, in the
+    known work range, with the known permutation steps). That refusal is
+    `OB3GuardUnavailable`, a subclass of `OB3VerificationError`, so a
+    deployment can alert on "the guard is down" apart from "this credential
+    is bad"; its text names the pyld found, what was expected and the
+    remedy (pin `pyld==3.3.0`, or upgrade openbadgeslib). pip checks the
+    `pyld<4` of `[ldp]` and `[ldp-sd]` only when it resolves, not on a later
+    `pip install -U pyld`; past the ceiling this refusal is what protects you.
     pyld 4.0 is unreleased and breaking, and its toRDF drops statements 3.x
-    keeps.
+    keeps: an IRI containing any of `< > " { } | \ ^` or a backquote, or two
+    `#`, as a subject, object, predicate, `@type`, graph name or list member,
+    and a literal whose `@language` is not shaped like a BCP 47 tag; and it
+    changes the bytes of literals (an `xsd:token` is whitespace-folded, a TAB
+    is not escaped). `add_data_integrity_proof` (and so `OB3LdpSigner`) now
+    refuses a document over 256 KiB, measured as its compact UTF-8 form,
+    before any JSON-LD work, where it used to canonicalize first and
+    `OB3LdpSigner` checked the size of its output afterwards. A document
+    pyld cannot expand now fails with pyld's message (cut at 300 characters)
+    after "could not canonicalize the credential:" instead of "Could not
+    convert input to RDF dataset".
     ecdsa-sd-2023 is delegated to openvc-core, which canonicalizes with an
     unbounded pyld of its own: the document is first canonicalized here
     within the same budget, which refuses the shapes above before the
