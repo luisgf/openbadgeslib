@@ -430,3 +430,59 @@ class TestGenuineCredential:
             document, public_key_jwk=jwk, extra_contexts=bundled_contexts()))
         assert screen < 0.5
         assert screen < 10 * delegate
+
+
+# ── the cheap checks come first, and a one-element proof array verifies ─────
+
+class TestProofValue:
+    @pytest.mark.parametrize('value', [None, 12345, ['u2V0'], {}, '', 'z3abc',
+                                       'uAAAA', 'u'])
+    def test_a_value_that_is_no_derived_proof_costs_nothing(
+            self, derived, monkeypatch, delegate_calls, value):
+        document, pub_pem, _ = derived
+        hostile = copy.deepcopy(document)
+        hostile['evidence'] = _named_clique(7)
+        hostile['proof']['proofValue'] = value
+        spent = []
+        monkeypatch.setattr(ldp, '_canonize',
+                            lambda *a, **k: spent.append(1) or '')
+        with pytest.raises(OB3VerificationError, match='proofValue'):
+            verify_data_integrity_proof(hostile, pub_pem)
+        assert not spent and not delegate_calls
+
+
+class TestProofArray:
+    def test_a_one_element_array_verifies(self, derived):
+        document, pub_pem, did = derived
+        wrapped = copy.deepcopy(document)
+        wrapped['proof'] = [wrapped['proof']]
+        verify_data_integrity_proof(wrapped, pub_pem)
+        credential = OB3LdpVerifier(pubkey_pem=pub_pem).verify(wrapped)
+        assert credential.issuer.id == did
+        assert OB3LdpVerifier().verify(wrapped).issuer.id == did
+
+    def test_a_tampered_one_element_array_is_refused(self, derived):
+        document, pub_pem, _ = derived
+        wrapped = copy.deepcopy(document)
+        wrapped['proof'] = [wrapped['proof']]
+        wrapped['name'] = 'Bachelor of Villainy'
+        with pytest.raises(OB3VerificationError):
+            OB3LdpVerifier(pubkey_pem=pub_pem).verify(wrapped)
+
+    def test_the_lifecycle_check_still_applies_to_an_array(self, ob3_credential):
+        _require_ldp_sd()
+        from test_ob3_ldp_ecdsa_sd import LAX_MANDATORY
+        lax, pub_pem, _ = _issue_and_derive(
+            _lifecycle_credential(ob3_credential),
+            selective=['/validUntil', '/credentialStatus'],
+            mandatory=LAX_MANDATORY)
+        lax['proof'] = [lax['proof']]
+        with pytest.raises(OB3VerificationError, match='did not make mandatory'):
+            OB3LdpVerifier(pubkey_pem=pub_pem).verify(lax)
+
+    def test_two_proofs_are_still_ambiguous(self, derived):
+        document, pub_pem, _ = derived
+        twice = copy.deepcopy(document)
+        twice['proof'] = [twice['proof'], copy.deepcopy(twice['proof'])]
+        with pytest.raises(OB3VerificationError, match='multiple'):
+            OB3LdpVerifier(pubkey_pem=pub_pem).verify(twice)

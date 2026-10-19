@@ -424,6 +424,23 @@ def _p256_pem_to_jwk(pubkey_pem: bytes) -> dict[str, str]:
 #: 3.10, most of it the delegate's).
 MAX_DELEGATED_QUADS = 2_500
 
+#: Multibase ``u`` (base64url, no padding) and the first two bytes of an
+#: ecdsa-sd-2023 proof value, the CBOR tag 0xd95d: what every base and derived
+#: proof value starts with.
+_SD_PROOF_VALUE_PREFIX = 'u2V0'
+
+
+def _check_sd_proof_value(proof: dict[str, Any]) -> None:
+    """Refuse a proofValue that cannot be an ecdsa-sd-2023 proof, in
+    microseconds, before the document is canonicalized for nothing. Only
+    the shape: the delegate decodes the value in full and owns every other
+    check of it."""
+    value = proof.get('proofValue')
+    if not isinstance(value, str) or not value.startswith(_SD_PROOF_VALUE_PREFIX):
+        raise OB3VerificationError(
+            "proofValue must be a multibase base64url ('u…') ecdsa-sd-2023 "
+            "proof value")
+
 
 def _prescreen_canonicalization(document: dict[str, Any], proof: dict[str, Any],
                                 loader: Any) -> None:
@@ -470,13 +487,17 @@ def _verify_ecdsa_sd_2023(document: dict[str, Any], proof: dict[str, Any],
     screened HERE (:func:`_prescreen_canonicalization`): the poison-graph
     work, within the work budget, and the number of statements. That screen
     is not a bound on what the delegate then spends.
+
+    The delegate takes the proof as an object, the one :func:`_select_proof`
+    chose, so a ``proof`` array of one entry is handed over unwrapped.
     """
     EcdsaSdProofSuite, ProofError = _require_openvc_ecdsa_sd()
     public_key_jwk = _p256_pem_to_jwk(pubkey_pem)
+    _check_sd_proof_value(proof)
     _prescreen_canonicalization(document, proof, loader)
     try:
         EcdsaSdProofSuite().verify(
-            document,
+            dict(document, proof=proof),
             public_key_jwk=public_key_jwk,
             expected_proof_purpose=proof.get('proofPurpose'),
             extra_contexts=bundled_contexts(),
