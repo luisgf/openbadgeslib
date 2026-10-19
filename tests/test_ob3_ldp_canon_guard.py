@@ -1234,6 +1234,54 @@ class TestThreadSafety:
 
 # ── the signing side ─────────────────────────────────────────────────────────
 
+class TestSigningInputBound:
+    def test_an_oversized_document_is_refused_before_any_pyld_call(
+            self, base_vc, ed25519_keypair, monkeypatch):
+        calls = []
+        for name in ('expand', 'to_rdf', 'compact', 'normalize'):
+            real = getattr(jsonld, name)
+            monkeypatch.setattr(
+                jsonld, name,
+                lambda *a, _real=real, **k: calls.append(1) or _real(*a, **k))
+        doc = copy.deepcopy(base_vc)
+        doc['evidence'] = [{'narrative': 'x' * (ldp.MAX_LDP_DOCUMENT_BYTES + 1)}]
+        priv, pub = ed25519_keypair
+        did = did_key(pub)
+        with pytest.raises(ErrorSigningFile, match='over the .*-byte limit'):
+            add_data_integrity_proof(doc, priv,
+                                     '%s#%s' % (did, did[len('did:key:'):]))
+        assert not calls
+
+    def test_a_document_that_is_not_json_is_refused(self, base_vc,
+                                                    ed25519_keypair):
+        doc = copy.deepcopy(base_vc)
+        doc['evidence'] = [{'narrative': object()}]
+        priv, pub = ed25519_keypair
+        did = did_key(pub)
+        with pytest.raises(ErrorSigningFile, match='not plain JSON'):
+            add_data_integrity_proof(doc, priv,
+                                     '%s#%s' % (did, did[len('did:key:'):]))
+
+    def test_a_compact_non_ascii_document_under_the_limit_still_signs(
+            self, base_vc, ed25519_keypair):
+        # Measured as the smallest text it can be sent as, not as json.dumps
+        # escapes it (6 bytes per CJK character): a verifier accepts this.
+        priv, pub = ed25519_keypair
+        did = did_key(pub)
+        doc = copy.deepcopy(base_vc)
+        doc['credentialSubject']['achievement']['description'] = '学' * 70000
+        assert len(json.dumps(doc)) > ldp.MAX_LDP_DOCUMENT_BYTES
+        signed = add_data_integrity_proof(
+            doc, priv, '%s#%s' % (did, did[len('did:key:'):]))
+        verify_data_integrity_proof(signed, pub)
+
+    def test_a_normal_document_still_signs(self, base_vc, ed25519_keypair):
+        priv, pub = ed25519_keypair
+        did = did_key(pub)
+        signed = add_data_integrity_proof(
+            copy.deepcopy(base_vc), priv, '%s#%s' % (did, did[len('did:key:'):]))
+        verify_data_integrity_proof(signed, pub)
+
 
 # ── the delegated ecdsa-sd-2023 path ─────────────────────────────────────────
 

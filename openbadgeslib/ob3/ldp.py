@@ -86,7 +86,9 @@ from .verifier import (OB3VerificationError, _check_recipient,
 #: is factorial in the size of the input: a few KB suffice. That is bounded by
 #: its own work and CPU-time budget, ob3/_canon_guard.py (MAX_CANON_WORK,
 #: MAX_CANON_SECONDS), and the duplicate checks of the JSON-LD to RDF
-#: conversion by MAX_NODE_MAP_PAIRS.
+#: conversion by MAX_NODE_MAP_PAIRS. The verifier measures the document as
+#: received; add_data_integrity_proof, which has no "as received", measures
+#: its compact UTF-8 form.
 MAX_LDP_DOCUMENT_BYTES = 256 * 1024
 
 
@@ -137,6 +139,7 @@ def _check_json_ld_form(document: dict[str, Any], proof: dict[str, Any],
 
     It does not bound the size: the verifier has already bounded the
     untrusted input as received (``_parse_document``), and the signer bounds
+    what it signs (``add_data_integrity_proof``, before any JSON-LD work) and
     the text it emits — re-measuring a parsed document here would measure a
     different serialization than either.
     """
@@ -526,6 +529,22 @@ def add_data_integrity_proof(
     if 'proof' in document:
         raise ErrorSigningFile('document already carries a proof; refusing '
                                'to add a second one')
+    try:
+        # Before any JSON-LD processing: the cost of expansion and RDF
+        # conversion grows with the input, and a caller may sign data a third
+        # party supplied. The compact UTF-8 form is the smallest text the
+        # document can be sent as, so a document over the limit even there is
+        # one no verifier accepts (ensure_ascii escapes and spaced separators
+        # would refuse genuine non-ASCII credentials at a third of it).
+        size = len(json.dumps(document, ensure_ascii=False,
+                              separators=(',', ':')).encode('utf-8'))
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise ErrorSigningFile(
+            'credential document is not plain JSON: %s' % exc) from exc
+    if size > MAX_LDP_DOCUMENT_BYTES:
+        raise ErrorSigningFile(
+            'credential document is %d bytes, over the %d-byte limit'
+            % (size, MAX_LDP_DOCUMENT_BYTES))
     if not isinstance(verification_method, str) or not verification_method:
         raise ErrorSigningFile('a proof needs a verificationMethod URL')
 
