@@ -91,7 +91,10 @@ from .verifier import (OB3VerificationError, _check_recipient,
 #: MAX_CANON_SECONDS), and the duplicate checks of the JSON-LD to RDF
 #: conversion by MAX_NODE_MAP_PAIRS. The verifier measures the document as
 #: received; add_data_integrity_proof, which has no "as received", measures
-#: its compact UTF-8 form.
+#: its compact UTF-8 form. The ecdsa-sd-2023 suite is delegated to openvc-core,
+#: whose own work no budget here bounds; what is screened before it runs is
+#: the poison-graph work and the number of statements (MAX_DELEGATED_QUADS),
+#: see _prescreen_canonicalization.
 MAX_LDP_DOCUMENT_BYTES = 256 * 1024
 
 
@@ -987,7 +990,9 @@ class OB3LdpVerifier:
         # total size (_context_validation) and counted once more by the
         # screen. (RDF canonicalization, which verify_data_integrity_proof
         # runs below, is NOT near-linear: it has its own work budget,
-        # _canon_guard.py.)
+        # _canon_guard.py. The delegated ecdsa-sd-2023 suite is only screened
+        # with it, and its own cost in the number of statements by
+        # MAX_DELEGATED_QUADS.)
         _check_json_ld_form(doc, proof, document_loader())
 
         try:
