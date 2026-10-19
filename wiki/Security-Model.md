@@ -61,7 +61,7 @@ if u.scheme != 'https':
         raise ValueError('Refusing to download ... HTTPS is required ...')
 ```
 
-TLS certificate validation is on (urllib's default context), downloads time out after 30 seconds, and plain HTTP is only ever used if a caller explicitly passes `allow_insecure=True`. A redirect to a non-HTTPS target is also rejected — an HTTPS URL can't be silently downgraded via a 302 — and the response body is capped at 5 MiB to bound memory use against an oversized or attacker-influenced response. Both HTTPS and (when `allow_insecure=True`) HTTP connections resolve the host, SSRF-validate the addresses, and dial the validated IP so a DNS rebinding window cannot steer the socket at connect time.
+TLS certificate validation is on (urllib's default context), downloads time out after 30 seconds per network operation and after 60 seconds in all, and plain HTTP is only ever used if a caller explicitly passes `allow_insecure=True`. A redirect to a non-HTTPS target is also rejected — an HTTPS URL can't be silently downgraded via a 302 — and the response body is capped at 5 MiB to bound memory use against an oversized or attacker-influenced response. Both HTTPS and (when `allow_insecure=True`) HTTP connections resolve the host, SSRF-validate the addresses, and dial the validated IP so a DNS rebinding window cannot steer the socket at connect time. The 60-second budget (`MAX_DOWNLOAD_SECONDS`) is spent by every recv of the response — status line, headers and body, across redirects — so a server that sends a byte every few seconds cannot hold a verifier (and the did:web, status-list and OB1/OB2 fetches that call it) open past it; connecting, the TLS handshake and DNS resolution are bounded per operation only.
 
 ### defusedxml for SVG (billion-laughs)
 
@@ -85,6 +85,12 @@ MAX_ITXT_DECOMPRESSED = 256 * 1024
 ```
 
 The iTXt structure is parsed properly (keyword, compression flag/method, language tag, translated keyword, then text) instead of trusting a fixed byte offset, so a malformed chunk is rejected rather than misread.
+
+### Bounded parsing of untrusted JSON
+
+`json.loads` accepts more than anything after it survives: nesting to the interpreter's limit (about 1,000 levels before Python 3.14, a C-stack budget of roughly 100,000 after it, so a 3.6 KB token is enough on 3.10), a lone surrogate written as an ASCII `\ud800` escape (a `str` that cannot be encoded to UTF-8), and a number outside a float's range (`1e999` is `Infinity`; `Infinity` and `NaN` are not JSON but Python's parser takes them). Left alone, each turned a token that parsed into a bare `RecursionError`, `UnicodeEncodeError` or `OverflowError` at the next `repr()`, `copy.deepcopy`, UTF-8 encode or `int()`, out of a `verify()` that promises a typed failure, before any signature was looked at.
+
+Everything the verifiers parse on behalf of an attacker goes through one bound instead (`openbadgeslib/_safejson.py`): a JWS header or payload, an OB1 body, the badge, issuer, key, revocation and status-list documents a remote host serves, the did:web document, a Data Integrity document, and the header and payload PyJWT hands back. More than 128 levels of nesting, a lone surrogate (in a key or a value) and a non-finite number are refused as a `ValueError`, which each caller maps to its own error (`SignatureError`, `OB2VerificationError`, `OB3VerificationError`, `AssertionFormatIncorrect`, a failed `VerifyResult`). Nothing legitimate nests that deep (a badge is a handful of levels, and the embedded-endorsement limit above keeps even a chain of them well inside) or carries those values. The messages never quote the value, since formatting it was what failed.
 
 ## Validity beyond the signature
 
