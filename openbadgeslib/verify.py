@@ -42,6 +42,9 @@
 from dataclasses import dataclass, field
 from typing import Any, List, Optional, Union
 
+from ._safejson import check as check_json
+from ._safejson import loads as loads_untrusted
+
 _PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 
 
@@ -135,7 +138,12 @@ def issuer_did_from_token(token: str) -> str:
     from .ob3 import OB3VerificationError
     try:
         payload = jwt.decode(token, options={'verify_signature': False})
-    except jwt.exceptions.PyJWTError as exc:
+        check_json(payload)
+    except (jwt.exceptions.PyJWTError, ValueError, RecursionError) as exc:
+        # ValueError: a str token PyJWT cannot encode (a lone surrogate), and
+        # UntrustedJSONError -- a payload nested too deeply to be formatted
+        # into the messages below, or holding a lone surrogate / a number that
+        # is not finite.
         raise OB3VerificationError('could not read token issuer: %s' % exc) from exc
     iss = payload.get('iss')
     if not iss:
@@ -152,10 +160,9 @@ def issuer_did_from_token(token: str) -> str:
 def issuer_did_from_document(document: str) -> str:
     """Read the issuer DID from an unverified Data Integrity credential — the
     LDP counterpart of :func:`issuer_did_from_token`, same trust caveat."""
-    import json
     from .ob3 import OB3VerificationError
     try:
-        doc = json.loads(document)
+        doc = loads_untrusted(document)
     except (ValueError, RecursionError) as exc:
         # RecursionError: a document nested deeper than the parser recurses
         # (untrusted input) fails like any other unreadable one.

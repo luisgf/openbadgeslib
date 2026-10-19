@@ -20,6 +20,7 @@
         License along with this library.
 """
 
+import math
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -702,7 +703,13 @@ def _float_or_none(value: Any) -> Optional[float]:
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return float(value)
+        try:
+            number = float(value)
+        except OverflowError as exc:       # an integer of 400 digits
+            raise ValueError("number out of range: %s" % exc) from exc
+        if not math.isfinite(number):
+            raise ValueError("number is not finite")
+        return number
     return None
 
 

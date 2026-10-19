@@ -44,6 +44,27 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     credential `validFrom`/`validUntil` and a proof's `created`/`expires`
     get the same typed failure.
 
+  - security(ob3): a hostile JWT-VC is an OB3VerificationError, whatever its
+    header or payload carries. PyJWT's own header checks (a non-string `kid`,
+    an invalid `crit`) raise InvalidTokenError, DecodeError's parent, which
+    `OB3Verifier.verify`, `verify_endorsement_jwt`, the status-list proof check
+    and `verify_badge` did not catch (the CLI printed a traceback); a str token
+    holding a lone surrogate raised UnicodeEncodeError; a signed payload
+    (self-signed by the attacker's did:key) with `creditsAvailable` or
+    `creditsEarned` of 400 digits raised OverflowError, and one with a
+    `credentialStatus` `statusListIndex` or `statusSize` of `Infinity` (`1e999`)
+    raised OverflowError in `check_credential_status`. On Python 3.14 and
+    later a header or payload value nested between what the parser takes
+    (about 116 000 levels) and what `repr()` takes (about 70 000) turned a
+    parsed token into a RecursionError the moment an error message formatted
+    it. The header and the payload PyJWT returns are now held to the shared
+    bound (_safejson: 128 levels, no lone surrogate, no non-finite number)
+    before anything reads them, `issuer_did_from_token` and
+    `issuer_did_from_document` likewise, the status list document and the
+    did:web document go through the bounded loader, and a number outside the
+    range of a float is a malformed credential. `creditsAvailable: Infinity`,
+    which used to verify, no longer does.
+
 * v4.6.2 - 2026-10-16
 
   - security(deps): the openvc-core floor of `[eudi]`, `[ldp-sd]` and

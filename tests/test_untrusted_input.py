@@ -297,3 +297,194 @@ class TestOB2RemoteKey:
         verifier = OB2Verifier(download=lambda url: json.dumps(key_doc).encode())
         with pytest.raises(OB2VerificationError, match='not valid JSON'):
             verifier.verify(token)
+
+
+# ── OB3 JWT-VC ───────────────────────────────────────────────────────────────
+
+@pytest.fixture()
+def did_key_signer(ed25519_keypair):
+    """An Ed25519 signer bound to its own did:key: the self-asserted issuer
+    --resolve-did accepts, so the attacker needs no trust to sign a payload."""
+    from openbadgeslib.ob3 import OB3Signer
+    from openbadgeslib.ob3.did import did_key_from_pem
+    priv, pub = ed25519_keypair
+    return OB3Signer(privkey_pem=priv, algorithm='EdDSA'), did_key_from_pem(pub)
+
+
+def _did_credential(did, **kwargs):
+    from openbadgeslib.ob3 import Achievement, Issuer, OpenBadgeCredential
+    return OpenBadgeCredential(
+        id='urn:uuid:00000000-0000-0000-0000-0000000000c3',
+        issuer=Issuer(id=did, name='Self'),
+        recipient_id='mailto:r@example.com',
+        achievement=Achievement(id='https://a.example/1', name='A',
+                                description='d', criteria_narrative='c'),
+        **kwargs)
+
+
+def _signed_jwt(signer, did, mutate=None) -> str:
+    payload = _did_credential(did).to_jwt_payload()
+    if mutate is not None:
+        mutate(payload)
+    return signer.sign_payload(payload)
+
+
+class TestOB3JwtHeader:
+    """F4: PyJWT raises InvalidTokenError (DecodeError's parent) for a header
+    it validates -- a non-string kid, an invalid crit -- and the verifier only
+    caught DecodeError."""
+
+    @pytest.mark.parametrize('header', [
+        {'alg': 'EdDSA', 'kid': 5},
+        {'alg': 'EdDSA', 'crit': 5},
+        {'alg': 'EdDSA', 'crit': []},
+    ], ids=['kid-5', 'crit-5', 'crit-empty'])
+    def test_header_pyjwt_rejects(self, ed25519_pub_pem, header):
+        from openbadgeslib.ob3 import OB3VerificationError, OB3Verifier
+        token = _unsigned_token(header, {'a': 1})
+        with pytest.raises(OB3VerificationError):
+            OB3Verifier(ed25519_pub_pem).verify(token)
+
+    def test_verify_endorsement_jwt(self, ed25519_pub_pem):
+        from openbadgeslib.ob3 import OB3VerificationError
+        from openbadgeslib.ob3.verifier import verify_endorsement_jwt
+        token = _unsigned_token({'alg': 'EdDSA', 'kid': 5}, {'a': 1})
+        with pytest.raises(OB3VerificationError):
+            verify_endorsement_jwt(token, endorser_pubkey_pem=ed25519_pub_pem)
+
+    def test_verify_badge_reports_it_as_invalid(self, ed25519_pub_pem):
+        from openbadgeslib.verify import verify_badge
+        svg = (TESTS_DIR / 'withoutxmlheader.svg').read_bytes()
+        token = _unsigned_token({'alg': 'EdDSA', 'kid': 5}, {'a': 1})
+        data = baking.bake_svg(svg, token, element=baking.SVG_ELEMENT_OB3,
+                               namespace=baking.SVG_NS_OB3)
+        result = verify_badge(data, '3', pubkey_pem=ed25519_pub_pem)
+        assert result.valid is False
+
+    def test_a_status_list_with_such_a_header(self, ed25519_pub_pem):
+        """The status list's own JWT goes through the same decode."""
+        from openbadgeslib.ob3.status import _verify_list_proof
+        from openbadgeslib.ob3 import OB3VerificationError
+        token = _unsigned_token({'alg': 'EdDSA', 'kid': 5}, {'a': 1})
+        with pytest.raises(OB3VerificationError, match='proof is invalid'):
+            _verify_list_proof(token.encode(), {'issuer': 'did:x'}, 'https://l/1',
+                               'did:x', lambda url: b'', ed25519_pub_pem)
+
+    def test_a_str_token_with_a_lone_surrogate(self, ed25519_pub_pem):
+        """F15: PyJWT encodes a str token to UTF-8 and raised UnicodeEncodeError."""
+        from openbadgeslib.ob3 import OB3VerificationError, OB3Verifier
+        from openbadgeslib.ob3.verifier import verify_endorsement_jwt
+        from openbadgeslib.verify import issuer_did_from_token
+        with pytest.raises(OB3VerificationError):
+            OB3Verifier(ed25519_pub_pem).verify('\ud800.e30.e30')
+        with pytest.raises(OB3VerificationError):
+            verify_endorsement_jwt('\ud800.e30.e30',
+                                   endorser_pubkey_pem=ed25519_pub_pem)
+        with pytest.raises(OB3VerificationError):
+            issuer_did_from_token('\ud800.e30.e30')
+
+
+class TestOB3JwtNesting:
+    """F10: on Python 3.14 json.loads takes about 116 000 levels, repr() about
+    70 000: a value nested between is parsed and then turns into a
+    RecursionError the moment an error message formats it."""
+
+    @pytest.mark.parametrize('depth', [5000, 100000])
+    def test_alg_nested_in_the_header(self, ed25519_pub_pem, depth):
+        from openbadgeslib.ob3 import OB3VerificationError, OB3Verifier
+        header = b'{"alg":' + _nested(depth).encode() + b'}'
+        with pytest.raises(OB3VerificationError):
+            OB3Verifier(ed25519_pub_pem).verify(_unsigned_token(header, {'a': 1}))
+
+    @pytest.mark.parametrize('depth', [5000, 100000])
+    def test_issuer_nested_in_the_unverified_payload(self, depth):
+        from openbadgeslib.ob3 import OB3VerificationError
+        from openbadgeslib.verify import issuer_did_from_token
+        payload = b'{"iss":' + _nested(depth).encode() + b'}'
+        with pytest.raises(OB3VerificationError):
+            issuer_did_from_token(_unsigned_token({'alg': 'EdDSA'}, payload))
+
+    @pytest.mark.parametrize('depth', [5000, 100000])
+    def test_endorsement_with_a_nested_issuer(self, ed25519_pub_pem, depth):
+        from openbadgeslib.ob3 import OB3VerificationError
+        from openbadgeslib.ob3.verifier import verify_endorsement_jwt
+        payload = b'{"issuer":' + _nested(depth).encode() + b'}'
+        with pytest.raises(OB3VerificationError):
+            verify_endorsement_jwt(_unsigned_token({'alg': 'EdDSA'}, payload),
+                                   endorser_pubkey_pem=ed25519_pub_pem)
+
+    def test_a_signed_payload_nested_past_the_bound(self, did_key_signer, ed25519_pub_pem):
+        # Signed by a key the attacker holds (a did:key is the presenter's
+        # own): validFrom nested past the bound must not reach the model.
+        from openbadgeslib.ob3 import OB3VerificationError, OB3Verifier
+        signer, did = did_key_signer
+        deep = []
+        for _ in range(200):
+            deep = [deep]
+        token = _signed_jwt(signer, did, lambda p: p.update(validFrom=deep))
+        with pytest.raises(OB3VerificationError, match='nested more than'):
+            OB3Verifier(ed25519_pub_pem).verify(token)
+
+
+class TestOB3Numbers:
+    """F8/F9/F14: a number the payload carries that no float or int can hold."""
+
+    @staticmethod
+    def _achievement(payload):
+        return payload['credentialSubject']['achievement']
+
+    @pytest.mark.parametrize('field', ['creditsAvailable', 'creditsEarned'])
+    def test_an_integer_past_the_float_range(self, did_key_signer, field):
+        from openbadgeslib.ob3 import OB3VerificationError, OB3Verifier
+        signer, did = did_key_signer
+
+        def mutate(payload):
+            target = (self._achievement(payload) if field == 'creditsAvailable'
+                      else payload['credentialSubject'])
+            target[field] = 10 ** 400
+
+        token = _signed_jwt(signer, did, mutate)
+        with pytest.raises(OB3VerificationError, match='Malformed credential'):
+            OB3Verifier.for_issuer_did(did).verify(token)
+
+    @pytest.mark.parametrize('value', [float('inf'), float('-inf'), float('nan')],
+                             ids=['inf', '-inf', 'nan'])
+    def test_credits_that_are_not_finite(self, did_key_signer, value):
+        from openbadgeslib.ob3 import OB3VerificationError, OB3Verifier
+        signer, did = did_key_signer
+        token = _signed_jwt(
+            signer, did, lambda p: self._achievement(p).update(creditsAvailable=value))
+        with pytest.raises(OB3VerificationError):
+            OB3Verifier.for_issuer_did(did).verify(token)
+
+    def test_model_refuses_a_number_past_the_float_range(self):
+        from openbadgeslib.ob3.credential import _float_or_none
+        with pytest.raises(ValueError, match='out of range'):
+            _float_or_none(10 ** 400)
+        with pytest.raises(ValueError, match='not finite'):
+            _float_or_none(float('inf'))
+        assert _float_or_none(3) == 3.0 and _float_or_none(True) is None
+        assert _float_or_none('3') is None and _float_or_none(2.5) == 2.5
+
+    @pytest.mark.parametrize('field', ['statusListIndex', 'statusSize'])
+    @pytest.mark.parametrize('value', [float('inf'), float('-inf')])
+    def test_a_status_entry_with_an_infinite_number(self, field, value):
+        from openbadgeslib.ob3 import OB3VerificationError, check_credential_status
+        entry = {'id': 'https://l.example/1#0', 'type': 'BitstringStatusListEntry',
+                 'statusPurpose': 'revocation', 'statusListIndex': '0',
+                 'statusListCredential': 'https://l.example/1'}
+        entry[field] = value
+        credential = _did_credential('did:key:z6Mk', credential_status=[entry])
+        with pytest.raises(OB3VerificationError, match='invalid status'):
+            check_credential_status(credential, download=lambda url: b'{}')
+
+    def test_signed_status_index_of_infinity(self, did_key_signer):
+        from openbadgeslib.ob3 import OB3VerificationError, OB3Verifier
+        signer, did = did_key_signer
+        entry = {'id': 'https://l.example/1#0', 'type': 'BitstringStatusListEntry',
+                 'statusPurpose': 'revocation', 'statusListIndex': float('inf'),
+                 'statusListCredential': 'https://l.example/1'}
+        token = _signed_jwt(signer, did, lambda p: p.update(credentialStatus=entry))
+        with pytest.raises(OB3VerificationError):
+            OB3Verifier.for_issuer_did(did).verify(token, check_status=True,
+                                                   download=lambda url: b'{}')

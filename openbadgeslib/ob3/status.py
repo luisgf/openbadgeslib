@@ -35,7 +35,6 @@
 # verify the list's JWT-VC proof and bind its issuer to the badge's, closing
 # the gap where a compromised status host could silently un-revoke.
 
-import json
 import zlib
 
 from datetime import datetime, timezone
@@ -44,6 +43,7 @@ from typing import Any, Callable, List, Optional, Union
 from .credential import OpenBadgeCredential, _parse_iso
 from .verifier import OB3VerificationError
 from .._jws.utils import base64url_decode
+from .._safejson import loads as loads_untrusted
 from ..util import CLOCK_SKEW_LEEWAY, download_file
 
 _SUPPORTED_ENTRY_TYPES = {"BitstringStatusListEntry", "StatusList2021Entry"}
@@ -95,7 +95,8 @@ def _reject_multibit_status_size(raw_size: Any, where: str) -> None:
         return
     try:
         size = int(raw_size)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError: statusSize Infinity (1e999 parses to inf)
         raise OB3VerificationError(
             "invalid statusSize in %s: %r" % (where, raw_size))
     if size != 1:
@@ -196,7 +197,7 @@ def _as_list(value: Any) -> List[Any]:
 def _parse_index(value: Any) -> int:
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise OB3VerificationError("invalid statusListIndex: %r" % (value,)) from None
 
 
@@ -206,13 +207,13 @@ def _status_list_document(raw: bytes) -> dict[str, Any]:
     text = raw.decode('utf-8').strip()
 
     if text.startswith('{'):
-        doc = json.loads(text)
+        doc = loads_untrusted(text)
         # A JWT payload wrapper ({"vc": {...}}) or a bare VC document.
         if isinstance(doc, dict) and "credentialSubject" not in doc \
                 and isinstance(doc.get("vc"), dict):
             doc = doc["vc"]
     elif text.count('.') == 2:                       # compact JWS: h.p.s
-        payload = json.loads(base64url_decode(text.split('.')[1]))
+        payload = loads_untrusted(base64url_decode(text.split('.')[1]))
         doc = payload.get("vc", payload)
     else:
         raise OB3VerificationError("status list is neither JSON nor a JWT")

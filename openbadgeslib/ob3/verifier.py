@@ -21,17 +21,20 @@
 """
 
 from datetime import datetime, timezone
-from typing import Any, Optional, Union
+from typing import Any, Optional, TypeVar, Union
 
 import jwt
 import jwt.exceptions
 
 from .credential import OpenBadgeCredential, _parse_iso
+from .._safejson import UntrustedJSONError, check as _check_json
 from ..errors import ErrorParsingFile, UnknownKeyType, LibOpenBadgesException
 from ..keys import KeyType, detect_key_type, key_to_pem
 from ..util import (CLOCK_SKEW_LEEWAY, normalize_recipient_id,
                     recipient_ids_match)
 from .. import baking
+
+_T = TypeVar("_T")
 
 # Signature algorithms accepted per key family. The signer only ever emits the
 # 256-bit variant, but we accept the whole family for interop while still
@@ -67,6 +70,18 @@ class OB3VerificationError(LibOpenBadgesException):
     Inherits from LibOpenBadgesException so callers can catch every library
     error (OB2 and OB3) with a single ``except``.
     """
+
+
+def _checked(value: _T, what: str) -> _T:
+    """Return *value* (a JWT header or payload PyJWT parsed) unless it is
+    nested too deeply, holds a lone surrogate or a number that is not finite:
+    the parser took it, but the error messages, the credential model and the
+    callers' own code format and re-encode it (see _safejson)."""
+    try:
+        _check_json(value)
+    except UntrustedJSONError as exc:
+        raise OB3VerificationError("%s: %s" % (what, exc)) from exc
+    return value
 
 
 def _check_vc_types(vc: dict[str, Any]) -> None:
@@ -327,8 +342,12 @@ class OB3Verifier:
                 "OB3LdpVerifier (requires: pip install openbadgeslib[ldp])")
         try:
             header = jwt.get_unverified_header(token)
-        except jwt.exceptions.DecodeError as exc:
+        except (jwt.exceptions.InvalidTokenError, ValueError, RecursionError) as exc:
+            # InvalidTokenError is DecodeError's parent: PyJWT's header checks
+            # (a non-string kid, an invalid crit) raise it directly. ValueError
+            # covers a str token that is not UTF-8 encodable (a lone surrogate).
             raise OB3VerificationError(f"Invalid JWT: {exc}") from exc
+        _checked(header, "Invalid JWT header")
 
         pubkey_pem, allowed_algorithms = self._key_for_token(header)
 
@@ -340,7 +359,7 @@ class OB3Verifier:
             )
 
         try:
-            return jwt.decode(
+            payload = jwt.decode(
                 token,
                 pubkey_pem,
                 algorithms=allowed_algorithms,
@@ -354,6 +373,9 @@ class OB3Verifier:
             raise OB3VerificationError(f"Invalid key for algorithm {alg!r}: {exc}") from exc
         except jwt.exceptions.InvalidTokenError as exc:
             raise OB3VerificationError(str(exc)) from exc
+        # The payload is signed, but by a key the attacker may hold (a did:key
+        # is the presenter's own), so it is as untrusted as the header.
+        return _checked(payload, "Invalid JWT payload")
 
     @staticmethod
     def _build_credential(payload: dict[str, Any]) -> OpenBadgeCredential:
@@ -372,7 +394,7 @@ class OB3Verifier:
 
         try:
             credential = OpenBadgeCredential.from_jwt_payload(payload)
-        except (KeyError, ValueError, TypeError) as exc:
+        except (KeyError, ValueError, TypeError, OverflowError) as exc:
             raise OB3VerificationError(f"Malformed credential payload: {exc}") from exc
 
         # OB3 §8.2.6.1: iss and nbf are REQUIRED registered claims, and iss MUST
@@ -413,11 +435,11 @@ class OB3Verifier:
         malformed token."""
         try:
             payload = jwt.decode(token, options={"verify_signature": False})
-        except jwt.exceptions.DecodeError as exc:
+        except (jwt.exceptions.InvalidTokenError, ValueError, RecursionError) as exc:
             raise OB3VerificationError("malformed JWT: %s" % exc) from exc
         if not isinstance(payload, dict):
             raise OB3VerificationError("JWT payload is not an object")
-        return payload
+        return _checked(payload, "malformed JWT")
 
     @staticmethod
     def extract_token_from_svg(svg_bytes: bytes) -> str:

@@ -47,6 +47,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from jwt.algorithms import OKPAlgorithm, ECAlgorithm, RSAAlgorithm
 
 from .verifier import OB3VerificationError
+from .._safejson import loads as _loads_untrusted
+from .._safejson import nested_deeper_than as _nested_deeper_than
 from ..util import download_file
 
 # multicodec codes (unsigned varint) for the public key types we accept.
@@ -257,10 +259,12 @@ def _fetch_did_web_document(did: str, fetch: Any) -> dict[str, Any]:
         raise OB3VerificationError(
             "could not fetch DID document %s: %s" % (url, exc)) from exc
     try:
-        doc = json.loads(raw.decode('utf-8'))
+        doc = _loads_untrusted(raw)
     except (ValueError, UnicodeDecodeError, RecursionError) as exc:
-        # RecursionError: the host serves a document nested deeper than the
-        # parser recurses, which is untrusted input like any other malformed one.
+        # The host serves what it likes: a document nested deeper than the
+        # parser recurses (or than _safejson allows), holding a lone surrogate
+        # or a number that is not finite, is untrusted input like any other
+        # malformed one.
         raise OB3VerificationError(
             "malformed DID document at %s: %s" % (url, exc)) from exc
     if not isinstance(doc, dict):
@@ -278,24 +282,6 @@ def _fetch_did_web_document(did: str, fetch: Any) -> dict[str, Any]:
 #: the recursion limit), and the host serving it is the one party the verifier
 #: does not control.
 MAX_DID_DOCUMENT_DEPTH = 64
-
-
-def _nested_deeper_than(value: Any, limit: int) -> bool:
-    """True if *value* (parsed JSON) has containers nested more than *limit*
-    deep. Iterative: the point is to survive input a recursive walk would not."""
-    stack: list[Tuple[Any, int]] = [(value, 1)]
-    while stack:
-        node, depth = stack.pop()
-        if isinstance(node, dict):
-            children: Any = node.values()
-        elif isinstance(node, list):
-            children = node
-        else:
-            continue
-        if depth > limit:
-            return True
-        stack.extend((child, depth + 1) for child in children)
-    return False
 
 
 def fetch_did_web_document(did: str, download: Any = None) -> dict[str, Any]:
@@ -507,9 +493,9 @@ def _pem_from_vm(vm: Any) -> bytes:
 
 def _jwk_to_pem(jwk: dict[str, Any]) -> bytes:
     kty = jwk.get('kty')
-    jwk_json = json.dumps(jwk)
     key: Any
     try:
+        jwk_json = json.dumps(jwk)
         if kty == 'OKP':
             key = OKPAlgorithm.from_jwk(jwk_json)
         elif kty == 'EC':
