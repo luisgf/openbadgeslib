@@ -153,7 +153,8 @@ def test_docs_cryptography_floor_matches_pyproject():
     match = re.search(r'"cryptography>=(\d+)"', pyproject)
     assert match, 'could not find cryptography floor in pyproject.toml'
     floor = match.group(1)
-    for path in (REPO / 'README.md', WIKI / 'Installation.md'):
+    for path in (REPO / 'README.md', WIKI / 'Installation.md',
+                 REPO / 'environment.yml'):
         compact = path.read_text(encoding='utf-8').replace(' ', '')
         assert ('>=%s' % floor) in compact, \
             '%s does not document cryptography>=%s' % (path.name, floor)

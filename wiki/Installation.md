@@ -13,8 +13,10 @@ These are resolved automatically when you install via pip:
 | --- | --- | --- |
 | `pypng` | `>=0.20220715.0` | PNG image manipulation |
 | `PyJWT[crypto]` | `>=2.15.1` | JWS / JWT-VC signing and verification (pulls in `cryptography`; security floor) |
-| `cryptography` | `>=45` | All key generation, PEM handling and signing (RSA, ECC, Ed25519) |
+| `cryptography` | `>=50` | All key generation, PEM handling and signing (RSA, ECC, Ed25519); security floor, see the note below |
 | `defusedxml` | `>=0.7` | Hardened XML parsing of untrusted SVG badges |
+
+> **The `cryptography` floor is a security floor.** 45.0.0, the release the old `>=45` named, is yanked on PyPI, and every release before 50.0.0 has a known advisory. One of them (CVE-2026-69249, path building that explodes over duplicate self-signed intermediates) is reachable: `verify_badge_sd_jwt(x5c_trust_anchors=…)` builds the path over the `x5c` chain of the untrusted badge, so a hostile one stalls the verifier for tens of seconds before 50.0.0. From 49.0.0 `cryptography` publishes no wheel for macOS x86_64 or 32-bit Windows; on those pip builds it from source, which needs a Rust toolchain. The weekly Audit workflow installs the declared floors and scans them, so the floor cannot go stale unnoticed.
 
 ### Python 3.10 deprecation
 

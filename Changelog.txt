@@ -111,6 +111,32 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     always documented. Connecting, the TLS handshake and DNS resolution are
     still bounded per operation (30 seconds), not by the budget.
 
+  - security(deps): the `cryptography` floor rises from 45 to 50.
+    `cryptography>=45` named 45.0.0, which is yanked on PyPI, and every
+    release before 50.0.0 carries a known advisory (CVE-2026-26007,
+    CVE-2026-34073, CVE-2026-39892, CVE-2026-69247, CVE-2026-69248,
+    CVE-2026-69249 and, in the OpenSSL bundled in the wheels,
+    GHSA-537c-gmf6-5ccf), so an install that lands on the floor (a lockfile
+    built with the lowest versions, a constraints file, a pinned image) got a
+    package a scanner flags. The weekly scan never saw it: it audits what a
+    fresh install resolves, which is the newest release. One advisory is
+    reachable from this library: CVE-2026-69249, fixed in 49.0.0, makes path
+    building exponential over duplicate self-signed intermediates, and
+    `verify_badge_sd_jwt(x5c_trust_anchors=…)` builds the path over the `x5c`
+    chain of the untrusted badge before it checks the signature. A 4 KB token
+    with six chain entries stalled the call for over 45 s on 45.0.0 and takes
+    0.1 s on 50.0.0; there is no integrity impact, and the default
+    `pubkey_pem` path never builds a path. The others are not reachable here:
+    openvc-core validates with the client verifier and no peer name and binds
+    the issuer by exact SAN match, a SECT key parses but every verifier
+    refuses it before it operates, and nothing calls the PKCS#7 decryption or
+    passes a non-contiguous buffer. 50.0.0 rather than 49.0.0 because it is
+    the first release with nothing to report, so the floor itself audits
+    clean. Installing with `--only-binary` needs a wheel: 49.0.0 and later
+    publish none for macOS x86_64 or 32-bit Windows (an Intel Mac already
+    resolved to 50.x and built it with Rust), so those platforms need a Rust
+    toolchain or a 64-bit Python. Upgrade with `pip install -U cryptography`.
+
 * v4.6.2 - 2026-10-16
 
   - security(deps): the openvc-core floor of `[eudi]`, `[ldp-sd]` and

@@ -20,7 +20,7 @@ dependencies:
   # (GHSA-hxm8-2xgr-2p9m) are on a reachable path. 2.15.1 is the tested
   # release; pyproject.toml explains the choice over 2.15.0.
   - pyjwt>=2.15.1
-  - cryptography>=45    # required by pyjwt[crypto]; openvc-core's core pin too
+  - cryptography>=50    # required by pyjwt[crypto]; a security floor, see pyproject.toml
   - defusedxml>=0.7     # hardened XML parsing of untrusted SVG badges
 
   # Development / testing

@@ -92,7 +92,7 @@ all three OB versions.
   ([#242](https://github.com/luisgf/openbadgeslib/issues/242)).
 - [pypng](https://pypi.org/project/pypng/) >= 0.20220715.0
 - [PyJWT[crypto]](https://pypi.org/project/PyJWT/) >= 2.15.1
-- [cryptography](https://pypi.org/project/cryptography/) >= 45
+- [cryptography](https://pypi.org/project/cryptography/) >= 50
 - [defusedxml](https://pypi.org/project/defusedxml/) >= 0.7
 
 ## Installation

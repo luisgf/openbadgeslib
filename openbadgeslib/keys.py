@@ -40,10 +40,11 @@ from enum import Enum
 
 # What a failed PEM load raises depends on the `cryptography` version: up to v46
 # an unsupported key algorithm came back as ValueError; **v47 changed the
-# contract** to UnsupportedAlgorithm (which is NOT a ValueError). Our floor
-# spans that change, so both are caught in one place and mapped onto the
-# library's own taxonomy — a caller must never have to know which cryptography
-# it resolved, and a raw crypto exception must never escape as a traceback.
+# contract** to UnsupportedAlgorithm (which is NOT a ValueError). The floor (50)
+# is past that change, but both stay caught in one place and mapped onto the
+# library's own taxonomy (#244) — a caller must never have to know which
+# cryptography it resolved, and a raw crypto exception must never escape as a
+# traceback.
 _PEM_LOAD_ERRORS = (ValueError, TypeError, UnsupportedAlgorithm)
 
 

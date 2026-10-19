@@ -72,13 +72,47 @@ dependencies = [
     # PyJWKClient one (it is not used). The native _jws engine never calls
     # jwt.decode, but the OB3 path does.
     "PyJWT[crypto]>=2.15.1",
-    # Floor at 45, openvc-core's own core pin — so an install that takes the
-    # [eudi]/[ldp-sd] extras resolves one range, not two. It is deliberately
-    # BELOW cryptography 47, where loading a key of an unsupported algorithm
-    # started raising UnsupportedAlgorithm instead of ValueError: 47 is recent
-    # (2026-04) and pinning it would buy nothing, because keys.py handles both
-    # exception contracts in one place and tests both (#244).
-    "cryptography>=45",
+    # Floor at 50.0.0, the first release with no known advisory. The old floor,
+    # 45, named 45.0.0, which is yanked on PyPI, and every release before 50.0.0
+    # carries at least one advisory that a scan of the floor reports (the audit
+    # workflow's declared-floors job). Fixed in:
+    #   * 46.0.5: CVE-2026-26007 (no subgroup check for SECT curves);
+    #   * 46.0.6: CVE-2026-34073 (DNS name constraints not applied to peer names);
+    #   * 46.0.7: CVE-2026-39892 (non-contiguous buffers overflow);
+    #   * 48.0.1: GHSA-537c-gmf6-5ccf (the OpenSSL bundled in the wheels);
+    #   * 49.0.0: CVE-2026-69248 (wildcard SANs escape permittedSubtrees) and
+    #     CVE-2026-69249 (duplicate self-signed intermediates make path
+    #     building exponential);
+    #   * 50.0.0: CVE-2026-69247 (a Bleichenbacher oracle in PKCS#7 decryption).
+    # One of those is reachable. The X.509 path of the [eudi] track
+    # (verify_badge_sd_jwt(x5c_trust_anchors=...), which hands the chain to
+    # openvc-core's PolicyBuilder verifier) builds paths over the `x5c` header of
+    # the untrusted badge, before its signature is checked, so CVE-2026-69249 is
+    # a CPU denial of service: a 4 KB token with six chain entries stalled the
+    # call for over 45 s on 45.0.0 and takes 0.1 s on 50.0.0. No integrity
+    # impact, and a verifier given `pubkey_pem` never builds a path. The rest
+    # are not reachable: openvc-core uses only the client verifier, with no peer
+    # name, and binds the issuer by exact SAN match; the JWS engines and the
+    # verifiers fix the algorithm to P-256/P-384/Ed25519/RSA before a key
+    # operates (a SECT curve parses and is refused); nothing passes a strided
+    # buffer or calls pkcs7_decrypt_*; and the bundled OpenSSL serves none of
+    # the affected APIs (TLS runs on the interpreter's ssl module).
+    # 50.0.0 rather than 49.0.0, which closes the reachable one: it is the first
+    # release a scanner reports nothing for, so the floor can be audited
+    # without an ignore list, and it costs no platform support the other does
+    # not: the wheel matrix changed at 49.0.0, which dropped macOS x86_64 and
+    # 32-bit Windows (an Intel Mac already resolves to 50.x and builds it with
+    # Rust; the floor only removes the cryptography<49 way out). 50.0.0 needs
+    # Python 3.9, so 3.10-3.15 is covered, and nothing above it caps it:
+    # openvc-core asks cryptography>=45 (>=48 for its [pq] extra), PyJWT[crypto] >=3.4.
+    # The distros that ship cryptography 45-49 (Ubuntu 26.04, Fedora 43, Alpine
+    # 3.23/3.24, Debian testing) no longer satisfy it, but none packages
+    # openbadgeslib (Repology lists it on PyPI only), so it is installed with
+    # pip, which has wheels.
+    # keys.py keeps catching both exception contracts for an unsupported key
+    # (ValueError up to 46, UnsupportedAlgorithm from 47, #244); with the floor
+    # past that change the second is the one raised.
+    "cryptography>=50",
     "defusedxml>=0.7",
 ]
 
