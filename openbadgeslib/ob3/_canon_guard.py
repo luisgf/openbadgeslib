@@ -1,106 +1,129 @@
-"""Bounded RDF Dataset Canonicalization (URDNA2015 / RDFC-1.0) for untrusted input.
-
-A Data Integrity proof signs the *canonical* form of the RDF dataset a JSON-LD
-document expands to, so the verifier has to canonicalize the document BEFORE it
-can tell whether the signature is any good: the cost is paid on input nobody
-has authenticated yet. RDFC-1.0 is cheap on every real credential and
-factorial on a "poison graph": groups of blank nodes the first-degree hash
-cannot tell apart (identical siblings, a clique, a symmetric tree, a ring) are
-resolved by trying their permutations, recursively. A 2.6 KB document that
-passes context validation is enough to keep a worker busy for minutes
-(pyld 3.3.0 has no work cap; digitalbazaar/pyld#336 adds one to the unreleased,
-breaking 4.0).
-
-This module bounds that work without touching pyld. :func:`canonize` does what
-``jsonld.normalize`` does (``to_rdf``, then ``URDNA2015.main``) but runs the
-second half with a per-call subclass of pyld's own ``URDNA2015`` that meters
-the one place the cost comes from. Every ``hash_n_degree_quads`` call, the
-recursive ones included, opens with ``create_hash_to_related``; the subclass
-charges the call there and returns each group of equivalent blank nodes wrapped
-in a list that charges one permutation step each time pyld's permutation
-generator rearranges it. Charging is cumulative over the whole check (see
-:class:`WorkBudget`), which is what catches the shapes made of many small
-groups (a ring has none larger than one node), and exhausting the budget raises
-before the next step runs. A group of all-distinct nodes is refused at once
-when its ``size!`` permutations cannot fit what is left, so the obvious shapes
-are rejected in microseconds, not after the budget has been spent.
-
-THE TIME BOUND IS CPU TIME, NOT THE UNIT BUDGET. The unit budget is a model
-of pyld's cost, fitted on one implementation, and it cannot be an
-interpreter-independent bound: CPython 3.11 and 3.12 pay 5 to 10 times more
-per unit for a window of document sizes (a circulant graph of 80 to 160
-nodes, 8 to 15 KB, is the one that was found) that moves with the absolute
-depth of the call stack the canonicalization runs at; 3.10 and 3.13 to 3.15
-do not have it. So the budget also carries a CPU-time allowance for the
-canonicalization proper, read from time.thread_time (this thread's CPU: it
-does not advance while the thread waits for the pyld lock or the GIL, so a
-legitimate request queued behind a hostile one is not charged for the wait,
-and neither is a loaded or paused host, whose legitimate canonicalizations
-cost milliseconds), checked at every Hash N-Degree Quads call and every 64th
-charge, i.e. at least every few hundred microseconds of pyld work. The
-allowance covers only the URDNA2015 phase: the JSON-LD expansion and RDF
-conversion before it are linear in the document, bounded by the document
-size cap and by the duplicate-check allowance below, and a large legitimate
-document must not lose its allowance there.
-
-
-Why this and not the alternatives:
-
-* a process-global patch of ``pyld.canon`` (the module-level ``permutations``,
-  or ``URDNA2015`` itself) would be visible to every thread and to every other
-  library using pyld, including openvc-core: rejected. Everything here is
-  instance state, so concurrent verifications cannot see each other's budget.
-* a static pre-pass over the dataset (largest group of equal first-degree
-  hashes, node count) cannot bound the cost: a ring has no group larger than
-  one and costs ~n^3, and a tree of groups of three costs (3!)^depth.
-* a deadline in a worker thread cannot stop pure-Python code, and a worker
-  process costs ~50 ms per call and fails in frozen / restricted environments.
-  The CPU deadline here is checked from the metering hooks of the very thread
-  that does the work.
-* relying on pyld 4: unreleased and breaking (rdflib), and its cap counts
-  permutations only, not their cost (each copies an issuer as large as the
-  component it is hashing), and counts a repeated element as if it were
-  distinct, where 3.x enumerates it once.
-
-The unit model is empirical (see MAX_CANON_WORK for the measurements). It
-describes pyld 3.3.0's implementation, so the guard fails CLOSED when that
-implementation is not the one it was fitted to: an unsupported pyld major
-version, a missing hook, or a canary canonicalization that does not
-reproduce the known output, does not spend work in the calibrated range or
-does not step through its permutation groups the way pyld 3.3.0 does, all
-raise CanonicalizationGuardUnavailable (surfaced as ``OB3GuardUnavailable``,
-a subclass of ``OB3VerificationError``, by ``ldp._canonize``, so a
-deployment can alert on "the guard is down" apart from "this credential is
-bad"). The message names the pyld it found, what it expected and the
-remedy. It never falls back to an unmetered ``jsonld.normalize``.
-
-The JSON-LD to RDF conversion that precedes canonicalization has a cost of
-its own that no hook can meter: pyld builds each node's property array with a
-linear duplicate check per value, so a node property holding N distinct values
-costs N^2/2 comparisons (8,000 distinct ``tag`` values, 57 KB, spend 12 s),
-N values spread over many occurrences of the same ``@id`` cost the same, and so
-do N node objects that all reverse into one node (``@reverse``: 6,000 children
-spread over 80 parents, about 240 KB, 18 million comparisons and 6 to 11 s).
-:func:`node_map_pairs` counts those comparisons on the expanded document first,
-the way pyld makes them, and :func:`canonize` refuses a document whose count is
-over the allowance of ``MAX_NODE_MAP_PAIRS``, which is shared by the document
-and the proof options of one signature check and is a SUM over every property
-of every node, because pyld's cost is the sum of those quadratics. A value
-repeated is compared once (pyld stops at the first match), so only distinct
-values count towards the square.
-
-pyld's JSON-LD processor keeps process-wide caches (resolved contexts,
-inverse contexts) in plain LRU caches that are not thread-safe: concurrent
-expand / compact / to_rdf calls corrupt them, and a corrupted cache fails
-every later call in the process, signing included. PYLD_LOCK serializes
-every pyld JSON-LD call this library makes on the Data Integrity path. The
-lock is NOT held while URDNA2015 runs (that phase touches no pyld cache), so
-a poison graph burning its CPU allowance does not hold up other threads.
-
-What it does not cover: canonicalization performed by other libraries on the
-same document, notably the ecdsa-sd-2023 suite delegated to openvc-core,
-which calls pyld on its own (outside PYLD_LOCK, and without a work bound).
 """
+        OpenBadges Library
+
+        Copyright (c) 2014-2026, Luis González Fernández, luisgf@luisgf.es
+
+        All rights reserved.
+
+        This library is free software; you can redistribute it and/or
+        modify it under the terms of the GNU Lesser General Public
+        License as published by the Free Software Foundation; either
+        version 3.0 of the License, or (at your option) any later version.
+
+        This library is distributed in the hope that it will be useful,
+        but WITHOUT ANY WARRANTY; without even the implied warranty of
+        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+        Lesser General Public License for more details.
+
+        You should have received a copy of the GNU Lesser General Public
+        License along with this library.
+"""
+
+# Bounded RDF Dataset Canonicalization (URDNA2015 / RDFC-1.0) for untrusted
+# input.
+#
+# A Data Integrity proof signs the *canonical* form of the RDF dataset a
+# JSON-LD document expands to, so the verifier has to canonicalize the document
+# BEFORE it can tell whether the signature is any good: the cost is paid on
+# input nobody has authenticated yet. RDFC-1.0 is cheap on every real
+# credential and factorial on a "poison graph": groups of blank nodes the
+# first-degree hash cannot tell apart (identical siblings, a clique, a
+# symmetric tree, a ring) are resolved by trying their permutations,
+# recursively. A 2.6 KB document that passes context validation (an ``evidence``
+# clique of eight labelled blank nodes) keeps a worker busy for 20 to 25 s on
+# an unpatched pyld 3.3.0, and one more node means minutes; pyld has no work
+# cap (digitalbazaar/pyld#336 adds one to the unreleased, breaking 4.0).
+#
+# This module bounds that work without touching pyld. canonize() does what
+# ``jsonld.normalize`` does (``to_rdf``, then ``URDNA2015.main``) but runs the
+# second half with a per-call subclass of pyld's own ``URDNA2015`` that meters
+# the one place the cost comes from. Every ``hash_n_degree_quads`` call, the
+# recursive ones included, opens with ``create_hash_to_related``; the subclass
+# charges the call there and returns each group of equivalent blank nodes
+# wrapped in a list that charges one permutation step each time pyld's
+# permutation generator rearranges it. Charging is cumulative over the whole
+# check (see WorkBudget), which is what catches the shapes made of many small
+# groups (a ring has none larger than one node), and exhausting the budget
+# raises before the next step runs. A group of all-distinct nodes is refused
+# at once when its ``size!`` permutations cannot fit what is left, so the
+# obvious shapes are rejected in microseconds, not after the budget has been
+# spent.
+#
+# THE TIME BOUND IS CPU TIME, NOT THE UNIT BUDGET. The unit budget is a model
+# of pyld's cost, fitted on one implementation, and it cannot be an
+# interpreter-independent bound: CPython 3.11 and 3.12 pay 5 to 10 times more
+# per unit for a window of document sizes (a circulant graph of 80 to 160
+# nodes, 8 to 15 KB, is the one that was found) that moves with the absolute
+# depth of the call stack the canonicalization runs at; 3.10 and 3.13 to 3.15
+# do not have it. So the budget also carries a CPU-time allowance for the
+# canonicalization proper, read from time.thread_time (this thread's CPU: it
+# does not advance while the thread waits for the pyld lock or the GIL, so a
+# legitimate request queued behind a hostile one is not charged for the wait,
+# and neither is a loaded or paused host, whose legitimate canonicalizations
+# cost milliseconds), checked at every Hash N-Degree Quads call and every 64th
+# charge, i.e. at least every few hundred microseconds of pyld work. The
+# allowance covers only the URDNA2015 phase: the JSON-LD expansion and RDF
+# conversion before it are linear in the document, bounded by the document
+# size cap and by the duplicate-check allowance below, and a large legitimate
+# document must not lose its allowance there.
+#
+# Why this and not the alternatives:
+#
+# * a process-global patch of ``pyld.canon`` (the module-level
+#   ``permutations``, or ``URDNA2015`` itself) would be visible to every thread
+#   and to every other library using pyld, including openvc-core: rejected.
+#   Everything metered here is instance state, so concurrent verifications
+#   cannot see each other's budget.
+# * a static pre-pass over the dataset (largest group of equal first-degree
+#   hashes, node count) cannot bound the cost: a ring has no group larger than
+#   one and costs ~n^3, and a tree of groups of three costs (3!)^depth.
+# * a deadline in a worker thread cannot stop pure-Python code, and a worker
+#   process costs ~50 ms per call and fails in frozen / restricted
+#   environments. The CPU deadline here is checked from the metering hooks of
+#   the very thread that does the work.
+# * relying on pyld 4: unreleased and breaking (rdflib), and its cap counts
+#   permutations only, not their cost (each copies an issuer as large as the
+#   component it is hashing), and counts a repeated element as if it were
+#   distinct, where 3.x enumerates it once.
+#
+# The unit model is empirical (see MAX_CANON_WORK for the measurements). It
+# describes pyld 3.3.0's implementation, so the guard fails CLOSED when that
+# implementation is not the one it was fitted to: an unsupported pyld major
+# version, a missing hook, or a canary canonicalization that does not
+# reproduce the known output, does not spend work in the calibrated range or
+# does not step through its permutation groups the way pyld 3.3.0 does, all
+# raise CanonicalizationGuardUnavailable (surfaced as ``OB3GuardUnavailable``,
+# a subclass of ``OB3VerificationError``, by ``ldp._canonize``, so a
+# deployment can alert on "the guard is down" apart from "this credential is
+# bad"). The message names the pyld it found, what it expected and the
+# remedy. It never falls back to an unmetered ``jsonld.normalize``.
+#
+# The JSON-LD to RDF conversion that precedes canonicalization has a cost of
+# its own that no hook can meter: pyld builds each node's property array with
+# a linear duplicate check per value, so a node property holding N distinct
+# values costs N^2/2 comparisons (8,000 distinct ``tag`` values, 57 KB, spend
+# 12 s), N values spread over many occurrences of the same ``@id`` cost the
+# same, and so do N node objects that all reverse into one node (``@reverse``:
+# 6,000 children spread over 80 parents, about 240 KB, 18 million comparisons
+# and 6 to 11 s). node_map_pairs() counts those comparisons on the expanded
+# document first, the way pyld makes them, and canonize() refuses a document
+# whose count is over the allowance of MAX_NODE_MAP_PAIRS, which is shared by
+# the document and the proof options of one signature check and is a SUM over
+# every property of every node, because pyld's cost is the sum of those
+# quadratics. A value repeated is compared once (pyld stops at the first
+# match), so only distinct values count towards the square.
+#
+# pyld's JSON-LD processor keeps process-wide caches (resolved contexts,
+# inverse contexts) in plain LRU caches that are not thread-safe: concurrent
+# expand / compact / to_rdf calls corrupt them, and a corrupted cache fails
+# every later call in the process, signing included. PYLD_LOCK serializes
+# every pyld JSON-LD call this library makes on the Data Integrity path. The
+# lock is NOT held while URDNA2015 runs (that phase touches no pyld cache), so
+# a poison graph burning its CPU allowance does not hold up other threads.
+#
+# What it does not cover: canonicalization performed by other libraries on the
+# same document, notably the ecdsa-sd-2023 suite delegated to openvc-core,
+# which calls pyld on its own (outside PYLD_LOCK, and without a work bound).
 import functools
 import math
 import os
