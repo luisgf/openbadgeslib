@@ -407,26 +407,54 @@ def _p256_pem_to_jwk(pubkey_pem: bytes) -> dict[str, str]:
             'x': _b64u(numbers.x), 'y': _b64u(numbers.y)}
 
 
+#: Most statements (canonical N-Quads lines) the credential a derived
+#: ecdsa-sd-2023 proof is presented with may hold. openvc-core 1.35 and 1.36
+#: round-trip the dataset through N-Quads text to canonicalize it, and pyld
+#: checks every statement it parses against all the earlier ones, so that
+#: part costs about 1.2e-7 s * statements**2 of CPU on CPython 3.12-3.15 and
+#: 1.7e-7 on 3.10, before the signature is looked at and with no blank node
+#: involved. Measured on an Apple-silicon laptop (openvc-core alone, 3.10 /
+#: 3.12 / 3.13 / 3.14 / 3.15): 2,525 statements cost 1.04 / 0.63 / 0.76 /
+#: 0.81 / 0.67 s, and 12,000 about 14 s on 3.14. A presentation carries the
+#: statements the holder chose to disclose: the repository's fixtures hold 28
+#: to 273, a credential with 100 alignments and 100 pieces of evidence holds
+#: 1,428. 2,500 leaves that nearly twofold of room and keeps the delegate
+#: near a second even on the slowest interpreter (a whole verification of a
+#: document just under the cap: 0.9 to 1.5 s of CPU on 3.12-3.15, 1.5 s on
+#: 3.10, most of it the delegate's).
+MAX_DELEGATED_QUADS = 2_500
+
+
 def _prescreen_canonicalization(document: dict[str, Any], proof: dict[str, Any],
                                 loader: Any) -> None:
-    """Refuse, before openvc-core spends it, a document whose RDF
-    canonicalization is over the work budget.
+    """Refuse, before openvc-core spends it, a credential that would cost the
+    delegate more than a handful of seconds.
 
-    openvc-core's ecdsa-sd-2023 suite canonicalizes the credential and the
-    proof options with pyld directly, without a work bound (the poison-graph
-    cost of ob3/_canon_guard.py). Canonicalizing the same document and proof
-    options here first, discarding the result, costs about as much as one of
-    openvc's own passes for a document that is cheap and refuses one that is
-    not. It is a screen, not a bound: openvc also canonicalizes the
-    mandatory and selectively disclosed subsets under its own blank-node
-    labels, and a different labelling prunes a different part of the
-    permutation search. The bound has to come from openvc-core itself."""
+    Two things, and only these two. First, the poison-graph work of
+    ob3/_canon_guard.py: openvc-core's ecdsa-sd-2023 suite canonicalizes the
+    credential and the proof options with pyld directly, with no work bound,
+    so both are canonicalized here first, within the work budget, and
+    discarded; it is the same dataset and the same blank-node work, so a
+    document the budget refuses is one the delegate would have spent minutes
+    on. Second, the number of statements: the delegate also parses the
+    dataset back from N-Quads text, which is quadratic in that number
+    whatever the graph looks like (:data:`MAX_DELEGATED_QUADS`).
+
+    This is NOT a bound on openvc-core's work: what it spends on a credential
+    that passes both is its own (it canonicalizes this same dataset, parses it
+    back from text, and checks the signatures), and the bound has to come from
+    openvc-core itself."""
     budget = WorkBudget()
     proof_config = {k: v for k, v in proof.items() if k != 'proofValue'}
     proof_config['@context'] = document.get('@context')
     _canonize(proof_config, loader, budget)
-    _canonize({k: v for k, v in document.items() if k != 'proof'}, loader,
-              budget)
+    canonical = _canonize({k: v for k, v in document.items() if k != 'proof'},
+                          loader, budget)
+    statements = canonical.count('\n')
+    if statements > MAX_DELEGATED_QUADS:
+        raise OB3VerificationError(
+            "ecdsa-sd-2023 credential holds %d statements, more than the %d "
+            "this library verifies" % (statements, MAX_DELEGATED_QUADS))
 
 
 def _verify_ecdsa_sd_2023(document: dict[str, Any], proof: dict[str, Any],
@@ -437,9 +465,11 @@ def _verify_ecdsa_sd_2023(document: dict[str, Any], proof: dict[str, Any],
     canonicalization plus the base and per-statement P-256 signatures;
     openbadgeslib only resolves/pins the key and feeds its pinned OB3 @context
     allowlist, so canonicalization is fail-closed and never touches the network.
-    The delegate canonicalizes with pyld's unbounded URDNA2015, so before
-    handing the document over it is canonicalized HERE, within the work budget
-    (:func:`_prescreen_canonicalization`).
+    The delegate canonicalizes with pyld's unbounded URDNA2015 and parses the
+    dataset back from N-Quads, so before handing the document over it is
+    screened HERE (:func:`_prescreen_canonicalization`): the poison-graph
+    work, within the work budget, and the number of statements. That screen
+    is not a bound on what the delegate then spends.
     """
     EcdsaSdProofSuite, ProofError = _require_openvc_ecdsa_sd()
     public_key_jwk = _p256_pem_to_jwk(pubkey_pem)

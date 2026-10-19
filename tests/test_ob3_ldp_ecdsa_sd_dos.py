@@ -29,7 +29,8 @@ import pytest
 from openbadgeslib.ob3 import OB3VerificationError, ldp
 from openbadgeslib.ob3.contexts import bundled_contexts, document_loader
 from openbadgeslib.ob3.did import did_key_from_pem
-from openbadgeslib.ob3.ldp import OB3LdpVerifier
+from openbadgeslib.ob3.ldp import (MAX_DELEGATED_QUADS, OB3LdpVerifier,
+                                   verify_data_integrity_proof)
 
 from test_ob3_ldp_ecdsa_sd import (_issue_and_derive, _lifecycle_credential,
                                    _p256_pem_pair, _require_ldp_sd)
@@ -141,6 +142,15 @@ def _named_clique(size):
             for i in range(size)]
 
 
+def _dense(nodes, values):
+    """*nodes* evidence nodes of 3 + *values* statements each, no poison
+    graph: the cost is the number of statements alone."""
+    return [dict({'type': ['Evidence'], 'name': 'e%d' % i},
+                 **({'audience': ['a%d' % k for k in range(values)]}
+                    if values else {}))
+            for i in range(nodes)]
+
+
 @pytest.fixture(scope='module')
 def issuer():
     _require_ldp_sd()
@@ -169,6 +179,13 @@ def derived(ob3_credential):
     return _issue_and_derive(
         _lifecycle_credential(ob3_credential),
         selective=['/credentialSchema', '/validUntil', '/credentialStatus'])
+
+
+def _statements(doc):
+    """What the screen counts: the canonical statements of the document."""
+    text = ldp._canonize({k: v for k, v in doc.items() if k != 'proof'},
+                         document_loader())
+    return text.count('\n')
 
 
 # ── the post-signature statement indexing is metered and reads openvc's graph ─
@@ -308,3 +325,108 @@ class TestStatementViewsParity:
         theirs, _ = sd._canonicalize(sd._to_nquads(
             doc, openvc_loader(bundled_contexts())))
         assert sorted({ln for ln in ours.split('\n') if ln}) == theirs
+
+
+# ── the statement count ──────────────────────────────────────────────────────
+
+class TestStatementCap:
+    def test_a_dense_document_is_refused_before_the_delegate(
+            self, derived, delegate_calls):
+        document, pub_pem, _ = derived
+        hostile = copy.deepcopy(document)
+        hostile['evidence'] = _dense(1000, 9)
+        assert _statements(hostile) > 12000
+        start = time.process_time()
+        with _within(60), pytest.raises(OB3VerificationError,
+                                        match=REFUSED_QUADS):
+            verify_data_integrity_proof(hostile, pub_pem)
+        assert time.process_time() - start < 5.0
+        assert not delegate_calls
+
+    def test_through_the_verifier(self, derived, delegate_calls):
+        document, pub_pem, _ = derived
+        hostile = copy.deepcopy(document)
+        hostile['evidence'] = _dense(1000, 9)
+        for verifier in (OB3LdpVerifier(), OB3LdpVerifier(pubkey_pem=pub_pem)):
+            with _within(60), pytest.raises(OB3VerificationError,
+                                            match=REFUSED_QUADS):
+                verifier.verify(hostile)
+        assert not delegate_calls
+
+    def test_the_cap_is_a_count_of_statements(self, derived, delegate_calls,
+                                              monkeypatch):
+        document, pub_pem, _ = derived
+        count = _statements(document)
+        loader = document_loader()
+        monkeypatch.setattr(ldp, 'MAX_DELEGATED_QUADS', count)
+        verify_data_integrity_proof(document, pub_pem)
+        assert len(delegate_calls) == 1
+        monkeypatch.setattr(ldp, 'MAX_DELEGATED_QUADS', count - 1)
+        with pytest.raises(OB3VerificationError, match=REFUSED_QUADS):
+            ldp._prescreen_canonicalization(document, document['proof'], loader)
+        assert len(delegate_calls) == 1
+
+    def test_a_document_at_the_cap_reaches_the_delegate(self, derived,
+                                                        delegate_calls):
+        # (its signature is wrong: the point is that the delegate was asked)
+        document, pub_pem, _ = derived
+        big = copy.deepcopy(document)
+        big['evidence'] = _dense(MAX_DELEGATED_QUADS // 3 - 20, 0)
+        assert MAX_DELEGATED_QUADS - 100 < _statements(big) <= MAX_DELEGATED_QUADS
+        with _within(60), pytest.raises(OB3VerificationError,
+                                        match='signature'):
+            verify_data_integrity_proof(big, pub_pem)
+        assert len(delegate_calls) == 1
+
+    def test_the_cap_leaves_room_for_a_rich_credential(self, ob3_credential,
+                                                       issuer):
+        # 100 alignments and 100 pieces of evidence: 1,428 statements.
+        doc = _credential(ob3_credential, issuer)
+        doc['credentialSubject']['achievement']['alignment'] = [
+            {'type': ['Alignment'], 'targetName': 'Skill %d' % i,
+             'targetUrl': 'https://frameworks.example/skills/%d' % i,
+             'targetFramework': 'Framework', 'targetCode': 'S%d' % i,
+             'targetDescription': 'Description of skill %d' % i}
+            for i in range(100)]
+        doc['evidence'] = [
+            {'type': ['Evidence'], 'id': 'https://e.example/%d' % i,
+             'name': 'Evidence %d' % i, 'description': 'd', 'narrative': 'n',
+             'genre': 'g', 'audience': 'a'} for i in range(100)]
+        assert 1400 < _statements(doc) < MAX_DELEGATED_QUADS * 0.6
+        secured, _ = _hand_signed(doc, issuer)
+        with _within(60):
+            OB3LdpVerifier(pubkey_pem=issuer.pub_pem).verify(secured)
+
+
+# ── a genuine credential, and what the screen costs it ──────────────────────
+
+class TestGenuineCredential:
+    def test_verifies(self, derived, delegate_calls):
+        document, pub_pem, did = derived
+        credential = OB3LdpVerifier(pubkey_pem=pub_pem).verify(document)
+        assert credential.issuer.id == did
+        assert len(delegate_calls) == 1
+
+    def test_the_screen_is_cheap_next_to_the_delegate(self, derived):
+        # Measured with loose bounds. The screen canonicalizes a genuine
+        # credential twice (document and proof options) and the delegate does
+        # the same, so the screen is of that order, a fraction of a second at
+        # the very most.
+        from openvc.proof.ecdsa_sd import EcdsaSdProofSuite
+        document, pub_pem, _ = derived
+        loader = document_loader()
+        jwk = ldp._p256_pem_to_jwk(pub_pem)
+
+        def cpu(fn, repeat=5):
+            fn()
+            start = time.process_time()
+            for _ in range(repeat):
+                fn()
+            return (time.process_time() - start) / repeat
+
+        screen = cpu(lambda: ldp._prescreen_canonicalization(
+            document, document['proof'], loader))
+        delegate = cpu(lambda: EcdsaSdProofSuite().verify(
+            document, public_key_jwk=jwk, extra_contexts=bundled_contexts()))
+        assert screen < 0.5
+        assert screen < 10 * delegate
