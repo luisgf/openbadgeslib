@@ -137,6 +137,13 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     resolved to 50.x and built it with Rust), so those platforms need a Rust
     toolchain or a 64-bit Python. Upgrade with `pip install -U cryptography`.
 
+  - ci: the weekly Audit workflow has a second job, "pip-audit (declared
+    floors)". It installs the exact floor of every runtime dependency of the
+    package and of the `ldp`, `eudi`, `ldp-sd` and `oid4vci` extras, read out
+    of pyproject.toml, then fails on a yanked floor and on any advisory
+    against it. pip-audit runs in its own environment, so the advisories of
+    its own dependencies are not counted against the package.
+
 * v4.6.2 - 2026-10-16
 
   - security(deps): the openvc-core floor of `[eudi]`, `[ldp-sd]` and

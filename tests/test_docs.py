@@ -160,6 +160,44 @@ def test_docs_cryptography_floor_matches_pyproject():
             '%s does not document cryptography>=%s' % (path.name, floor)
 
 
+def _audit_floors_script():
+    """The python heredoc the audit workflow's 'Read the declared floors' step
+    runs, with the workflow's indentation stripped."""
+    audit = (REPO / '.github' / 'workflows' / 'audit.yml').read_text(encoding='utf-8')
+    step = re.search(r"(?ms)^( *)python - > \"\$RUNNER_TEMP/floors\.txt\" <<'PY'\n"
+                     r"(.*?)^\1PY$", audit)
+    assert step, "audit.yml has no 'Read the declared floors' step"
+    indent = len(step.group(1))
+    return '\n'.join(line[indent:] for line in step.group(2).splitlines()) + '\n'
+
+
+def test_audit_floors_job_derives_the_floors():
+    """The weekly floors audit installs the exact floors pyproject.toml
+    declares, so it must read them from there and run: a floor it cannot parse
+    (a `~=` spec, a marker, two extras that disagree) would otherwise break the
+    job on a Monday, not in the pull request that introduced it.
+
+    cryptography>=45 sat in pyproject.toml while 45.0.0 was yanked and carried
+    seven advisories, and the audit of the freshly resolved tree never saw it."""
+    import subprocess
+    import sys
+    pytest.importorskip('tomllib')      # Python 3.11+, as on the audit runner
+    audit = (REPO / '.github' / 'workflows' / 'audit.yml').read_text(encoding='utf-8')
+    assert 'pip-audit (declared floors)' in audit
+    literal = re.findall(r'\b[A-Za-z][\w.-]*(?:\[[^\]]*\])?==\d[^\s"\']*', audit)
+    assert not literal, \
+        'audit.yml pins %s literally; derive it from pyproject.toml' % literal
+    run = subprocess.run([sys.executable, '-c', _audit_floors_script()],
+                         cwd=REPO, capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    pins = dict(line.split('==') for line in run.stdout.split())
+    pyproject = (REPO / 'pyproject.toml').read_text(encoding='utf-8')
+    cryptography = re.search(r'"cryptography>=(\d+(?:\.\d+)*)"', pyproject).group(1)
+    assert pins['cryptography'] == cryptography
+    assert set(pins) >= {'cryptography', 'pyjwt', 'pypng', 'defusedxml',
+                         'pyld', 'openvc-core'}
+
+
 def test_docs_pyjwt_floor_matches_pyproject():
     """README and Installation state the PyJWT[crypto] security floor exactly
     as pyproject.toml declares it: 4.6.1 raised it to 2.15.1 while both still

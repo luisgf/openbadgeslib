@@ -2,7 +2,8 @@ name: Audit
 
 # Weekly dependency vulnerability scan (pip-audit). Separate from CI so it does
 # not gate pushes/releases; it surfaces newly-disclosed advisories against the
-# installed dependency tree. See #149.
+# installed dependency tree. See #149. A second job audits the other end of
+# the range: the exact floors pyproject.toml declares.
 on:
   schedule:
     - cron: '17 6 * * 1'   # Mondays, 06:17 UTC
@@ -33,3 +34,103 @@ jobs:
         # CVE-2024-23342, wontfix upstream) that used to need one is gone with
         # the dependency itself (the cryptography port, #167).
         run: pip-audit
+
+  pip-audit-floors:
+    # The job above audits what a fresh install resolves TODAY, which is the
+    # newest release of everything. A declared floor is a promise that an
+    # install may legitimately land on that exact version (a resolver given an
+    # older lock, a distro or conda build, `pip install --constraint`), and
+    # nothing audited it: cryptography>=45 stayed in pyproject.toml while 45.0.0
+    # was yanked from PyPI and carried seven advisories, and this scan stayed
+    # green because pip had resolved 50.x. So this job installs the EXACT floor
+    # of every runtime dependency of the base package and of the ldp, eudi,
+    # ldp-sd and oid4vci extras, and fails on a yanked floor as well as on an
+    # advisory. The floors are read out of pyproject.toml, never restated here
+    # (the same rule as the CI `eudi` job, #264).
+    name: pip-audit (declared floors)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Read the declared floors
+        # `name>=X` becomes the constraint `name==X`: a bare major such as
+        # cryptography>=50 is PEP 440 equal to 50.0.0, so it pins the release
+        # that floor names. A floor that two extras declare differently fails
+        # here, as the openvc-core one does in the `eudi` job.
+        run: |
+          python - > "$RUNNER_TEMP/floors.txt" <<'PY'
+          import pathlib, re, sys, tomllib
+          project = tomllib.loads(
+              pathlib.Path('pyproject.toml').read_text('utf-8'))['project']
+          specs = list(project['dependencies'])
+          for extra in ('ldp', 'eudi', 'ldp-sd', 'oid4vci'):
+              specs += project['optional-dependencies'][extra]
+          floors = {}
+          for spec in specs:
+              m = re.match(r'([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*>=\s*(\d+(?:\.\d+)*)', spec)
+              if not m:
+                  sys.exit('no >= floor in %r' % spec)
+              name = re.sub(r'[-_.]+', '-', m.group(1)).lower()
+              if floors.setdefault(name, m.group(2)) != m.group(2):
+                  sys.exit('the floors of %s disagree: %s' % (name, spec))
+          for name, version in sorted(floors.items()):
+              print('%s==%s' % (name, version))
+          PY
+          cat "$RUNNER_TEMP/floors.txt"
+
+      - name: Install the package at those floors in a clean environment
+        # The floors go in as a constraints file, so pip resolves the package's
+        # own requirements against them and fails here if a floor lies outside
+        # a declared range (a cap that excludes it, say). Transitive
+        # dependencies resolve normally.
+        run: |
+          python -m venv "$RUNNER_TEMP/floors"
+          "$RUNNER_TEMP/floors/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/floors/bin/pip" install -e ".[ldp,eudi,ldp-sd,oid4vci]" \
+              --constraint "$RUNNER_TEMP/floors.txt"
+          "$RUNNER_TEMP/floors/bin/pip" freeze --exclude-editable
+
+      - name: Fail on a yanked floor
+        # pip-audit does not report a yanked release, and pip installs one when
+        # it is pinned exactly, so ask PyPI about each version installed.
+        run: |
+          "$RUNNER_TEMP/floors/bin/python" - "$RUNNER_TEMP/floors.txt" <<'PY'
+          import importlib.metadata as md, json, sys, urllib.request
+          bad = []
+          for line in open(sys.argv[1], encoding='utf-8'):
+              name = line.split('==')[0].strip()
+              if not name:
+                  continue
+              version = md.version(name)
+              url = 'https://pypi.org/pypi/%s/%s/json' % (name, version)
+              with urllib.request.urlopen(url, timeout=30) as response:
+                  files = json.load(response)['urls']
+              yanked = bool(files) and all(f.get('yanked') for f in files)
+              print('%s %s%s' % (name, version, '  YANKED' if yanked else ''))
+              if yanked:
+                  bad.append('%s==%s' % (name, version))
+          if bad:
+              sys.exit('yanked floor(s): %s' % ', '.join(bad))
+          PY
+
+      - name: Install pip-audit in its own environment
+        # Apart from the environment under audit. pip-audit audits every
+        # distribution it finds, so installed beside the floors it would report
+        # the advisories of its own dependencies (urllib3, requests, ...) as if
+        # they were the package's.
+        run: |
+          python -m venv "$RUNNER_TEMP/tool"
+          "$RUNNER_TEMP/tool/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/tool/bin/pip" install pip-audit
+
+      - name: Audit the floors
+        # No ignores, as above. --skip-editable leaves out openbadgeslib itself
+        # (the checkout, not a release).
+        run: |
+          site="$("$RUNNER_TEMP/floors/bin/python" -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
+          "$RUNNER_TEMP/tool/bin/pip-audit" --path "$site" --skip-editable
