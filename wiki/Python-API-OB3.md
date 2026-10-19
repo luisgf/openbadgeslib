@@ -215,7 +215,10 @@ the pinned contexts (VC Data Integrity §2.4.1 context validation, since
 published contexts), a `@context` below the top level other than an
 embedded endorsement credential's own, more than 64 embedded credentials,
 more than 8 levels of them or more than 256 KiB of their JSON in all, a
-member re-keyed to its IRI, a value its term cannot carry (e.g. an untyped
+node whose `type` repeats an entry or lists more than 8, a document with more
+than 1,600 typed objects, 2,000 type entries or 8,000 objects (an embedded
+endorsement counting once more for each credential that holds it; see
+Security-Model), a member re-keyed to its IRI, a value its term cannot carry (e.g. an untyped
 `validUntil`, which compaction keeps under the full IRI rather than the term
 the policy reads), a member the policy reads spelled by its IRI because its
 context is not bundled (a VC 1.1 badge's `expirationDate`, re-compacted onto
