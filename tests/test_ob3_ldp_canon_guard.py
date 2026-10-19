@@ -52,7 +52,7 @@ from pyld import jsonld  # noqa: E402
 
 from openbadgeslib.errors import ErrorSigningFile  # noqa: E402
 from openbadgeslib.ob3 import (  # noqa: E402
-    OB3LdpSigner, OB3LdpVerifier, OB3VerificationError,
+    OB3GuardUnavailable, OB3LdpSigner, OB3LdpVerifier, OB3VerificationError,
     add_data_integrity_proof, verify_data_integrity_proof)
 from openbadgeslib.ob3 import _canon_guard as guard  # noqa: E402
 from openbadgeslib.ob3 import ldp  # noqa: E402
@@ -476,6 +476,20 @@ class TestHostileDocuments:
 
 
 class TestCostModel:
+    def test_the_canaries_spend_exactly_what_the_model_says(self):
+        # Pins every term of the model together (the call, the quads, the
+        # permutation step and the issuer a step copies, the per-swap meter):
+        # change a constant on purpose and change these numbers with it. The
+        # run-time canary tolerates less than this on purpose (it checks a
+        # range), so this is where an accidental change is caught.
+        bounded = guard._bounded_class()
+        seen = []
+        for document, nquads, swaps, units in guard._CANARIES:
+            budget = guard.WorkBudget(limit=10 ** 8, seconds=60)
+            assert guard._run(jsonld, bounded, document, None, budget) == nquads
+            seen.append((budget.spent, budget.swaps))
+        assert seen == [(10_332, 92), (308, 0)]
+
     def test_nodes_with_a_canonical_id_are_not_charged_to_every_permutation(
             self, base_vc):
         # A permutation copies the issuer, which only ever holds blank nodes
@@ -859,9 +873,11 @@ class TestModelAgainstPyld:
 # ── fail closed when pyld is not what the cost model describes ───────────────
 
 class TestFailsClosed:
-    def _canonize_must_refuse(self, base_vc, match='cannot canonicalize safely'):
-        with pytest.raises(OB3VerificationError, match=match):
+    def _canonize_must_refuse(self, base_vc, match='cannot canonicalize safely',
+                              error=OB3GuardUnavailable):
+        with pytest.raises(error, match=match) as caught:
             ldp._canonize(copy.deepcopy(base_vc), document_loader())
+        return str(caught.value)
 
     def test_pyld_4_is_refused_not_run_unmetered(self, base_vc, monkeypatch):
         import pyld.__about__ as about
@@ -882,21 +898,84 @@ class TestFailsClosed:
                                                          monkeypatch):
         # pyld 4 enumerates with itertools.permutations: no in-place swaps, so
         # the per-step meter would see nothing and a hostile group would run
-        # unmetered. The canary's exact spend notices.
+        # unmetered.
         from pyld import canon
         monkeypatch.setattr(
             canon, 'permutations',
             lambda items: (list(p) for p in itertools.permutations(sorted(items))))
-        self._canonize_must_refuse(base_vc, 'work of the canary document')
+        text = self._canonize_must_refuse(base_vc, 'permutations')
+        assert 'steps through 0 permutations' in text
 
-    def test_a_recalibrated_cost_model_must_update_the_canary(self, base_vc,
-                                                              monkeypatch):
+    def test_a_pyld_that_stops_swapping_groups_of_three_or_more_is_refused(
+            self, base_vc, monkeypatch):
+        # A generator that still swaps in place for pairs but not beyond:
+        # the first canary (a group of two) alone would pass.
+        from pyld import canon
+        real = canon.permutations
+
+        def partial(elements):
+            if len(elements) > 2:
+                return (list(p) for p in itertools.permutations(sorted(elements)))
+            return real(elements)
+        monkeypatch.setattr(canon, 'permutations', partial)
+        self._canonize_must_refuse(base_vc, 'steps through')
+
+    def test_a_pyld_that_enumerates_repeated_members_is_refused(
+            self, base_vc, monkeypatch):
+        # pyld 3.x enumerates a group of equal entries once; one that did not
+        # (Heap's algorithm below swaps in place and visits every ordering,
+        # equal or not) would make every embedded proof cost size!
+        # permutations. The distinct canary cannot tell it from pyld 3.3.0
+        # (23 swaps either way); the repeated-member one can.
+        from pyld import canon
+
+        def heap(elements):
+            elements.sort()
+            n = len(elements)
+            counters = [0] * n
+            yield elements
+            i = 0
+            while i < n:
+                if counters[i] < i:
+                    j = 0 if i % 2 == 0 else counters[i]
+                    elements[j], elements[i] = elements[i], elements[j]
+                    yield elements
+                    counters[i] += 1
+                    i = 0
+                else:
+                    counters[i] = 0
+                    i += 1
+        monkeypatch.setattr(canon, 'permutations', heap)
+        text = self._canonize_must_refuse(base_vc, 'steps through')
+        assert 'expects 0' in text
+
+    def test_a_small_recalibration_is_tolerated_a_large_one_is_not(
+            self, base_vc, monkeypatch):
+        # The canary's unit range is a tolerance, not an equality: a pyld that
+        # does a little more work, or a constant nudged by one, must not brick
+        # verification and signing.
         monkeypatch.setattr(guard, '_PERM_UNITS', guard._PERM_UNITS + 1)
-        self._canonize_must_refuse(base_vc, 'work of the canary document')
+        assert ldp._canonize(copy.deepcopy(base_vc), document_loader())
+        guard._bounded_class.cache_clear()
+        monkeypatch.setattr(guard, '_PERM_UNITS', 400)
+        text = self._canonize_must_refuse(base_vc, 'work units')
+        assert 'calibrated on' in text
 
     def test_a_changed_output_is_refused(self, base_vc, monkeypatch):
-        monkeypatch.setattr(guard, '_CANARY_NQUADS', 'not what pyld emits\n')
+        document, nquads, swaps, units = guard._CANARIES[0]
+        monkeypatch.setattr(guard, '_CANARIES', (
+            (document, 'not what pyld emits\n', swaps, units),)
+            + guard._CANARIES[1:])
         self._canonize_must_refuse(base_vc, 'known output')
+
+    def test_the_message_says_what_to_do(self, base_vc, monkeypatch):
+        document, nquads, swaps, units = guard._CANARIES[0]
+        monkeypatch.setattr(guard, '_CANARIES', (
+            (document, nquads, swaps + 2, units),) + guard._CANARIES[1:])
+        text = self._canonize_must_refuse(base_vc, 'steps through')
+        assert 'pyld 3.' in text                    # the version it found
+        assert '%d' % (swaps + 2) in text           # what it expected
+        assert 'pin pyld==3.3.0' in text            # the remedy
 
     def test_the_canary_proves_the_budget_is_enforced(self, monkeypatch):
         monkeypatch.setattr(guard.WorkBudget, 'charge', lambda self, units: None)
@@ -907,8 +986,52 @@ class TestFailsClosed:
             self, base_vc, verifier, ed25519_keypair, monkeypatch):
         import pyld.__about__ as about
         monkeypatch.setattr(about, '__version__', '4.0.0')
-        with pytest.raises(OB3VerificationError, match='cannot canonicalize'):
+        with pytest.raises(OB3VerificationError,
+                           match='cannot canonicalize') as caught:
             verifier.verify(_with_bogus_proof(base_vc, ed25519_keypair[1]))
+        # ... of a kind a deployment can alert on apart from a bad credential
+        assert isinstance(caught.value, OB3GuardUnavailable)
+
+    def test_a_bad_credential_is_not_a_guard_failure(
+            self, base_vc, verifier, ed25519_keypair):
+        with pytest.raises(OB3VerificationError, match=REFUSED) as caught:
+            verifier.verify(_with_bogus_proof(clique(base_vc, 8),
+                                              ed25519_keypair[1]))
+        assert not isinstance(caught.value, OB3GuardUnavailable)
+
+    def test_signing_reports_it_with_the_guard_as_the_cause(
+            self, base_vc, ed25519_keypair, monkeypatch):
+        import pyld.__about__ as about
+        monkeypatch.setattr(about, '__version__', '4.0.0')
+        priv, pub = ed25519_keypair
+        did = did_key(pub)
+        with pytest.raises(ErrorSigningFile, match='cannot canonicalize') as c:
+            add_data_integrity_proof(copy.deepcopy(base_vc), priv,
+                                     '%s#%s' % (did, did[len('did:key:'):]))
+        assert isinstance(c.value.__cause__, OB3GuardUnavailable)
+
+    def test_the_canary_runs_once_however_many_threads_start_cold(
+            self, base_vc, monkeypatch):
+        builds = []
+        real = guard._build_bounded_class
+
+        def counting():
+            builds.append(1)
+            time.sleep(0.05)
+            return real()
+        monkeypatch.setattr(guard, '_build_bounded_class', counting)
+        old = sys.getswitchinterval()
+        sys.setswitchinterval(1e-5)
+        try:
+            threads = [threading.Thread(target=guard._bounded_class)
+                       for _ in range(16)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        finally:
+            sys.setswitchinterval(old)
+        assert len(builds) == 1
 
 
 class TestSelfTestErrors:
@@ -923,8 +1046,30 @@ class TestSelfTestErrors:
             raise ValueError('pyld changed')
         monkeypatch.setattr(guard, '_run', boom)
         with pytest.raises(guard.CanonicalizationGuardUnavailable,
-                           match='self-test failed: pyld changed'):
+                           match=r"self-test failed on pyld 3\.\d+\.\d+: "
+                                 r"ValueError\('pyld changed'\)"):
             guard._bounded_class()
+
+    @pytest.mark.parametrize('error', [MemoryError(), RecursionError('deep')],
+                             ids=['memory', 'recursion'])
+    def test_a_transient_resource_error_is_not_a_verdict_on_pyld(
+            self, base_vc, monkeypatch, error):
+        # Not "the guard cannot meter this pyld": the master text for the
+        # same failure, and the next call (nothing was cached) just works.
+        real = guard._run
+        failures = []
+
+        def flaky(*args, **kwargs):
+            if not failures:
+                failures.append(1)
+                raise error
+            return real(*args, **kwargs)
+        monkeypatch.setattr(guard, '_run', flaky)
+        with pytest.raises(OB3VerificationError,
+                           match='could not canonicalize the credential') as c:
+            ldp._canonize(copy.deepcopy(base_vc), document_loader())
+        assert not isinstance(c.value, OB3GuardUnavailable)
+        assert ldp._canonize(copy.deepcopy(base_vc), document_loader())
 
     def test_a_budget_that_never_trips_is_reported(self, monkeypatch):
         # (the canary must see the budget enforced, not just counted)
@@ -979,11 +1124,6 @@ class TestNoGlobalState:
             t.join()
         assert outcomes == {'refused': 4, 'ok': 4, 'wrong': 0}
 
-
-# ── the signing side ─────────────────────────────────────────────────────────
-
-
-# ── the delegated ecdsa-sd-2023 path ─────────────────────────────────────────
 
 class TestThreadSafety:
     """pyld keeps its resolved-context and inverse-context caches in plain
@@ -1091,6 +1231,11 @@ class TestThreadSafety:
             done.set()
             owner.join(30)
 
+
+# ── the signing side ─────────────────────────────────────────────────────────
+
+
+# ── the delegated ecdsa-sd-2023 path ─────────────────────────────────────────
 
 class TestEcdsaSdPrescreen:
     """openvc-core canonicalizes with an unbounded pyld, so the document is

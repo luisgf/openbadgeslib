@@ -25,8 +25,8 @@ from .credential import (Achievement, Alignment, Evidence, IdentityObject,
 from .signer import OB3Signer
 from .verifier import (OB3VerificationError, OB3Verifier,
                        verify_endorsement_jwt)
-from .ldp import (OB3LdpSigner, OB3LdpVerifier, add_data_integrity_proof,
-                  verify_data_integrity_proof)
+from .ldp import (OB3GuardUnavailable, OB3LdpSigner, OB3LdpVerifier,
+                  add_data_integrity_proof, verify_data_integrity_proof)
 from .status import check_credential_status, decode_encoded_list, set_indices
 from .status_list import (build_status_list_credential, encode_bitstring,
                           sign_status_list_credential, status_entry)
@@ -62,6 +62,7 @@ __all__ = [
     'OpenBadgeCredential',
     'Result',
     'ResultDescription',
+    'OB3GuardUnavailable',
     'OB3LdpSigner',
     'OB3LdpVerifier',
     'OB3Signer',

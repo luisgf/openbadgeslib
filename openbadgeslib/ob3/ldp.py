@@ -84,7 +84,9 @@ from .verifier import (OB3VerificationError, _check_recipient,
 #: coherent with baking.MAX_ITXT_DECOMPRESSED. It does NOT bound RDF
 #: canonicalization, whose cost on hostile blank-node graphs ("poison graphs")
 #: is factorial in the size of the input: a few KB suffice. That is bounded by
-#: its own work budget, ob3/_canon_guard.py (MAX_CANON_WORK).
+#: its own work and CPU-time budget, ob3/_canon_guard.py (MAX_CANON_WORK,
+#: MAX_CANON_SECONDS), and the duplicate checks of the JSON-LD to RDF
+#: conversion by MAX_NODE_MAP_PAIRS.
 MAX_LDP_DOCUMENT_BYTES = 256 * 1024
 
 
@@ -99,6 +101,15 @@ MAX_LDP_DOCUMENT_BYTES = 256 * 1024
 #: use): it refuses a hand-installed release that is unsafe here, not one that
 #: is merely older than the tested pin.
 _OPENVC_MIN_VERSION = (1, 33, 2)
+
+
+class OB3GuardUnavailable(OB3VerificationError):
+    """The RDF canonicalization guard (ob3/_canon_guard.py) cannot run safely
+    with the installed pyld, so no Data Integrity credential can be verified
+    or signed until pyld or openbadgeslib is changed. A deployment should
+    alert on this apart from an ordinary ``OB3VerificationError``, which says
+    a credential is bad; this says the verifier is down. (When signing, the
+    :class:`ErrorSigningFile` raised has this as its ``__cause__``.)"""
 
 
 def _require_jsonld() -> Any:
@@ -239,7 +250,8 @@ def _canonize(document: dict[str, Any], loader: Any,
     nodes it cannot tell apart, so a few KB of hostile JSON-LD would pin a CPU
     for minutes. *budget* is shared by the canonicalizations of one signature
     check; omitted, this call gets a fresh one. A document over budget, and a
-    pyld the guard cannot meter, both fail closed.
+    pyld the guard cannot meter, both fail closed (the latter as
+    :class:`OB3GuardUnavailable`).
     """
     jsonld = _require_jsonld()
     try:
@@ -248,7 +260,7 @@ def _canonize(document: dict[str, Any], loader: Any,
         raise OB3VerificationError(
             "refusing to canonicalize the credential: %s" % exc) from exc
     except CanonicalizationGuardUnavailable as exc:
-        raise OB3VerificationError(
+        raise OB3GuardUnavailable(
             "cannot canonicalize safely: %s" % exc) from exc
     except Exception as exc:
         cause: Optional[BaseException] = exc

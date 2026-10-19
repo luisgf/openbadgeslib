@@ -63,15 +63,16 @@ Why this and not the alternatives:
   distinct, where 3.x enumerates it once.
 
 The unit model is empirical (see MAX_CANON_WORK for the measurements). It
-describes pyld 3.3.0's implementation, so the guard fails
-CLOSED when that implementation is not the one it was fitted to: an
-unsupported pyld major version, a missing hook, or a canary canonicalization
-that does not reproduce the known output AND the known work total all raise
-:class:`CanonicalizationGuardUnavailable` (surfaced as ``OB3VerificationError``
-by ``ldp._canonize``). It never falls back to an unmetered
-``jsonld.normalize``. A pyld 3.x release that changes ``create_hash_to_related``
-or how it permutes therefore stops verification until this module is
-recalibrated (``_CANARY_SPENT``): that is the intended failure mode.
+describes pyld 3.3.0's implementation, so the guard fails CLOSED when that
+implementation is not the one it was fitted to: an unsupported pyld major
+version, a missing hook, or a canary canonicalization that does not
+reproduce the known output, does not spend work in the calibrated range or
+does not step through its permutation groups the way pyld 3.3.0 does, all
+raise CanonicalizationGuardUnavailable (surfaced as ``OB3GuardUnavailable``,
+a subclass of ``OB3VerificationError``, by ``ldp._canonize``, so a
+deployment can alert on "the guard is down" apart from "this credential is
+bad"). The message names the pyld it found, what it expected and the
+remedy. It never falls back to an unmetered ``jsonld.normalize``.
 
 The JSON-LD to RDF conversion that precedes canonicalization has a cost of
 its own that no hook can meter: pyld builds each node's property array with a
@@ -164,27 +165,6 @@ _PERM_UNITS = 6
 #: An all-distinct group this large has size! permutations: more than any
 #: budget (13! = 6.2 billion) without computing the factorial.
 _MAX_GROUP = 12
-
-# Output of the canary document below, produced by stock pyld 3.3.0, and the
-# exact work it costs under the model above. Changing a constant or the
-# metering changes _CANARY_SPENT; so does pyld changing how it permutes.
-_CANARY_DOCUMENT = {
-    '@context': {'@vocab': 'https://example.org/c#'},
-    '@id': 'https://example.org/c/root',
-    'p': [{'q': [{'s': 'x'}, {'s': 'x'}]}, {'q': [{'s': 'x'}, {'s': 'x'}]}],
-}
-_CANARY_NQUADS = (
-    '<https://example.org/c/root> <https://example.org/c#p> _:c14n0 .\n'
-    '<https://example.org/c/root> <https://example.org/c#p> _:c14n3 .\n'
-    '_:c14n0 <https://example.org/c#q> _:c14n1 .\n'
-    '_:c14n0 <https://example.org/c#q> _:c14n2 .\n'
-    '_:c14n1 <https://example.org/c#s> "x" .\n'
-    '_:c14n2 <https://example.org/c#s> "x" .\n'
-    '_:c14n3 <https://example.org/c#q> _:c14n4 .\n'
-    '_:c14n3 <https://example.org/c#q> _:c14n5 .\n'
-    '_:c14n4 <https://example.org/c#s> "x" .\n'
-    '_:c14n5 <https://example.org/c#s> "x" .\n')
-_CANARY_SPENT = 524
 
 #: The deadline is read every this many charges (a clock read is a system
 #: call on some platforms).
@@ -309,10 +289,88 @@ class _MeteredGroup(List[str]):
         super().__setitem__(index, value)
 
 
-@functools.lru_cache(maxsize=1)
-def _bounded_class() -> Any:
-    """Build (once per process) the metered URDNA2015 subclass, after proving
-    the installed pyld is the implementation the cost model describes."""
+# ── the canary ───────────────────────────────────────────────────────────────
+# Two tiny documents canonicalized, on first use, with the metered class. Their
+# output is what stock pyld 3.3.0 produces; their metering is what this cost
+# model expects of it.
+#
+# * identical parents with groups of FOUR distinct blank nodes: the in-place
+#   permutation generator (a group of four takes 23 steps, so a pyld that
+#   stopped swapping in place for groups of three or more, as pyld 4's
+#   itertools.permutations, would charge none of them);
+# * two blank graphs, each holding a node whose four statements all name that
+#   graph: a group of four entries that are ONE node, which pyld 3.3.0
+#   enumerates once, not 4! times (an embedded proof does this).
+
+_CANARY_VOCAB = {'@vocab': 'https://example.org/c#'}
+
+_CANARY_DISTINCT: Dict[str, Any] = {
+    '@context': _CANARY_VOCAB,
+    '@id': 'https://example.org/c/root',
+    'p': [{'q': [{'s': 'x'} for _ in range(4)]} for _ in range(2)],
+}
+
+_CANARY_REPEATED: Dict[str, Any] = {
+    '@context': _CANARY_VOCAB,
+    '@graph': [{'@id': '_:g%d' % i,
+                '@graph': [{'@id': '_:a%d' % i, 'q': ['1', '2', '3', '4']}]}
+               for i in range(2)],
+}
+
+_CANARY_NQUADS_DISTINCT = (
+    '<https://example.org/c/root> <https://example.org/c#p> _:c14n0 .\n'
+    '<https://example.org/c/root> <https://example.org/c#p> _:c14n5 .\n'
+    '_:c14n0 <https://example.org/c#q> _:c14n1 .\n'
+    '_:c14n0 <https://example.org/c#q> _:c14n2 .\n'
+    '_:c14n0 <https://example.org/c#q> _:c14n3 .\n'
+    '_:c14n0 <https://example.org/c#q> _:c14n4 .\n'
+    '_:c14n1 <https://example.org/c#s> "x" .\n'
+    '_:c14n2 <https://example.org/c#s> "x" .\n'
+    '_:c14n3 <https://example.org/c#s> "x" .\n'
+    '_:c14n4 <https://example.org/c#s> "x" .\n'
+    '_:c14n5 <https://example.org/c#q> _:c14n6 .\n'
+    '_:c14n5 <https://example.org/c#q> _:c14n7 .\n'
+    '_:c14n5 <https://example.org/c#q> _:c14n8 .\n'
+    '_:c14n5 <https://example.org/c#q> _:c14n9 .\n'
+    '_:c14n6 <https://example.org/c#s> "x" .\n'
+    '_:c14n7 <https://example.org/c#s> "x" .\n'
+    '_:c14n8 <https://example.org/c#s> "x" .\n'
+    '_:c14n9 <https://example.org/c#s> "x" .\n')
+
+_CANARY_NQUADS_REPEATED = (
+    '_:c14n1 <https://example.org/c#q> "1" _:c14n0 .\n'
+    '_:c14n1 <https://example.org/c#q> "2" _:c14n0 .\n'
+    '_:c14n1 <https://example.org/c#q> "3" _:c14n0 .\n'
+    '_:c14n1 <https://example.org/c#q> "4" _:c14n0 .\n'
+    '_:c14n3 <https://example.org/c#q> "1" _:c14n2 .\n'
+    '_:c14n3 <https://example.org/c#q> "2" _:c14n2 .\n'
+    '_:c14n3 <https://example.org/c#q> "3" _:c14n2 .\n'
+    '_:c14n3 <https://example.org/c#q> "4" _:c14n2 .\n')
+
+#: (document, canonical N-Quads, permutation steps, (min, max) units). Measured
+#: on pyld 3.3.0: 10,332 units and 92 steps (two groups of four: 23 steps of
+#: two item assignments each), 308 units and no step. The step counts are
+#: exact for pyld's Steinhaus-Johnson-Trotter generator and are a hard
+#: requirement: they are what proves the per-step meter is wired. The unit
+#: range (0.5x to 4x) tolerates a pyld that does more or less work elsewhere
+#: (more work only makes the guard refuse sooner).
+_CANARIES: Tuple[Tuple[Dict[str, Any], str, int, Tuple[int, int]], ...] = (
+    (_CANARY_DISTINCT, _CANARY_NQUADS_DISTINCT, 92, (5_166, 41_328)),
+    (_CANARY_REPEATED, _CANARY_NQUADS_REPEATED, 0, (154, 1_232)),
+)
+
+
+def _remedy(pyld_version: str) -> str:
+    return ("openbadgeslib's RDF canonicalization guard is fitted to pyld "
+            "3.3.0 (found %s): pin pyld==3.3.0, or upgrade openbadgeslib to "
+            "a release that supports this pyld" % pyld_version)
+
+
+# ── the metered class, built once per process ────────────────────────────────
+
+def _build_bounded_class() -> Any:
+    """Build the metered URDNA2015 subclass, after proving the installed pyld
+    is the implementation the cost model describes."""
     try:
         from pyld import jsonld
         from pyld.__about__ import __version__ as pyld_version
@@ -320,7 +378,8 @@ def _bounded_class() -> Any:
     except ImportError as exc:
         raise CanonicalizationGuardUnavailable(
             "pyld's canonicalizer is not importable: %s" % exc) from exc
-    if str(pyld_version).split('.')[0] != '3':
+    pyld_version = str(pyld_version)
+    if pyld_version.split('.')[0] != '3':
         raise CanonicalizationGuardUnavailable(
             "pyld %s is not supported by the canonicalization guard "
             "(it meters pyld 3.x; install pyld>=3.3.0,<4)" % pyld_version)
@@ -328,7 +387,8 @@ def _bounded_class() -> Any:
         if not callable(getattr(URDNA2015, name, None)):
             raise CanonicalizationGuardUnavailable(
                 "pyld.canon.URDNA2015 has no %s(): the canonicalization "
-                "guard cannot meter this pyld" % name)
+                "guard cannot meter this pyld. %s"
+                % (name, _remedy(pyld_version)))
 
     class BoundedURDNA2015(URDNA2015):          # type: ignore[misc]
         """URDNA2015 that charges a :class:`WorkBudget` for the work each
@@ -387,38 +447,81 @@ def _bounded_class() -> Any:
                 metered[key] = _MeteredGroup(group, budget, step)
             return metered
 
-    _selftest(jsonld, BoundedURDNA2015)
+    _selftest(jsonld, BoundedURDNA2015, pyld_version)
     return BoundedURDNA2015
 
 
-def _selftest(jsonld: Any, bounded: Any) -> None:
-    """Prove, on a document with a permutation group, that the guard (a)
-    reproduces stock pyld's output, (b) meters exactly the work this cost
-    model expects of pyld 3.3.0, and (c) is enforced."""
+class _Once:
+    """The metered class, built (and proven) once per process.
+
+    Race-free: the first callers queue on :data:`PYLD_LOCK` and only one of
+    them runs the canary. A failed build is not remembered, so a transient
+    error (memory, recursion depth) is retried by the next call."""
+
+    def __init__(self) -> None:
+        self._value: Any = None
+
+    def __call__(self) -> Any:
+        value = self._value
+        if value is None:
+            with PYLD_LOCK:
+                value = self._value
+                if value is None:
+                    value = self._value = _build_bounded_class()
+        return value
+
+    def cache_clear(self) -> None:
+        with PYLD_LOCK:
+            self._value = None
+
+
+_bounded_class = _Once()
+
+
+def _selftest(jsonld: Any, bounded: Any, pyld_version: str) -> None:
+    """Prove, on documents with permutation groups, that the guard (a)
+    reproduces stock pyld's output, (b) meters the work this cost model
+    expects of pyld 3.3.0, step by step, and (c) is enforced."""
     try:
-        budget = WorkBudget()
-        out = _run(jsonld, bounded, _CANARY_DOCUMENT, None, budget)
-        if out != _CANARY_NQUADS:
+        for index, (document, nquads, swaps, units) in enumerate(_CANARIES):
+            # A generous budget: the canary measures, it is not itself limited.
+            budget = WorkBudget(limit=10 ** 8, seconds=60.0)
+            out = _run(jsonld, bounded, document, None, budget)
+            where = "canary %d of %d" % (index + 1, len(_CANARIES))
+            if out != nquads:
+                raise CanonicalizationGuardUnavailable(
+                    "%s: pyld %s no longer canonicalizes the canary document "
+                    "to the known output. %s"
+                    % (where, pyld_version, _remedy(pyld_version)))
+            if budget.swaps != swaps:
+                raise CanonicalizationGuardUnavailable(
+                    "%s: pyld %s steps through %d permutations where the "
+                    "guard expects %d: its permutation generator no longer "
+                    "reorders the groups it is given in place, so the "
+                    "per-step meter would see nothing. %s"
+                    % (where, pyld_version, budget.swaps, swaps,
+                       _remedy(pyld_version)))
+            if not units[0] <= budget.spent <= units[1]:
+                raise CanonicalizationGuardUnavailable(
+                    "%s: pyld %s costs %d work units where the guard was "
+                    "calibrated on %d to %d. %s"
+                    % (where, pyld_version, budget.spent, units[0], units[1],
+                       _remedy(pyld_version)))
+            try:
+                _run(jsonld, bounded, document, None,
+                     WorkBudget(limit=budget.spent // 2, seconds=60.0))
+            except CanonicalizationWorkExceeded:
+                continue
             raise CanonicalizationGuardUnavailable(
-                "the canary document no longer canonicalizes to the known "
-                "output")
-        if budget.spent != _CANARY_SPENT:
-            raise CanonicalizationGuardUnavailable(
-                "the canonicalization work of the canary document is %d, "
-                "not the %d this guard was calibrated on"
-                % (budget.spent, _CANARY_SPENT))
-        try:
-            _run(jsonld, bounded, _CANARY_DOCUMENT, None,
-                 WorkBudget(limit=_CANARY_SPENT // 2))
-        except CanonicalizationWorkExceeded:
-            return
-        raise CanonicalizationGuardUnavailable(
-            "the canonicalization budget is not enforced")
+                "the canonicalization budget is not enforced")
     except CanonicalizationGuardUnavailable:
         raise
+    except (MemoryError, RecursionError):
+        raise                           # transient: not a verdict on pyld
     except Exception as exc:
         raise CanonicalizationGuardUnavailable(
-            "the canonicalization self-test failed: %s" % exc) from exc
+            "the canonicalization self-test failed on pyld %s: %r. %s"
+            % (pyld_version, exc, _remedy(pyld_version))) from exc
 
 
 def _to_dataset(jsonld: Any, document: Any, loader: Any) -> Any:
