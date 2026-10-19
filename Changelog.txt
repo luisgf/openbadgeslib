@@ -32,6 +32,18 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     timestamp. A body whose `expires` is `1e999`, `NaN` or `Infinity` is
     refused at parse (it used to read as "never expires").
 
+  - fix(ob2): a hosted assertion whose `issuedOn` or `expires` is
+    `9999-12-31T23:59:59-23:59` (or `0001-01-01T00:00:00+23:59`) is an
+    OB2VerificationError, as is a remote CryptographicKey whose
+    `publicKeyPem` holds a lone surrogate. The first parsed (aware datetimes
+    compare) and raised OverflowError converting to UTC in
+    `Assertion.to_dict()`, after the library had fetched the attacker's `id`
+    URL; the second raised UnicodeEncodeError, even on the hosted path that
+    is documented never to fail the verdict. The date helper the OB2 and OB3
+    models share refuses a timestamp with no UTC instant at parse, so the
+    credential `validFrom`/`validUntil` and a proof's `created`/`expires`
+    get the same typed failure.
+
 * v4.6.2 - 2026-10-16
 
   - security(deps): the openvc-core floor of `[eudi]`, `[ldp-sd]` and

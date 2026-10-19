@@ -223,3 +223,77 @@ class TestOB1RemoteDocuments:
         with patch('openbadgeslib.ob1.verifier.download_file', side_effect=docs.__getitem__):
             with pytest.raises(AssertionFormatIncorrect, match='format incorrect'):
                 Verifier(identity=identity).check_revocation(badge)
+
+
+# ── OB2 ──────────────────────────────────────────────────────────────────────
+
+def _ob2_hosted_payload(**override) -> dict:
+    from datetime import datetime, timezone
+    from openbadgeslib.ob2 import Assertion, IdentityObject, Verification
+    payload = Assertion(
+        id='https://attacker.example/a/1',
+        recipient=IdentityObject.create('r@example.com', salt='s4lt3d'),
+        badge='https://attacker.example/badge.json',
+        verification=Verification(type='HostedBadge'),
+        issued_on=datetime(2026, 1, 1, tzinfo=timezone.utc)).to_dict()
+    payload.update(override)
+    return payload
+
+
+class TestOB2Dates:
+    """F6: _parse_iso accepted 9999-12-31T23:59:59-23:59 (aware datetimes
+    compare fine) and Assertion.to_dict() then overflowed converting it to
+    UTC -- in _verify_hosted, after the attacker's URL had been fetched."""
+
+    EXTREME = ['9999-12-31T23:59:59-23:59', '0001-01-01T00:00:00+23:59']
+
+    @pytest.mark.parametrize('field', ['issuedOn', 'expires'])
+    @pytest.mark.parametrize('value', EXTREME)
+    def test_verify_refuses_it_before_fetching_anything(self, field, value):
+        from openbadgeslib.ob2 import OB2VerificationError, OB2Verifier
+        fetched = []
+
+        def download(url):
+            fetched.append(url)
+            return b'{"anything": 1}'
+
+        token = _unsigned_token({'alg': 'none'},
+                                _ob2_hosted_payload(**{field: value}))
+        with pytest.raises(OB2VerificationError, match='out of range'):
+            OB2Verifier(download=download).verify(token)
+        assert fetched == []
+
+    @pytest.mark.parametrize('value', EXTREME)
+    def test_verify_badge_reports_it_as_invalid(self, monkeypatch, value):
+        from openbadgeslib.verify import verify_badge
+        monkeypatch.setattr('openbadgeslib.ob2.verifier.download_file',
+                            lambda url: b'{"anything": 1}')
+        svg = (TESTS_DIR / 'withoutxmlheader.svg').read_bytes()
+        token = _unsigned_token({'alg': 'none'}, _ob2_hosted_payload(issuedOn=value))
+        result = verify_badge(baking.bake_svg(svg, token), '2')
+        assert result.valid is False
+
+    def test_a_valid_offset_still_parses_to_the_same_instant(self):
+        from openbadgeslib._jsonmodel import _parse_iso
+        parsed = _parse_iso('2026-01-01T01:00:00+01:00')
+        assert parsed.utcoffset().total_seconds() == 3600
+        assert parsed.isoformat() == '2026-01-01T01:00:00+01:00'
+        # The edges of the representable range are fine.
+        _parse_iso('9999-12-31T23:59:59Z')
+        _parse_iso('0001-01-01T00:00:00Z')
+
+
+class TestOB2RemoteKey:
+    """F13: a lone surrogate in a CryptographicKey's publicKeyPem raised
+    UnicodeEncodeError when verify() encoded the PEM, including on the hosted
+    path that is documented never to fail the verdict."""
+
+    def test_a_remote_key_document_with_a_lone_surrogate(self, rsa_priv_pem):
+        from openbadgeslib.ob2 import OB2VerificationError, OB2Verifier
+        token = _ob2_token_with_header(rsa_priv_pem, b'{"alg":"RS256"}')
+        key_doc = {'type': 'CryptographicKey', 'id': 'https://example.com/key.json',
+                   'owner': 'https://example.com/organization.json',
+                   'publicKeyPem': '\ud800'}
+        verifier = OB2Verifier(download=lambda url: json.dumps(key_doc).encode())
+        with pytest.raises(OB2VerificationError, match='not valid JSON'):
+            verifier.verify(token)

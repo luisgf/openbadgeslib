@@ -51,8 +51,8 @@ def _parse_iso(value: Any, where: str = 'date') -> datetime:
     A non-string (e.g. a bare Unix timestamp, the legacy OB 1.0 shape) is
     rejected, as is a naive timestamp with no offset — verify() always compares
     against an aware ``datetime.now(timezone.utc)``, so only unambiguously
-    anchored timestamps are accepted. Raises ValueError otherwise, naming
-    *where* the bad value came from.
+    anchored timestamps are accepted, and so is one whose UTC instant is out of
+    range. Raises ValueError otherwise, naming *where* the bad value came from.
     """
     if not isinstance(value, str):
         raise ValueError("%s must be an ISO 8601 string, got %r" % (where, value))
@@ -62,6 +62,15 @@ def _parse_iso(value: Any, where: str = 'date') -> datetime:
         raise ValueError("invalid ISO 8601 date in %s: %r" % (where, value)) from exc
     if dt.tzinfo is None:
         raise ValueError("%s is missing a UTC offset: %r" % (where, value))
+    try:
+        dt.astimezone(timezone.utc)
+    except OverflowError as exc:
+        # 9999-12-31T23:59:59-23:59 is a valid aware datetime (comparisons
+        # work) that no UTC instant can represent: _iso, which converts to UTC,
+        # would raise OverflowError later. Refuse it here, where every caller
+        # already expects a ValueError. The value returned is unchanged.
+        raise ValueError(
+            "invalid ISO 8601 date in %s (out of range): %r" % (where, value)) from exc
     return dt
 
 
