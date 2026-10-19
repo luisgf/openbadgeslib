@@ -121,11 +121,20 @@ def build_credential_offer(conf: configparser.ConfigParser, badge: str,
     offer in someone's hands whose code the issuer never recorded.
 
     Raises :class:`ConfigError` for a badge that does not opt into OID4VCI or a
-    format it did not offer, and :class:`IssuanceError` if a revocation slot
-    could not be reserved.
+    format it did not offer, and :class:`IssuanceError` for a recipient that is
+    not valid Unicode (a lone surrogate, which no store can hold) or if a
+    revocation slot could not be reserved.
     """
     moment = now or datetime.now(tz=timezone.utc)
     cfg = oid4vci_config(conf)
+    try:
+        recipient.encode('utf-8')
+    except UnicodeEncodeError as exc:
+        # Before a revocation slot is reserved, and not left to the store:
+        # sqlite3 refuses the str with UnicodeEncodeError at save_grant.
+        raise IssuanceError(
+            "the recipient is not valid Unicode (it holds a lone "
+            "surrogate)") from exc
     formats = oid4vci_formats(conf, badge)
     if not formats:
         raise ConfigError(

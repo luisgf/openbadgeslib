@@ -1286,3 +1286,52 @@ class TestRequireKeyAttestation:
         claims = jwt.decode(response.credentials[0],
                             options={'verify_signature': False})
         assert claims['sub'] == did_jwk_from_jwk(jwk)
+
+
+class TestLoneSurrogates:
+    """A str decoded from a JSON request can hold a lone surrogate (a "\\ud800"
+    escape); .encode('utf-8') refused it with UnicodeEncodeError, an unhandled
+    500 at the token and credential endpoints."""
+
+    def test_token_request_with_such_a_code_is_invalid_grant(self, conf, store):
+        with pytest.raises(OID4VCIError) as caught:
+            handle_token_request(conf, code='\ud800', store=store)
+        assert caught.value.error == INVALID_GRANT
+
+    def test_such_a_tx_code_is_a_wrong_pin_and_counted(self, conf, store):
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=store, tx_code=True)
+        with pytest.raises(OID4VCIError) as caught:
+            handle_token_request(conf, code=offer.pre_authorized_code,
+                                 tx_code='\ud800', store=store)
+        assert caught.value.error == INVALID_GRANT
+        # The attempt was recorded: it is the counter that bounds PIN guessing.
+        from openbadgeslib.oid4vci.codes import secret_id
+        grant = store.find_grant_by_code(secret_id(offer.pre_authorized_code),
+                                         now=datetime.now(tz=timezone.utc))
+        assert grant is not None and grant.tx_code_attempts == 1
+        # And the right PIN still works.
+        token = handle_token_request(conf, code=offer.pre_authorized_code,
+                                     tx_code=offer.tx_code, store=store)
+        assert token.access_token
+
+    def test_credential_request_with_such_a_token_is_invalid_token(
+            self, conf, store, nonces):
+        with pytest.raises(OID4VCIError) as caught:
+            handle_credential_request(conf, b'{}', access_token='\ud800',
+                                      store=store, nonces=nonces)
+        assert caught.value.error == INVALID_TOKEN
+
+    def test_an_ordinary_secret_hashes_as_it_always_did(self):
+        import hashlib
+        from openbadgeslib.oid4vci.codes import secret_id
+        assert secret_id('abc') == hashlib.sha256(b'abc').hexdigest()
+        assert secret_id('é日本') == hashlib.sha256('é日本'.encode()).hexdigest()
+        assert secret_id('\ud800') != secret_id('')
+
+    def test_an_offer_for_such_a_recipient_is_refused_before_anything_is_reserved(
+            self, conf, store):
+        from openbadgeslib.errors import IssuanceError
+        with pytest.raises(IssuanceError, match='not valid Unicode'):
+            build_credential_offer(conf, 'badge_1', '\ud800@example.org',
+                                   store=store)

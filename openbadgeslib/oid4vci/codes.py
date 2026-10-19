@@ -79,7 +79,7 @@ def secret_id(value: str) -> str:
     reading the database yields no usable code or token, and the B-tree
     comparisons happen over digests rather than over the secret itself.
     """
-    return hashlib.sha256(value.encode('utf-8')).hexdigest()
+    return hashlib.sha256(_utf8(value)).hexdigest()
 
 
 def new_tx_code(length: int, input_mode: str = 'numeric') -> str:
@@ -134,5 +134,19 @@ def dummy_tx_verification() -> None:
 
 
 def _scrypt(value: str, salt: bytes) -> bytes:
-    return hashlib.scrypt(value.encode('utf-8'), salt=salt, n=_SCRYPT_N,
+    return hashlib.scrypt(_utf8(value), salt=salt, n=_SCRYPT_N,
                           r=_SCRYPT_R, p=_SCRYPT_P, dklen=_SCRYPT_DKLEN)
+
+
+def _utf8(value: str) -> bytes:
+    """*value* as bytes, tolerating a lone surrogate.
+
+    The code, tx_code and token a caller hands the endpoints are decoded from a
+    request and so can be any str, including one with a lone surrogate (a JSON
+    ``"\\ud800"`` escape), which ``.encode('utf-8')`` refuses with
+    UnicodeEncodeError -- an unhandled 500 at the endpoint, and, on the tx_code
+    path, a failed attempt that was never counted. ``surrogatepass`` encodes it
+    to bytes no minted secret or PIN (ASCII) can have, so it is simply a value
+    that matches nothing: the same ``invalid_grant`` / ``invalid_token`` as any
+    wrong one, in the same time."""
+    return value.encode('utf-8', 'surrogatepass')

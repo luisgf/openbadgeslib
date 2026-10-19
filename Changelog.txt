@@ -87,6 +87,18 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     hostile OB1 body, or a JWT whose header PyJWT rejects, now ends in the
     one-object verdict and exit status 1 instead of a traceback.
 
+  - fix(oid4vci): a lone surrogate in a value the endpoints take from a
+    request is an ordinary wrong value, not a 500. A pre-authorized code,
+    `tx_code` or access token decoded from JSON (`"\ud800"`) raised
+    UnicodeEncodeError out of `handle_token_request` and
+    `handle_credential_request`, and a PIN-gated grant skipped its failed-attempt
+    counter on that path. They are hashed with `surrogatepass`: the value
+    matches nothing, so it is the same `invalid_grant` / `invalid_token` as any
+    wrong one, in the same time, and a wrong `tx_code` is counted.
+    `build_credential_offer` refuses a recipient that is not valid Unicode with
+    IssuanceError before it reserves a status slot (sqlite3 refused the str at
+    `save_grant`).
+
 * v4.6.2 - 2026-10-16
 
   - security(deps): the openvc-core floor of `[eudi]`, `[ldp-sd]` and
