@@ -488,3 +488,115 @@ class TestOB3Numbers:
         with pytest.raises(OB3VerificationError):
             OB3Verifier.for_issuer_did(did).verify(token, check_status=True,
                                                    download=lambda url: b'{}')
+
+
+# ── OB3 Data Integrity (LDP) ─────────────────────────────────────────────────
+
+@pytest.fixture()
+def ldp_signed(ed25519_keypair):
+    """(signed document, pinned public key PEM). Needs the [ldp] extra."""
+    pytest.importorskip('pyld')
+    from openbadgeslib.ob3 import (Achievement, Issuer, OpenBadgeCredential,
+                                   add_data_integrity_proof)
+    from openbadgeslib.ob3.did import did_key_from_pem
+    priv, pub = ed25519_keypair
+    did = did_key_from_pem(pub)
+    vc = OpenBadgeCredential(
+        issuer=Issuer(id='https://issuer.example', name='I'),
+        recipient_id='mailto:r@example.com',
+        achievement=Achievement(id='https://a.example/1', name='A',
+                                description='d', criteria_narrative='c')).to_vc()
+    return (add_data_integrity_proof(vc, priv, '%s#%s' % (did, did[len('did:key:'):])),
+            pub)
+
+
+class TestLdpProof:
+    """F1: proof.cryptosuite that is a JSON array or object is unhashable and
+    raised a bare TypeError at the membership test."""
+
+    @pytest.mark.parametrize('cryptosuite', [['x'], {'a': 1}, [], 5, None, True],
+                             ids=['list', 'dict', 'empty-list', 'int', 'null', 'bool'])
+    def test_cryptosuite_that_is_not_a_string(self, ldp_signed, cryptosuite):
+        from openbadgeslib.ob3 import (OB3LdpVerifier, OB3VerificationError,
+                                       verify_data_integrity_proof)
+        doc, pub = ldp_signed
+        doc['proof']['cryptosuite'] = cryptosuite
+        with pytest.raises(OB3VerificationError, match='no supported Data Integrity proof'):
+            OB3LdpVerifier(pubkey_pem=pub).verify(json.dumps(doc))
+        with pytest.raises(OB3VerificationError, match='no supported Data Integrity proof'):
+            verify_data_integrity_proof(doc, pub)
+
+    def test_the_message_names_the_string_cryptosuites_found(self, ldp_signed):
+        from openbadgeslib.ob3 import OB3VerificationError, verify_data_integrity_proof
+        doc, pub = ldp_signed
+        doc['proof']['cryptosuite'] = 'made-up-2099'
+        with pytest.raises(OB3VerificationError, match='made-up-2099'):
+            verify_data_integrity_proof(doc, pub)
+
+    def test_a_signed_document_still_verifies(self, ldp_signed):
+        from openbadgeslib.ob3 import OB3LdpVerifier
+        doc, pub = ldp_signed
+        assert OB3LdpVerifier(pubkey_pem=pub).verify(json.dumps(doc))
+
+
+class TestLdpDocument:
+    """F2/F16/F17: what the document holds, checked once on parse."""
+
+    def _verify(self, doc, pub):
+        from openbadgeslib.ob3 import OB3LdpVerifier
+        return OB3LdpVerifier(pubkey_pem=pub).verify(doc)
+
+    def test_a_lone_surrogate_in_any_string(self, ldp_signed):
+        # F2: json.dumps writes it as an ASCII \ud800 escape, so the document
+        # survives baking; hashing it raised UnicodeEncodeError before any
+        # signature was checked.
+        from openbadgeslib.ob3 import OB3VerificationError
+        doc, pub = ldp_signed
+        doc['credentialSubject']['achievement']['description'] = 'x\ud800y'
+        for payload in (json.dumps(doc), doc):
+            with pytest.raises(OB3VerificationError, match='surrogate'):
+                self._verify(payload, pub)
+
+    def test_a_lone_surrogate_in_a_key_or_the_proof(self, ldp_signed):
+        from openbadgeslib.ob3 import OB3VerificationError
+        doc, pub = ldp_signed
+        doc['proof']['\ud800'] = 'x'
+        with pytest.raises(OB3VerificationError, match='surrogate'):
+            self._verify(json.dumps(doc), pub)
+
+    @pytest.mark.parametrize('depth', [900, 5000])
+    def test_low_level_verify_of_a_nested_dict(self, ldp_signed, depth):
+        # F16: verify_data_integrity_proof deep-copies the document; it raised
+        # RecursionError at about 900 nested levels on every Python.
+        from openbadgeslib.ob3 import OB3VerificationError, verify_data_integrity_proof
+        doc, pub = ldp_signed
+        node = doc['credentialSubject']['achievement']
+        for _ in range(depth):
+            node['x'] = {}
+            node = node['x']
+        with pytest.raises(OB3VerificationError, match='nested more than'):
+            verify_data_integrity_proof(doc, pub)
+
+    @pytest.mark.parametrize('depth', [20000, 100000])
+    def test_nested_document_is_refused_before_any_walk(
+            self, ldp_signed, monkeypatch, depth):
+        # F17: _check_nested_contexts rebuilds an O(depth) path per node, so
+        # 160 KB of nesting cost 3 s of CPU before any signature check. The
+        # bound on parse means the walk never sees such a document.
+        from openbadgeslib.ob3 import OB3VerificationError
+        doc, pub = ldp_signed
+        doc['credentialSubject']['achievement']['description'] = None
+        text = json.dumps(doc).replace('"description": null',
+                                       '"description": ' + _nested(depth))
+
+        def walked(*args, **kwargs):
+            raise AssertionError('the context walk ran on a document that deep')
+
+        monkeypatch.setattr('openbadgeslib.ob3.ldp._check_json_ld_form', walked)
+        with pytest.raises(OB3VerificationError, match='nested too deeply'):
+            self._verify(text, pub)
+
+    def test_the_depth_a_real_credential_has_is_far_from_the_bound(self, ldp_signed):
+        from openbadgeslib._safejson import MAX_JSON_DEPTH, nested_deeper_than
+        doc, _ = ldp_signed
+        assert not nested_deeper_than(doc, 12) and MAX_JSON_DEPTH > 12

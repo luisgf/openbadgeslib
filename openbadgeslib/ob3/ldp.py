@@ -65,6 +65,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple, Union
 
 from .. import baking
+from .._safejson import JSONTooDeepError, check as check_json, loads as loads_untrusted
 from ..errors import ErrorSigningFile
 from ..keys import KeyType, detect_key_type, key_to_pem
 from ..util import __version__
@@ -148,15 +149,20 @@ def _select_proof(document: dict[str, Any]) -> dict[str, Any]:
     """
     raw = document.get('proof')
     proofs = raw if isinstance(raw, list) else [raw] if raw is not None else []
+    # Only a string names a cryptosuite: a JSON array or object is unhashable,
+    # so testing it for membership would raise a bare TypeError.
     candidates = [
         p for p in proofs
         if isinstance(p, dict) and p.get('type') == 'DataIntegrityProof'
-        and p.get('cryptosuite') in _CRYPTOSUITES
+        and isinstance(p.get('cryptosuite'), str)
+        and p['cryptosuite'] in _CRYPTOSUITES
     ]
     if not candidates:
         found = sorted({
-            str(p.get('cryptosuite') or p.get('type'))
-            for p in proofs if isinstance(p, dict)
+            str(name) for name in (
+                p.get('cryptosuite') or p.get('type')
+                for p in proofs if isinstance(p, dict))
+            if isinstance(name, str)
         })
         raise OB3VerificationError(
             "credential carries no supported Data Integrity proof "
@@ -414,6 +420,14 @@ def verify_data_integrity_proof(
     """
     if not isinstance(document, dict):
         raise OB3VerificationError("credential document must be a JSON object")
+    try:
+        # Nesting, lone surrogates and non-finite numbers: copy.deepcopy below
+        # and the hash (UTF-8 encode) would otherwise raise RecursionError or
+        # UnicodeEncodeError. OB3LdpVerifier has checked this on parse already.
+        check_json(document)
+    except ValueError as exc:
+        raise OB3VerificationError(
+            "credential document is not usable JSON: %s" % exc) from exc
     proof = _select_proof(document)
     _validate_proof(proof, expected_proof_purpose)
     loader = document_loader(extra_contexts)
@@ -890,6 +904,10 @@ class OB3LdpVerifier:
         :class:`OB3VerificationError`, never a bare ``RecursionError``."""
         if isinstance(document, dict):
             try:
+                # Before json.dumps and the copy below: nesting past
+                # _safejson's bound, a lone surrogate (UnicodeEncodeError when
+                # hashed) or a non-finite number.
+                check_json(document)
                 raw_len = len(json.dumps(document))
             except (TypeError, ValueError, RecursionError) as exc:
                 raise OB3VerificationError(
@@ -910,8 +928,8 @@ class OB3LdpVerifier:
         try:
             text = document.decode('utf-8') if isinstance(document, bytes) \
                 else document
-            parsed = json.loads(text)
-        except RecursionError as exc:
+            parsed = loads_untrusted(text)
+        except (RecursionError, JSONTooDeepError) as exc:
             raise OB3VerificationError(
                 "credential document is nested too deeply") from exc
         except (ValueError, UnicodeDecodeError) as exc:

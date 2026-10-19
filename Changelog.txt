@@ -65,6 +65,20 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     range of a float is a malformed credential. `creditsAvailable: Infinity`,
     which used to verify, no longer does.
 
+  - security(ldp): a hostile Data Integrity document is an OB3VerificationError
+    before any signature or context work. A `proof.cryptosuite` that is a JSON
+    array or object raised a bare TypeError out of `OB3LdpVerifier.verify`,
+    `verify_data_integrity_proof` and `verify_badge`; a lone surrogate in any
+    string (the `\ud800` escape of an ASCII document) raised
+    UnicodeEncodeError when the document was hashed; `verify_data_integrity_proof`
+    (the CLR route) deep-copied a dict nested about 900 levels, raising
+    RecursionError; and a document nested 100 000 levels deep (160 KB, within
+    the size cap) cost seconds of CPU in the context walk, which rebuilds an
+    O(depth) path per node, before any signature was looked at. The document is
+    now held to the shared bound (_safejson: 128 levels, no lone surrogate, no
+    non-finite number) on parse and at the top of `verify_data_integrity_proof`,
+    and only a string cryptosuite is looked up.
+
 * v4.6.2 - 2026-10-16
 
   - security(deps): the openvc-core floor of `[eudi]`, `[ldp-sd]` and
