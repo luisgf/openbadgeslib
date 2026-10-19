@@ -32,6 +32,7 @@
 import argparse
 import json
 import logging
+import math
 import sys
 import os
 
@@ -170,8 +171,11 @@ def _finish(args: argparse.Namespace, result: Dict[str, Any]) -> None:
     the object rather than the exit status depends on."""
     code = 1 if not result.get('valid') else (0 if result.get('trusted') else 2)
     if args.json:
-        payload = {k: v for k, v in result.items() if not k.startswith('_')}
-        print(json.dumps(payload))
+        # A float that is not finite has no JSON spelling: json.dumps would
+        # print Infinity or NaN and break the one-valid-JSON-object contract.
+        payload = {k: (None if isinstance(v, float) and not math.isfinite(v) else v)
+                   for k, v in result.items() if not k.startswith('_')}
+        print(json.dumps(payload, allow_nan=False))
         sys.exit(code)
     # Human mode: the lines are already printed. Exit only on a non-zero status
     # (invalid -> 1, valid-but-untrusted -> 2); a valid, trusted badge falls

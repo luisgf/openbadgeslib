@@ -79,6 +79,14 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     non-finite number) on parse and at the top of `verify_data_integrity_proof`,
     and only a string cryptosuite is looked up.
 
+  - fix(cli): `openbadges-verifier --json` prints exactly one strictly valid
+    JSON object. A verified credential whose `creditsAvailable` was `1e999` or
+    `NaN` made it print `Infinity` or `NaN`, which JSON.parse, jq and serde
+    reject. Such a credential no longer verifies (see the ob3 entry above), and
+    any other non-finite float the payload ever carries is printed as null. A
+    hostile OB1 body, or a JWT whose header PyJWT rejects, now ends in the
+    one-object verdict and exit status 1 instead of a traceback.
+
 * v4.6.2 - 2026-10-16
 
   - security(deps): the openvc-core floor of `[eudi]`, `[ldp-sd]` and

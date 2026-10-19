@@ -600,3 +600,73 @@ class TestLdpDocument:
         from openbadgeslib._safejson import MAX_JSON_DEPTH, nested_deeper_than
         doc, _ = ldp_signed
         assert not nested_deeper_than(doc, 12) and MAX_JSON_DEPTH > 12
+
+
+# ── openbadges-verifier ───────────────────────────────────────────────────────
+
+def _run_cli(argv, capsys):
+    """Run the verifier CLI; return (exit code, the one JSON object it printed,
+    parsed strictly: Infinity and NaN are not JSON)."""
+    import sys
+    from unittest.mock import patch
+    from openbadgeslib import openbadges_verifier
+
+    def refuse(token):
+        raise ValueError('not JSON: %s' % token)
+
+    with patch.object(sys, 'argv', ['openbadges-verifier'] + argv):
+        with pytest.raises(SystemExit) as exc:
+            openbadges_verifier.main()
+    out = capsys.readouterr().out
+    return exc.value.code, json.loads(out, parse_constant=refuse)
+
+
+class TestVerifierCli:
+    """F4/F5/F14: a hostile file was a traceback and rc=1 with no JSON, or a
+    JSON line with Infinity in it."""
+
+    def test_ob3_header_pyjwt_rejects(self, tmp_path, capsys, ed25519_pub_pem):
+        svg = (TESTS_DIR / 'withoutxmlheader.svg').read_bytes()
+        token = _unsigned_token({'alg': 'EdDSA', 'kid': 5}, {'a': 1})
+        badge = tmp_path / 'b.svg'
+        badge.write_bytes(baking.bake_svg(svg, token, element=baking.SVG_ELEMENT_OB3,
+                                          namespace=baking.SVG_NS_OB3))
+        key = tmp_path / 'k.pem'
+        key.write_bytes(ed25519_pub_pem)
+        code, result = _run_cli(['-i', str(badge), '-r', 'a@b.c', '-k', str(key),
+                                 '--json'], capsys)
+        assert code == 1 and result['valid'] is False
+
+    def test_ob1_nested_body(self, tmp_path, capsys, rsa_pub_pem):
+        token = _unsigned_token({'alg': 'RS256'},
+                                _ob1_body('"a": ' + _nested(DEEPER)))
+        key = tmp_path / 'k.pem'
+        key.write_bytes(rsa_pub_pem)
+        code, result = _run_cli(['-V', '1', '-i', _bake_svg(token, tmp_path),
+                                 '-r', 'a@b.c', '-k', str(key), '--json'], capsys)
+        assert code == 1 and result['valid'] is False
+        assert 'not valid base64url JSON' in result['reason']
+
+    def test_ob3_credits_of_infinity_is_not_a_json_infinity(
+            self, tmp_path, capsys, did_key_signer):
+        signer, did = did_key_signer
+        token = _signed_jwt(signer, did, lambda p: p['credentialSubject'][
+            'achievement'].update(creditsAvailable=float('inf')))
+        svg = (TESTS_DIR / 'withoutxmlheader.svg').read_bytes()
+        badge = tmp_path / 'b.svg'
+        badge.write_bytes(baking.bake_svg(svg, token, element=baking.SVG_ELEMENT_OB3,
+                                          namespace=baking.SVG_NS_OB3))
+        code, result = _run_cli(['-i', str(badge), '-r', 'r@example.com',
+                                 '--resolve-did', '--json'], capsys)
+        assert code == 1 and result['valid'] is False
+
+    def test_finish_never_prints_a_non_finite_number(self, capsys):
+        import argparse
+        from openbadgeslib.openbadges_verifier import _finish
+        result = {'valid': True, 'trusted': True, 'credits_available': float('inf'),
+                  'credits_earned': float('nan'), 'ok': 2.5}
+        with pytest.raises(SystemExit):
+            _finish(argparse.Namespace(json=True), result)
+        printed = json.loads(capsys.readouterr().out)
+        assert printed['credits_available'] is None
+        assert printed['credits_earned'] is None and printed['ok'] == 2.5
