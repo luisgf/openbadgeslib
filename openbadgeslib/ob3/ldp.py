@@ -271,8 +271,13 @@ def _canonize(document: dict[str, Any], loader: Any,
             if isinstance(cause, UnknownContextError):
                 raise OB3VerificationError(str(cause)) from exc
             cause = cause.__cause__
+        # pyld's JsonLdError text carries a fragment of the offending
+        # document: keep the lead (message and code) and bound the rest.
+        detail = str(exc) or repr(exc)
+        if len(detail) > 300:
+            detail = detail[:300] + '...'
         raise OB3VerificationError(
-            "could not canonicalize the credential: %s" % exc) from exc
+            "could not canonicalize the credential: %s" % detail) from exc
 
 
 def _hash_data(unsecured_doc: dict[str, Any], proof_config: dict[str, Any], loader: Any) -> bytes:

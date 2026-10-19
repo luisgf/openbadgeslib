@@ -1080,6 +1080,26 @@ class TestSelfTestErrors:
                            match='not enforced'):
             guard._bounded_class()
 
+    def test_a_long_error_text_is_cut(self, base_vc, monkeypatch):
+        def boom(*args, **kwargs):
+            raise ValueError('x' * 5000)
+        monkeypatch.setattr(jsonld, 'expand', boom)
+        with pytest.raises(OB3VerificationError) as caught:
+            ldp._canonize(copy.deepcopy(base_vc), document_loader())
+        assert str(caught.value).startswith(
+            'could not canonicalize the credential: xxx')
+        assert len(str(caught.value)) < 400
+
+    def test_malformed_json_ld_keeps_a_short_useful_message(self, base_vc):
+        doc = copy.deepcopy(base_vc)
+        doc['evidence'] = [{'type': 5, 'name': 'x' * 100_000}]
+        with pytest.raises(OB3VerificationError) as caught:
+            ldp._canonize(doc, document_loader())
+        text = str(caught.value)
+        assert text.startswith('could not canonicalize the credential: ')
+        assert 'Invalid JSON-LD syntax' in text
+        assert len(text) < 450, len(text)
+
 
 # ── instance state only, and pyld's thread-unsafe caches ─────────────────────
 
