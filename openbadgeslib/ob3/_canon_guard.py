@@ -88,15 +88,30 @@ of every node, because pyld's cost is the sum of those quadratics. A value
 repeated is compared once (pyld stops at the first match), so only distinct
 values count towards the square.
 
+pyld's JSON-LD processor keeps process-wide caches (resolved contexts,
+inverse contexts) in plain LRU caches that are not thread-safe: concurrent
+expand / compact / to_rdf calls corrupt them, and a corrupted cache fails
+every later call in the process, signing included. PYLD_LOCK serializes
+every pyld JSON-LD call this library makes on the Data Integrity path. The
+lock is NOT held while URDNA2015 runs (that phase touches no pyld cache), so
+a poison graph burning its CPU allowance does not hold up other threads.
+
 What it does not cover: canonicalization performed by other libraries on the
-same document, notably the ecdsa-sd-2023 suite delegated to openvc-core, which
-calls pyld on its own.
+same document, notably the ecdsa-sd-2023 suite delegated to openvc-core,
+which calls pyld on its own (outside PYLD_LOCK, and without a work bound).
 """
 import functools
 import math
+import os
+import threading
 import time
 
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
+#: Serializes pyld's JSON-LD processor (expand / compact / to_rdf) across the
+#: threads of one process: its context caches are shared and not thread-safe.
+#: Reentrant, because a caller already holding it may call canonize().
+PYLD_LOCK = threading.RLock()
 
 #: Work one signature check may spend canonicalizing (the proof options and
 #: the document share it), in model units. About 100 times the most a real
@@ -412,7 +427,8 @@ def _to_dataset(jsonld: Any, document: Any, loader: Any) -> Any:
         options['documentLoader'] = loader
     # What jsonld.normalize does for URDNA2015: to_rdf without a format, then
     # the algorithm on the resulting dataset.
-    return jsonld.to_rdf(document, options)
+    with PYLD_LOCK:
+        return jsonld.to_rdf(document, options)
 
 
 def _canonicalize(bounded: Any, dataset: Any, budget: WorkBudget) -> str:
@@ -559,8 +575,22 @@ def canonize(jsonld: Any, document: Any, loader: Any,
     if budget is None:
         budget = WorkBudget()
     options = {} if loader is None else {'documentLoader': loader}
-    pairs, widest, where = _scan_node_map(jsonld.expand(document, options))
-    budget.take_pairs(pairs, "; the largest property holds %d values: %s"
-                      % (widest, where))
-    dataset = _to_dataset(jsonld, document, loader)
+    with PYLD_LOCK:
+        pairs, widest, where = _scan_node_map(jsonld.expand(document, options))
+        budget.take_pairs(pairs, "; the largest property holds %d values: %s"
+                          % (widest, where))
+        dataset = _to_dataset(jsonld, document, loader)
     return _canonicalize(bounded, dataset, budget)
+
+
+def _reinit_after_fork(lock: Any) -> None:
+    """A forked child inherits the lock in whatever state some thread of the
+    parent left it, and that thread does not exist there."""
+    reinit = getattr(lock, '_at_fork_reinit', None)
+    if reinit is not None:
+        reinit()
+
+
+if hasattr(os, 'register_at_fork'):                 # pragma: no branch
+    os.register_at_fork(after_in_child=functools.partial(
+        _reinit_after_fork, PYLD_LOCK))

@@ -69,7 +69,7 @@ from .._safejson import JSONTooDeepError, check as check_json, loads as loads_un
 from ..errors import ErrorSigningFile
 from ..keys import KeyType, detect_key_type, key_to_pem
 from ..util import __version__
-from ._canon_guard import (CanonicalizationGuardUnavailable,
+from ._canon_guard import (PYLD_LOCK, CanonicalizationGuardUnavailable,
                            CanonicalizationWorkExceeded, WorkBudget, canonize)
 from ._context_validation import validate_document
 from .contexts import UnknownContextError, bundled_contexts, document_loader
@@ -140,7 +140,8 @@ def _check_json_ld_form(document: dict[str, Any], proof: dict[str, Any],
     # As in canonicalization: the proof options are read in the context of
     # the secured document.
     proof_config['@context'] = document.get('@context')
-    validate_document(unsecured, proof_config, loader, jsonld)
+    with PYLD_LOCK:                 # pyld's context caches are not thread-safe
+        validate_document(unsecured, proof_config, loader, jsonld)
 
 
 def _select_proof(document: dict[str, Any]) -> dict[str, Any]:

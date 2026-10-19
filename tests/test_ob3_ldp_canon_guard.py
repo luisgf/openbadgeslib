@@ -553,6 +553,21 @@ class TestCpuDeadline:
             stop.set()
             spinner.join()
 
+    def test_a_waiting_thread_is_not_charged_for_the_lock(self, base_vc):
+        # The pyld lock is held by someone else for longer than the CPU
+        # allowance: the document is still canonicalized once it gets in.
+        loader = document_loader()
+        expected = ldp._canonize(copy.deepcopy(base_vc), loader)
+        results = []
+        budget = guard.WorkBudget(seconds=0.2)
+        with guard.PYLD_LOCK:
+            worker = threading.Thread(target=lambda: results.append(
+                ldp._canonize(copy.deepcopy(base_vc), loader, budget)))
+            worker.start()
+            time.sleep(0.6)
+        worker.join(30)
+        assert results == [expected]
+
     def test_it_is_the_operative_bound_where_the_unit_model_is_wrong(
             self, base_vc):
         # Units unlimited, a short CPU allowance: the poison graph is cut off
@@ -969,6 +984,113 @@ class TestNoGlobalState:
 
 
 # ── the delegated ecdsa-sd-2023 path ─────────────────────────────────────────
+
+class TestThreadSafety:
+    """pyld keeps its resolved-context and inverse-context caches in plain
+    LRU caches shared by the whole process: concurrent expand / compact /
+    to_rdf calls interleave inside them, a cachetools LRUCache that raced
+    keeps a stale key at its head, and every later call that must evict then
+    fails with a KeyError for as long as the process lives (signing too)."""
+
+    def _hammer(self, work, threads=16, rounds=4):
+        errors = []
+        results = []
+
+        def run(index):
+            for _ in range(rounds):
+                try:
+                    results.append(work(index))
+                except Exception as exc:        # (a spurious failure is the bug)
+                    errors.append(repr(exc)[:200])
+        old = sys.getswitchinterval()
+        sys.setswitchinterval(1e-5)
+        try:
+            pool = [threading.Thread(target=run, args=(i,))
+                    for i in range(threads)]
+            for t in pool:
+                t.start()
+            for t in pool:
+                t.join(120)
+        finally:
+            sys.setswitchinterval(old)
+        return errors, results
+
+    def test_concurrent_verifications_never_fail_spuriously(
+            self, base_vc, ed25519_keypair):
+        loader = document_loader()
+        priv, pub = ed25519_keypair
+        did = did_key(pub)
+        method = '%s#%s' % (did, did[len('did:key:'):])
+        signed = add_data_integrity_proof(copy.deepcopy(base_vc), priv, method)
+        hostile = _with_bogus_proof(identical_children(base_vc, 9), pub)
+        expected = ldp._canonize(copy.deepcopy(base_vc), loader)
+
+        def work(index):
+            if index % 4 == 3:                          # a poison graph
+                with pytest.raises(OB3VerificationError, match=REFUSED):
+                    verify_data_integrity_proof(copy.deepcopy(hostile), pub)
+                return None
+            verify_data_integrity_proof(copy.deepcopy(signed), pub)
+            ldp._check_json_ld_form(
+                copy.deepcopy({k: v for k, v in signed.items()}),
+                signed['proof'], loader)
+            return ldp._canonize(copy.deepcopy(base_vc), loader)
+
+        errors, results = self._hammer(work)
+        assert errors == []
+        assert [r for r in results if r is not None]
+        assert all(r in (None, expected) for r in results)
+        # a poisoned process fails every later call too
+        verify_data_integrity_proof(copy.deepcopy(signed), pub)
+
+    def test_the_lock_is_not_held_while_a_poison_graph_burns_its_allowance(
+            self, base_vc, monkeypatch):
+        # Another thread's canonicalization (URDNA2015) must not queue behind
+        # a hostile one: only pyld's JSON-LD calls take the lock.
+        from pyld import canon
+        loader = document_loader()
+        guard._bounded_class()                      # built before the patch
+        entered = threading.Event()
+        release = threading.Event()
+        real = canon.URDNA2015.create_hash_to_related
+
+        def parked(self, *args):
+            entered.set()
+            release.wait(30)
+            return real(self, *args)
+        monkeypatch.setattr(canon.URDNA2015, 'create_hash_to_related', parked)
+        holder = threading.Thread(target=lambda: ldp._canonize(
+            identical_children(base_vc, 3), loader))
+        holder.start()
+        try:
+            assert entered.wait(30)
+            # the other thread is inside URDNA2015 now: the lock is free
+            assert guard.PYLD_LOCK.acquire(timeout=5)
+            guard.PYLD_LOCK.release()
+        finally:
+            release.set()
+            holder.join(60)
+
+    def test_a_forked_child_does_not_inherit_a_held_lock(self):
+        lock = threading.RLock()
+        held = threading.Event()
+        done = threading.Event()
+
+        def hold():
+            lock.acquire()
+            held.set()
+            done.wait(30)
+        owner = threading.Thread(target=hold)
+        owner.start()
+        assert held.wait(30)
+        try:
+            guard._reinit_after_fork(lock)
+            assert lock.acquire(timeout=5)
+            lock.release()
+        finally:
+            done.set()
+            owner.join(30)
+
 
 class TestEcdsaSdPrescreen:
     """openvc-core canonicalizes with an unbounded pyld, so the document is
