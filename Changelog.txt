@@ -4,6 +4,23 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v4.6.3 - unreleased
+
+  - fix(jws): the native JWS engine (OB1 and OB2 signed badges) answers a
+    hostile token with its own error, and so does everything that parses JSON
+    an attacker controls through it. A protected header nested past the
+    parser's recursion limit (a 3.6 KB token on Python 3.10 and 3.11) raised a
+    bare RecursionError out of `OB2Verifier.verify`, `verify_badge(..., '2')`
+    and the OB1 signature check, before any signature was looked at. The
+    shared JSON loader (`_jws.utils.from_json`) is now bounded by the new
+    `openbadgeslib/_safejson.py`: more than 128 levels of nesting, a lone
+    surrogate (the `\ud800` escape of an ASCII document, which cannot be
+    encoded to UTF-8) and a number that is not finite (`1e999`, `NaN`) are
+    refused as a ValueError, which the callers already map to a signature
+    failure or a failed verdict, and `verify_block` types a str token that
+    holds a lone surrogate. Nothing legitimate nests that deep or carries
+    those values.
+
 * v4.6.2 - 2026-10-16
 
   - security(deps): the openvc-core floor of `[eudi]`, `[ldp-sd]` and

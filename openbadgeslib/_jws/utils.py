@@ -5,6 +5,8 @@ import re
 
 from typing import Any, Union
 
+from .._safejson import loads as _loads_untrusted
+
 _B64URL_ALPHABET = re.compile(rb'[A-Za-z0-9_-]*')
 
 
@@ -46,9 +48,11 @@ def to_json(a: Any) -> bytes:
 
 
 def from_json(a: Union[str, bytes]) -> Any:
-    if isinstance(a, (bytes, bytearray)):
-        a = a.decode('utf-8')
-    return json.loads(a)
+    # Every caller parses a token segment or a document a remote host served.
+    # A ValueError for what json.loads takes but nothing downstream survives:
+    # nesting past the bound (a RecursionError otherwise), a lone surrogate,
+    # a number that is not finite (see _safejson).
+    return _loads_untrusted(a)
 
 
 def to_base64(a: bytes) -> bytes: return base64url_encode(a)

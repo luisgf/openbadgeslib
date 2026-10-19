@@ -126,7 +126,10 @@ def sign(header_dict: Dict[str, Any], payload_dict: Dict[str, Any], key: Any) ->
 def verify_block(msg: Union[str, bytes], key: Optional[Any] = None) -> bool:
     """Verify a JWS compact serialization (bytes or str). Returns True or raises SignatureError."""
     if isinstance(msg, str):
-        msg = msg.encode('utf-8')
+        try:
+            msg = msg.encode('utf-8')
+        except UnicodeEncodeError as exc:       # a lone surrogate
+            raise SignatureError("Malformed JWS") from exc
     # Transport whitespace around the whole token (a trailing newline from a
     # file or a third-party baker) is not part of any signed segment; inside
     # a segment it still fails the strict base64url decode.
