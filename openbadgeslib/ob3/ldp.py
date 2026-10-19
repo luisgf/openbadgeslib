@@ -72,6 +72,7 @@ from ..util import __version__
 from ._canon_guard import (PYLD_LOCK, CanonicalizationGuardUnavailable,
                            CanonicalizationWorkExceeded, WorkBudget, canonize)
 from ._context_validation import validate_document
+from ._structure_screen import StructureLimitExceeded, screen as screen_structure
 from .contexts import UnknownContextError, bundled_contexts, document_loader
 from .credential import OpenBadgeCredential, _iso, _parse_iso
 from .did import (_b58btc_decode, _b58btc_encode, _public_key_to_pem,
@@ -81,7 +82,9 @@ from .verifier import (OB3VerificationError, _check_recipient,
 
 #: Upper bound on a Data Integrity credential document. It bounds the input
 #: of every linear pass (parsing, context validation, RDF conversion) and is
-#: coherent with baking.MAX_ITXT_DECOMPRESSED. It does NOT bound RDF
+#: coherent with baking.MAX_ITXT_DECOMPRESSED. It bounds their bytes, not
+#: their cost: a short typed node costs ~20 times more per byte than text,
+#: which ob3/_structure_screen.py bounds by count. Nor does it bound RDF
 #: canonicalization, whose cost on hostile blank-node graphs ("poison graphs")
 #: is factorial in the size of the input: a few KB suffice. That is bounded by
 #: its own work and CPU-time budget, ob3/_canon_guard.py (MAX_CANON_WORK,
@@ -124,6 +127,23 @@ def _require_jsonld() -> Any:
             "optional 'pyld' dependency; install it with: "
             "pip install openbadgeslib[ldp]") from exc
     return jsonld
+
+
+def _screen_structure(document: Any, *, scale: int = 1,
+                      contexts: bool = True) -> None:
+    """Refuse a document over the structural limits of
+    ob3/_structure_screen.py (type multiplicity, typed-node, node and
+    @context counts) before any JSON-LD processor touches it: the cost of
+    those is paid on input nobody has authenticated, and the size cap does not
+    bound it. Where context validation runs on the path it bounds the
+    ``@context`` arrays itself (*contexts* false); where it does not, *scale*
+    is 2. Raises :class:`OB3VerificationError`; the message never echoes the
+    document."""
+    try:
+        screen_structure(document, scale=scale, contexts=contexts)
+    except StructureLimitExceeded as exc:
+        raise OB3VerificationError(
+            "refusing the credential: %s" % exc) from None
 
 
 def _check_json_ld_form(document: dict[str, Any], proof: dict[str, Any],
@@ -490,6 +510,13 @@ def verify_data_integrity_proof(
         raise OB3VerificationError(
             "credential document is not usable JSON: %s" % exc) from exc
     proof = _select_proof(document)
+    # The ecdsa-sd-2023 suite runs more passes than this module's own
+    # eddsa-rdfc-2022 canonicalization (and openvc-core's more yet), so it
+    # keeps the strict limits the verifier applies. (OB3LdpVerifier has
+    # screened the document already, and this second pass costs about a
+    # millisecond: both are public entry points.)
+    _screen_structure(document,
+                      scale=1 if proof['cryptosuite'] == 'ecdsa-sd-2023' else 2)
     _validate_proof(proof, expected_proof_purpose)
     loader = document_loader(extra_contexts)
     pem = key_to_pem(pubkey_pem)
@@ -552,6 +579,10 @@ def add_data_integrity_proof(
             % (size, MAX_LDP_DOCUMENT_BYTES))
     if not isinstance(verification_method, str) or not verification_method:
         raise ErrorSigningFile('a proof needs a verificationMethod URL')
+    try:
+        _screen_structure(document, scale=2)
+    except OB3VerificationError as exc:
+        raise ErrorSigningFile(str(exc)) from None
 
     pem = key_to_pem(privkey_pem)
     pem_bytes = pem.encode('utf-8') if isinstance(pem, str) else pem
@@ -866,6 +897,9 @@ class OB3LdpVerifier:
         undefined terms) is rejected.
         """
         doc = self._parse_document(document)
+        # Before anything reads or processes it, JSON-LD processor included.
+        # (Context validation, next, bounds the @context arrays itself.)
+        _screen_structure(doc, contexts=False)
 
         _check_vc_types(doc)
         # Fields the RDF-canonicalized proof cannot cover (VC 1.1 date aliases,
@@ -888,13 +922,15 @@ class OB3LdpVerifier:
         # the ecdsa-sd-2023 delegation too. It also runs before the key is
         # resolved, deliberately: a malformed document never triggers a
         # did:web fetch. The cost is CPU on unauthenticated input, bounded by
-        # MAX_LDP_DOCUMENT_BYTES and near-linear in the document: every
-        # @context the JSON-LD processor applies, at any depth, is bounded
-        # before it runs, and the embedded credentials, each validated again
-        # on its own, by number, depth and total size (_context_validation),
-        # so at most about twice the passes over the document itself. (RDF
-        # canonicalization, which verify_data_integrity_proof runs below, is
-        # NOT near-linear: it has its own work budget, _canon_guard.py.)
+        # MAX_LDP_DOCUMENT_BYTES and, for what a byte can cost, by the
+        # structural screen above (_structure_screen.py: type multiplicity,
+        # typed objects, objects): every @context the JSON-LD processor
+        # applies, at any depth, is bounded before it runs, and the embedded
+        # credentials, each validated again on its own, by number, depth and
+        # total size (_context_validation) and counted once more by the
+        # screen. (RDF canonicalization, which verify_data_integrity_proof
+        # runs below, is NOT near-linear: it has its own work budget,
+        # _canon_guard.py.)
         _check_json_ld_form(doc, proof, document_loader())
 
         try:
@@ -1088,8 +1124,16 @@ class OB3LdpSigner:
         context validation :class:`OB3LdpVerifier` applies — or one larger,
         as :meth:`sign_to_json` serializes it, than the
         ``MAX_LDP_DOCUMENT_BYTES`` verifiers accept."""
+        document = credential.to_vc()
+        try:
+            # The strict limits the verifier applies: add_data_integrity_proof
+            # below only holds the looser ones of the paths without context
+            # validation, and this one validates the result.
+            _screen_structure(document, contexts=False)
+        except OB3VerificationError as exc:
+            raise ErrorSigningFile(str(exc)) from None
         signed = add_data_integrity_proof(
-            credential.to_vc(), self.privkey_pem, self.verification_method,
+            document, self.privkey_pem, self.verification_method,
             created=created)
         # Measure exactly the text sign_to_json emits (and baking embeds), so
         # anything issued here is within the limit the verifier applies to it.

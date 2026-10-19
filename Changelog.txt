@@ -228,6 +228,54 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     within the same budget, which refuses the shapes above before the
     delegate runs; it is a screen, not a bound.
 
+  - security(ldp): the structure of a Data Integrity document is bounded
+    before any JSON-LD processing. pyld applies a type-scoped `@context` once
+    per entry of every node's `type` array, duplicates included, and once per
+    typed node, in expansion and again in compaction (and context validation
+    expands and compacts each embedded endorsement again on its own); it
+    applies the entries of an `@context` array one by one. The 256 KiB
+    document cap bounds the bytes, not that work, and the signature check
+    comes after it: 22,500 repeated types over ~300 nodes (258 KB) cost
+    `OB3LdpVerifier.verify` 9 to 11 s of CPU, the same inside one embedded
+    endorsement 12 to 15 s, and a flood of ~7,000 distinct typed nodes 6 to
+    7 s, every one of them ending in "signature mismatch", on a document
+    nobody had authenticated. Every release since 3.2.0 pays it (a 229 KB
+    document of repeated types took 2.2 s on 4.5.0 and 4.6.0, which only
+    canonicalized, and 6.8 s on 4.6.1 and 4.6.2, which also validate the
+    contexts; 3.2.0 to 4.4 share the canonicalization path but could not be
+    run here), and `verify_data_integrity_proof` and `add_data_integrity_proof`,
+    which cap nothing, also paid ~3 ms for each entry of an `@context` array
+    listing one pinned context a thousand times (34 s for 610 KB). The new
+    `ob3/_structure_screen.py` makes one iterative pass over the parsed JSON
+    (no pyld, no recursion, any nesting) at the top of
+    `OB3LdpVerifier.verify`, `verify_data_integrity_proof`,
+    `add_data_integrity_proof` and `OB3LdpSigner.sign`, and refuses with
+    `OB3VerificationError` ("refusing the credential: ...";
+    `ErrorSigningFile` when signing; the message names the limit, never the
+    document): a node whose `type` repeats an entry or lists more than 8; a
+    document with more than 1,600 typed objects, 2,000 type entries or 8,000
+    objects, an embedded endorsement's content counting once more for every
+    credential that holds it and a value of a property whose pinned context
+    carries a scoped `@context` of its own (`cnf`, `proofPurpose`,
+    `statusMessage`, `verifiableCredential`: pyld applies it to every value)
+    counting as one type entry; and, in the two low-level functions (context
+    validation bounds it for the verifier), an `@context` array of more than
+    8 entries or 4,096 entries in all. The low-level functions run no context
+    validation, a node takes about half the passes there, and they take
+    twice the three totals for eddsa-rdfc-2022 (ecdsa-sd-2023 keeps the
+    verifier's). The limits come from timing the most expensive document each
+    one admits through `verify` on CPython 3.10 to 3.15: 1.0 to 1.4 s of CPU
+    on an Apple M4 Pro (3.10 the slowest), against 7 to 15 s before, and
+    every hostile shape above is refused in tens of milliseconds at most
+    (the screen itself takes about a millisecond on a legitimate badge).
+    Real credentials sit far below them: the 1EdTech "Complete" example, as
+    the tests model it, has 104 typed objects, a badge with 200 alignments,
+    500 evidence entries and 50 results 805, and a CLR of 1,000 achievements
+    and 1,000 associations 3,005 (it verifies as before). What no longer
+    verifies: a badge with more than 1,600 typed objects, and a CLR of more
+    than 3,200 typed objects or 4,000 type entries, which is about 280 signed
+    member credentials of 11 typed objects each.
+
 * v4.6.2 - 2026-10-16
 
   - security(deps): the openvc-core floor of `[eudi]`, `[ldp-sd]` and

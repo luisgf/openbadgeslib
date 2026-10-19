@@ -169,6 +169,13 @@ def sign_clr_credential(document: dict[str, Any], signing_key_pem: Any,
     hash-pinned CLR context via ``extra_contexts`` — the library never fetches
     remote contexts, so without this injection canonicalization cannot see the
     CLR terms. Requires the optional ``[ldp]`` extra.
+
+    The document is held to the structural limits of
+    ``ob3/_structure_screen.py`` (``ErrorSigningFile`` over them): up to
+    3,200 typed objects, 4,000 type entries and 16,000 objects in all, which
+    is about 280 signed member credentials of a dozen objects each, or a
+    thousand achievements with an alignment each plus a thousand
+    associations (the pair limit of ``_canon_guard`` binds just above that).
     """
     from .ldp import add_data_integrity_proof
     return add_data_integrity_proof(
