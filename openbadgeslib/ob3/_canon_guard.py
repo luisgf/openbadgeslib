@@ -25,6 +25,25 @@ before the next step runs. A group of all-distinct nodes is refused at once
 when its ``size!`` permutations cannot fit what is left, so the obvious shapes
 are rejected in microseconds, not after the budget has been spent.
 
+THE TIME BOUND IS CPU TIME, NOT THE UNIT BUDGET. The unit budget is a model
+of pyld's cost, fitted on one implementation, and it cannot be an
+interpreter-independent bound: CPython 3.11 and 3.12 pay 5 to 10 times more
+per unit for a window of document sizes (a circulant graph of 80 to 160
+nodes, 8 to 15 KB, is the one that was found) that moves with the absolute
+depth of the call stack the canonicalization runs at; 3.10 and 3.13 to 3.15
+do not have it. So the budget also carries a CPU-time allowance for the
+canonicalization proper, read from time.thread_time (this thread's CPU: it
+does not advance while the thread waits for the pyld lock or the GIL, so a
+legitimate request queued behind a hostile one is not charged for the wait,
+and neither is a loaded or paused host, whose legitimate canonicalizations
+cost milliseconds), checked at every Hash N-Degree Quads call and every 64th
+charge, i.e. at least every few hundred microseconds of pyld work. The
+allowance covers only the URDNA2015 phase: the JSON-LD expansion and RDF
+conversion before it are linear in the document, bounded by the document
+size cap and by the duplicate-check allowance below, and a large legitimate
+document must not lose its allowance there.
+
+
 Why this and not the alternatives:
 
 * a process-global patch of ``pyld.canon`` (the module-level ``permutations``,
@@ -36,19 +55,15 @@ Why this and not the alternatives:
   one and costs ~n^3, and a tree of groups of three costs (3!)^depth.
 * a deadline in a worker thread cannot stop pure-Python code, and a worker
   process costs ~50 ms per call and fails in frozen / restricted environments.
-  A monotonic deadline IS checked from the same hook, as a backstop for a cost
-  model that is wrong on some interpreter, but it is not the bound.
+  The CPU deadline here is checked from the metering hooks of the very thread
+  that does the work.
 * relying on pyld 4: unreleased and breaking (rdflib), and its cap counts
   permutations only, not their cost (each copies an issuer as large as the
   component it is hashing), and counts a repeated element as if it were
   distinct, where 3.x enumerates it once.
 
-The cost model is empirical: one unit is ~0.2 microseconds of CPython time. It
-was checked on sixteen families of hostile graphs (cliques, trees, rings,
-chains, grids, bipartite graphs, ladders, hubs, twins and random digraphs, up
-to ~11 million units each) and ~1,300 random ones: 0.03 to 0.21 microseconds
-per unit on CPython 3.14, up to 0.25 on 3.13, never more, so the budget can
-only over-charge. It describes pyld 3.3.0's implementation, so the guard fails
+The unit model is empirical (see MAX_CANON_WORK for the measurements). It
+describes pyld 3.3.0's implementation, so the guard fails
 CLOSED when that implementation is not the one it was fitted to: an
 unsupported pyld major version, a missing hook, or a canary canonicalization
 that does not reproduce the known output AND the known work total all raise
@@ -81,19 +96,35 @@ import functools
 import math
 import time
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 #: Work one signature check may spend canonicalizing (the proof options and
-#: the document share it). ~0.2 us per unit on CPython 3.13-3.15 on an
-#: Apple-silicon laptop, so about 0.4 s there and a few seconds on a slow
-#: CI runner. A real credential spends 0 to a few thousand.
-MAX_CANON_WORK = 2_000_000
+#: the document share it), in model units. About 100 times the most a real
+#: credential spends (the repo's modelled copy of 1EdTech's "Complete
+#: OpenBadgeCredential" spends 1,124; the review of this guard measured 1,828
+#: for the real example and at most ~2,400 over 53 real documents), and 1.5
+#: times the largest legitimate shape known: an identifier-only subject with
+#: 1,400 first-degree-identical blank Results, which is where the node-map
+#: allowance below stops it anyway (161,000 units; 700 spend 80,500).
+#:
+#: Measured, CPython 3.10 to 3.15rc3 on an Apple-silicon laptop: a unit costs
+#: 0.15 to 0.45 microseconds on the poison graphs (cliques, trees, rings,
+#: grids, bipartite graphs, ladders, twins, random digraphs, circulants), so a
+#: document that exhausts the budget is refused after 0.05 to 0.22 s of CPU
+#: in all, expansion included (0.16 to 0.22 s at most, per interpreter);
+#: inside the CPython 3.11/3.12 window of the module comment a unit costs up
+#: to 3.4 microseconds and the same refusal took up to 0.85 s, which is what
+#: MAX_CANON_SECONDS bounds.
+MAX_CANON_WORK = 250_000
 
-#: Backstop wall-clock limit for the same check, in seconds. Not the bound:
-#: the unit budget takes ~0.4 s here, so this is reached first only on
-#: hardware or an interpreter ~25x slower than the one the model was fitted
-#: on, or where the model is wrong.
-MAX_CANON_SECONDS = 10.0
+#: CPU seconds one signature check may spend inside URDNA2015 (the proof
+#: options and the document share it): the bound that holds on every
+#: interpreter whatever the unit model says. A legitimate canonicalization
+#: takes milliseconds (a real credential: 1 ms; the 161,000 units above:
+#: 0.05 s on 3.14, 0.075 s on 3.10). With the unit budget out of the way, a
+#: poison graph is refused after 1.05 to 1.12 s of CPU in all on CPython 3.11
+#: and 3.12, at the caller stack depths (0 and 20) and hash seeds tried.
+MAX_CANON_SECONDS = 1.0
 
 #: Cap on the duplicate-check comparisons pyld's JSON-LD to RDF conversion
 #: makes building the node map (see :func:`node_map_pairs`), summed over every
@@ -107,9 +138,10 @@ MAX_NODE_MAP_PAIRS = 1_000_000
 # Cost model, in units. A hash_n_degree_quads call: fixed overhead plus a unit
 # per quad of the node it hashes. A permutation: fixed overhead, plus one unit
 # per element of the group (the permutation generator reorders it) and one per
-# identifier the issuer already holds (the issuer is copied for every
-# permutation; it can hold at most the blank nodes of the start node's
-# connected component).
+# identifier the issuer can hold (the issuer is copied for every permutation;
+# it holds at most the blank nodes the algorithm can still reach from the
+# start node: its component among blank nodes that have no canonical
+# identifier yet).
 _CALL_UNITS = 9
 _QUAD_UNITS = 14
 _PERM_UNITS = 6
@@ -139,6 +171,30 @@ _CANARY_NQUADS = (
     '_:c14n5 <https://example.org/c#s> "x" .\n')
 _CANARY_SPENT = 524
 
+#: The deadline is read every this many charges (a clock read is a system
+#: call on some platforms).
+_TICK_MASK = 63
+
+
+def _cpu_seconds() -> float:
+    """CPU time of the calling thread (process CPU where the platform has no
+    per-thread clock)."""
+    return _CLOCK()
+
+
+def _pick_clock() -> Callable[[], float]:
+    clock = getattr(time, 'thread_time', None)
+    if clock is not None:
+        try:
+            clock()
+            return clock                            # type: ignore[no-any-return]
+        except (OSError, NotImplementedError):      # pragma: no cover
+            pass
+    return time.process_time                        # pragma: no cover
+
+
+_CLOCK = _pick_clock()
+
 
 class CanonicalizationWorkExceeded(Exception):
     """The canonicalization needs more work than the budget allows."""
@@ -149,21 +205,33 @@ class CanonicalizationGuardUnavailable(Exception):
 
 
 class WorkBudget:
-    """Work allowance of one signature check, shared by every canonicalization
-    it performs. ``limit`` and ``seconds`` default to the module constants,
-    read at construction; so does ``pairs``, the allowance of JSON-LD to RDF
-    duplicate checks (:data:`MAX_NODE_MAP_PAIRS`), shared in the same way."""
+    """Allowance of one signature check, shared by every canonicalization it
+    performs (and used by one thread, whose CPU clock it reads).
 
-    __slots__ = ('limit', 'spent', 'deadline', 'pairs_left')
+    * ``limit``: model units (:data:`MAX_CANON_WORK`);
+    * ``seconds``: CPU seconds spent inside URDNA2015
+      (:data:`MAX_CANON_SECONDS`), accumulated over the canonicalizations
+      that share the budget;
+    * ``pairs``: JSON-LD to RDF duplicate checks
+      (:data:`MAX_NODE_MAP_PAIRS`), shared in the same way.
+
+    ``None`` means the module constant, read at construction."""
+
+    __slots__ = ('limit', 'spent', 'swaps', 'seconds', 'pairs_left',
+                 '_cpu_used', '_cpu_mark', '_ticks')
 
     def __init__(self, limit: Optional[int] = None,
                  seconds: Optional[float] = None,
                  pairs: Optional[int] = None) -> None:
         self.limit = MAX_CANON_WORK if limit is None else limit
         self.spent = 0
+        #: permutation steps charged (the canary proves the meter is wired)
+        self.swaps = 0
+        self.seconds = MAX_CANON_SECONDS if seconds is None else seconds
         self.pairs_left = MAX_NODE_MAP_PAIRS if pairs is None else pairs
-        self.deadline = time.monotonic() + (
-            MAX_CANON_SECONDS if seconds is None else seconds)
+        self._cpu_used = 0.0
+        self._cpu_mark: Optional[float] = None
+        self._ticks = 0
 
     def charge(self, units: int) -> None:
         self.spent += units
@@ -172,11 +240,28 @@ class WorkBudget:
                 "RDF canonicalization needs more than %d work units (the "
                 "document contains blank nodes the algorithm cannot tell "
                 "apart cheaply)" % self.limit)
+        self._ticks += 1
+        if not self._ticks & _TICK_MASK:
+            self.check_time()
+
+    def begin(self) -> None:
+        """Start the CPU clock of a URDNA2015 run."""
+        self._cpu_mark = _cpu_seconds()
+
+    def end(self) -> None:
+        """Stop it, keeping the time spent against the allowance."""
+        if self._cpu_mark is not None:
+            self._cpu_used += max(0.0, _cpu_seconds() - self._cpu_mark)
+            self._cpu_mark = None
 
     def check_time(self) -> None:
-        if time.monotonic() > self.deadline:
+        used = self._cpu_used
+        if self._cpu_mark is not None:
+            used += max(0.0, _cpu_seconds() - self._cpu_mark)
+        if used > self.seconds:
             raise CanonicalizationWorkExceeded(
-                "RDF canonicalization exceeded its time limit")
+                "RDF canonicalization exceeded its CPU time limit (%.2f s)"
+                % self.seconds)
 
     def take_pairs(self, pairs: int, detail: str = '') -> None:
         """Charge the duplicate checks of one JSON-LD to RDF conversion."""
@@ -204,6 +289,7 @@ class _MeteredGroup(List[str]):
         self._half = permutation_units // 2 + 1
 
     def __setitem__(self, index: Any, value: Any) -> None:
+        self._budget.swaps += 1
         self._budget.charge(self._half)
         super().__setitem__(index, value)
 
@@ -239,20 +325,28 @@ def _bounded_class() -> Any:
             self._component: Dict[str, int] = {}
 
         def _component_size(self, id_: str) -> int:
-            """Blank nodes connected to *id_* through quads: an upper bound
-            on the identifiers an issuer can hold while hashing *id_*."""
+            """Blank nodes the algorithm can still reach from *id_*: its
+            component among the blank nodes that have no canonical
+            identifier. An identifier issuer holds only such nodes (a node
+            with a canonical identifier is written into a path as that
+            identifier and never recursed into), so this bounds what each
+            permutation step copies. Computed once per component, when it is
+            first needed; canonical identifiers are only ever added, so a
+            later component can only be smaller than the cached one."""
             size = self._component.get(id_)
             if size is None:
+                canonical = self.canonical_issuer.existing
                 seen = {id_}
                 todo = [id_]
                 while todo:
                     for quad in self.blank_node_info[todo.pop()]['quads']:
                         for key, term in quad.items():
-                            if (key != 'predicate'
-                                    and term['type'] == 'blank node'
-                                    and term['value'] not in seen):
-                                seen.add(term['value'])
-                                todo.append(term['value'])
+                            if key != 'predicate' and (
+                                    term['type'] == 'blank node'):
+                                value = term['value']
+                                if value not in seen and value not in canonical:
+                                    seen.add(value)
+                                    todo.append(value)
                 size = len(seen)
                 for member in seen:
                     self._component[member] = size
@@ -312,17 +406,33 @@ def _selftest(jsonld: Any, bounded: Any) -> None:
             "the canonicalization self-test failed: %s" % exc) from exc
 
 
-def _run(jsonld: Any, bounded: Any, document: Any, loader: Any,
-         budget: WorkBudget) -> str:
+def _to_dataset(jsonld: Any, document: Any, loader: Any) -> Any:
     options: Dict[str, Any] = {'produceGeneralizedRdf': False}
     if loader is not None:
         options['documentLoader'] = loader
     # What jsonld.normalize does for URDNA2015: to_rdf without a format, then
     # the algorithm on the resulting dataset.
-    dataset = jsonld.to_rdf(document, options)
-    return str(bounded(budget).main(
-        dataset, {'format': 'application/n-quads'}))
+    return jsonld.to_rdf(document, options)
 
+
+def _canonicalize(bounded: Any, dataset: Any, budget: WorkBudget) -> str:
+    """URDNA2015 on *dataset*: pure Python on plain dicts, touching no pyld
+    cache, so it runs outside :data:`PYLD_LOCK`."""
+    budget.begin()
+    try:
+        return str(bounded(budget).main(
+            dataset, {'format': 'application/n-quads'}))
+    finally:
+        budget.end()
+
+
+def _run(jsonld: Any, bounded: Any, document: Any, loader: Any,
+         budget: WorkBudget) -> str:
+    return _canonicalize(bounded, _to_dataset(jsonld, document, loader),
+                         budget)
+
+
+# ── the duplicate checks of the JSON-LD to RDF conversion ────────────────────
 
 def _node_key(node: Dict[str, Any]) -> Tuple[str, Any]:
     """Identity of a node object in pyld's node map: its ``@id`` (a blank node
@@ -438,10 +548,11 @@ def canonize(jsonld: Any, document: Any, loader: Any,
     """RDFC-1.0-canonicalize *document* to N-Quads, byte-identical to
     ``jsonld.normalize(document, {'algorithm': 'URDNA2015', 'format':
     'application/n-quads', 'documentLoader': loader})`` but bounded by
-    *budget* (a fresh :class:`WorkBudget` by default): its work units and its
-    allowance of JSON-LD to RDF duplicate checks.
+    *budget* (a fresh :class:`WorkBudget` by default): its work units, its
+    CPU time inside URDNA2015 and its allowance of JSON-LD to RDF duplicate
+    checks.
 
-    Raises :class:`CanonicalizationWorkExceeded` over either bound and
+    Raises :class:`CanonicalizationWorkExceeded` over any bound and
     :class:`CanonicalizationGuardUnavailable` when the guard cannot meter the
     installed pyld; anything else is pyld's own error."""
     bounded = _bounded_class()
@@ -451,4 +562,5 @@ def canonize(jsonld: Any, document: Any, loader: Any,
     pairs, widest, where = _scan_node_map(jsonld.expand(document, options))
     budget.take_pairs(pairs, "; the largest property holds %d values: %s"
                       % (widest, where))
-    return _run(jsonld, bounded, document, loader, budget)
+    dataset = _to_dataset(jsonld, document, loader)
+    return _canonicalize(bounded, dataset, budget)

@@ -321,6 +321,25 @@ class TestLegitimateDocuments:
         assert 'security#challenge' in out         # the terms are really there
         assert budget.spent < 5000, budget.spent
 
+    def test_the_largest_legitimate_shapes_have_headroom(self, base_vc):
+        # Hundreds of identical blank Results under an identifier-only
+        # subject, or the same typed node re-stated by every entry of a long
+        # array: bounded by pyld's own quadratic node map long before they
+        # approach the work budget (byte-identity to stock pyld is pinned on
+        # the real documents above). They assert units, not time: the CPU
+        # allowance is lifted so coverage tracing cannot trip it.
+        loader = document_loader()
+        budget = guard.WorkBudget(seconds=60.0)
+        guard.canonize(jsonld, hub_results(base_vc, 700), loader, budget)
+        assert budget.spent < guard.MAX_CANON_WORK / 2, budget.spent
+        budget = guard.WorkBudget(seconds=60.0)
+        guard.canonize(jsonld, shared_creator(base_vc, 900), loader, budget)
+        assert budget.spent == 0
+        # ... up to the node-map cap itself (1,400 Results: 161,000 units).
+        budget = guard.WorkBudget(seconds=60.0)
+        guard.canonize(jsonld, hub_results(base_vc, 1400), loader, budget)
+        assert budget.spent < guard.MAX_CANON_WORK
+
     def test_option_parity_with_jsonld_normalize(self):
         # produceGeneralizedRdf=False: a blank-node PROPERTY ('_:p') yields no
         # statement in stock normalize; with generalized RDF it would, and the
@@ -333,6 +352,12 @@ class TestLegitimateDocuments:
         assert 'generalized' not in stock
         assert guard.canonize(jsonld, copy.deepcopy(doc), None) == stock
 
+    def test_the_default_allowance_is_small(self):
+        # ~100x what any real credential spends, not the 2M units (0.4-0.8 s)
+        # of 4.6.3's first cut, and a CPU allowance of about a second.
+        assert guard.MAX_CANON_WORK <= 400_000
+        assert guard.MAX_CANON_SECONDS <= 2.0
+
 
 # ── hostile documents are refused ────────────────────────────────────────────
 
@@ -342,6 +367,7 @@ HOSTILE = [
     ('tree-8x2', lambda b: tree(b, 8, 2)),
     ('tree-3x4', lambda b: tree(b, 3, 4)),
     ('ring-400', lambda b: ring(b, 400)),
+    ('circulant-146', lambda b: circulant(b, 146)),
     ('identical-children-9', lambda b: identical_children(b, 9)),
     ('identical-children-40', lambda b: identical_children(b, 40)),
     ('many-cliques', lambda b: many_cliques(b, 60, 5)),
@@ -449,12 +475,139 @@ class TestHostileDocuments:
         assert argument and max(argument) <= 12      # (never 40!)
 
 
+class TestCostModel:
+    def test_nodes_with_a_canonical_id_are_not_charged_to_every_permutation(
+            self, base_vc):
+        # A permutation copies the issuer, which only ever holds blank nodes
+        # that have no canonical identifier yet. Charging the whole connected
+        # component made the work of N identical Results under an anonymous
+        # subject grow with N squared (700 Results: 2.0M units, now 80k) and
+        # refused credentials stock pyld canonicalizes in 0.2 s.
+        loader = document_loader()
+        spent = {}
+        for n in (200, 400):
+            budget = guard.WorkBudget(seconds=60.0)
+            guard.canonize(jsonld, hub_results(base_vc, n), loader, budget)
+            spent[n] = budget.spent
+        assert spent[400] < 2.6 * spent[200], spent
+        assert spent[400] < guard.MAX_CANON_WORK / 4
+
+
 class TestBudgetArithmetic:
     def test_a_charge_over_the_limit_raises_one_at_the_limit_does_not(self):
         budget = guard.WorkBudget(limit=5)
         budget.charge(5)
         with pytest.raises(guard.CanonicalizationWorkExceeded):
             budget.charge(1)
+
+    def test_each_item_assignment_pays_half_a_permutation_and_is_counted(self):
+        budget = guard.WorkBudget(limit=10 ** 6)
+        group = guard._MeteredGroup(['a', 'b'], budget, 10)
+        group[0], group[1] = group[1], group[0]
+        assert group == ['b', 'a']
+        assert budget.swaps == 2
+        assert budget.spent == 2 * (10 // 2 + 1)
+
+    def test_the_cpu_clock_is_read_from_a_swap_loop_too(self, monkeypatch):
+        # A document can spend a long time between two Hash N-Degree Quads
+        # calls (every permutation copies the issuer): the deadline must be
+        # read from the per-swap meter as well.
+        now = [0.0]
+        monkeypatch.setattr(guard, '_cpu_seconds', lambda: now[0])
+        budget = guard.WorkBudget(limit=10 ** 9, seconds=1.0)
+        group = guard._MeteredGroup(['a', 'b'], budget, 2)
+        budget.begin()
+        now[0] = 5.0
+        with pytest.raises(guard.CanonicalizationWorkExceeded,
+                           match='CPU time limit'):
+            for _ in range(200):
+                group[0] = 'a'
+        assert budget.swaps <= guard._TICK_MASK + 1
+
+
+class TestCpuDeadline:
+    def test_it_measures_cpu_not_waiting(self):
+        # A thread parked on the pyld lock or the GIL, or a host that is
+        # paused or overloaded, spends no CPU: it must not lose the document
+        # its allowance.
+        budget = guard.WorkBudget(seconds=0.05)
+        budget.begin()
+        time.sleep(0.3)
+        budget.check_time()
+        budget.end()
+
+    def test_it_counts_this_threads_cpu_only(self):
+        budget = guard.WorkBudget(seconds=0.05)
+        stop = threading.Event()
+
+        def spin():
+            while not stop.is_set():
+                pass
+        spinner = threading.Thread(target=spin)
+        spinner.start()
+        try:
+            budget.begin()
+            time.sleep(0.3)             # another thread burns CPU meanwhile
+            budget.check_time()
+        finally:
+            stop.set()
+            spinner.join()
+
+    def test_it_is_the_operative_bound_where_the_unit_model_is_wrong(
+            self, base_vc):
+        # Units unlimited, a short CPU allowance: the poison graph is cut off
+        # by the clock, on whatever interpreter this runs on.
+        budget = guard.WorkBudget(limit=10 ** 12, seconds=0.25)
+        with cpu_below(CPU_BOUND):
+            with pytest.raises(OB3VerificationError, match='CPU time limit'):
+                ldp._canonize(circulant(base_vc, 146), document_loader(),
+                              budget)
+        assert budget.spent > 0
+
+    def test_it_is_shared_by_the_canonicalizations_of_one_check(self,
+                                                                monkeypatch):
+        now = [0.0]
+        monkeypatch.setattr(guard, '_cpu_seconds', lambda: now[0])
+        budget = guard.WorkBudget(seconds=1.0)
+        for _ in range(2):
+            budget.begin()
+            now[0] += 0.4
+            budget.end()
+        budget.begin()
+        now[0] += 0.3
+        with pytest.raises(guard.CanonicalizationWorkExceeded):
+            budget.check_time()
+
+    def test_the_clock_is_read_when_a_node_is_first_hashed(self, base_vc):
+        # Even a document with too few charges to reach the periodic read.
+        budget = guard.WorkBudget(seconds=-1)
+        with pytest.raises(OB3VerificationError, match='CPU time limit'):
+            ldp._canonize(identical_children(base_vc, 2), document_loader(),
+                          budget)
+        assert budget.spent < 64
+
+    def test_the_time_backstop_through_the_verifier_path(self, base_vc):
+        budget = guard.WorkBudget(seconds=-1)     # already past its allowance
+        with pytest.raises(OB3VerificationError, match='time limit'):
+            ldp._canonize(identical_children(base_vc, 3), document_loader(),
+                          budget)
+
+    def test_the_linear_stages_are_not_charged_to_the_allowance(self,
+                                                                base_vc,
+                                                                monkeypatch):
+        # Expansion and RDF conversion are bounded by the document size cap
+        # and the duplicate-check allowance, not by the allowance for
+        # URDNA2015: a large legitimate document must not lose it there.
+        now = [0.0]
+        monkeypatch.setattr(guard, '_cpu_seconds', lambda: now[0])
+        real = jsonld.to_rdf
+
+        def slow_to_rdf(*args, **kwargs):
+            now[0] += 100.0
+            return real(*args, **kwargs)
+        monkeypatch.setattr(jsonld, 'to_rdf', slow_to_rdf)
+        budget = guard.WorkBudget(seconds=0.5)
+        ldp._canonize(copy.deepcopy(base_vc), document_loader(), budget)
 
 
 class TestNodeMapBound:
