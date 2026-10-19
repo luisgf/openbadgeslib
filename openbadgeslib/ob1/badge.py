@@ -138,6 +138,9 @@ class BadgeSigned():
             # UnicodeDecodeError / JSONDecodeError / binascii.Error — all
             # ValueError subclasses, not LibOpenBadgesException. Map them so a
             # caller trapping library errors still gets a clean verdict (#281).
+            # So does a body nested too deeply, or holding a lone surrogate
+            # or a number that is not finite (UntrustedJSONError, see
+            # _safejson).
             raise AssertionFormatIncorrect(
                 'OpenBadge assertion body is not valid base64url JSON: %s'
                 % exc) from exc
@@ -191,7 +194,8 @@ class BadgeSigned():
                                     salt=body['recipient']['salt'].encode('utf-8'),
                                     issue_date=body['issuedOn'],
                                     assertion=assertion)
-        except (KeyError, TypeError, AttributeError) as exc:
+        except (KeyError, TypeError, AttributeError, ValueError) as exc:
+            # ValueError: a recipient string that cannot be UTF-8 encoded.
             raise AssertionFormatIncorrect(
                 'OpenBadge assertion is missing or has a malformed field: %s' % exc) from exc
         return badge_sig

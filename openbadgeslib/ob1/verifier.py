@@ -218,11 +218,17 @@ class Verifier():
             raise AssertionFormatIncorrect(
                 "Badge 'expires' field is not a valid timestamp: %r" % (badge.expiration,)) from exc
 
-        if expired:
+        if not expired:
+            return None
+        try:
             return "%s" % strftime("%a, %d %b %Y %H:%M:%S +0000",
                                    gmtime(badge.expiration))
-        else:
-            return None
+        except (OverflowError, ValueError, OSError) as exc:
+            # A timestamp far enough in the past (-1e300, or -10**30 as an
+            # integer) is "expired" but names no date gmtime can format.
+            raise AssertionFormatIncorrect(
+                "Badge 'expires' field is not a valid timestamp: %s"
+                % exc) from exc
 
     def check_identity(self, badge: Any) -> bool:
         # No identity supplied means signature-only verification: skip the

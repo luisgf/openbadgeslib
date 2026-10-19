@@ -21,6 +21,17 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     holds a lone surrogate. Nothing legitimate nests that deep or carries
     those values.
 
+  - fix(ob1): a hostile OpenBadges 1.0 badge is a verdict, not a traceback.
+    `BadgeSigned.read_from_file` raised a bare RecursionError for a body
+    nested past the parser's limit and a UnicodeEncodeError for a lone
+    surrogate in `recipient.identity` or `salt`, and `Verifier.check_expiration`
+    an OverflowError for an `expires` of -1e300 or -10**30 (the signature had
+    already verified, so `get_badge_status` raised instead of returning its
+    VerifyInfo). The CLI printed a traceback for each. They are now
+    AssertionFormatIncorrect, and an unformattable expiry reads as an invalid
+    timestamp. A body whose `expires` is `1e999`, `NaN` or `Infinity` is
+    refused at parse (it used to read as "never expires").
+
 * v4.6.2 - 2026-10-16
 
   - security(deps): the openvc-core floor of `[eudi]`, `[ldp-sd]` and

@@ -119,3 +119,107 @@ class TestOB1Signature:
             b'{"alg":"RS256","x":' + _nested(DEEPER).encode() + b'}').encode()
         result = Verifier(identity=identity).check_jws_signature(badge)
         assert result.status is BadgeStatus.SIGNATURE_ERROR
+
+
+# ── OB1 ──────────────────────────────────────────────────────────────────────
+
+def _ob1_body(extra: str = '', **override) -> bytes:
+    body = {'uid': 'a', 'recipient': {'identity': 'sha256$x', 'salt': 's'},
+            'image': 'i', 'badge': 'b',
+            'verify': {'url': 'https://127.0.0.1:1/k.pem'}, 'issuedOn': 1}
+    body.update(override)
+    text = json.dumps(body)
+    if extra:
+        text = text[:-1] + ', ' + extra + '}'
+    return text.encode()
+
+
+class TestOB1Body:
+    """F5: BadgeSigned.read_from_file only mapped ValueError/TypeError around
+    the body decode and (KeyError, TypeError, AttributeError) around the field
+    reads, so a nested body (RecursionError) and a lone surrogate in the
+    recipient (UnicodeEncodeError at .encode) escaped, and the CLI printed a
+    traceback."""
+
+    def _read(self, body: bytes, tmp_path):
+        from openbadgeslib.ob1.badge import BadgeSigned
+        token = _unsigned_token({'alg': 'RS256'}, body)
+        return BadgeSigned.read_from_file(_bake_svg(token, tmp_path))
+
+    @pytest.mark.parametrize('depth', [DEEP, DEEPER])
+    def test_nested_body(self, tmp_path, depth):
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        with pytest.raises(AssertionFormatIncorrect):
+            self._read(_ob1_body('"a": ' + _nested(depth)), tmp_path)
+
+    @pytest.mark.parametrize('field', ['identity', 'salt'])
+    def test_lone_surrogate_in_the_recipient(self, tmp_path, field):
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        recipient = {'identity': 'sha256$x', 'salt': 's', field: '\ud800'}
+        with pytest.raises(AssertionFormatIncorrect):
+            self._read(_ob1_body(recipient=recipient), tmp_path)
+
+    @pytest.mark.parametrize('expires', ['1e999', '-1e999', 'NaN'])
+    def test_expiry_that_is_not_a_finite_number(self, tmp_path, expires):
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        with pytest.raises(AssertionFormatIncorrect):
+            self._read(_ob1_body('"expires": ' + expires), tmp_path)
+
+    def test_an_ordinary_body_still_reads(self, tmp_path):
+        badge = self._read(_ob1_body('"expires": 1893456000'), tmp_path)
+        assert badge.expiration == 1893456000
+        assert badge.get_serial_num() == 'a'
+
+
+class TestOB1Expiration:
+    """F12: check_expiration formatted a long-expired timestamp with gmtime,
+    which raises OverflowError for -1e300 or -10**30 -- after the signature
+    verified, so get_badge_status (documented to return a VerifyInfo) raised."""
+
+    @pytest.mark.parametrize('expires', [-1e300, -10 ** 30, -2 ** 70])
+    def test_check_expiration_types_an_unformattable_timestamp(self, expires):
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        from openbadgeslib.ob1.badge import BadgeSigned
+        from openbadgeslib.ob1.verifier import Verifier
+        with pytest.raises(AssertionFormatIncorrect, match='not a valid timestamp'):
+            Verifier().check_expiration(BadgeSigned(expiration=expires))
+
+    def test_get_badge_status_returns_a_verdict(self, badge_for_verify_rsa):
+        from unittest.mock import patch
+        from openbadgeslib.ob1.badge import BadgeStatus
+        from openbadgeslib.ob1.verifier import Verifier
+        badge, identity = badge_for_verify_rsa
+        badge.expiration = -10 ** 30
+        verifier = Verifier(identity=identity)
+        with patch.object(Verifier, 'check_revocation', return_value=None):
+            info = verifier.get_badge_status(badge)
+        assert info.status is BadgeStatus.SIGNATURE_ERROR
+        assert 'not a valid timestamp' in info.msg
+
+    def test_an_expired_badge_is_still_reported_with_its_date(self):
+        from openbadgeslib.ob1.badge import BadgeSigned
+        from openbadgeslib.ob1.verifier import Verifier
+        text = Verifier().check_expiration(BadgeSigned(expiration=86400))
+        assert text == 'Fri, 02 Jan 1970 00:00:00 +0000'
+
+
+class TestOB1RemoteDocuments:
+    """The badge, issuer and revocation list an OB1 verifier fetches are parsed
+    with the same bounded loader: a revocation reason nested 100 000 deep
+    raised RecursionError from str(reason) on Python 3.14."""
+
+    def test_nested_revocation_list(self, badge_for_verify_rsa):
+        from unittest.mock import patch
+        from openbadgeslib.errors import AssertionFormatIncorrect
+        from openbadgeslib.ob1.verifier import Verifier
+        badge, identity = badge_for_verify_rsa
+        badge.source.json_url = 'https://example.com/badge.json'
+        docs = {
+            'https://example.com/badge.json': b'{"issuer": "https://example.com/issuer.json"}',
+            'https://example.com/issuer.json': b'{"revocationList": "https://example.com/rev.json"}',
+            'https://example.com/rev.json':
+                ('{"%s": %s}' % (badge.serial_num, _nested(100000))).encode(),
+        }
+        with patch('openbadgeslib.ob1.verifier.download_file', side_effect=docs.__getitem__):
+            with pytest.raises(AssertionFormatIncorrect, match='format incorrect'):
+                Verifier(identity=identity).check_revocation(badge)
