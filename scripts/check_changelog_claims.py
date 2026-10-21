@@ -18,8 +18,8 @@ prose says:
   * With --numbers, every number written with a thousands separator in the
     section is listed with its line, for a human to read against the code.
 
-Usage:  python scripts/check_changelog_claims.py [--tree PATH] [--version 4.6.3]
-        [--numbers] [--strict]
+Usage:  python scripts/check_changelog_claims.py [--tree PATH]
+        [--version 4.6.3,4.6.4] [--numbers] [--strict]
 
 Exit status 1 when a number disagrees with the code (and, with --strict, when a
 claim is not found or a name does not resolve). Run it on the tree that will be
@@ -61,10 +61,13 @@ def load_constants(tree):
     c['screen.CLR_TYPED'] = 2 * c['screen.MAX_TYPED_NODES']
     c['screen.CLR_ENTRIES'] = 2 * c['screen.MAX_TYPE_ENTRIES']
     c['screen.CLR_NODES'] = 2 * c['screen.MAX_NODES']
-    # N distinct values of one property cost N^2/2 comparisons: the most that
-    # fits the pair budget.
-    pairs = c['canon.MAX_NODE_MAP_PAIRS']
-    c['canon.MAX_ONE_PROPERTY'] = math.isqrt(2 * pairs)
+    # N distinct values of one property cost N(N-1)/2 comparisons: the most that
+    # fits each pair budget (the one in force depends on the interpreter this
+    # runs on, so the claims are checked against both).
+    for suffix, name in (('', 'FULL'), ('_CHUNKED_STACK', 'CHUNKED_STACK')):
+        pairs = c['canon.MAX_NODE_MAP_PAIRS_' + name]
+        c['canon.MAX_ONE_PROPERTY' + suffix] = (1 + math.isqrt(1 + 8 * pairs)) // 2
+        c['canon.TWO_PROPERTIES' + suffix] = math.isqrt(pairs)
     c['ldp.DOC_KIB'] = c['ldp.MAX_LDP_DOCUMENT_BYTES'] // 1024
     return c
 
@@ -106,7 +109,25 @@ CLAIMS = [
     ('screen: the CLR limits, as a triple',
      r'\(' + N + r' / ' + N + r' / ' + N + r'\)',
      ['screen.CLR_TYPED', 'screen.CLR_ENTRIES', 'screen.CLR_NODES'], None, True),
-    ('pair budget', r'a document over ' + N + r' of them', ['canon.MAX_NODE_MAP_PAIRS']),
+    ('pair budget', r'a document over ' + N + r' of them',
+     ['canon.MAX_NODE_MAP_PAIRS_FULL']),
+    ('pair budget on CPython 3.11 and 3.12',
+     r'`MAX_NODE_MAP_PAIRS` is ' + N + r' on CPython 3\.11 and 3\.12',
+     ['canon.MAX_NODE_MAP_PAIRS_CHUNKED_STACK'], None, True),
+    ('values of one property, and of two',
+     r'more than ' + N + r' distinct values in one property \(about ' + N
+     + r' in each of two\)',
+     ['canon.MAX_ONE_PROPERTY', 'canon.TWO_PROPERTIES']),
+    ('values of one property, and of two, on CPython 3.11 and 3.12',
+     r'more than ' + N + r' distinct values in one property \(about ' + N
+     + r' in each of two;',
+     ['canon.MAX_ONE_PROPERTY_CHUNKED_STACK',
+      'canon.TWO_PROPERTIES_CHUNKED_STACK'], None, True),
+    ('values of a property, and of two, on CPython 3.11 and 3.12 (prose)',
+     r'a property of more than ' + N + r' distinct values \((?:about ' + N
+     + r' in each of two properties|two of about ' + N + r')\)',
+     ['canon.MAX_ONE_PROPERTY_CHUNKED_STACK',
+      'canon.TWO_PROPERTIES_CHUNKED_STACK'], None, True),
     ('values of one property', r'one property of ' + N + r' distinct values',
      ['canon.MAX_ONE_PROPERTY']),
     ('JSON nesting', r'(\d+) levels(?: of nesting|, no lone surrogate)',
@@ -145,6 +166,8 @@ def check_claims(c, texts):
             for m in re.finditer(pattern, flat):
                 found += 1
                 for group, name in zip(m.groups(), names):
+                    if group is None:
+                        continue
                     want = c.get(name)
                     if want is None and name == 'util.MAX_DOWNLOAD_SIZE_MIB':
                         want = c['util.MAX_DOWNLOAD_SIZE'] // 2 ** 20
@@ -190,27 +213,33 @@ def check_names(tree, changelog_section):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('--tree', default=str(Path(__file__).resolve().parent.parent))
-    ap.add_argument('--version', default='4.6.3')
+    ap.add_argument('--version', default='4.6.3,4.6.4',
+                    help='Changelog sections to check, comma-separated '
+                         '(the 4.6.3 entries the table was written for, and '
+                         'those that amend them)')
     ap.add_argument('--numbers', action='store_true')
     ap.add_argument('--strict', action='store_true')
     args = ap.parse_args()
     tree = Path(args.tree).resolve()
 
     c = load_constants(tree)
-    sec = section((tree / 'Changelog.txt').read_text(encoding='utf-8'), args.version)
-    texts = {'Changelog %s' % args.version: sec}
+    changelog = (tree / 'Changelog.txt').read_text(encoding='utf-8')
+    versions = [v.strip() for v in args.version.split(',') if v.strip()]
+    secs = {v: section(changelog, v) for v in versions}
+    texts = {'Changelog %s' % v: sec for v, sec in secs.items()}
     for page in PAGES:
         if (tree / page).exists():
             texts[page] = (tree / page).read_text(encoding='utf-8')
 
     problems, notes = check_claims(c, texts)
-    unresolved = check_names(tree, sec)
+    unresolved = [u for sec in secs.values() for u in check_names(tree, sec)]
 
     if args.numbers:
-        print('Numbers with a thousands separator in the %s section:' % args.version)
-        for i, line in enumerate(sec.splitlines(), 1):
-            for m in re.finditer(r'\b\d{1,3}(?:,\d{3})+\b', line):
-                print('  line %4d  %-10s %s' % (i, m.group(), line.strip()[:70]))
+        for version, sec in secs.items():
+            print('Numbers with a thousands separator in the %s section:' % version)
+            for i, line in enumerate(sec.splitlines(), 1):
+                for m in re.finditer(r'\b\d{1,3}(?:,\d{3})+\b', line):
+                    print('  line %4d  %-10s %s' % (i, m.group(), line.strip()[:70]))
     for line in problems:
         print('MISMATCH   ', line)
     for line in unresolved:
