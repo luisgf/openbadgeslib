@@ -571,7 +571,7 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     CLR takes about 1.8 times the CPU of 4.6.2 (0.45 s against 0.25 s for 250
     members), the cost of the checks added in 4.6.3.
 
-  - compatibility: what 4.6.3 changes for a caller who sends no hostile
+  - docs(compatibility): what 4.6.3 changes for a caller who sends no hostile
     input. Nothing is removed or renamed, and every credential of the test
     suite and of 1EdTech's examples verifies as it did in 4.6.2; what follows
     is what a deployment may notice.

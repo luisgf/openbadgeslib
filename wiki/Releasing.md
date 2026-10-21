@@ -38,7 +38,10 @@ Replace `X.Y.Z` with the new version throughout.
    Before dating it, check that nothing is missing:
    `git log --pretty='%s%n%b' vPREV..HEAD` (`vPREV` = the previous release
    tag) lists the changelog-worthy commits (`feat`/`fix`/`security`/`perf`),
-   and a `Changelog:` trailer on a commit carries wording to reuse.
+   and a `Changelog:` trailer on a commit carries wording to reuse. Then
+   `python scripts/check_changelog_claims.py --strict` compares the budgets,
+   caps and floors the entry quotes with the constants in the code and checks
+   that the files, constants and classes it names exist.
 
 3. **Run the checks locally** before tagging — CI runs the same `flake8` + `mypy` + `pytest` gate (see [[Contributing]]):
 
