@@ -36,7 +36,50 @@ class TestIsoNaiveIsUTCNotLocal:
             == '2026-01-01T10:00:00Z'
 
 
+class TestIsoRange:
+    """_iso converts to UTC; a timestamp whose UTC instant ``datetime`` cannot
+    hold keeps its own offset instead of raising OverflowError."""
+
+    def test_the_edges_of_the_representable_range_are_padded_z_forms(self):
+        # strftime("%Y") leaves a year below 1000 unpadded on some platforms.
+        assert jm._iso(datetime(1, 1, 1, tzinfo=timezone.utc)) == '0001-01-01T00:00:00Z'
+        assert jm._iso(datetime(999, 12, 31, 1, 2, 3)) == '0999-12-31T01:02:03Z'
+        assert jm._iso(datetime(9999, 12, 31, 23, 59, 59, 999999,
+                                tzinfo=timezone.utc)) == '9999-12-31T23:59:59Z'
+
+    @pytest.mark.parametrize('value', [
+        '9999-12-31T23:59:59-05:00', '9999-12-31T23:59:59-00:01',
+        '9999-12-31T23:59:59-23:59', '0001-01-01T00:00:00+05:00',
+        '0001-01-01T00:00:00+23:59'])
+    def test_an_instant_with_no_utc_datetime_keeps_its_offset(self, value):
+        parsed = jm._parse_iso(value)
+        with pytest.raises(OverflowError):
+            parsed.astimezone(timezone.utc)          # what _iso used to do
+        assert jm._iso(parsed) == value
+        assert jm._parse_iso(jm._iso(parsed)) == parsed
+
+    def test_the_fallback_drops_microseconds_like_the_z_form(self):
+        parsed = jm._parse_iso('9999-12-31T23:59:59.999999-05:00')
+        assert jm._iso(parsed) == '9999-12-31T23:59:59-05:00'
+
+    def test_a_representable_offset_still_writes_the_z_form(self):
+        # The last instant an offset can reach without leaving the range.
+        parsed = jm._parse_iso('9999-12-31T18:59:59-05:00')
+        assert jm._iso(parsed) == '9999-12-31T23:59:59Z'
+        assert jm._iso(jm._parse_iso('0001-01-01T05:00:00+05:00')) \
+            == '0001-01-01T00:00:00Z'
+
+
 class TestParseIso:
+    def test_accepts_an_offset_whose_utc_instant_is_out_of_range(self):
+        # Comparisons and timestamp() do not convert to UTC; 4.6.2 accepted it.
+        late = jm._parse_iso('9999-12-31T23:59:59-05:00')
+        early = jm._parse_iso('0001-01-01T00:00:00+05:00')
+        assert late > datetime(2026, 1, 1, tzinfo=timezone.utc)
+        assert early < datetime(2026, 1, 1, tzinfo=timezone.utc)
+        assert late.timestamp() == 253402318799
+        assert early.timestamp() == -62135614800
+
     def test_default_where_matches_ob3_message(self):
         # ob3 called _parse_iso(s) with no `where`; the default keeps its message.
         with pytest.raises(ValueError, match='date is missing a UTC offset'):

@@ -240,38 +240,78 @@ def _ob2_hosted_payload(**override) -> dict:
     return payload
 
 
+#: Aware timestamps that are valid ISO 8601 and compare fine, but whose UTC
+#: instant is past what ``datetime`` holds (9999-12-31T23:59:59-05:00 is
+#: 10000-01-01T04:59:59Z): converting them to UTC raises OverflowError.
+PAST_THE_LATE_END = ['9999-12-31T23:59:59-05:00', '9999-12-31T23:59:59-00:01',
+                     '9999-12-31T23:59:59-23:59']
+PAST_THE_EARLY_END = ['0001-01-01T00:00:00+05:00', '0001-01-01T00:00:00+23:59']
+NO_UTC_DATETIME = PAST_THE_LATE_END + PAST_THE_EARLY_END
+
+
 class TestOB2Dates:
-    """F6: _parse_iso accepted 9999-12-31T23:59:59-23:59 (aware datetimes
-    compare fine) and Assertion.to_dict() then overflowed converting it to
-    UTC -- in _verify_hosted, after the attacker's URL had been fetched."""
+    """9999-12-31T23:59:59-23:59 parsed (aware datetimes compare fine) and
+    Assertion.to_dict() then overflowed converting it to UTC, in
+    _verify_hosted, after the attacker's URL had been fetched. The parser keeps
+    accepting such a timestamp, as 4.6.2 did; what converts to UTC (_iso) now
+    writes it with its own offset."""
 
-    EXTREME = ['9999-12-31T23:59:59-23:59', '0001-01-01T00:00:00+23:59']
+    ISSUER = 'https://attacker.example/org.json'
 
-    @pytest.mark.parametrize('field', ['issuedOn', 'expires'])
-    @pytest.mark.parametrize('value', EXTREME)
-    def test_verify_refuses_it_before_fetching_anything(self, field, value):
-        from openbadgeslib.ob2 import OB2VerificationError, OB2Verifier
+    def _verify(self, payload):
+        from openbadgeslib.ob2 import OB2Verifier
+        docs = {payload['id']: payload,
+                payload['badge']: {'issuer': self.ISSUER},
+                self.ISSUER: {'id': self.ISSUER}}
         fetched = []
 
         def download(url):
             fetched.append(url)
-            return b'{"anything": 1}'
+            return json.dumps(docs[url]).encode()
 
-        token = _unsigned_token({'alg': 'none'},
-                                _ob2_hosted_payload(**{field: value}))
-        with pytest.raises(OB2VerificationError, match='out of range'):
-            OB2Verifier(download=download).verify(token)
-        assert fetched == []
+        token = _unsigned_token({'alg': 'none'}, payload)
+        return OB2Verifier(download=download).verify(token), fetched
 
-    @pytest.mark.parametrize('value', EXTREME)
-    def test_verify_badge_reports_it_as_invalid(self, monkeypatch, value):
-        from openbadgeslib.verify import verify_badge
-        monkeypatch.setattr('openbadgeslib.ob2.verifier.download_file',
-                            lambda url: b'{"anything": 1}')
-        svg = (TESTS_DIR / 'withoutxmlheader.svg').read_bytes()
-        token = _unsigned_token({'alg': 'none'}, _ob2_hosted_payload(issuedOn=value))
-        result = verify_badge(baking.bake_svg(svg, token), '2')
-        assert result.valid is False
+    @pytest.mark.parametrize('value', PAST_THE_LATE_END)
+    def test_a_late_expiry_is_never_expires(self, value):
+        assertion, fetched = self._verify(_ob2_hosted_payload(expires=value))
+        assert assertion.expires.isoformat() == value
+        assert len(fetched) == 3                    # the whole hosted walk ran
+        assert assertion.to_dict()['expires'] == value
+
+    @pytest.mark.parametrize('value', PAST_THE_EARLY_END)
+    def test_an_early_issue_date_is_issued(self, value):
+        assertion, _ = self._verify(_ob2_hosted_payload(issuedOn=value))
+        assert assertion.issued_on.isoformat() == value
+        assert assertion.to_dict()['issuedOn'] == value
+
+    @pytest.mark.parametrize('value', PAST_THE_EARLY_END)
+    def test_an_early_expiry_has_expired(self, value):
+        from openbadgeslib.ob2 import OB2VerificationError
+        with pytest.raises(OB2VerificationError, match='Assertion has expired'):
+            self._verify(_ob2_hosted_payload(expires=value))
+
+    @pytest.mark.parametrize('value', PAST_THE_LATE_END)
+    def test_a_late_issue_date_is_not_yet_valid(self, value):
+        from openbadgeslib.ob2 import OB2VerificationError
+        with pytest.raises(OB2VerificationError, match='not yet valid'):
+            self._verify(_ob2_hosted_payload(issuedOn=value))
+
+    @pytest.mark.parametrize('value', PAST_THE_LATE_END)
+    def test_the_signer_writes_it(self, rsa_priv_pem, value):
+        from datetime import datetime, timezone
+        from openbadgeslib.ob2 import (Assertion, IdentityObject, OB2Signer,
+                                       Verification)
+        expires = datetime.fromisoformat(value)
+        token = OB2Signer(privkey_pem=rsa_priv_pem, algorithm='RS256').sign(
+            Assertion(recipient=IdentityObject.create('r@example.com', salt='s'),
+                      badge='https://example.com/badge.json',
+                      verification=Verification(type='SignedBadge',
+                                                creator='https://example.com/key.json'),
+                      issued_on=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                      expires=expires))
+        payload = json.loads(jws_utils.base64url_decode(token.split('.')[1]))
+        assert payload['expires'] == value
 
     def test_a_valid_offset_still_parses_to_the_same_instant(self):
         from openbadgeslib._jsonmodel import _parse_iso
@@ -281,6 +321,61 @@ class TestOB2Dates:
         # The edges of the representable range are fine.
         _parse_iso('9999-12-31T23:59:59Z')
         _parse_iso('0001-01-01T00:00:00Z')
+
+
+class TestOB3Dates:
+    """The validity window and a proof's created/expires take the same
+    timestamps: a late validUntil with a negative offset is the "never
+    expires" some tools write, and 4.6.2 verified it."""
+
+    FIELD_CLAIM = {'validUntil': 'exp', 'validFrom': 'nbf'}
+
+    @pytest.mark.parametrize('field, value', (
+        [('validUntil', v) for v in PAST_THE_LATE_END]
+        + [('validFrom', v) for v in PAST_THE_EARLY_END]))
+    def test_a_jwt_verifies_and_serialises_back(self, did_key_signer, field, value):
+        from datetime import datetime
+        from openbadgeslib.ob3 import OB3Verifier
+        signer, did = did_key_signer
+        token = _signed_jwt(signer, did, lambda p: p.update({field: value}))
+        credential = OB3Verifier.for_issuer_did(did).verify(token)
+        assert credential.to_vc()[field] == value
+        claim = self.FIELD_CLAIM[field]
+        assert credential.to_jwt_payload()[claim] == int(
+            datetime.fromisoformat(value).timestamp())
+
+    @pytest.mark.parametrize('field, value, message', (
+        [('validFrom', v, 'not yet valid') for v in PAST_THE_LATE_END]
+        + [('validUntil', v, 'expired') for v in PAST_THE_EARLY_END]))
+    def test_a_jwt_outside_its_window_is_refused_for_that(self, did_key_signer,
+                                                          field, value, message):
+        from openbadgeslib.ob3 import OB3VerificationError, OB3Verifier
+        signer, did = did_key_signer
+        token = _signed_jwt(signer, did, lambda p: p.update({field: value}))
+        with pytest.raises(OB3VerificationError, match=message):
+            OB3Verifier.for_issuer_did(did).verify(token)
+
+    @pytest.mark.parametrize('field, value', (
+        [('validUntil', v) for v in PAST_THE_LATE_END]
+        + [('validFrom', v) for v in PAST_THE_EARLY_END]))
+    def test_a_data_integrity_credential_verifies_and_serialises_back(
+            self, ob3_credential, ed25519_keypair, field, value):
+        pytest.importorskip('pyld')
+        from ldp_helpers import did_key, sign_ldp
+        from openbadgeslib.ob3.ldp import OB3LdpVerifier
+        priv, pub = ed25519_keypair
+        document = ob3_credential.to_vc()
+        document['issuer'] = {'id': did_key(pub), 'type': ['Profile'], 'name': 'I'}
+        document[field] = value
+        credential = OB3LdpVerifier().verify(sign_ldp(document, priv, pub))
+        assert credential.to_vc()[field] == value
+
+    def test_a_proof_with_such_timestamps_is_well_formed(self):
+        from openbadgeslib.ob3.ldp import _validate_proof
+        _validate_proof({'proofPurpose': 'assertionMethod',
+                         'verificationMethod': 'did:key:z6Mk#z6Mk',
+                         'created': PAST_THE_EARLY_END[0],
+                         'expires': PAST_THE_LATE_END[0]}, 'assertionMethod')
 
 
 class TestOB2RemoteKey:

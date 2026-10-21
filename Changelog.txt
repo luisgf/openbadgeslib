@@ -35,17 +35,23 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     issuer or revocation URL with a malformed response (a chunked body that
     ends inside a chunk raised `http.client.IncompleteRead` out of it).
 
-  - fix(ob2): a hosted assertion whose `issuedOn` or `expires` is
-    `9999-12-31T23:59:59-23:59` (or `0001-01-01T00:00:00+23:59`) is an
-    OB2VerificationError, as is a remote CryptographicKey whose
-    `publicKeyPem` holds a lone surrogate. The first parsed (aware datetimes
-    compare) and raised OverflowError converting to UTC in
-    `Assertion.to_dict()`, after the library had fetched the attacker's `id`
-    URL; the second raised UnicodeEncodeError, even on the hosted path that
-    is documented never to fail the verdict. The date helper the OB2 and OB3
-    models share refuses a timestamp with no UTC instant at parse, so the
-    credential `validFrom`/`validUntil` and a proof's `created`/`expires`
-    get the same typed failure.
+  - fix(ob2): a timestamp with no UTC `datetime` no longer ends in an
+    OverflowError. `9999-12-31T23:59:59-05:00` is 10000-01-01T04:59:59Z and
+    `0001-01-01T00:00:00+05:00` precedes year 1: valid ISO 8601, comparable,
+    and accepted by the parser, but `Assertion.to_dict()` converted them to
+    UTC, so a hosted assertion carrying one as `issuedOn` or `expires` raised
+    OverflowError out of `OB2Verifier.verify` after the library had fetched the
+    attacker's `id` URL, and `OB2Signer.sign` and `OpenBadgeCredential.to_vc()`
+    raised it for a datetime like it. The date helper the OB2 and OB3 models
+    share still accepts every aware timestamp, as 4.6.2 did (a credential's
+    `validFrom`/`validUntil` and a proof's `created`/`expires` too), and the one
+    place that converts to UTC now writes such an instant with its own offset
+    (`9999-12-31T23:59:59-05:00`), which names the same instant. Every other
+    value is written as before, except that a year below 1000 is zero-padded on
+    every platform (`0001-01-01T00:00:00Z`). A remote CryptographicKey whose
+    `publicKeyPem` holds a lone surrogate raised UnicodeEncodeError, even on
+    the hosted path that is documented never to fail the verdict; it is an
+    OB2VerificationError now.
 
   - security(ob3): a hostile JWT-VC is an OB3VerificationError, whatever its
     header or payload carries. PyJWT's own header checks (a non-string `kid`,
