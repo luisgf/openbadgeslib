@@ -571,6 +571,68 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     CLR takes about 1.8 times the CPU of 4.6.2 (0.45 s against 0.25 s for 250
     members), the cost of the checks added in 4.6.3.
 
+  - compatibility: what 4.6.3 changes for a caller who sends no hostile
+    input. Nothing is removed or renamed, and every credential of the test
+    suite and of 1EdTech's examples verifies as it did in 4.6.2; what follows
+    is what a deployment may notice.
+    - Dependencies. `cryptography` must be `>=50` (it was `>=45`): a floor, not
+      a pin, but an environment that holds `cryptography<50` (a distribution
+      package, a constraints file, a lock file built on the old floor) stops
+      resolving until that is lifted, and 49.0.0 and later publish no wheel
+      for macOS x86_64 or 32-bit Windows. `pyld>=3.3.0,<4` (the ceiling dates
+      from 4.6.2) is a pin in practice, 3.3.0 being the only release in that
+      range: the canonicalization guard refuses with `OB3GuardUnavailable` any
+      pyld it was not fitted to, and pip checks the range only when it
+      resolves.
+    - New names. `OB3GuardUnavailable` (a subclass of `OB3VerificationError`,
+      exported by `openbadgeslib.ob3`) is the only name this release adds to a
+      public `__all__`. `openbadgeslib.ob3.ldp.MAX_DELEGATED_QUADS` is a module
+      constant outside any `__all__`; the guard, the structure screen, the JSON
+      bound and the lock around pyld live in underscore modules.
+    - Refused now, accepted before. A number that is not finite or not a float
+      (`Infinity`, `NaN`, `1e999`: an OB1 `expires`, `creditsAvailable`, a
+      status entry), a lone surrogate, and JSON nested more than 128 levels in
+      a token, a baked assertion or a document a host serves. In a Data
+      Integrity document, for both cryptosuites: more than 1,600 typed
+      objects, 2,000 type entries or 8,000 objects (twice that through the
+      low-level functions, which a CLR uses), a node with more than 8 types
+      or a repeated one, more than 1,414 distinct
+      values in one property (about 1,000 in each of two), an `@context` of
+      more than 8 entries in the low-level functions, a canonicalization
+      beyond its work or time budget, and an ecdsa-sd-2023 credential of more
+      than 2,500 statements. A real badge is far inside all of them (1EdTech's
+      "Complete" example has 104 typed objects and spends 1,124 of the 250,000
+      units), but a badge with 1,500 alignments verified in 4.6.2 and does not
+      now.
+    - Signing. `add_data_integrity_proof`, `OB3LdpSigner` and
+      `sign_clr_credential` refuse a document over 256 KiB (compact UTF-8)
+      before any JSON-LD work, so a CLR that 4.6.2 signed may not be signed
+      again: of member credentials of 1.34 KB (three alignments and an
+      evidence entry) 194 fit, and 4.6.2 signed 400 (538 KB). Verifying one
+      that 4.6.2 signed is unchanged up to the structure limits above.
+    - Accepted now, refused before. A credential whose `proof` is an array of
+      one entry verifies for ecdsa-sd-2023, as it did for eddsa-rdfc-2022.
+      A timestamp with no UTC `datetime` (`9999-12-31T23:59:59-05:00`) is
+      accepted, as in 4.6.2, and now also serialised (with its own offset).
+    - Messages and types. A document pyld cannot expand fails with "could not
+      canonicalize the credential: ..." (it was "Could not convert input to
+      RDF dataset"). A hostile token, body or document that ended in a bare
+      `RecursionError`, `OverflowError`, `TypeError` or `UnicodeEncodeError`
+      is now the typed failure of the verifier it reached
+      (`OB3VerificationError`, `OB2VerificationError`, `ErrorSigningFile`,
+      `AssertionFormatIncorrect`), and OB1's `get_badge_status` returns its
+      VerifyInfo where it raised: code that matches on the old text, or
+      catches the bare exceptions, should use those.
+    - Cost. Signing and verifying a Data Integrity document takes more CPU:
+      CPython 3.14, minimum of 5 runs against 4.6.2, a badge with 200
+      alignments 0.083 to 0.100 s to verify and one with 1,000 alignments
+      0.51 to 0.60 s (about 1.2 times), a CLR of 100 member credentials
+      (135 KB) 0.15 to 0.26 s and of 150 (202 KB) 0.23 to 0.40 s (about 1.8
+      times), either way to sign or to verify. The pyld calls of the Data
+      Integrity path share one process-wide lock, so verifications on the
+      threads of one process no longer overlap inside pyld; use processes to
+      scale.
+
 * v4.6.2 - 2026-10-16
 
   - security(deps): the openvc-core floor of `[eudi]`, `[ldp-sd]` and
