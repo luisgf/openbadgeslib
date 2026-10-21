@@ -264,9 +264,14 @@ def _pinned_dial(conn: http.client.HTTPConnection, default_port: int,
 _SOCKET_TIMEOUT = 30
 
 
-class _DownloadBudgetExceeded(ValueError):
+class _DownloadBudgetExceeded(Exception):
     """The wall-clock budget of a download ran out mid-response; download_file
-    turns it into the ValueError that names the URL."""
+    turns it into the ValueError that names the URL.
+
+    Deliberately not a ValueError: ``http.client`` reads the size line of a
+    chunked body inside ``try: ... except ValueError: raise IncompleteRead``,
+    so a ValueError raised from the reader there reached the caller as an
+    unrelated ``IncompleteRead`` instead of the budget's own error."""
 
 
 class _BudgetReader(io.RawIOBase):
@@ -457,7 +462,20 @@ def download_file(url: str, allow_insecure: bool = False,
     The check is re-applied to redirect targets. HTTPS always, and HTTP when
     ``allow_insecure=True``, pin the socket to the validated IP (DNS
     rebinding). The response body is bounded to MAX_DOWNLOAD_SIZE to limit
-    memory use.
+    memory use, and the whole call (every redirect, the status line, headers
+    and body, a chunked body's size lines included) to MAX_DOWNLOAD_SECONDS.
+
+    Raises:
+        ValueError: the URL or a redirect target is refused (a non-HTTPS
+            scheme, a non-public host, a host that does not resolve), the body
+            exceeds MAX_DOWNLOAD_SIZE, or the MAX_DOWNLOAD_SECONDS budget runs
+            out (a server that sends a byte every few seconds).
+        OSError: a network fault: ``urllib.error.URLError``, ``HTTPError`` (an
+            HTTP error status) and the socket and TLS errors.
+        http.client.HTTPException: the server sent a malformed response, such
+            as a chunked body that ends inside a chunk (``IncompleteRead``).
+            It is neither a ValueError nor an OSError: a caller that must
+            survive a hostile server catches it too (``ob1.Verifier`` does).
     """
     u = urlparse(url)
 

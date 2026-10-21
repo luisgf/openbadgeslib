@@ -647,15 +647,45 @@ def _prompt_response(conn, stop):
                  b'Connection: close\r\n\r\n' + b'y' * 200000)
 
 
-def _download(url, **kwargs):
-    """download_file in a thread, so a call that never ends fails the test
-    instead of hanging it. Returns (outcome, finished)."""
+_CHUNKED = b'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n'
+
+
+def _chunk_size_drip(conn, stop):
+    """The size line of the first chunk never ends: one hex digit at a time.
+    http.client reads that line inside a ``try: ... except ValueError: raise
+    IncompleteRead``, which swallowed the budget's own exception."""
+    _drip(conn, stop, _CHUNKED, b'0')
+
+
+def _chunk_data_drip(conn, stop):
+    _drip(conn, stop, _CHUNKED + b'f4240\r\n', b'x')
+
+
+def _chunk_trailer_drip(conn, stop):
+    _drip(conn, stop, _CHUNKED + b'0\r\n', b'T')
+
+
+def _chunk_truncated(conn, stop):
+    conn.sendall(_CHUNKED + b'5\r\nab')
+
+
+def _chunked_redirect_drip(conn, stop):
+    """A 302 whose chunked body drips its size line; urllib reads and discards
+    that body before it follows the Location (which is never reached)."""
+    _drip(conn, stop,
+          b'HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:9/\r\n'
+          b'Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n', b'0')
+
+
+def _bounded(call):
+    """Run *call* in a thread, so one that never ends fails the test instead of
+    hanging it. Returns (outcome, finished)."""
     import threading
     outcome = {}
 
     def run():
         try:
-            outcome['value'] = download_file(url, **kwargs)
+            outcome['value'] = call()
         except BaseException as exc:                     # noqa: BLE001
             outcome['error'] = exc
 
@@ -663,6 +693,11 @@ def _download(url, **kwargs):
     thread.start()
     thread.join(timeout=10)
     return outcome, not thread.is_alive()
+
+
+def _download(url, **kwargs):
+    """download_file under :func:`_bounded`."""
+    return _bounded(lambda: download_file(url, **kwargs))
 
 
 @pytest.fixture()
@@ -677,8 +712,11 @@ class TestDownloadBudgetOnTheWire:
     dripped the same way, held download_file open for as long as the server
     liked (the 30 s socket timeout never fired)."""
 
-    @pytest.mark.parametrize('behaviour', [_body_drip, _header_drip, _status_drip],
-                             ids=['body', 'header', 'status-line'])
+    @pytest.mark.parametrize('behaviour', [
+        _body_drip, _header_drip, _status_drip, _chunk_size_drip,
+        _chunk_data_drip, _chunk_trailer_drip, _chunked_redirect_drip,
+    ], ids=['body', 'header', 'status-line', 'chunk-size-line', 'chunk-data',
+            'chunk-trailer', 'redirect-chunked-body'])
     def test_a_dripping_server_hits_the_budget(self, one_second_budget, behaviour):
         server = _DripServer(behaviour)
         try:
@@ -722,44 +760,107 @@ class TestDownloadBudgetOnTheWire:
     def test_over_tls(self, one_second_budget, tmp_path, monkeypatch):
         """The production path: a verifying TLS client against a server whose
         certificate it trusts, prompt and dripping."""
-        import ssl
-        import datetime as dt
-        from cryptography import x509
-        from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric import ec
-        from cryptography.x509.oid import NameOID
-        import ipaddress
-
-        key = ec.generate_private_key(ec.SECP256R1())
-        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, '127.0.0.1')])
-        now = dt.datetime.now(dt.timezone.utc)
-        cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
-                .public_key(key.public_key()).serial_number(x509.random_serial_number())
-                .not_valid_before(now - dt.timedelta(minutes=5))
-                .not_valid_after(now + dt.timedelta(hours=1))
-                .add_extension(x509.SubjectAlternativeName(
-                    [x509.IPAddress(ipaddress.ip_address('127.0.0.1'))]), False)
-                .sign(key, hashes.SHA256()))
-        cert_pem = cert.public_bytes(serialization.Encoding.PEM)
-        (tmp_path / 'cert.pem').write_bytes(cert_pem)
-        (tmp_path / 'key.pem').write_bytes(key.private_bytes(
-            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
-            serialization.NoEncryption()))
-        server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        server_ctx.load_cert_chain(str(tmp_path / 'cert.pem'), str(tmp_path / 'key.pem'))
-        client_ctx = ssl.create_default_context(cadata=cert_pem.decode())
-        monkeypatch.setattr(ssl, '_create_default_https_context',
-                            lambda *a, **k: client_ctx)
-
+        server_ctx = _trusted_tls_server(tmp_path, monkeypatch)
         prompt = _DripServer(_prompt_response, tls_context=server_ctx)
         drip = _DripServer(_body_drip, tls_context=server_ctx)
+        size_line = _DripServer(_chunk_size_drip, tls_context=server_ctx)
         try:
             ok, ok_finished = _download('https://127.0.0.1:%d/' % prompt.port,
                                         allow_private=True)
             slow, slow_finished = _download('https://127.0.0.1:%d/' % drip.port,
                                             allow_private=True)
+            chunked, chunked_finished = _download(
+                'https://127.0.0.1:%d/' % size_line.port, allow_private=True)
         finally:
             prompt.close()
             drip.close()
+            size_line.close()
         assert ok_finished and ok.get('value') == b'y' * 200000, ok
         assert slow_finished and 'time budget' in str(slow.get('error')), slow
+        assert chunked_finished, chunked
+        assert isinstance(chunked.get('error'), ValueError), chunked
+        assert 'time budget' in str(chunked['error'])
+
+    def test_a_truncated_chunked_body_is_a_malformed_response(self):
+        """Not the budget's: a body that ends inside a chunk is
+        http.client.IncompleteRead, which download_file documents and lets
+        through (it is neither a ValueError nor an OSError)."""
+        import http.client
+        server = _DripServer(_chunk_truncated)
+        try:
+            outcome, finished = _download(
+                'http://127.0.0.1:%d/' % server.port,
+                allow_insecure=True, allow_private=True)
+        finally:
+            server.close()
+        assert finished
+        assert isinstance(outcome.get('error'), http.client.IncompleteRead), outcome
+
+
+def _trusted_tls_server(tmp_path, monkeypatch):
+    """A TLS server context for 127.0.0.1 with a throwaway certificate, and the
+    client side trusting exactly that certificate (urllib's default context)."""
+    import ssl
+    import datetime as dt
+    import ipaddress
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, '127.0.0.1')])
+    now = dt.datetime.now(dt.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
+            .public_key(key.public_key()).serial_number(x509.random_serial_number())
+            .not_valid_before(now - dt.timedelta(minutes=5))
+            .not_valid_after(now + dt.timedelta(hours=1))
+            .add_extension(x509.SubjectAlternativeName(
+                [x509.IPAddress(ipaddress.ip_address('127.0.0.1'))]), False)
+            .sign(key, hashes.SHA256()))
+    cert_pem = cert.public_bytes(serialization.Encoding.PEM)
+    (tmp_path / 'cert.pem').write_bytes(cert_pem)
+    (tmp_path / 'key.pem').write_bytes(key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption()))
+    server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_ctx.load_cert_chain(str(tmp_path / 'cert.pem'), str(tmp_path / 'key.pem'))
+    client_ctx = ssl.create_default_context(cadata=cert_pem.decode())
+    monkeypatch.setattr(ssl, '_create_default_https_context',
+                        lambda *a, **k: client_ctx)
+    return server_ctx
+
+
+class TestOB1VerifierAgainstAHostileServer:
+    """ob1.Verifier.get_badge_status is documented to return a VerifyInfo
+    whatever the badge, issuer and revocation URLs serve. A server that drips
+    the size line of a chunked body, or ends inside a chunk, made
+    download_file raise http.client.IncompleteRead (an HTTPException: neither
+    an OSError nor a ValueError), which the verifier did not catch."""
+
+    @pytest.mark.parametrize('behaviour', [_chunk_size_drip, _chunked_redirect_drip,
+                                           _body_drip, _chunk_truncated],
+                             ids=['chunk-size-line', 'redirect-chunked-body',
+                                  'body', 'truncated-chunk'])
+    def test_it_returns_a_verdict(self, one_second_budget, badge_for_verify_rsa,
+                                  behaviour):
+        from openbadgeslib import util
+        from openbadgeslib.ob1.badge import BadgeStatus
+        from openbadgeslib.ob1.verifier import Verifier
+        badge, identity = badge_for_verify_rsa
+        badge.source.json_url = 'https://example.com/badge.json'
+        server = _DripServer(behaviour)
+
+        def fetch(url):
+            return util.download_file('http://127.0.0.1:%d/' % server.port,
+                                      allow_insecure=True, allow_private=True)
+
+        try:
+            with patch('openbadgeslib.ob1.verifier.download_file', side_effect=fetch):
+                outcome, finished = _bounded(
+                    lambda: Verifier(identity=identity).get_badge_status(badge))
+        finally:
+            server.close()
+        assert finished, 'get_badge_status is still waiting on the server'
+        assert 'error' not in outcome, outcome
+        assert outcome['value'].status is BadgeStatus.SIGNATURE_ERROR

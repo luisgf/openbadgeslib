@@ -30,6 +30,7 @@ from .._jws.exceptions import JWSException
 from .._jws import verify_block as jws_verify_block
 from .._jws import utils as jws_utils
 from ..errors import AssertionFormatIncorrect, NotIdentityInAssertion, UnknownKeyType, VerifierExceptions
+import http.client
 import json
 import logging
 logger = logging.getLogger(__name__)
@@ -109,6 +110,13 @@ class Verifier():
             # block / size or time budget; treat it the same as a network
             # failure instead of letting it escape uncaught.
             return VerifyInfo(BadgeStatus.SIGNATURE_ERROR, str(e))
+        except http.client.HTTPException as e:
+            # A malformed response from the same attacker-influenced URLs, such
+            # as a chunked body that ends inside a chunk (IncompleteRead): an
+            # HTTPException is neither an OSError nor a ValueError. Name the
+            # class only, not str(e): BadStatusLine echoes the server's line.
+            return VerifyInfo(BadgeStatus.SIGNATURE_ERROR,
+                              'Malformed HTTP response (%s)' % type(e).__name__)
         except VerifierExceptions as e:
             # check_revocation raises AssertionFormatIncorrect on malformed or
             # non-object remote badge/issuer/revocation JSON (again from
