@@ -28,7 +28,7 @@
 # cap bounds the BYTES, not that work: pyld applies a type-scoped @context once
 # per entry of every node's ``type`` array (duplicates included) and once per
 # typed node, in expansion and again in compaction, and it applies the
-# entries of an ``@context`` array one by one. That costs ~0.3 to 0.6 ms per
+# entries of an ``@context`` array one by one. That costs ~0.3 to 0.8 ms per
 # type entry through OB3LdpVerifier.verify, ~40 microseconds per byte of a
 # short typed node against ~2 for ordinary text: a 258 KB credential whose
 # nodes repeat ``"type": ["Profile", "Profile", ...]`` cost 9 to 11 s of CPU,
@@ -45,6 +45,8 @@
 #
 # * a ``type`` / ``@type`` array that repeats an entry, or lists more than
 #   MAX_TYPES_PER_NODE of them (a real node has one to three);
+# * containers nested more than MAX_DEPTH deep (where the deepest node sits on
+#   the call stack matters on CPython 3.11 and 3.12, see MAX_DEPTH);
 # * more than MAX_TYPED_NODES typed objects, MAX_TYPE_ENTRIES type entries
 #   (a value of a property named like a term that has an @context of its own
 #   counts as one, see scoped_terms) or MAX_NODES objects in all;
@@ -156,8 +158,8 @@ def scoped_terms(contexts: Iterable[Any]) -> FrozenSet[str]:
     costs the same as one of the second (``"DataIntegrityProof": [0, 0, ...]``
     in a node: 130,000 values, 6 to 9 s of CPU through OB3LdpVerifier.verify),
     so what counts is that the term has a context, not which kind it is. A
-    value of such a key costs about a tenth of a type entry (22 to 50
-    microseconds against 0.3 to 0.6 ms) and is counted as one.
+    value of such a key costs about a tenth of a type entry (23 to 48
+    microseconds against 0.3 to 0.8 ms) and is counted as one.
 
     Iterative, so a context of any depth is walked."""
     found = set()
