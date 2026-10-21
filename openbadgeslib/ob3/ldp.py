@@ -725,6 +725,16 @@ def add_data_integrity_proof(
 
     signed = copy.deepcopy(document)
     signed['proof'] = dict(proof, proofValue='z' + _b58btc_encode(signature))
+    # The check above measured the document without its proof, which adds
+    # about 0.4 KB: what is returned is what verify_data_integrity_proof
+    # measures, so a document that fits only without it is refused here
+    # rather than signed into one no verifier takes.
+    signed_size = len(json.dumps(signed, ensure_ascii=False,
+                                 separators=(',', ':')).encode('utf-8'))
+    if signed_size > MAX_LDP_DOCUMENT_BYTES:
+        raise ErrorSigningFile(
+            'credential document is %d bytes once signed, over the %d-byte '
+            'limit' % (signed_size, MAX_LDP_DOCUMENT_BYTES))
     return signed
 
 

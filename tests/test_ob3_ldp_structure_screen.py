@@ -946,6 +946,49 @@ class TestLowLevelVerifyBoundsTheBytesFirst:
                 json.dumps(dict(doc, pad='x' * ldp.MAX_LDP_DOCUMENT_BYTES)))
 
 
+class TestWhatIsSignedFitsWhatIsVerified:
+    """add_data_integrity_proof measured the document without the proof it
+    adds (~0.4 KB): one within that of the cap was signed and then refused by
+    verify_data_integrity_proof, which measures the signed document."""
+
+    @staticmethod
+    def _document(size):
+        """An unsigned document whose compact UTF-8 form is *size* bytes."""
+        doc = _credential(note='')
+        base = len(json.dumps(doc, separators=(',', ':')).encode('utf-8'))
+        doc['note'] = 'x' * (size - base)
+        return doc
+
+    def test_a_document_that_fits_only_without_its_proof_is_refused(
+            self, keypair):
+        doc = self._document(ldp.MAX_LDP_DOCUMENT_BYTES - 100)
+        with pytest.raises(ErrorSigningFile, match='once signed'):
+            add_data_integrity_proof(doc, keypair[0], 'did:example:vm')
+
+    def test_one_that_fits_with_it_is_signed_and_verified(self, keypair):
+        did = did_key(keypair[1])
+        vm = '%s#%s' % (did, did[len('did:key:'):])
+        doc = self._document(ldp.MAX_LDP_DOCUMENT_BYTES - 700)
+        signed = add_data_integrity_proof(doc, keypair[0], vm)
+        size = len(json.dumps(signed, separators=(',', ':')).encode('utf-8'))
+        assert ldp.MAX_LDP_DOCUMENT_BYTES - 700 < size <= ldp.MAX_LDP_DOCUMENT_BYTES
+        verify_data_integrity_proof(signed, keypair[1])
+
+    def test_the_boundary_is_the_signed_size(self, keypair):
+        did = did_key(keypair[1])
+        vm = '%s#%s' % (did, did[len('did:key:'):])
+        probe = add_data_integrity_proof(self._document(1000), keypair[0], vm)
+        proof_bytes = len(json.dumps(probe, separators=(',', ':'))) - 1000
+        doc = self._document(ldp.MAX_LDP_DOCUMENT_BYTES - proof_bytes - 2)
+        signed = add_data_integrity_proof(doc, keypair[0], vm)
+        verify_data_integrity_proof(signed, keypair[1])
+        # a few bytes more and it is over (the proof value is 87 or 88 chars)
+        with pytest.raises(ErrorSigningFile, match='once signed'):
+            add_data_integrity_proof(
+                self._document(ldp.MAX_LDP_DOCUMENT_BYTES - proof_bytes + 4),
+                keypair[0], vm)
+
+
 class TestEveryScopedTermIsBounded:
     """A term with an @context of its own, used as a property KEY, costs a
     type entry per value whether the bundled context scopes it to a type or to
