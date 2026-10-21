@@ -385,8 +385,8 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     canonicalized, and 6.8 s on 4.6.1 and 4.6.2, which also validate the
     contexts; 3.2.0 to 4.4 share the canonicalization path but could not be
     run here), and `verify_data_integrity_proof` and `add_data_integrity_proof`,
-    which cap nothing, also paid ~3 ms for each entry of an `@context` array
-    listing one pinned context a thousand times (34 s for 610 KB). The new
+    which capped nothing then, also paid ~3 ms for each entry of an `@context`
+    array listing one pinned context a thousand times (34 s for 610 KB). The new
     `ob3/_structure_screen.py` makes one iterative pass over the parsed JSON
     (no pyld, no recursion, any nesting) at the top of
     `OB3LdpVerifier.verify`, `verify_data_integrity_proof`,
@@ -394,33 +394,99 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     `OB3VerificationError` ("refusing the credential: ...";
     `ErrorSigningFile` when signing; the message names the limit, never the
     document): a node whose `type` repeats an entry or lists more than 8; a
-    document with more than 1,600 typed objects, 2,000 type entries or 8,000
-    objects, an embedded endorsement's content counting once more for every
-    credential that holds it and a value of a property named like any term
-    that has an `@context` of its own counting as one type entry (26 terms in
-    the pinned contexts, `cnf`, `proofPurpose`, `DataIntegrityProof`,
+    document with containers nested more than 36 deep (see the nesting entry
+    below); a document with more than 1,600 typed objects, 2,000 type entries
+    or 8,000 objects, an embedded endorsement's content counting once more
+    for every credential that holds it and a value of a property named like
+    any term that has an `@context` of its own counting as one type entry (26
+    terms in the pinned contexts, `cnf`, `proofPurpose`, `DataIntegrityProof`,
     `Achievement`, `Profile` among them; the CLR context's three when the
     low-level functions are given it, and those of any `extra_contexts`; pyld
     applies that context to every value, however the arrays are nested: a
     list of 130,000 integers under the key `DataIntegrityProof` cost 6 to 9 s
     of CPU through `verify`, 11 to 16 s inside an endorsement); and, in the
-    two low-level functions (context
-    validation bounds it for the verifier), an `@context` array of more than
-    8 entries or 4,096 entries in all. The low-level functions run no context
-    validation, a node takes about half the passes there, and they take
-    twice the three totals for eddsa-rdfc-2022 (ecdsa-sd-2023 keeps the
-    verifier's). The limits come from timing the most expensive document each
-    one admits through `verify` on CPython 3.10 to 3.15: 1.0 to 1.4 s of CPU
-    on an Apple M4 Pro (3.10 the slowest), against 7 to 15 s before, and
-    every hostile shape above is refused in tens of milliseconds at most
-    (the screen itself takes about a millisecond on a legitimate badge).
-    Real credentials sit far below them: the 1EdTech "Complete" example, as
-    the tests model it, has 104 typed objects, a badge with 200 alignments,
-    500 evidence entries and 50 results 805, and a CLR of 1,000 achievements
-    and 1,000 associations 3,005 (it verifies as before). What no longer
-    verifies: a badge with more than 1,600 typed objects, and a CLR of more
-    than 3,200 typed objects or 4,000 type entries, which is about 280 signed
-    member credentials of 11 typed objects each.
+    two low-level functions (context validation bounds it for the verifier),
+    an `@context` array of more than 8 entries or 4,096 entries in all. The
+    low-level functions run no context validation, a node takes about half
+    the passes there, and they take twice the three totals for eddsa-rdfc-2022
+    (ecdsa-sd-2023 keeps the verifier's). The limits come from timing the
+    most expensive document each one admits through `verify` on CPython 3.10
+    to 3.15: 1.25 to 1.55 s of CPU on an Apple M4 Pro (3.10 the slowest, 1.25
+    to 1.45 s on 3.11 to 3.15), against 7 to 15 s before, and every hostile
+    shape above is refused in tens of milliseconds at most (the screen itself
+    takes about a millisecond on a legitimate badge). Real credentials sit
+    far below them: the 1EdTech "Complete" example, as the tests model it,
+    has 104 typed objects and a badge with 200 alignments, 500 evidence
+    entries and 50 results 805. What no longer verifies: a badge with more
+    than 1,600 typed objects (a CLR is bounded by its size first: see the
+    entry on CLRs below).
+
+  - security(ldp): `verify_data_integrity_proof` bounds the size of the dict
+    it is handed, and `add_data_integrity_proof` the size of the document it
+    returns. The 256 KiB cap lived in `OB3LdpVerifier`'s parse and in
+    `add_data_integrity_proof`; the low-level verify, which is how CLR
+    credentials are verified, bounded nothing, so a large dict paid the whole
+    Python walk before it was refused (10 million empty objects: 2.1 s of CPU
+    and 690 MiB). It now measures the compact UTF-8 form of the dict, as
+    `add_data_integrity_proof` does, with `json.dumps` in C before anything
+    walks it (0.13 s and 40 MiB for the same dict), and refuses with
+    "credential document exceeds the 262144-byte limit". A document
+    `OB3LdpVerifier` accepts is never refused here: it measures the document
+    as received, spaces and escapes included. `add_data_integrity_proof`
+    measured the document without the proof it adds (about 0.4 KB), so one
+    within that of the cap was signed and then refused by every verifier: it
+    measures the signed document too, and refuses with "N bytes once signed".
+
+  - security(ldp): a Data Integrity document may nest at most 36 containers
+    deep (the JSON bound `_safejson` applies to everything is 128), and the
+    limit that remains on CPython 3.11 and 3.12 is documented. On those two
+    versions the interpreter allocates its call-stack data in 16 KiB chunks,
+    and a tight loop whose calls straddle a chunk boundary pays an allocation
+    for each call. pyld's duplicate check for the values of a node property
+    (`compare_values`, up to 1,000,000 comparisons, 0.35 s) is such a loop: a
+    28 KB document of 34 nested objects around an array of 1,300 distinct
+    objects cost `OB3LdpVerifier.verify` and `verify_data_integrity_proof` 5
+    to 10 s of CPU (0.3 s at 33 or 35 levels), ending in "signature
+    mismatch". Where the boundary falls depends on how deep the caller
+    already is (a web framework adds 40 to 100 frames), so whether a
+    deployment is exposed depends on its own stack and the document is
+    chosen to match it. For the worst shape (objects nested directly) at least
+    86 % of the caller depths have a nesting depth at which the loop sits on
+    a boundary within the 128 levels, and 22 % within 36 (the deepest document
+    the library accepts, 8 embedded endorsements inside a CLR member, is 28
+    deep; the 1EdTech examples are 6 to 10). **Known limit**: the cap lowers
+    the odds, it does not remove the cliff, and a hit costs about 7
+    microseconds per comparison through `verify` (10 through the low-level
+    function) against 0.35, up to the 1,000,000 the canonicalization guard
+    allows: on 3.11 and 3.12, 5 to 10 s of CPU in the unlucky 22 %. CPython
+    3.10 and 3.13 to 3.15 do not have it (no outlier in 3,000 placements
+    each). Run the workers that verify untrusted credentials under a CPU
+    limit (a resource limit or a timeout that kills the worker) where 3.11 or
+    3.12 is in use.
+
+  - fix(ob3): a signed CLR is held to the 256 KiB the verifiers accept, and
+    `sign_clr_credential` says how to split one that is over it. Its
+    docstring and the wiki quoted "about 280 signed member credentials" and
+    a CLR of a thousand achievements plus a thousand associations, counting
+    the structural limits only; the size cap binds first on every shape. A
+    signed member credential takes 0.93 KB at the least (281 fit in one
+    CLR), 1.5 KB with three alignments, a result, evidence and an image
+    (176) and 1.7 KB with a result description and an achievement image
+    (154); an achievement with an alignment and its association take 0.4 KB
+    (about 650), and the thousand-achievement CLR is 400 KB. The structural
+    limits come after, at about 500, 285 and 245 members of the three sizes.
+    The `ErrorSigningFile` now says what to do: "this CLR holds 300 member
+    credentials of about 931 bytes each; sign it as several CLRs of at most
+    about 266 members". **Changed**: 4.6.2 put no cap on a CLR; it signed
+    one of 400 minimal members (505 KB) in 0.4 s and
+    `verify_data_integrity_proof`, which is how CLRs are verified, took it.
+    Both now refuse a CLR over 256 KiB (compact UTF-8), so one that big
+    signed by 4.6.2 no longer verifies, and a transcript that embeds more
+    members than fit has to be split into several CLRs. The size is not what
+    protects the CPU (the structural limits do) but one rule for every Data
+    Integrity document, signer and verifier alike. Signing or verifying a
+    CLR takes about 1.8 times the CPU of 4.6.2 (0.45 s against 0.25 s for 250
+    members), the cost of the checks added in 4.6.3.
 
 * v4.6.2 - 2026-10-16
 
