@@ -191,13 +191,18 @@ def _hostile(scale=1):
             base, Achievement=[[0] * (scale * s.MAX_TYPE_ENTRIES + 100)]),
         'type-term-as-key-endorsed': dict(base, endorsement=[_endorsement(
             1, Profile=[0] * (scale * s.MAX_TYPE_ENTRIES + 100))]),
+        # the cliff document: nested past the bound around a wide array
+        'nested-past-the-bound': _evidence(base, [_nest(
+            s.MAX_DEPTH + 1, leaf={'alignment': [
+                {'name': 'x%d' % i} for i in range(1300)]})]),
     }
 
 
 HOSTILE = ['dupmany', 'one-node-20000-types', 'dup-in-an-endorsement',
            'distinct-typed-flood', 'two-types-per-node', 'untyped-flood',
            'scoped-property-flood', 'endorsed-flood', 'type-term-as-key',
-           'type-term-as-key-nested', 'type-term-as-key-endorsed']
+           'type-term-as-key-nested', 'type-term-as-key-endorsed',
+           'nested-past-the-bound']
 
 
 @pytest.fixture(scope='module')
@@ -541,6 +546,117 @@ class TestLimits:
             assert SENTINEL not in str(caught.value)
 
 
+def _nest(levels, leaf=None, *, kind='dict'):
+    """A document nested *levels* containers deep (the document is the first)
+    around *leaf*."""
+    node = {} if leaf is None else leaf
+    for level in range(levels - 1):
+        if kind == 'dict' or (kind == 'mixed' and level % 2 == 0):
+            node = {'alignment': node}
+        else:
+            node = [node]
+    return node
+
+
+class TestNestingDepth:
+    """How deep containers nest is bounded: where the deepest node of a
+    document sits on the call stack decides whether CPython 3.11 and 3.12 hit
+    their data-stack chunk boundary in a tight loop (the duplicate check of a
+    wide array: 7 to 9 s of CPU for 28 KB), and the 128 levels _safejson
+    allows leave 90 % of the caller stack depths exposed."""
+
+    @pytest.mark.parametrize('kind', ['dict', 'list', 'mixed'])
+    def test_the_bound_is_a_boundary(self, kind):
+        s = _screen()
+        stats = s.screen(_nest(s.MAX_DEPTH, kind=kind))
+        assert stats.max_nesting == s.MAX_DEPTH
+        with pytest.raises(s.StructureLimitExceeded,
+                           match='nested more than %d levels' % s.MAX_DEPTH):
+            s.screen(_nest(s.MAX_DEPTH + 1, kind=kind))
+
+    def test_levels_count_from_the_document(self):
+        s = _screen()
+        assert s.screen({}).max_nesting == 1
+        assert s.screen({'a': {}}).max_nesting == 2
+        assert s.screen({'a': [{}]}).max_nesting == 3
+        assert s.screen({'a': 1, 'b': [1, 2, 3]}).max_nesting == 2
+        assert s.screen([]).max_nesting == 1
+        assert s.screen('x').max_nesting == 0
+
+    def test_a_deep_branch_among_shallow_ones_is_found(self):
+        s = _screen()
+        doc = {'evidence': [{'a': 1}] * 50 + [_nest(s.MAX_DEPTH + 1)]}
+        with pytest.raises(s.StructureLimitExceeded, match='nested more'):
+            s.screen(doc)
+
+    def test_the_bound_covers_endorsements_and_scoped_arrays(self):
+        s = _screen()
+        deep = _nest(s.MAX_DEPTH)
+        for doc in ({'endorsement': [dict(deep, **{'@context': []})]},
+                    {'endorsement': deep}, {'cnf': [[deep]]},
+                    {'type': [], 'x': [[[[deep]]]]}):
+            with pytest.raises(s.StructureLimitExceeded, match='nested more'):
+                s.screen(doc)
+
+    def test_the_message_names_the_bound_not_the_document(self):
+        s = _screen()
+        deep = _nest(s.MAX_DEPTH + 5, leaf={SENTINEL: SENTINEL})
+        with pytest.raises(s.StructureLimitExceeded) as caught:
+            s.screen(deep)
+        assert SENTINEL not in str(caught.value)
+
+    def test_it_is_not_scaled_or_context_dependent(self):
+        s = _screen()
+        deep = _nest(s.MAX_DEPTH + 1)
+        for kwargs in ({'scale': 2}, {'contexts': False}, {'scoped': set()}):
+            with pytest.raises(s.StructureLimitExceeded, match='nested more'):
+                s.screen(deep, **kwargs)
+        s.screen(deep, limits=False)
+
+    def test_describe_says_how_deep(self):
+        s = _screen()
+        assert 'nested 2 levels' in s.describe(s.screen({'a': {}}))
+
+    @pytest.mark.parametrize('name, build, levels', [
+        ('the complete example', lambda: __import__(
+            'test_ob3_ldp_context_validation')._complete_document(), 9),
+        ('4 embedded endorsements, nested through issuer',
+         lambda: _credential(endorsement=[_chain(4)]), 13),
+        ('8 embedded endorsements, nested through issuer (the most the '
+         'library accepts)', lambda: _credential(endorsement=[_chain(8)]), 25),
+        ('9 embedded endorsements (context validation refuses it with its '
+         'own message)', lambda: _credential(endorsement=[_chain(9)]), 28),
+    ])
+    def test_legitimate_documents_are_far_from_the_bound(self, name, build,
+                                                         levels):
+        s = _screen()
+        stats = s.screen(build())
+        assert stats.max_nesting == levels, name
+        assert stats.max_nesting + 8 <= s.MAX_DEPTH, name
+
+    def test_a_clr_member_with_the_deepest_chain_passes(self):
+        # a CLR holds whole credentials by value: 3 levels more than the
+        # credential, the deepest thing the library accepts
+        s = _screen()
+        member = _credential(endorsement=[_chain(8)])
+        clr = _credential(type=['ClrCredential'])
+        clr['credentialSubject'] = {'type': 'ClrSubject',
+                                    'verifiableCredential': [member]}
+        stats = s.screen(clr, scale=2)
+        assert stats.max_nesting == 28
+        assert stats.max_nesting + 8 <= s.MAX_DEPTH
+
+    @needs_pyld
+    def test_the_deepest_credential_the_library_accepts_signs_and_verifies(
+            self, keypair):
+        doc = _credential(endorsement=[_chain(8)])
+        did = did_key(keypair[1])
+        signed = add_data_integrity_proof(
+            doc, keypair[0], '%s#%s' % (did, did[len('did:key:'):]))
+        OB3LdpVerifier(pubkey_pem=keypair[1]).verify(signed)
+        verify_data_integrity_proof(signed, keypair[1])
+
+
 class TestNoMatterHowTheDocumentIsShaped:
     def test_survives_nesting_far_past_the_recursion_limit(self):
         s = _screen()
@@ -549,10 +665,15 @@ class TestNoMatterHowTheDocumentIsShaped:
         for _ in range(300_000):
             cur['x'] = {}
             cur = cur['x']
-        with pytest.raises(s.StructureLimitExceeded, match='objects'):
+        with pytest.raises(s.StructureLimitExceeded, match='nested more than'):
             s.screen(deep)
         stats = s.screen(deep, limits=False)
         assert stats.nodes == 300_001
+        assert stats.max_nesting == 300_001
+        # past the node limit as well, with the depth bound out of the way
+        wide = [{} for _ in range(s.MAX_NODES + 1)]
+        with pytest.raises(s.StructureLimitExceeded, match='objects'):
+            s.screen({'e': wide})
 
     def test_survives_lists_nested_a_million_deep(self):
         deep = []
@@ -561,7 +682,11 @@ class TestNoMatterHowTheDocumentIsShaped:
             nxt = []
             cur.append(nxt)
             cur = nxt
-        assert _screen().screen(deep).nodes == 0
+        with pytest.raises(_screen().StructureLimitExceeded,
+                           match='nested more than'):
+            _screen().screen(deep)
+        stats = _screen().screen(deep, limits=False)
+        assert (stats.nodes, stats.max_nesting) == (0, 1_000_001)
 
     def test_a_document_that_contains_itself_is_refused_not_looped(self):
         loop = {'type': ['A']}

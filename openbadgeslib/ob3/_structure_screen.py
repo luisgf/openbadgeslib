@@ -95,6 +95,25 @@ MAX_TYPE_ENTRIES = 2_000
 #: Most objects in a document, counted like the typed nodes.
 MAX_NODES = 8_000
 
+#: Most containers (objects and arrays) one inside another, the document
+#: itself being the first (``@context`` values are not entered). The deepest
+#: document the library accepts is a chain of 8 embedded endorsements, each
+#: nested through the issuer of the one before: 25 levels, 28 inside a CLR
+#: member (context validation refuses a 9th with its own message); the
+#: 1EdTech examples nest 6 to 10. The bound is not about pyld's work, which is
+#: linear in depth. It is about where the deepest node sits on the call stack:
+#: CPython 3.11 and 3.12 allocate the data stack in 16 KiB chunks, and a tight
+#: loop whose calls straddle a chunk boundary pays an allocation per call.
+#: pyld's duplicate check for the values of a node property (``compare_values``,
+#: up to MAX_NODE_MAP_PAIRS of them, see ``_canon_guard``) is such a loop:
+#: 28 KB of JSON cost 5 to 9 s of CPU instead of 0.35 s. The
+#: boundary's place relative to the document depends on how deep the caller
+#: already is; for the worst document shape (objects nested directly, 400
+#: values) 87 % of the caller depths have a hit at some nesting depth up to
+#: the 128 levels ``_safejson`` allows, 22 % at or below this bound. It lowers
+#: the chance, it does not remove the cliff: wiki/Security-Model.md.
+MAX_DEPTH = 36
+
 #: Most entries one ``@context`` array may list. Context validation accepts
 #: eight; pyld processes an array of up to ten entries for ~0.06 ms an entry
 #: and one of twelve or more for ~2 ms an entry.
@@ -119,6 +138,7 @@ class StructureStats(NamedTuple):
     max_types: int          # the longest ``type`` array (unweighted)
     max_context: int        # the longest ``@context`` array (unweighted)
     max_depth: int          # embedded credentials nested that deep
+    max_nesting: int = 0    # containers one inside another (the document: 1)
 
 
 _TYPE_KEYS = ('type', '@type')
@@ -194,14 +214,27 @@ def screen(document: Any, *, scale: int = 1, contexts: bool = True,
     context_cap = MAX_CONTEXT_ENTRIES_TOTAL
     nodes = typed = entries = context_entries = 0
     longest = longest_context = deepest = 0
-    # (value, weight = 1 + embedding depth, value is an ``endorsement`` entry,
-    # value is an array under a key with a scoped context: its leaves count)
-    stack: List[Tuple[Any, int, bool, bool]] = [(document, 1, False, False)]
+    nesting = 0
+    # (container, weight = 1 + embedding depth, container is an ``endorsement``
+    # entry, container is an array under a key with a scoped context: its
+    # leaves count, levels of containers down to it)
+    stack: List[Tuple[Any, int, bool, bool, int]] = [
+        (document, 1, False, False, 1)]
     while stack:
-        value, weight, entry, counted = stack.pop()
+        value, weight, entry, counted, level = stack.pop()
+        if not isinstance(value, (dict, list, tuple)):
+            continue                # only the document itself can be a scalar
+        if level > nesting:
+            nesting = level
+            if limits and level > MAX_DEPTH:
+                raise StructureLimitExceeded(
+                    "the document is nested more than %d levels deep"
+                    % MAX_DEPTH)
+        below = level + 1
         if isinstance(value, (list, tuple)):
             if not counted:
-                stack.extend((item, weight, False, False) for item in value
+                stack.extend((item, weight, False, False, below)
+                             for item in value
                              if isinstance(item, (dict, list, tuple)))
                 continue
             # JSON-LD flattens nested arrays: every leaf is a value of the
@@ -209,16 +242,14 @@ def screen(document: Any, *, scale: int = 1, contexts: bool = True,
             leaves = 0
             for item in value:
                 if isinstance(item, (list, tuple)):
-                    stack.append((item, weight, False, True))
+                    stack.append((item, weight, False, True, below))
                     continue
                 leaves += 1
                 if isinstance(item, dict):
-                    stack.append((item, weight, False, False))
+                    stack.append((item, weight, False, False, below))
             entries += weight * leaves
             if limits:
                 _check('type entries', entries, entries_cap, deepest)
-            continue
-        if not isinstance(value, dict):
             continue
         if entry and '@context' in value:
             weight += 1             # an embedded credential: validated again
@@ -253,20 +284,22 @@ def screen(document: Any, *, scale: int = 1, contexts: bool = True,
                     context_entries += 1
             elif key == _ENDORSEMENT:
                 if isinstance(item, dict):
-                    stack.append((item, weight, True, False))
+                    stack.append((item, weight, True, False, below))
                 elif isinstance(item, (list, tuple)):
-                    stack.extend((member, weight, True, False)
+                    # the array is a level of its own, entered here
+                    stack.extend((member, weight, True, False, below + 1)
                                  for member in item
                                  if isinstance(member, (dict, list, tuple)))
+                    nesting = max(nesting, below)
             elif key in scoped_keys:
                 if isinstance(item, (list, tuple)):
-                    stack.append((item, weight, False, True))   # its leaves
+                    stack.append((item, weight, False, True, below))  # leaves
                 else:
                     values += 1
                     if isinstance(item, dict):
-                        stack.append((item, weight, False, False))
+                        stack.append((item, weight, False, False, below))
             elif isinstance(item, (dict, list, tuple)):
-                stack.append((item, weight, False, False))
+                stack.append((item, weight, False, False, below))
         if node_types:
             typed += weight
             longest = max(longest, node_types)
@@ -282,7 +315,7 @@ def screen(document: Any, *, scale: int = 1, contexts: bool = True,
             if contexts:
                 _check('@context entries', context_entries, context_cap, 0)
     return StructureStats(nodes, typed, entries, context_entries, longest,
-                          longest_context, deepest)
+                          longest_context, deepest, nesting)
 
 
 def _check(what: str, count: int, cap: int, embedded: int) -> None:
@@ -298,7 +331,7 @@ def describe(stats: Optional[StructureStats]) -> str:
     if stats is None:
         return 'n/a'
     return ('%d objects, %d typed, %d type entries (longest %d), %d @context '
-            'entries (longest %d), embedded %d deep'
+            'entries (longest %d), embedded %d deep, nested %d levels'
             % (stats.nodes, stats.typed_nodes, stats.type_entries,
                stats.max_types, stats.context_entries, stats.max_context,
-               stats.max_depth))
+               stats.max_depth, stats.max_nesting))
