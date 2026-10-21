@@ -36,9 +36,12 @@ import copy
 import hashlib
 import itertools
 import json
+import os
 import random
 import re
+import subprocess
 import sys
+import textwrap
 import threading
 import time
 
@@ -1516,6 +1519,53 @@ class TestPrivateCaches:
         with pytest.raises(OB3GuardUnavailable,
                            match='without asking for an inverse'):
             verifier.verify(_with_bogus_proof(base_vc, ed25519_keypair[1]))
+
+
+class TestFork:
+    def test_a_fork_waits_for_whoever_is_inside_pyld(self):
+        held = threading.Event()
+        release = threading.Event()
+        forked = threading.Event()
+
+        def hold():
+            with guard.PYLD_LOCK:
+                held.set()
+                release.wait(30)
+
+        def fork_hooks():
+            guard._before_fork()
+            forked.set()
+            guard._after_fork_in_parent()
+        holder = threading.Thread(target=hold)
+        holder.start()
+        assert held.wait(30)
+        forker = threading.Thread(target=fork_hooks)
+        forker.start()
+        try:
+            assert not forked.wait(0.3)         # (the child would have a
+        finally:                                # half-written cache)
+            release.set()
+        assert forked.wait(30)
+        holder.join(30)
+        forker.join(30)
+        assert guard.PYLD_LOCK.acquire(timeout=5)
+        guard.PYLD_LOCK.release()
+
+    @pytest.mark.skipif(not hasattr(os, 'fork'), reason='needs fork()')
+    def test_a_fork_inside_the_lock_leaves_both_sides_a_usable_lock(self):
+        code = textwrap.dedent("""
+            import os, sys
+            from openbadgeslib.ob3 import _canon_guard as g
+            with g.PYLD_LOCK:
+                pid = os.fork()
+            if pid == 0:
+                os._exit(0 if g.PYLD_LOCK.acquire(timeout=5) else 3)
+            _, status = os.waitpid(pid, 0)
+            assert os.waitstatus_to_exitcode(status) == 0, status
+            assert g.PYLD_LOCK.acquire(timeout=5)
+        """)
+        subprocess.run([sys.executable, '-W', 'ignore', '-c', code],
+                       check=True, timeout=120, cwd=str(ROOT))
 
 
 class TestStorm:

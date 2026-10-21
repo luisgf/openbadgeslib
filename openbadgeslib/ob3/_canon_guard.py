@@ -174,6 +174,11 @@
 # derivation instead of for a whole verification, so the window is far smaller
 # than it was; a leaked one blocks the next derivation of every other thread.
 #
+# FORK. A child inherits whatever state a thread of the parent left the shared
+# inverse-context cache in, so fork() waits for PYLD_LOCK (as the standard
+# logging module does for its own) and releases it on both sides. A thread's
+# private cache is not inherited by anyone but the thread that forks.
+#
 # What PYLD_LOCK does not cover: other libraries that call pyld in the same
 # process share pyld's own caches. The one call this library makes that way is
 # the ecdsa-sd-2023 suite delegated to openvc-core, which calls pyld on its own
@@ -192,8 +197,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 #: Serializes whatever still uses pyld's own process-wide caches (resolved
 #: contexts, inverse contexts: plain LRU caches, not thread-safe) across the
 #: threads of one process: the derivation of an inverse context in a
-#: compaction here (tens of microseconds), the build of the guard (once) and,
-#: where this library takes it around them, calls into pyld made by
+#: compaction here (tens of microseconds), the build of the guard (once) and a
+#: fork, and, where this library takes it around them, calls into pyld made by
 #: another library (the openvc-core delegate of ecdsa-sd-2023). Nothing else
 #: on the Data Integrity path takes it: see THREADS in the module comment.
 #: Reentrant, because a caller already holding it may call canonize().
@@ -958,13 +963,34 @@ def canonize(jsonld: Any, document: Any, loader: Any,
 
 
 def _reinit_after_fork(lock: Any) -> None:
-    """A forked child inherits the lock in whatever state some thread of the
-    parent left it, and that thread does not exist there."""
+    """Give a forked child a lock nobody holds, whatever state some thread of
+    the parent left it in (that thread does not exist there)."""
     reinit = getattr(lock, '_at_fork_reinit', None)
     if reinit is not None:
         reinit()
 
 
+def _before_fork() -> None:
+    """Wait for whoever is inside pyld's process-wide caches (an inverse
+    context being derived, the delegated ecdsa-sd-2023 verification), so the
+    child is not born with one half written."""
+    PYLD_LOCK.acquire()
+
+
+def _after_fork_in_parent() -> None:
+    PYLD_LOCK.release()
+
+
+def _after_fork_in_child() -> None:
+    """The forking thread is all that is left, and holds the lock
+    :func:`_before_fork` took: give it back."""
+    try:
+        PYLD_LOCK.release()
+    except RuntimeError:                            # pragma: no cover
+        _reinit_after_fork(PYLD_LOCK)
+
+
 if hasattr(os, 'register_at_fork'):                 # pragma: no branch
-    os.register_at_fork(after_in_child=functools.partial(
-        _reinit_after_fork, PYLD_LOCK))
+    os.register_at_fork(before=_before_fork,
+                        after_in_parent=_after_fork_in_parent,
+                        after_in_child=_after_fork_in_child)
