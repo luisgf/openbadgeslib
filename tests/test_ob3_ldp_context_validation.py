@@ -1723,7 +1723,7 @@ class TestEcdsaSdPartialStatus:
         document, _, _ = self._issue(_lifecycle_credential(ob3_credential), [], lax=False)
         statements, mandatory = ldp._sd_disclosed_statements(document, document['proof'])
         monkeypatch.setattr(ldp, '_sd_disclosed_statements',
-                            lambda doc, proof: (statements, mandatory))
+                            lambda doc, proof, lines=None: (statements, mandatory))
         doc = dict(document, id='_:b0')
         with pytest.raises(OB3VerificationError, match='cannot find the statements'):
             ldp._reject_selective_sd_lifecycle(doc, doc['proof'])

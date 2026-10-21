@@ -69,9 +69,10 @@ from .._safejson import JSONTooDeepError, check as check_json, loads as loads_un
 from ..errors import ErrorSigningFile
 from ..keys import KeyType, detect_key_type, key_to_pem
 from ..util import __version__
-from ._canon_guard import (CanonicalizationGuardUnavailable,
+from ._canon_guard import (PYLD_LOCK, CanonicalizationGuardUnavailable,
                            CanonicalizationWorkExceeded, WorkBudget, canonize,
-                           isolate, require_guard)
+                           canonize_dataset, isolate, node_map_pairs,
+                           require_guard)
 from ._context_validation import validate_document
 from ._structure_screen import (StructureLimitExceeded,
                                 bundled_scoped_terms, scoped_terms,
@@ -498,41 +499,108 @@ def _check_sd_proof_value(proof: dict[str, Any]) -> None:
             "proof value")
 
 
-def _prescreen_canonicalization(document: dict[str, Any], proof: dict[str, Any],
-                                loader: Any) -> None:
-    """Refuse, before openvc-core spends it, a credential that would cost the
-    delegate more than a handful of seconds.
+def _sd_canonical_lines(document: dict[str, Any], budget: WorkBudget) -> List[str]:
+    """The sorted canonical N-Quads lines of *document* (a credential without
+    its ``proof``) exactly as openvc-core's ecdsa-sd-2023 ``verify``
+    computes them, within *budget* (ob3/_canon_guard.py).
 
-    Two things, and only these two. First, the poison-graph work of
-    ob3/_canon_guard.py: openvc-core's ecdsa-sd-2023 suite canonicalizes the
-    credential and the proof options with pyld directly, with no work bound,
-    so both are canonicalized here first, within the work budget, and
-    discarded; it is the same dataset and the same blank-node work, so a
-    document the budget refuses is one the delegate would have spent minutes
-    on. Second, the number of statements: the delegate also parses the
-    dataset back from N-Quads text, which is quadratic in that number
-    whatever the graph looks like (:data:`MAX_DELEGATED_QUADS`).
+    That is NOT the canonical form of the RDF dataset the JSON expands to.
+    openvc-core 1.35 to 1.37 write the dataset as N-Quads text, parse the
+    text back, canonicalize what the parse made of it, then parse the
+    canonical text and write it again. pyld's N-Quads escaping and parsing
+    are not inverse on a literal that holds a backslash followed by ``t``,
+    ``n`` or ``r`` (a literal ``\\theta`` is read back as a backslash and a
+    TAB, and a backslash and a TAB as the same thing), so the dataset
+    openvc-core canonicalizes can differ from the one the JSON expands to: two
+    literals the document tells apart can be one for it, and the blank nodes
+    that carry them then cannot be told apart, which is where RDFC-1.0 is
+    factorial. The screen, the statement count and the mandatory-statement
+    check must all see what openvc-core sees, so this replays its pipeline,
+    step for step, with the URDNA2015 step run by the guard:
+
+    * the JSON-LD to RDF conversion, as N-Quads text (under the pyld lock,
+      after its duplicate checks are counted against *budget*);
+    * the statement count of that text, refused over
+      :data:`MAX_DELEGATED_QUADS` BEFORE the parse, because pyld's N-Quads
+      parser compares each statement with all the earlier ones;
+    * the parse; the guarded URDNA2015 on the dataset it makes; the parse of
+      the canonical text and its serialization.
+
+    A document openvc-core cannot canonicalize (a Unicode line separator,
+    VT, FF, FS, GS, RS or U+0085 in a literal, a ``>`` in an IRI: its N-Quads
+    parser splits the line there) is refused here, with openvc-core's own
+    limit named. Raises :class:`OB3VerificationError`."""
+    jsonld = _require_jsonld()
+    from pyld.jsonld import JsonLdProcessor
+    # The delegate resolves @context from the bundled contexts alone
+    # (extra_contexts is ignored for ecdsa-sd-2023), so this does too.
+    options: Dict[str, Any] = {'documentLoader': document_loader()}
+    try:
+        with PYLD_LOCK:             # pyld's context caches are not thread-safe
+            budget.take_pairs(node_map_pairs(jsonld.expand(document, options)))
+            nquads = jsonld.to_rdf(document, dict(
+                options, format='application/n-quads',
+                produceGeneralizedRdf=False))
+        statements = nquads.count('\n')
+        if statements > MAX_DELEGATED_QUADS:
+            raise OB3VerificationError(
+                "ecdsa-sd-2023 credential holds %d statements, more than the "
+                "%d this library verifies" % (statements, MAX_DELEGATED_QUADS))
+        try:
+            dataset = JsonLdProcessor.parse_nquads(nquads)
+        except Exception:
+            raise OB3VerificationError(
+                "openvc-core cannot canonicalize this ecdsa-sd-2023 "
+                "credential: the N-Quads form of a literal or an IRI does "
+                "not read back (a Unicode line separator, a VT, FF, FS, GS, "
+                "RS or U+0085 character, or a '>' in an IRI)") from None
+        canonical = canonize_dataset(dataset, budget)
+        text = JsonLdProcessor.to_nquads(JsonLdProcessor.parse_nquads(canonical))
+        return sorted(line for line in text.split('\n') if line)
+    except OB3VerificationError:
+        raise
+    except Exception as exc:
+        raise _canonization_failure(exc) from exc
+
+
+def _prescreen_canonicalization(document: dict[str, Any],
+                                proof: dict[str, Any]) -> List[str]:
+    """Refuse, before openvc-core spends it, a credential that would cost the
+    delegate more than a few seconds; return the canonical lines it will
+    index.
+
+    Three things. First, the poison-graph work of ob3/_canon_guard.py:
+    openvc-core's ecdsa-sd-2023 suite canonicalizes the credential and the
+    proof options with pyld directly, with no work bound, so both are
+    canonicalized here first, within the work budget, on the very dataset the
+    delegate canonicalizes (:func:`_sd_canonical_lines`: the document's is the
+    one openvc-core's N-Quads round trip makes, which is not always the one
+    the JSON expands to); a document the budget refuses is one the delegate
+    would have spent minutes on. Second, the number of statements: the
+    delegate parses the dataset from N-Quads text, which is quadratic in that
+    number whatever the graph looks like (:data:`MAX_DELEGATED_QUADS`).
+    Third, the lines themselves, which the mandatory-statement check of
+    :func:`_reject_selective_sd_lifecycle` indexes once the signature has
+    verified: the delegate and that check read the same lines, computed once.
 
     This is NOT a bound on openvc-core's work: what it spends on a credential
-    that passes both is its own (it canonicalizes this same dataset, parses it
-    back from text, and checks the signatures), and the bound has to come from
-    openvc-core itself."""
+    that passes is its own (it canonicalizes this same dataset again, and
+    checks the signatures), and a bound has to come from openvc-core itself."""
     budget = WorkBudget()
     proof_config = {k: v for k, v in proof.items() if k != 'proofValue'}
     proof_config['@context'] = document.get('@context')
-    _canonize(proof_config, loader, budget)
-    canonical = _canonize({k: v for k, v in document.items() if k != 'proof'},
-                          loader, budget)
-    statements = canonical.count('\n')
-    if statements > MAX_DELEGATED_QUADS:
-        raise OB3VerificationError(
-            "ecdsa-sd-2023 credential holds %d statements, more than the %d "
-            "this library verifies" % (statements, MAX_DELEGATED_QUADS))
+    # The proof options, as the delegate hashes them: converted and
+    # canonicalized directly, no N-Quads round trip.
+    _canonize(proof_config, document_loader(), budget)
+    return _sd_canonical_lines(
+        {k: v for k, v in document.items() if k != 'proof'}, budget)
 
 
 def _verify_ecdsa_sd_2023(document: dict[str, Any], proof: dict[str, Any],
-                          pubkey_pem: bytes, loader: Any) -> None:
-    """Verify one ecdsa-sd-2023 derived proof by delegating to openvc-core.
+                          pubkey_pem: bytes, loader: Any) -> List[str]:
+    """Verify one ecdsa-sd-2023 derived proof by delegating to openvc-core;
+    returns the canonical lines the delegate indexed (see
+    :func:`_prescreen_canonicalization`).
 
     openvc-core owns the whole selective-disclosure verification — its own RDF
     canonicalization plus the base and per-statement P-256 signatures;
@@ -545,12 +613,14 @@ def _verify_ecdsa_sd_2023(document: dict[str, Any], proof: dict[str, Any],
     is not a bound on what the delegate then spends.
 
     The delegate takes the proof as an object, the one :func:`_select_proof`
-    chose, so a ``proof`` array of one entry is handed over unwrapped.
+    chose, so a ``proof`` array of one entry is handed over unwrapped. (*loader*
+    is the registry's signature: the delegate is given the bundled contexts
+    alone, and so is the screen.)
     """
     EcdsaSdProofSuite, ProofError = _require_openvc_ecdsa_sd()
     public_key_jwk = _p256_pem_to_jwk(pubkey_pem)
     _check_sd_proof_value(proof)
-    _prescreen_canonicalization(document, proof, loader)
+    lines = _prescreen_canonicalization(document, proof)
     try:
         EcdsaSdProofSuite().verify(
             dict(document, proof=proof),
@@ -566,13 +636,17 @@ def _verify_ecdsa_sd_2023(document: dict[str, Any], proof: dict[str, Any],
     except Exception as exc:
         raise OB3VerificationError(
             "could not verify the ecdsa-sd-2023 proof: %s" % exc) from exc
+    return lines
 
 
 #: Registry of supported cryptosuites -> verify callback. eddsa-rdfc-2022 is
 #: verified natively; ecdsa-sd-2023 (selective disclosure) is VERIFY-only and
 #: delegated to openvc-core (needs the [ldp-sd] extra — see the module
-#: docstring). An unknown suite fails closed naming the supported ones.
-_CRYPTOSUITES: Dict[str, Callable[[dict[str, Any], dict[str, Any], bytes, Any], None]] = {
+#: docstring). An unknown suite fails closed naming the supported ones. A
+#: callback returns None, or what the lifecycle check of the suite reads once
+#: the proof has verified (ecdsa-sd-2023: the canonical lines it indexed).
+_CRYPTOSUITES: Dict[str, Callable[[dict[str, Any], dict[str, Any], bytes, Any],
+                                  Optional[List[str]]]] = {
     'eddsa-rdfc-2022': _verify_eddsa_rdfc_2022,
     'ecdsa-sd-2023': _verify_ecdsa_sd_2023,
 }
@@ -609,6 +683,18 @@ def verify_data_integrity_proof(
        validates that the JSON is the compacted form of what was signed
        before it reads anything.
     """
+    _verify_data_integrity(document, pubkey_pem,
+                           expected_proof_purpose=expected_proof_purpose,
+                           extra_contexts=extra_contexts)
+
+
+def _verify_data_integrity(
+        document: dict[str, Any], pubkey_pem: Any, *,
+        expected_proof_purpose: str = 'assertionMethod',
+        extra_contexts: Optional[Mapping[str, dict[str, Any]]] = None
+        ) -> Optional[List[str]]:
+    """verify_data_integrity_proof, returning what the cryptosuite
+    returns for the lifecycle check that follows (see _CRYPTOSUITES)."""
     if not isinstance(document, dict):
         raise OB3VerificationError("credential document must be a JSON object")
     _require_within_size_cap(document)
@@ -633,7 +719,7 @@ def verify_data_integrity_proof(
     loader = document_loader(extra_contexts)
     pem = key_to_pem(pubkey_pem)
     pem_bytes = pem.encode('utf-8') if isinstance(pem, str) else pem
-    _CRYPTOSUITES[proof['cryptosuite']](document, proof, pem_bytes, loader)
+    return _CRYPTOSUITES[proof['cryptosuite']](document, proof, pem_bytes, loader)
 
 
 def add_data_integrity_proof(
@@ -830,7 +916,8 @@ _SD_LIFECYCLE = frozenset({_SD_STATUS, '<%svalidFrom>' % _CRED,
                            '<%svalidUntil>' % _CRED})
 
 
-def _reject_selective_sd_lifecycle(doc: dict[str, Any], proof: dict[str, Any]) -> None:
+def _reject_selective_sd_lifecycle(doc: dict[str, Any], proof: dict[str, Any],
+                                   lines: Optional[List[str]] = None) -> None:
     """Fail closed unless every disclosed ecdsa-sd-2023 statement about the
     credential's lifecycle is MANDATORY.
 
@@ -848,7 +935,9 @@ def _reject_selective_sd_lifecycle(doc: dict[str, Any], proof: dict[str, Any]) -
     every statement about one of its status entries, must be mandatory:
     issuers mark ``/validFrom``, ``/validUntil`` and ``/credentialStatus`` as
     mandatory pointers. Runs after the proof verified (the mandatory indexes
-    are then the issuer's).
+    are then the issuer's). *lines* are the canonical lines the delegate
+    indexed, as :func:`_verify_ecdsa_sd_2023` returns them; without them
+    they are computed again.
 
     Limit: a statement the issuer left selective and the holder withheld is
     invisible here. An issuer who marks only ``/credentialStatus/0`` (or only
@@ -857,7 +946,7 @@ def _reject_selective_sd_lifecycle(doc: dict[str, Any], proof: dict[str, Any]) -
     """
     if proof.get('cryptosuite') != 'ecdsa-sd-2023':
         return
-    statements, mandatory = _sd_disclosed_statements(doc, proof)
+    statements, mandatory = _sd_disclosed_statements(doc, proof, lines)
     credential_id = doc.get('id')
     subject = '<%s>' % credential_id if isinstance(credential_id, str) else None
     terms = [statement.split(' ', 2) for statement in statements]
@@ -892,21 +981,22 @@ def _nquad_node(rest: str) -> Optional[str]:
     return None
 
 
-def _sd_disclosed_statements(doc: dict[str, Any], proof: dict[str, Any]
+def _sd_disclosed_statements(doc: dict[str, Any], proof: dict[str, Any],
+                             lines: Optional[List[str]] = None
                              ) -> Tuple[List[str], Set[int]]:
     """The statements a derived ecdsa-sd-2023 proof discloses, exactly as
     openvc-core's verify indexes them (the document as presented, canonical
     N-Quads, blank nodes relabeled through the proof's label map, sorted), and
     the indexes of the mandatory ones.
 
-    The document is canonicalized HERE, through the guard of
-    ob3/_canon_guard.py and within its own work budget, and never
-    deskolemized: verify reads a ``urn:bnid:`` IRI of the presented document
-    as an IRI, so the statements indexed here are those whose signatures it
-    checked, and the graph canonicalized is the one that was screened. Only
-    the relabeling and the proof-value decoder are openvc's own, so the
-    indexes cannot drift from what its verify checked; if it stops exposing
-    them, fail closed."""
+    *lines* are the canonical lines the screen computed before the delegate
+    ran (:func:`_sd_canonical_lines`, openvc-core's own pipeline with the
+    URDNA2015 step under the guard); without them they are computed here,
+    within a budget of their own. The document is never deskolemized: verify
+    reads a ``urn:bnid:`` IRI of the presented document as an IRI. Only the
+    relabeling and the proof-value decoder are openvc's own, so the indexes
+    cannot drift from what its verify checked; if it stops exposing them, fail
+    closed."""
     _require_openvc_ecdsa_sd()
     try:
         from openvc.proof import ecdsa_sd
@@ -920,9 +1010,9 @@ def _sd_disclosed_statements(doc: dict[str, Any], proof: dict[str, Any]
             % (exc,)) from exc
     try:
         parsed = decode(proof['proofValue'])
-        unsecured = {k: v for k, v in doc.items() if k != 'proof'}
-        canonical = _canonize(unsecured, document_loader(), WorkBudget())
-        lines = sorted({ln for ln in canonical.split('\n') if ln})
+        if lines is None:
+            lines = _sd_canonical_lines(
+                {k: v for k, v in doc.items() if k != 'proof'}, WorkBudget())
         statements = list(relabel(lines, {
             '_:' + k: '_:' + v for k, v in parsed['label_map'].items()}))
         mandatory = set(parsed['mandatory_indexes'])
@@ -1106,11 +1196,11 @@ class OB3LdpVerifier:
                     "credential issuer %r" % (vm, issuer_id))
             pem = self._resolve_vm(vm, download)
 
-        verify_data_integrity_proof(doc, pem)
+        indexed = _verify_data_integrity(doc, pem)
         # ecdsa-sd-2023: the disclosed lifecycle statements must be ones the
         # base signature covers as a whole, or a holder could have withheld
         # part of them (a status entry, a statusSize) undetected.
-        _reject_selective_sd_lifecycle(doc, proof)
+        _reject_selective_sd_lifecycle(doc, proof, indexed)
 
         _check_validity_window(credential)
 

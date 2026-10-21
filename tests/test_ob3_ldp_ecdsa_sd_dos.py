@@ -19,6 +19,7 @@ that carries ``urn:bnid:`` IRIs.
 import contextlib
 import copy
 import json
+import random
 import secrets
 import signal
 import threading
@@ -250,7 +251,10 @@ class TestNamedNodesAreNotBlankNodes:
         runs.clear()
         OB3LdpVerifier().verify(secured)
         assert runs.count('URDNA2015') == 2, runs
-        assert runs.count('BoundedURDNA2015') >= 3, runs
+        # the proof options and the document, once each: the lines of the
+        # document are computed before the delegate runs and read again by
+        # the lifecycle check, not canonicalized a third time
+        assert runs.count('BoundedURDNA2015') == 2, runs
         assert set(runs) == {'URDNA2015', 'BoundedURDNA2015'}
 
     def test_both_views_of_the_statements_are_equal(self, ob3_credential,
@@ -326,7 +330,7 @@ class TestStatementIndexingRefusals:
         def refuse(*args, **kwargs):
             raise OB3VerificationError('refusing to canonicalize: over budget')
 
-        monkeypatch.setattr(ldp, '_canonize', refuse)
+        monkeypatch.setattr(ldp, 'canonize_dataset', refuse)
         with pytest.raises(OB3VerificationError) as caught:
             ldp._sd_disclosed_statements(document, document['proof'])
         assert str(caught.value) == 'refusing to canonicalize: over budget'
@@ -339,10 +343,77 @@ class TestStatementIndexingRefusals:
             ldp._sd_disclosed_statements(document, proof)
 
 
+# Literals whose N-Quads spelling is easiest to get wrong: pyld escapes a
+# backslash, TAB, LF, CR and quote and unescapes them with a chain of
+# replacements that is not its inverse, so openvc-core's round trip of the
+# dataset through N-Quads text changes a literal that holds a backslash
+# followed by t, n or r.
+AWKWARD_LITERALS = [
+    'plain text',
+    'proof of \\theta',                 # backslash, t
+    'a\\nb',                            # backslash, n
+    'carriage \\return',                # backslash, r
+    'C:\\Users\\new\\temp',
+    'see \\textbf{x}',
+    'caf\\u00e9 \\U0001F600',           # backslash, u: not an N-Quads escape here
+    'quote\\"x',                        # backslash, quote
+    'say "hi"',
+    'line1\nline2',                     # a real LF
+    'a\tb',                             # a real TAB
+    'a\\\tb',                           # backslash, TAB
+    'cr\rlf',                           # a real CR
+    'é 日本 😀',
+    'end\\',
+    'a\\\\tb',                          # two backslashes, t
+    '\\\\n',
+    '\\ \\t \\n \\r',
+    'tab\t\\t',
+]
+
+
+def _unsecured(document):
+    return {k: v for k, v in document.items() if k != 'proof'}
+
+
+def _openvc_lines(document):
+    """The canonical lines openvc-core's verify canonicalizes the document to."""
+    from openvc.proof import ecdsa_sd as sd
+    from openvc.proof.contexts import document_loader as openvc_loader
+    return sd._canonicalize(sd._to_nquads(
+        _unsecured(document), openvc_loader(bundled_contexts())))[0]
+
+
+def _verify_statements(secured, pub_pem):
+    """Run openvc-core's own verify on *secured* and return the list of
+    statements it relabeled and indexed, as it computed it (captured from its
+    ``_relabel``), and the mandatory indexes it read."""
+    from unittest import mock
+
+    from openvc.proof import ecdsa_sd as sd
+    seen = []
+    real = sd._relabel
+
+    def spy(lines, mapping):
+        out = real(lines, mapping)
+        seen.append(out)
+        return out
+
+    with mock.patch.object(sd, '_relabel', spy):
+        sd.EcdsaSdProofSuite().verify(
+            secured, public_key_jwk=ldp._p256_pem_to_jwk(pub_pem),
+            extra_contexts=bundled_contexts())
+    assert len(seen) == 1
+    parsed = sd.decode_derived_proof(secured['proof']['proofValue'])
+    return seen[0], set(parsed['mandatory_indexes'])
+
+
 class TestStatementViewsParity:
-    """The statements the lifecycle check indexes are those openvc-core
-    verified, for documents with blank nodes, named nodes and the literals
-    whose N-Quads spelling is easiest to get wrong."""
+    """The statements the lifecycle check indexes are the ones openvc-core's
+    verify indexes, byte for byte, whatever the literals and the blank nodes
+    look like. openvc-core canonicalizes the dataset after an N-Quads round
+    trip that pyld does not invert, so this is NOT the canonical form of the
+    dataset the JSON expands to: asserted here against openvc-core's own
+    helpers and against its verify."""
 
     @pytest.mark.parametrize('extra', [
         {},
@@ -353,16 +424,119 @@ class TestStatementViewsParity:
         {'evidence': [{'type': ['Evidence'], 'name': 'e%d' % i,
                        'audience': ['a', 'b']} for i in range(40)]},
     ])
-    def test_guarded_and_openvc_canonical_lines_agree(
+    def test_the_lines_are_the_ones_openvc_canonicalizes(
             self, ob3_credential, issuer, extra):
-        from openvc.proof import ecdsa_sd as sd
-        from openvc.proof.contexts import document_loader as openvc_loader
         doc = _credential(ob3_credential, issuer)
         doc.update(extra)
-        ours = ldp._canonize(doc, document_loader())
-        theirs, _ = sd._canonicalize(sd._to_nquads(
-            doc, openvc_loader(bundled_contexts())))
-        assert sorted({ln for ln in ours.split('\n') if ln}) == theirs
+        ours = ldp._sd_canonical_lines(doc, ldp.WorkBudget())
+        assert ours == _openvc_lines(doc)
+
+    @pytest.mark.parametrize('literal', AWKWARD_LITERALS)
+    def test_the_lines_survive_awkward_literals(self, ob3_credential, issuer,
+                                                literal):
+        doc = _credential(ob3_credential, issuer)
+        doc['evidence'] = [{'type': ['Evidence'], 'name': literal},
+                           {'type': ['Evidence'], 'name': literal + 'x'},
+                           {'type': ['Evidence'], 'name': 'other'}]
+        doc['credentialStatus'] = [{
+            'type': 'BitstringStatusListEntry', 'statusPurpose': 'revocation',
+            'statusListIndex': '7',
+            'statusListCredential': 'https://example.com/status/1'}]
+        ours = ldp._sd_canonical_lines(doc, ldp.WorkBudget())
+        assert ours == _openvc_lines(doc)
+
+    def test_the_dataset_the_json_expands_to_is_not_the_one_openvc_reads(
+            self, ob3_credential, issuer):
+        # Why the parametrization above matters: for a backslash followed by
+        # t, n or r the canonical form of the dataset as the JSON expands to
+        # it is NOT what openvc-core canonicalizes.
+        doc = _credential(ob3_credential, issuer)
+        doc['evidence'] = [{'type': ['Evidence'], 'name': 'proof of \\theta'}]
+        direct = ldp._canonize(doc, document_loader())
+        direct_lines = sorted({ln for ln in direct.split('\n') if ln})
+        assert direct_lines != _openvc_lines(doc)
+        assert ldp._sd_canonical_lines(doc, ldp.WorkBudget()) == _openvc_lines(doc)
+
+    def test_the_statements_and_the_mandatory_indexes_are_the_ones_verify_reads(
+            self, ob3_credential, issuer):
+        doc = _credential(ob3_credential, issuer)
+        doc['evidence'] = [{'id': 'urn:bnid:x%d' % i,
+                            'name': 'e%d' % i} for i in range(3)]
+        secured, signed_view = _hand_signed(
+            doc, issuer, mandatory=lambda s: 'evidence' not in s)
+        statements, mandatory = ldp._sd_disclosed_statements(
+            secured, secured['proof'])
+        assert any('urn:bnid:x0' in s for s in statements)
+        assert statements == signed_view
+        verified, verified_mandatory = _verify_statements(
+            secured, issuer.pub_pem)
+        assert statements == verified and mandatory == verified_mandatory
+
+    def test_a_corpus_of_generated_credentials(self, ob3_credential, issuer):
+        # Seeded, so a failure reproduces: documents with up to six blank
+        # nodes carrying awkward literals, a status entry with and without an
+        # id, alignments and evidence in arrays, and a random choice of the
+        # statements the issuer made mandatory. For each, the statements and
+        # the mandatory indexes the lifecycle check reads are what openvc-core
+        # indexed in its verify, and the lifecycle verdict is the one the
+        # helpers of 4.6.2 gave on the document as presented.
+        rnd = random.Random(20261021)
+        seen_difference = False
+        verdicts = set()
+        for case in range(60):
+            doc = _credential(ob3_credential, issuer)
+            status = {'type': 'BitstringStatusListEntry',
+                      'statusPurpose': rnd.choice(['revocation', 'suspension']),
+                      'statusListIndex': str(rnd.randrange(10 ** 6)),
+                      'statusListCredential': 'https://example.com/status/1'}
+            if rnd.random() < 0.5:
+                status['id'] = 'https://example.com/status/1#%d' % case
+            doc['credentialStatus'] = [status]
+            doc['evidence'] = [
+                {'type': ['Evidence'],
+                 'name': rnd.choice(AWKWARD_LITERALS) + rnd.choice(['', 'x', '\\t']),
+                 'audience': [rnd.choice(AWKWARD_LITERALS)
+                              for _ in range(rnd.randrange(3))]}
+                for _ in range(rnd.randrange(7))]
+            if rnd.random() < 0.5:
+                doc['credentialSubject']['achievement']['alignment'] = [
+                    {'type': ['Alignment'], 'targetName': rnd.choice(AWKWARD_LITERALS),
+                     'targetUrl': 'https://frameworks.example/%d' % i}
+                    for i in range(rnd.randrange(4))]
+            keep = rnd.choice([0.0, 0.5, 1.0])
+            secured, _ = _hand_signed(doc, issuer,
+                                      mandatory=lambda s: rnd.random() < keep)
+            statements, mandatory = ldp._sd_disclosed_statements(
+                secured, secured['proof'])
+            verified, verified_mandatory = _verify_statements(
+                secured, issuer.pub_pem)
+            assert (statements, mandatory) == (verified, verified_mandatory), case
+            seen_difference |= (sorted({ln for ln in ldp._canonize(
+                _unsecured(secured), document_loader()).split('\n') if ln})
+                != _openvc_lines(secured))
+
+            def verdict():
+                try:
+                    ldp._reject_selective_sd_lifecycle(secured, secured['proof'])
+                except OB3VerificationError as exc:
+                    return str(exc)
+                return None
+
+            def legacy_verdict():
+                from unittest import mock
+                with mock.patch.object(
+                        ldp, '_sd_disclosed_statements',
+                        lambda doc, proof, lines=None: (verified, verified_mandatory)):
+                    try:
+                        ldp._reject_selective_sd_lifecycle(secured, secured['proof'])
+                    except OB3VerificationError as exc:
+                        return str(exc)
+                    return None
+
+            assert verdict() == legacy_verdict(), case
+            verdicts.add(verdict() is None)
+        assert seen_difference     # the corpus does exercise the round trip
+        assert verdicts == {True, False}     # and both verdicts
 
 
 # ── the statement count ──────────────────────────────────────────────────────
@@ -395,13 +569,12 @@ class TestStatementCap:
                                               monkeypatch):
         document, pub_pem, _ = derived
         count = _statements(document)
-        loader = document_loader()
         monkeypatch.setattr(ldp, 'MAX_DELEGATED_QUADS', count)
         verify_data_integrity_proof(document, pub_pem)
         assert len(delegate_calls) == 1
         monkeypatch.setattr(ldp, 'MAX_DELEGATED_QUADS', count - 1)
         with pytest.raises(OB3VerificationError, match=REFUSED_QUADS):
-            ldp._prescreen_canonicalization(document, document['proof'], loader)
+            ldp._prescreen_canonicalization(document, document['proof'])
         assert len(delegate_calls) == 1
 
     def test_a_document_at_the_cap_reaches_the_delegate(self, derived,
@@ -445,14 +618,13 @@ class TestGenuineCredential:
         assert credential.issuer.id == did
         assert len(delegate_calls) == 1
 
-    def test_the_screen_is_cheap_next_to_the_delegate(self, derived):
-        # Measured with loose bounds. The screen canonicalizes a genuine
-        # credential twice (document and proof options) and the delegate does
-        # the same, so the screen is of that order, a fraction of a second at
-        # the very most.
+    def test_the_screen_costs_what_the_delegate_costs(self, derived):
+        # Measured with loose bounds. The screen replays the delegate's
+        # pipeline on the document and the proof options (that is the point:
+        # it must canonicalize what the delegate will), so it is of the
+        # delegate's order, a fraction of a second at the very most.
         from openvc.proof.ecdsa_sd import EcdsaSdProofSuite
         document, pub_pem, _ = derived
-        loader = document_loader()
         jwk = ldp._p256_pem_to_jwk(pub_pem)
 
         def cpu(fn, repeat=5):
@@ -463,11 +635,11 @@ class TestGenuineCredential:
             return (time.process_time() - start) / repeat
 
         screen = cpu(lambda: ldp._prescreen_canonicalization(
-            document, document['proof'], loader))
+            document, document['proof']))
         delegate = cpu(lambda: EcdsaSdProofSuite().verify(
             document, public_key_jwk=jwk, extra_contexts=bundled_contexts()))
         assert screen < 0.5
-        assert screen < 10 * delegate
+        assert screen < 5 * delegate
 
 
 # ── the cheap checks come first, and a one-element proof array verifies ─────
@@ -524,3 +696,255 @@ class TestProofArray:
         twice['proof'] = [twice['proof'], copy.deepcopy(twice['proof'])]
         with pytest.raises(OB3VerificationError, match='multiple'):
             OB3LdpVerifier(pubkey_pem=pub_pem).verify(twice)
+
+
+# ── a credential openvc-core issued and derived, read back by openvc-core ────
+
+def _openvc_issue_and_derive(doc, issuer, *, selective):
+    """*doc* issued by openvc-core with the strict mandatory pointers of
+    test_ob3_ldp_ecdsa_sd.MANDATORY, then derived by it revealing those and
+    *selective*."""
+    from openvc.keys import P256SigningKey
+    from openvc.proof.ecdsa_sd import EcdsaSdProofSuite
+
+    from test_ob3_ldp_ecdsa_sd import MANDATORY
+    suite = EcdsaSdProofSuite()
+    base = suite.add_base_proof(
+        doc, signing_key=P256SigningKey.from_pem(issuer.priv_pem, kid=issuer.vm),
+        verification_method=issuer.vm, mandatory_pointers=MANDATORY,
+        extra_contexts=bundled_contexts())
+    return suite.derive_proof(base, selective_pointers=selective,
+                              extra_contexts=bundled_contexts())
+
+
+def _delegate_accepts(derived, pub_pem):
+    from openvc.proof.ecdsa_sd import EcdsaSdProofSuite
+    EcdsaSdProofSuite().verify(
+        derived, public_key_jwk=ldp._p256_pem_to_jwk(pub_pem),
+        extra_contexts=bundled_contexts())
+
+
+class TestLegitimateCredentialsAreAccepted:
+    """4.6.3 read the dataset the JSON expands to, where openvc-core reads the
+    one its N-Quads round trip makes, so a credential openvc-core issued,
+    derived and verifies was refused ("did not make mandatory") whenever a
+    literal held a backslash followed by t, n or r and the status entry had no
+    ``id``: the blank-node blocks landed on other statements than the ones the
+    issuer marked mandatory (37 of 40 refused with six blank nodes)."""
+
+    def test_forty_credentials_with_backslash_literals_and_a_status_without_id(
+            self, ob3_credential, issuer):
+        accepted = 0
+        for trial in range(40):
+            doc = _credential(ob3_credential, issuer)
+            doc['credentialStatus'] = [{
+                'type': 'BitstringStatusListEntry',
+                'statusPurpose': 'revocation',
+                'statusListIndex': str(1000 + trial),
+                'statusListCredential': 'https://example.com/status/1'}]
+            doc['evidence'] = [{'type': ['Evidence'], 'name': 'proof of \\theta%d' % i}
+                               for i in range(6)]
+            derived_doc = _openvc_issue_and_derive(
+                doc, issuer, selective=['/evidence'])
+            _delegate_accepts(derived_doc, issuer.pub_pem)
+            assert OB3LdpVerifier(pubkey_pem=issuer.pub_pem).verify(
+                derived_doc).issuer.id == issuer.did
+            accepted += 1
+        assert accepted == 40
+
+    @pytest.mark.parametrize('literal', ['a\\nb', 'C:\\Users\\new\\temp',
+                                         'see \\textbf{x}', 'carriage \\return'])
+    def test_each_backslash_sequence(self, ob3_credential, issuer, literal):
+        for trial in range(8):
+            doc = _credential(ob3_credential, issuer)
+            doc['credentialStatus'] = [{
+                'type': 'BitstringStatusListEntry', 'statusPurpose': 'revocation',
+                'statusListIndex': str(trial),
+                'statusListCredential': 'https://example.com/status/1'}]
+            doc['evidence'] = [{'type': ['Evidence'], 'name': '%s%d' % (literal, i)}
+                               for i in range(4)]
+            derived_doc = _openvc_issue_and_derive(
+                doc, issuer, selective=['/evidence'])
+            OB3LdpVerifier(pubkey_pem=issuer.pub_pem).verify(derived_doc)
+
+    def test_a_status_entry_the_issuer_left_selective_is_still_refused(
+            self, ob3_credential, issuer):
+        # The other direction: with the same literals, an issuer who left the
+        # members of a status entry without an id selective is refused every
+        # time, whatever the HMAC key puts where.
+        def members(statement):
+            return statement.startswith('_:') and any(
+                name in statement for name in
+                ('statusPurpose', 'statusListIndex', 'statusListCredential'))
+
+        for trial in range(20):
+            doc = _credential(ob3_credential, issuer)
+            doc['credentialStatus'] = [{
+                'type': 'BitstringStatusListEntry', 'statusPurpose': 'suspension',
+                'statusListIndex': str(trial),
+                'statusListCredential': 'https://example.com/status/1'}]
+            doc['evidence'] = [{'type': ['Evidence'], 'name': 'e%d\\t' % i}
+                               for i in range(6)]
+            secured, _ = _hand_signed(doc, issuer,
+                                      mandatory=lambda s: not members(s))
+            with pytest.raises(OB3VerificationError,
+                               match='did not make mandatory'):
+                OB3LdpVerifier(pubkey_pem=issuer.pub_pem).verify(secured)
+
+
+# ── a clique that only the N-Quads round trip makes a clique ────────────────
+
+def _decodable_proof_value():
+    """A derived proofValue that decodes (the delegate decodes it before it
+    canonicalizes anything) and signs nothing: what an attacker without any
+    key attaches to a hostile document."""
+    from openvc.keys import P256SigningKey
+    from openvc.proof import ecdsa_sd as sd
+    ephemeral = P256SigningKey.generate(kid='urn:ephemeral')
+    return sd.encode_derived_proof(
+        base_signature=b'\0' * 64,
+        public_key=sd.p256_public_multikey(ephemeral.public_jwk()),
+        signatures=[], label_map={}, mandatory_indexes=[])
+
+
+def _collapsing_clique(base, size, collapse):
+    """*size* evidence nodes, each aligned with every other, named by one of
+    eight spellings of the same text: a backslash followed by ``t`` or by a
+    TAB, three times over. The JSON tells the eight apart, so the dataset it
+    expands to has no indistinguishable blank node and canonicalizes at once;
+    openvc-core's N-Quads round trip turns every spelling into the same
+    literal, and the clique is a poison graph for it (size 8: 22 to 29 s of
+    CPU for a 2 KB document). Without *collapse* every node has a name of its
+    own."""
+    def name(i):
+        if not collapse:
+            return 'x%d' % i
+        return 'x' + ''.join(
+            ('\\\t' if (i >> bit) & 1 else '\\t') + 'y' for bit in range(3))
+
+    doc = copy.deepcopy(base)
+    doc['evidence'] = [
+        {'id': '_:c%d' % i, 'type': ['Evidence'], 'name': name(i),
+         'alignment': [{'id': '_:c%d' % j} for j in range(size) if j != i]}
+        for i in range(size)]
+    return doc
+
+
+class TestNQuadsRoundTripCollapse:
+    @pytest.fixture
+    def attack(self, derived):
+        document, pub_pem, _ = derived
+        proof = dict(document['proof'], proofValue=_decodable_proof_value())
+
+        def build(size, collapse=True):
+            hostile = _collapsing_clique(document, size, collapse)
+            hostile['proof'] = proof
+            return hostile
+        return build, pub_pem
+
+    def test_the_spellings_are_one_literal_to_openvc_and_many_to_the_json(
+            self, attack):
+        build, _ = attack
+
+        def evidence_names(lines):
+            return {ln.split(' ', 2)[2] for ln in lines
+                    if ln.startswith('_:') and '/name>' in ln.split(' ', 2)[1]}
+
+        small = build(4)
+        assert len({e['name'] for e in small['evidence']}) == 4    # the JSON
+        direct = ldp._canonize(small, document_loader())
+        assert len(evidence_names(direct.split('\n'))) == 4       # the dataset
+        assert len(evidence_names(_openvc_lines(small))) == 1      # openvc's
+
+    def test_a_clique_of_eight_is_refused_in_no_time(self, attack,
+                                                     delegate_calls):
+        build, pub_pem = attack
+        hostile = build(8)
+        assert len(json.dumps(hostile)) < 6000
+        start = time.process_time()
+        for verifier in (OB3LdpVerifier(), OB3LdpVerifier(pubkey_pem=pub_pem)):
+            with _within(20), pytest.raises(OB3VerificationError,
+                                            match='refusing to canonicalize'):
+                verifier.verify(hostile)
+        assert time.process_time() - start < 3.0
+        assert not delegate_calls
+
+    def test_through_the_low_level_entry_too(self, attack, delegate_calls):
+        build, pub_pem = attack
+        with _within(20), pytest.raises(OB3VerificationError,
+                                        match='refusing to canonicalize'):
+            verify_data_integrity_proof(build(8), pub_pem)
+        assert not delegate_calls
+
+    def test_a_clique_of_five_is_within_the_budget_and_reaches_the_delegate(
+            self, attack, delegate_calls):
+        # five indistinguishable nodes cost 115,000 units: allowed. The
+        # signature is wrong, so the delegate refuses it: the point is that
+        # the screen let it through.
+        build, pub_pem = attack
+        with _within(30), pytest.raises(OB3VerificationError,
+                                        match='signature'):
+            verify_data_integrity_proof(build(5), pub_pem)
+        assert len(delegate_calls) == 1
+
+    def test_the_same_clique_with_names_of_its_own_is_no_poison_graph(
+            self, attack, delegate_calls):
+        build, pub_pem = attack
+        with _within(30), pytest.raises(OB3VerificationError,
+                                        match='signature'):
+            verify_data_integrity_proof(build(8, collapse=False), pub_pem)
+        assert len(delegate_calls) == 1
+
+
+# ── what openvc-core cannot canonicalize is refused before it is asked ──────
+
+class TestUnreadableNQuads:
+    """openvc-core splits the N-Quads text it parses with ``splitlines``, which
+    breaks a line at a Unicode line separator (U+2028, U+2029, U+0085), VT, FF,
+    FS, GS and RS, and its IRI pattern stops at a ``>``. A literal or an IRI
+    that holds one can be neither signed nor verified by it, so the credential
+    is refused here, before the delegate, with that limit named; every other
+    character is canonicalized as before."""
+
+    SEPARATORS = ['\u2028', '\u2029', '\x85', '\x0b', '\x0c', '\x1c', '\x1d',
+                  '\x1e']
+
+    @pytest.mark.parametrize('char', SEPARATORS)
+    def test_a_line_separator_in_a_literal(self, derived, delegate_calls, char):
+        document, pub_pem, _ = derived
+        hostile = copy.deepcopy(document)
+        hostile['evidence'] = [{'type': ['Evidence'], 'name': 'a%sb' % char}]
+        with pytest.raises(OB3VerificationError,
+                           match='openvc-core cannot canonicalize') as caught:
+            verify_data_integrity_proof(hostile, pub_pem)
+        assert 'Evidence' not in str(caught.value)      # never echoes the document
+        assert not delegate_calls
+
+    def test_a_closing_bracket_in_an_iri(self, derived, delegate_calls):
+        document, pub_pem, _ = derived
+        hostile = copy.deepcopy(document)
+        hostile['evidence'] = [{'type': ['Evidence'],
+                                'id': 'https://e.example/a>b'}]
+        with pytest.raises(OB3VerificationError,
+                           match='openvc-core cannot canonicalize'):
+            verify_data_integrity_proof(hostile, pub_pem)
+        assert not delegate_calls
+
+    @pytest.mark.parametrize('char', SEPARATORS + ['\x1f', '\x00', '\x7f',
+                                                   '\ufeff', ' ', 'é'])
+    def test_the_refusal_is_exactly_openvcs(self, ob3_credential, issuer, char):
+        # Differential: this library refuses a document exactly when
+        # openvc-core's canonicalization raises on it.
+        doc = _credential(ob3_credential, issuer)
+        doc['evidence'] = [{'type': ['Evidence'], 'name': 'a%sb' % char}]
+        try:
+            _openvc_lines(doc)
+            openvc_reads_it = True
+        except Exception:
+            openvc_reads_it = False
+        try:
+            ldp._sd_canonical_lines(_unsecured(doc), ldp.WorkBudget())
+            we_read_it = True
+        except OB3VerificationError:
+            we_read_it = False
+        assert we_read_it == openvc_reads_it == (char not in self.SEPARATORS)
