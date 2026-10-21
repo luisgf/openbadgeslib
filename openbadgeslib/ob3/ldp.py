@@ -612,6 +612,16 @@ def _verify_ecdsa_sd_2023(document: dict[str, Any], proof: dict[str, Any],
     work, within the work budget, and the number of statements. That screen
     is not a bound on what the delegate then spends.
 
+    The delegate runs under :data:`PYLD_LOCK`: it calls pyld, whose context
+    caches are shared by the whole process and are not thread-safe, and
+    concurrent verifications corrupted them (valid credentials refused at
+    random, every later verification or signature in the process failing
+    until a restart). Every other pyld call of this library takes the same
+    lock, so the delegate also holds up the verifications and signatures of
+    other threads while it runs: at most as long as a credential of
+    :data:`MAX_DELEGATED_QUADS` statements costs it, which is why that number
+    is a hold time as much as a CPU bound.
+
     The delegate takes the proof as an object, the one :func:`_select_proof`
     chose, so a ``proof`` array of one entry is handed over unwrapped. (*loader*
     is the registry's signature: the delegate is given the bundled contexts
@@ -622,12 +632,13 @@ def _verify_ecdsa_sd_2023(document: dict[str, Any], proof: dict[str, Any],
     _check_sd_proof_value(proof)
     lines = _prescreen_canonicalization(document, proof)
     try:
-        EcdsaSdProofSuite().verify(
-            dict(document, proof=proof),
-            public_key_jwk=public_key_jwk,
-            expected_proof_purpose=proof.get('proofPurpose'),
-            extra_contexts=bundled_contexts(),
-        )
+        with PYLD_LOCK:
+            EcdsaSdProofSuite().verify(
+                dict(document, proof=proof),
+                public_key_jwk=public_key_jwk,
+                expected_proof_purpose=proof.get('proofPurpose'),
+                extra_contexts=bundled_contexts(),
+            )
     except ProofError as exc:
         raise OB3VerificationError(
             "Invalid ecdsa-sd-2023 Data Integrity proof: %s" % exc) from exc

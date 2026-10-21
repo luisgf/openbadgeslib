@@ -22,6 +22,7 @@ import json
 import random
 import secrets
 import signal
+import sys
 import threading
 import time
 
@@ -30,8 +31,9 @@ import pytest
 from openbadgeslib.ob3 import OB3VerificationError, ldp
 from openbadgeslib.ob3.contexts import bundled_contexts, document_loader
 from openbadgeslib.ob3.did import did_key_from_pem
-from openbadgeslib.ob3.ldp import (MAX_DELEGATED_QUADS, OB3LdpVerifier,
-                                   verify_data_integrity_proof)
+from openbadgeslib.ob3._canon_guard import PYLD_LOCK
+from openbadgeslib.ob3.ldp import (MAX_DELEGATED_QUADS, OB3LdpSigner,
+                                   OB3LdpVerifier, verify_data_integrity_proof)
 
 from test_ob3_ldp_ecdsa_sd import (_issue_and_derive, _lifecycle_credential,
                                    _p256_pem_pair, _require_ldp_sd)
@@ -948,3 +950,133 @@ class TestUnreadableNQuads:
         except OB3VerificationError:
             we_read_it = False
         assert we_read_it == openvc_reads_it == (char not in self.SEPARATORS)
+
+
+# ── the delegate shares pyld's caches with everything else ──────────────────
+
+@pytest.fixture(scope='module')
+def derived_set(ob3_credential, issuer):
+    """Three genuine derived credentials of different sizes."""
+    documents = []
+    for i in range(3):
+        doc = _credential(ob3_credential, issuer)
+        doc['evidence'] = [{'type': ['Evidence'], 'name': 'e%d-%d' % (i, k)}
+                           for k in range(2 + i)]
+        documents.append(_openvc_issue_and_derive(
+            doc, issuer, selective=['/evidence']))
+    return documents
+
+
+def _hammer(jobs, threads, seconds):
+    """Call the *jobs* (zero-argument callables, one per thread in turn) from
+    *threads* threads for *seconds*, at the shortest thread switch interval
+    that makes a data race likely; stop at the first failure. Returns (calls
+    that returned, the failures, the threads still running after a minute)."""
+    original = sys.getswitchinterval()
+    stop = threading.Event()
+    guard = threading.Lock()
+    failures, calls = [], [0]
+
+    def work(n):
+        while not stop.is_set():
+            try:
+                jobs[n % len(jobs)]()
+                with guard:
+                    calls[0] += 1
+            except Exception as exc:     # a regression: report it, don't hang
+                with guard:
+                    failures.append('%s: %s' % (type(exc).__name__, str(exc)[:160]))
+                stop.set()
+
+    workers = [threading.Thread(target=work, args=(n,), daemon=True)
+               for n in range(threads)]
+    sys.setswitchinterval(1e-5)
+    try:
+        for worker in workers:
+            worker.start()
+        stop.wait(seconds)
+        stop.set()
+        for worker in workers:
+            worker.join(60)
+    finally:
+        sys.setswitchinterval(original)
+    return calls[0], failures, [w for w in workers if w.is_alive()]
+
+
+def _lock_is_free():
+    """Whether another thread could take the pyld lock right now (the lock is
+    reentrant, so the caller's own thread cannot tell)."""
+    free = []
+
+    def probe():
+        if PYLD_LOCK.acquire(blocking=False):
+            PYLD_LOCK.release()
+            free.append(True)
+        else:
+            free.append(False)
+
+    thread = threading.Thread(target=probe)
+    thread.start()
+    thread.join()
+    return free[0]
+
+
+class TestDelegateRunsUnderThePyldLock:
+    """openvc-core's verify calls pyld on its own, and pyld's context caches
+    are plain LRU caches shared by the whole process: concurrent calls
+    corrupt them. Valid credentials were refused at random (several percent of
+    them at 16 threads), and once corrupted every verification or signature
+    in the process failed until a restart, for every cryptosuite, because the
+    calls that held the library's lock read the same caches the delegate
+    mutated without it."""
+
+    def test_the_lock_is_held_while_the_delegate_runs(self, derived,
+                                                      monkeypatch):
+        from openvc.proof.ecdsa_sd import EcdsaSdProofSuite
+        document, pub_pem, _ = derived
+        real = EcdsaSdProofSuite.verify
+        held = []
+
+        def verify(self, *args, **kwargs):
+            held.append(not _lock_is_free())
+            return real(self, *args, **kwargs)
+
+        monkeypatch.setattr(EcdsaSdProofSuite, 'verify', verify)
+        verify_data_integrity_proof(document, pub_pem)
+        assert held == [True]
+
+    def test_and_released_when_it_refuses(self, derived):
+        document, _, _ = derived
+        _, other_pub = _p256_pem_pair()
+        with pytest.raises(OB3VerificationError):
+            verify_data_integrity_proof(document, other_pub)
+        assert _lock_is_free()
+
+    def test_sixteen_threads_verifying_valid_credentials_never_fail(
+            self, derived_set, issuer):
+        verifier = OB3LdpVerifier(pubkey_pem=issuer.pub_pem)
+        jobs = [lambda d=d: verifier.verify(copy.deepcopy(d))
+                for d in derived_set]
+        calls, failures, stuck = _hammer(jobs, 16, 6.0)
+        assert not stuck
+        assert not failures, failures[:3]
+        assert calls >= 16
+        verifier.verify(copy.deepcopy(derived_set[0]))      # and afterwards
+
+    def test_and_neither_do_the_eddsa_verifications_beside_them(
+            self, derived_set, issuer, ob3_credential, ed25519_keypair):
+        # The signatures and verifications that already held the lock failed
+        # too, because the delegate mutated the caches they read.
+        priv, pub = ed25519_keypair
+        signed = OB3LdpSigner(priv).sign(ob3_credential)
+        sd_verifier = OB3LdpVerifier(pubkey_pem=issuer.pub_pem)
+        ed_verifier = OB3LdpVerifier(pubkey_pem=pub)
+        jobs = ([lambda d=d: sd_verifier.verify(copy.deepcopy(d))
+                 for d in derived_set]
+                + [lambda: ed_verifier.verify(copy.deepcopy(signed)),
+                   lambda: OB3LdpSigner(priv).sign(ob3_credential)])
+        calls, failures, stuck = _hammer(jobs, 16, 6.0)
+        assert not stuck
+        assert not failures, failures[:3]
+        assert calls >= 16
+        ed_verifier.verify(copy.deepcopy(signed))
