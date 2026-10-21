@@ -929,6 +929,47 @@ class TestLegitimateCredentialsAreAccepted:
                 OB3LdpVerifier(pubkey_pem=issuer.pub_pem).verify(secured)
 
 
+class TestTheHolderCannotRespellItsWayPastTheLifecycleCheck:
+    """With an issuer that left the members of its status entry selective, a
+    backslash followed by t and the same followed by a TAB are one literal to
+    openvc-core's verify: the signature holds for every spelling a holder
+    chooses of the evidence names, and in 4.6.3's first form of the check half
+    of the spellings were told that the status block was mandatory. All of
+    them are refused, whatever the HMAC key of the issuer."""
+
+    def test_every_spelling_is_refused(self, ob3_credential, issuer):
+        import itertools
+
+        def members(statement):
+            return statement.startswith('_:') and any(
+                name in statement for name in
+                ('statusPurpose', 'statusListIndex', 'statusListCredential'))
+
+        count = 5
+
+        def evidence(bits):
+            return [{'type': ['Evidence'], 'description': 'd%d' % i,
+                     'name': 'e%d%sx' % (i, '\\\t' if bit else '\\t')}
+                    for i, bit in enumerate(bits)]
+
+        for key in range(3):            # the label order depends on the HMAC key
+            doc = _credential(ob3_credential, issuer)
+            doc['credentialStatus'] = [{
+                'type': 'BitstringStatusListEntry', 'statusPurpose': 'suspension',
+                'statusListIndex': str(key),
+                'statusListCredential': 'https://example.com/status/1'}]
+            doc['evidence'] = evidence([0] * count)
+            secured, _ = _hand_signed(doc, issuer,
+                                      mandatory=lambda s: not members(s))
+            for bits in itertools.product((0, 1), repeat=count):
+                respelled = copy.deepcopy(secured)
+                respelled['evidence'] = evidence(bits)
+                verify_data_integrity_proof(respelled, issuer.pub_pem)   # signed
+                with pytest.raises(OB3VerificationError,
+                                   match='did not make mandatory'):
+                    OB3LdpVerifier(pubkey_pem=issuer.pub_pem).verify(respelled)
+
+
 # ── a clique that only the N-Quads round trip makes a clique ────────────────
 
 def _decodable_proof_value():
