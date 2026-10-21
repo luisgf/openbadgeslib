@@ -69,8 +69,9 @@ from .._safejson import JSONTooDeepError, check as check_json, loads as loads_un
 from ..errors import ErrorSigningFile
 from ..keys import KeyType, detect_key_type, key_to_pem
 from ..util import __version__
-from ._canon_guard import (PYLD_LOCK, CanonicalizationGuardUnavailable,
-                           CanonicalizationWorkExceeded, WorkBudget, canonize)
+from ._canon_guard import (CanonicalizationGuardUnavailable,
+                           CanonicalizationWorkExceeded, WorkBudget, canonize,
+                           isolate, require_guard)
 from ._context_validation import validate_document
 from ._structure_screen import StructureLimitExceeded, screen as screen_structure
 from .contexts import UnknownContextError, bundled_contexts, document_loader
@@ -168,6 +169,11 @@ def _check_json_ld_form(document: dict[str, Any], proof: dict[str, Any],
     """
     jsonld = _require_jsonld()
     try:
+        require_guard()             # the guard also keeps pyld's caches apart
+    except CanonicalizationGuardUnavailable as exc:
+        raise OB3GuardUnavailable(
+            "cannot canonicalize safely: %s" % exc) from exc
+    try:
         json.dumps(document)
     except (TypeError, ValueError, RecursionError) as exc:
         raise OB3VerificationError(
@@ -177,8 +183,8 @@ def _check_json_ld_form(document: dict[str, Any], proof: dict[str, Any],
     # As in canonicalization: the proof options are read in the context of
     # the secured document.
     proof_config['@context'] = document.get('@context')
-    with PYLD_LOCK:                 # pyld's context caches are not thread-safe
-        validate_document(unsecured, proof_config, loader, jsonld)
+    # On this thread's own context caches, not pyld's shared ones (_canon_guard).
+    validate_document(unsecured, proof_config, loader, isolate(jsonld))
 
 
 def _select_proof(document: dict[str, Any]) -> dict[str, Any]:

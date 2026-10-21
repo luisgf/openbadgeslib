@@ -113,20 +113,74 @@
 # quadratics. A value repeated is compared once (pyld stops at the first
 # match), so only distinct values count towards the square.
 #
-# pyld's JSON-LD processor keeps process-wide caches (resolved contexts,
-# inverse contexts) in plain LRU caches that are not thread-safe: concurrent
-# expand / compact / to_rdf calls corrupt them, and a corrupted cache fails
-# every later call in the process, signing included. PYLD_LOCK serializes
-# every pyld JSON-LD call this library makes on the Data Integrity path. The
-# lock is NOT held while URDNA2015 runs (that phase touches no pyld cache), so
-# a poison graph burning its CPU allowance does not hold up other threads.
+# THREADS. pyld's JSON-LD processor keeps two caches for the whole process,
+# resolved contexts and inverse contexts, in plain LRU caches that are not
+# thread-safe: concurrent expand / compact / to_rdf calls corrupt them, and a
+# corrupted cache fails every later call in the process, signing included
+# (4.6.2, which shares them, failed 459 of 480 verifications run by 8 threads
+# on CPython 3.14 and 182 of 480 on 3.10).
+# Putting every pyld call behind one lock cured that, and was this module's
+# first answer, but a document that passes every screen spends about a second
+# of CPU, 98% of it in pyld's linear JSON-LD phase, so a request holding the
+# lock for that second held every other thread up with it: with one such
+# request in flight (42 KB, 1,200 typed nodes) a legitimate verification that
+# takes 5 ms alone waited 1.1 s (p50, CPython 3.14), 4.4 s behind four and 17 s
+# behind sixteen. So the caches are kept apart instead of the calls serialized:
 #
-# What it does not cover: canonicalization performed by other libraries on the
-# same document, notably the ecdsa-sd-2023 suite delegated to openvc-core,
-# which calls pyld on its own (outside PYLD_LOCK, and without a work bound).
-# That path is only screened here, before the delegate runs (poison-graph work
-# and the statement count, ldp._prescreen_canonicalization); the statements the
-# lifecycle check indexes after the signature are canonicalized under the guard.
+# * resolved contexts: every call is handed a ContextResolver (the
+#   ``contextResolver`` option pyld documents as internal use) over a cache
+#   that belongs to the calling thread. Bounded like pyld's own (100 entries;
+#   about 1 to 2 MiB once a credential has gone through) and dropped by any
+#   call that raises, an interrupted one included, so a half-updated cache is
+#   never reused. A thread's first call, or the first after a refusal, builds
+#   it again: 6.2 ms instead of 4.4 for a small credential. The output is the
+#   same: these caches only remember work.
+# * inverse contexts (compaction only): derived per compaction and remembered
+#   by it. pyld stores each one in its process-wide cache as well, with no
+#   option to say otherwise, so deriving one takes PYLD_LOCK, for about 50
+#   microseconds (8 times per legitimate verification, 1,300 times per hostile
+#   typed-flood request, which holds the lock 8% of its second). This is the
+#   one lock left on the path and it is what remains of the convoy. A thread
+#   that finds it taken blocks, and a blocked thread has to win the GIL back
+#   from the CPU-bound ones, which costs it up to 60 ms each time. Measured
+#   (CPython 3.14, one legitimate verification every 20 ms, hostile requests of
+#   the kind above in a loop, best of three runs): p50 / p99 of the legitimate
+#   one with 1, 4 and 16 hostile requests in flight is 13 / 21, 29 / 517 and
+#   43 / 442 ms (1.0 s at the worst), against 13 / 23, 35 / 95 and 92 / 721 ms
+#   with the lock taken out (not safe: the cache then corrupts) and 4.4 s and
+#   17 s at the median behind the old lock. 3.10 and 3.12 measure the same
+#   within noise. Only a copy of pyld's inverse-context code that does not
+#   write its cache would remove it, and a copy would put the compacted form
+#   context validation compares against in this library's hands.
+#
+# Nothing else the path does touches pyld's caches (INITIAL_CONTEXTS, written
+# once per processing mode with an immutable value, apart), and the
+# document loader hands out the same pinned documents to every thread.
+#
+# ASYNCHRONOUS EXCEPTIONS. A signal handler that raises (a timeout, Celery's
+# soft limit, KeyboardInterrupt) can land between two statements of pyld's
+# cache code and leave an LRU with a stale key at its head, after which every
+# call that must evict fails with a KeyError for as long as the process lives
+# (reproduced on CPython 3.10, and in pyld alone on 3.14 and 3.15). A thread's
+# cache is dropped by any exception, and the shared inverse-context cache,
+# which this module touches only under PYLD_LOCK, is emptied in place if the
+# exception comes out of its derivation. What this does not cover: a handler
+# that verifies a credential itself, on the thread it interrupted (the nested
+# call sees the interrupted one's cache as it was left; unsupported, as
+# before), and CPython 3.14.8, where ANY ``with lock:`` can leak the lock when
+# the exception arrives between taking it and entering the block (a Lock, an
+# RLock and acquire/try/finally leak alike; 3.10 to 3.13 and 3.15 do not). That
+# is an interpreter defect. PYLD_LOCK is held for tens of microseconds per
+# derivation instead of for a whole verification, so the window is far smaller
+# than it was; a leaked one blocks the next derivation of every other thread.
+#
+# What PYLD_LOCK does not cover: other libraries that call pyld in the same
+# process share pyld's own caches. The one call this library makes that way is
+# the ecdsa-sd-2023 suite delegated to openvc-core, which calls pyld on its own
+# and without a work bound; it is made under PYLD_LOCK. That path is also
+# screened here, before the delegate runs (poison-graph work and the statement
+# count, ldp._prescreen_canonicalization); the statements the lifecycle check
+# indexes after the signature are canonicalized under the guard.
 import functools
 import math
 import os
@@ -135,8 +189,13 @@ import time
 
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-#: Serializes pyld's JSON-LD processor (expand / compact / to_rdf) across the
-#: threads of one process: its context caches are shared and not thread-safe.
+#: Serializes whatever still uses pyld's own process-wide caches (resolved
+#: contexts, inverse contexts: plain LRU caches, not thread-safe) across the
+#: threads of one process: the derivation of an inverse context in a
+#: compaction here (tens of microseconds), the build of the guard (once) and,
+#: where this library takes it around them, calls into pyld made by
+#: another library (the openvc-core delegate of ecdsa-sd-2023). Nothing else
+#: on the Data Integrity path takes it: see THREADS in the module comment.
 #: Reentrant, because a caller already holding it may call canonize().
 PYLD_LOCK = threading.RLock()
 
@@ -318,6 +377,153 @@ class _MeteredGroup(List[str]):
         self._budget.swaps += 1
         self._budget.charge(self._half)
         super().__setitem__(index, value)
+
+
+# ── pyld's process-wide caches, kept out of reach ─────────────────────────────
+# See the module comment. pyld gives every JSON-LD call the same two plain LRU
+# caches. Here each thread keeps its own resolved contexts, each compaction its
+# own inverse contexts, and only the derivation of an inverse context, which
+# pyld insists on storing in its own cache, takes PYLD_LOCK.
+
+#: Resolved contexts a thread keeps (the size of pyld's own shared cache): the
+#: pinned documents and the scoped contexts they define inline, about thirty
+#: for a complete credential.
+_MAX_RESOLVED_CONTEXTS = 100
+
+#: Inverse contexts one compaction remembers (pyld's own cache holds 20).
+_MAX_INVERSE_CONTEXTS = 20
+
+
+class _Cache(Dict[str, Any]):
+    """A bounded map (the oldest entry makes room) in the shape pyld expects
+    of a context cache: ``get`` and item assignment. Used by one thread at a
+    time, so it takes no lock."""
+
+    def __init__(self, limit: int) -> None:
+        super().__init__()
+        self._limit = limit
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        if key not in self and len(self) >= self._limit:
+            del self[next(iter(self))]
+        super().__setitem__(key, value)
+
+
+_LOCAL = threading.local()
+
+
+def _thread_contexts() -> _Cache:
+    """The calling thread's resolved contexts."""
+    cache: Optional[_Cache] = getattr(_LOCAL, 'contexts', None)
+    if cache is None:
+        cache = _LOCAL.contexts = _Cache(_MAX_RESOLVED_CONTEXTS)
+    return cache
+
+
+def _discard_thread_contexts() -> None:
+    _LOCAL.contexts = None
+
+
+def _reset(cache: Any) -> None:
+    """Empty a cachetools cache in place, whatever state an exception left it
+    in: its constructor is its reset (``clear`` stops at the first stale key)."""
+    try:
+        type(cache).__init__(cache, cache.maxsize)
+    except Exception:                               # pragma: no cover
+        pass
+
+
+@functools.lru_cache(maxsize=None)
+def _processor_class(jsonld: Any) -> Any:
+    """pyld's ``JsonLdProcessor`` with the inverse contexts of one compaction
+    kept by that compaction. A miss takes :data:`PYLD_LOCK` for as long as
+    pyld takes to derive one inverse context (tens of microseconds on a
+    pinned context) because pyld stores the result in a cache of its own,
+    shared by the whole process; if the derivation is interrupted, that cache
+    is emptied rather than left half updated."""
+    base: Any = jsonld.JsonLdProcessor
+    if not callable(getattr(base, '_get_inverse_context', None)):
+        raise CanonicalizationGuardUnavailable(
+            "pyld's JsonLdProcessor has no _get_inverse_context(): the "
+            "guard cannot keep the caches of a compaction apart")
+
+    class PrivateProcessor(base):                   # type: ignore[misc]
+        def __init__(self) -> None:
+            super().__init__()
+            self._inverse = _Cache(_MAX_INVERSE_CONTEXTS)
+
+        def _get_inverse_context(self, active_ctx: Any) -> Any:
+            key = active_ctx['_uuid']
+            inverse = self._inverse.get(key)
+            if inverse is None:
+                with PYLD_LOCK:
+                    try:
+                        inverse = super()._get_inverse_context(active_ctx)
+                    except BaseException:
+                        shared = getattr(jsonld, '_inverse_context_cache', None)
+                        if shared is not None:
+                            _reset(shared)
+                        raise
+                self._inverse[key] = inverse
+            return inverse
+
+    return PrivateProcessor
+
+
+class _Isolated:
+    """``expand`` / ``compact`` / ``to_rdf`` of the pyld ``jsonld`` module, each
+    run on this thread's own resolved-context cache (*contexts*, for a probe)
+    instead of pyld's process-wide one. The output is the same: the caches
+    only remember work. A call that raises discards the thread's cache, so
+    whatever an exception (an asynchronous one included) interrupted is
+    rebuilt, never reused."""
+
+    __slots__ = ('_jsonld', '_contexts')
+
+    def __init__(self, jsonld: Any, contexts: Optional[_Cache] = None) -> None:
+        self._jsonld = jsonld
+        self._contexts = contexts
+
+    def _options(self, options: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        options = dict(options or {})
+        loader = options.get('documentLoader')
+        if loader is None:
+            loader = options['documentLoader'] = \
+                self._jsonld.get_document_loader()
+        contexts = (_thread_contexts() if self._contexts is None
+                    else self._contexts)
+        options['contextResolver'] = self._jsonld.ContextResolver(
+            contexts, loader)
+        return options
+
+    def _call(self, function: Callable[[Dict[str, Any]], Any],
+              options: Optional[Dict[str, Any]]) -> Any:
+        try:
+            return function(self._options(options))
+        except BaseException:
+            if self._contexts is None:
+                _discard_thread_contexts()
+            raise
+
+    def expand(self, document: Any,
+               options: Optional[Dict[str, Any]] = None) -> Any:
+        return self._call(lambda o: self._jsonld.expand(document, o), options)
+
+    def to_rdf(self, document: Any,
+               options: Optional[Dict[str, Any]] = None) -> Any:
+        return self._call(lambda o: self._jsonld.to_rdf(document, o), options)
+
+    def compact(self, document: Any, context: Any,
+                options: Optional[Dict[str, Any]] = None) -> Any:
+        return self._call(
+            lambda o: _processor_class(self._jsonld)().compact(
+                document, context, o), options)
+
+
+def isolate(jsonld: Any) -> Any:
+    """*jsonld* (the pyld module) as :class:`_Isolated`; one already isolated
+    is returned as it is."""
+    return jsonld if isinstance(jsonld, _Isolated) else _Isolated(jsonld)
 
 
 # ── the canary ───────────────────────────────────────────────────────────────
@@ -510,6 +716,13 @@ class _Once:
 _bounded_class = _Once()
 
 
+def require_guard() -> None:
+    """Build and prove the guard if that has not been done: raises
+    :class:`CanonicalizationGuardUnavailable` when the installed pyld is not
+    one it can meter or keep apart (see the module comment)."""
+    _bounded_class()
+
+
 def _selftest(jsonld: Any, bounded: Any, pyld_version: str) -> None:
     """Prove, on documents with permutation groups, that the guard (a)
     reproduces stock pyld's output, (b) meters the work this cost model
@@ -546,6 +759,7 @@ def _selftest(jsonld: Any, bounded: Any, pyld_version: str) -> None:
                 continue
             raise CanonicalizationGuardUnavailable(
                 "the canonicalization budget is not enforced")
+        _probe_isolation(jsonld, pyld_version)
     except CanonicalizationGuardUnavailable:
         raise
     except (MemoryError, RecursionError):
@@ -556,19 +770,44 @@ def _selftest(jsonld: Any, bounded: Any, pyld_version: str) -> None:
             % (pyld_version, exc, _remedy(pyld_version))) from exc
 
 
+def _probe_isolation(jsonld: Any, pyld_version: str) -> None:
+    """Prove that pyld answers from the caches handed to it, not from its
+    process-wide ones: a pinned context lands in the private cache, and a
+    compaction reaches the inverse-context hook."""
+    from .contexts import document_loader
+    context = 'https://www.w3.org/ns/credentials/v2'
+    document = {'@context': context, 'id': 'urn:example:probe',
+                'type': 'VerifiableCredential'}
+    contexts = _Cache(_MAX_RESOLVED_CONTEXTS)
+    isolated = _Isolated(jsonld, contexts)
+    options = {'documentLoader': document_loader()}
+    expanded = isolated.expand(document, options)
+    if context not in contexts:
+        raise CanonicalizationGuardUnavailable(
+            "pyld %s resolved a context without using the cache the guard "
+            "handed it, so its process-wide cache cannot be kept out of reach. "
+            "%s" % (pyld_version, _remedy(pyld_version)))
+    processor = _processor_class(jsonld)()
+    processor.compact(expanded, context, isolated._options(options))
+    if not processor._inverse:
+        raise CanonicalizationGuardUnavailable(
+            "pyld %s compacted without asking for an inverse context, so its "
+            "process-wide cache cannot be kept out of reach. %s"
+            % (pyld_version, _remedy(pyld_version)))
+
+
 def _to_dataset(jsonld: Any, document: Any, loader: Any) -> Any:
     options: Dict[str, Any] = {'produceGeneralizedRdf': False}
     if loader is not None:
         options['documentLoader'] = loader
     # What jsonld.normalize does for URDNA2015: to_rdf without a format, then
     # the algorithm on the resulting dataset.
-    with PYLD_LOCK:
-        return jsonld.to_rdf(document, options)
+    return isolate(jsonld).to_rdf(document, options)
 
 
 def _canonicalize(bounded: Any, dataset: Any, budget: WorkBudget) -> str:
     """URDNA2015 on *dataset*: pure Python on plain dicts, touching no pyld
-    cache, so it runs outside :data:`PYLD_LOCK`."""
+    cache."""
     budget.begin()
     try:
         return str(bounded(budget).main(
@@ -710,11 +949,11 @@ def canonize(jsonld: Any, document: Any, loader: Any,
     if budget is None:
         budget = WorkBudget()
     options = {} if loader is None else {'documentLoader': loader}
-    with PYLD_LOCK:
-        pairs, widest, where = _scan_node_map(jsonld.expand(document, options))
-        budget.take_pairs(pairs, "; the largest property holds %d values: %s"
-                          % (widest, where))
-        dataset = _to_dataset(jsonld, document, loader)
+    pairs, widest, where = _scan_node_map(
+        isolate(jsonld).expand(document, options))
+    budget.take_pairs(pairs, "; the largest property holds %d values: %s"
+                      % (widest, where))
+    dataset = _to_dataset(jsonld, document, loader)
     return _canonicalize(bounded, dataset, budget)
 
 

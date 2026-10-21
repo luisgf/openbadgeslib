@@ -61,6 +61,7 @@ from openbadgeslib.ob3.contexts import document_loader  # noqa: E402
 from ldp_helpers import b58encode, did_key  # noqa: E402
 from test_ob3_ldp_context_validation import _complete_document  # noqa: E402
 
+ROOT = Path(__file__).parent.parent
 FIXTURES = Path(__file__).parent / 'fixtures' / 'vc_di_eddsa'
 REFUSED = 'refusing to canonicalize'
 #: CPU seconds. Generous: a refusal costs 0.05-0.25 s (0.85 s inside the
@@ -229,8 +230,10 @@ def _fresh_guard():
     """The guard's pyld check is cached per process; tests that change pyld
     must not leak (or inherit) that state."""
     guard._bounded_class.cache_clear()
+    guard._processor_class.cache_clear()
     yield
     guard._bounded_class.cache_clear()
+    guard._processor_class.cache_clear()
 
 
 @pytest.fixture
@@ -550,6 +553,28 @@ class TestCpuDeadline:
         budget.check_time()
         budget.end()
 
+    def test_a_coarse_clock_still_bounds_the_work_and_spares_real_documents(
+            self, base_vc, monkeypatch):
+        # Windows reads a thread's CPU time from GetThreadTimes, which only
+        # advances once per scheduler tick (documented as about 15.6 ms; not
+        # measured there). Emulated: two readings of that clock subtract to 0
+        # or to a whole tick, so a span is over- or under-charged by up to one
+        # tick. Real canonicalizations take 1 to 100 ms in at most two spans
+        # per signature check, a poison graph is cut off within a tick or two
+        # of its allowance.
+        tick = 0.015625
+        monkeypatch.setattr(
+            guard, '_CLOCK', lambda: int(time.thread_time() / tick) * tick)
+        for name, doc, loader in _documents(base_vc):
+            assert ldp._canonize(copy.deepcopy(doc), loader) == \
+                _stock(doc, loader), name
+        budget = guard.WorkBudget(limit=10 ** 12, seconds=0.25)
+        with cpu_below(CPU_BOUND):
+            with pytest.raises(OB3VerificationError, match='CPU time limit'):
+                ldp._canonize(circulant(base_vc, 146), document_loader(),
+                              budget)
+        assert 0.25 < budget._cpu_used < 0.25 + 3 * tick
+
     def test_it_counts_this_threads_cpu_only(self):
         budget = guard.WorkBudget(seconds=0.05)
         stop = threading.Event()
@@ -567,20 +592,36 @@ class TestCpuDeadline:
             stop.set()
             spinner.join()
 
-    def test_a_waiting_thread_is_not_charged_for_the_lock(self, base_vc):
-        # The pyld lock is held by someone else for longer than the CPU
-        # allowance: the document is still canonicalized once it gets in.
+    def test_a_thread_held_up_elsewhere_is_not_charged_for_the_wait(
+            self, base_vc, ed25519_keypair):
+        # Another thread sits on the pyld lock for longer than the CPU
+        # allowance. Canonicalization needs no lock, so it is not held up; the
+        # check that compacts (it asks for an inverse context) is, and still
+        # finishes within its own allowance once it gets in.
         loader = document_loader()
         expected = ldp._canonize(copy.deepcopy(base_vc), loader)
-        results = []
+        canonized = []
+        checked = threading.Event()
         budget = guard.WorkBudget(seconds=0.2)
+        signed = _with_bogus_proof(base_vc, ed25519_keypair[1])
+
+        def check():
+            ldp._check_json_ld_form(
+                {k: v for k, v in signed.items() if k != 'proof'},
+                signed['proof'], loader)
+            checked.set()
         with guard.PYLD_LOCK:
-            worker = threading.Thread(target=lambda: results.append(
+            worker = threading.Thread(target=lambda: canonized.append(
                 ldp._canonize(copy.deepcopy(base_vc), loader, budget)))
+            blocked = threading.Thread(target=check)
             worker.start()
+            blocked.start()
+            worker.join(30)
+            assert canonized == [expected]          # not held up by the lock
             time.sleep(0.6)
-        worker.join(30)
-        assert results == [expected]
+            assert not checked.is_set()             # held up, as it must be
+        blocked.join(30)
+        assert checked.is_set()
 
     def test_it_is_the_operative_bound_where_the_unit_model_is_wrong(
             self, base_vc):
@@ -1083,6 +1124,7 @@ class TestSelfTestErrors:
     def test_a_long_error_text_is_cut(self, base_vc, monkeypatch):
         def boom(*args, **kwargs):
             raise ValueError('x' * 5000)
+        guard._bounded_class()                      # (its probe expands too)
         monkeypatch.setattr(jsonld, 'expand', boom)
         with pytest.raises(OB3VerificationError) as caught:
             ldp._canonize(copy.deepcopy(base_vc), document_loader())
@@ -1250,6 +1292,270 @@ class TestThreadSafety:
         finally:
             done.set()
             owner.join(30)
+
+
+class Interrupt(BaseException):
+    """What a signal handler's timeout raises in the middle of a call (not
+    KeyboardInterrupt itself, which would abort the test session)."""
+
+
+def _spy_cache(name, size, seen, interrupt=None):
+    """A stand-in for one of pyld's process-wide caches that records every
+    access with the thread that made it and whether that thread held
+    :data:`guard.PYLD_LOCK`."""
+    from cachetools import LRUCache
+
+    class Spy(LRUCache):
+        def _note(self, op):
+            seen[name].append(
+                (op, threading.current_thread().name,
+                 guard.PYLD_LOCK._is_owned()))
+
+        def get(self, key, default=None):
+            self._note('get')
+            return super().get(key, default)
+
+        def __getitem__(self, key):
+            self._note('getitem')
+            return super().__getitem__(key)
+
+        def __contains__(self, key):
+            self._note('in')
+            return super().__contains__(key)
+
+        def __setitem__(self, key, value):
+            self._note('set')
+            super().__setitem__(key, value)
+            if interrupt is not None and interrupt['armed']:
+                interrupt['armed'] = False
+                # the entry is in, the bookkeeping is not: a stale key at the
+                # head of the eviction order, as a torn update leaves it
+                order = getattr(self, '_LRUCache__order', None)
+                if order is not None:
+                    order['stale'] = None
+                    order.move_to_end('stale', last=False)
+                raise Interrupt()
+    return Spy(maxsize=size)
+
+
+@pytest.fixture
+def spies(monkeypatch):
+    """pyld's two process-wide caches, replaced by recording ones."""
+    seen = {'resolved': [], 'inverse': []}
+    control = {'armed': False}
+    monkeypatch.setattr(jsonld, '_resolved_context_cache',
+                        _spy_cache('resolved', 100, seen))
+    monkeypatch.setattr(jsonld, '_inverse_context_cache',
+                        _spy_cache('inverse', 20, seen, control))
+    seen['control'] = control
+    return seen
+
+
+def _method(pub):
+    did = did_key(pub)
+    return '%s#%s' % (did, did[len('did:key:'):])
+
+
+class TestPrivateCaches:
+    """The Data Integrity path keeps pyld's context caches apart per thread
+    (ob3/_canon_guard.py): only the derivation of an inverse context, which
+    pyld stores in a cache of its own, takes the process-wide lock."""
+
+    def test_pyld_resolved_context_cache_is_never_used(
+            self, base_vc, ed25519_keypair, verifier, spies):
+        priv, pub = ed25519_keypair
+        signed = add_data_integrity_proof(
+            copy.deepcopy(base_vc), priv, _method(pub))
+        verify_data_integrity_proof(copy.deepcopy(signed), pub)
+        verifier.verify(copy.deepcopy(signed))
+        with pytest.raises(OB3VerificationError, match='signature'):
+            verifier.verify(_with_bogus_proof(base_vc, pub))
+        with pytest.raises(OB3VerificationError, match=REFUSED):
+            verifier.verify(_with_bogus_proof(clique(base_vc, 8), pub))
+        assert spies['resolved'] == []
+
+    def test_pyld_inverse_context_cache_is_only_used_under_the_lock(
+            self, base_vc, ed25519_keypair, verifier, spies):
+        priv, pub = ed25519_keypair
+        signed = add_data_integrity_proof(
+            copy.deepcopy(base_vc), priv, _method(pub))
+        workers = [threading.Thread(
+            target=lambda: verifier.verify(copy.deepcopy(signed)))
+            for _ in range(4)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(60)
+        accesses = spies['inverse']
+        assert accesses and all(owned for _, _, owned in accesses)
+
+    def test_a_cache_torn_by_an_interrupt_is_emptied_not_reused(
+            self, base_vc, ed25519_keypair, verifier, spies):
+        # An asynchronous exception between the two halves of a store leaves
+        # pyld's LRU with a stale key at its head, and every later call that
+        # must evict then fails with a KeyError for as long as the process
+        # lives. The cache is put back to empty instead.
+        priv, pub = ed25519_keypair
+        signed = add_data_integrity_proof(
+            copy.deepcopy(base_vc), priv, _method(pub))
+        for index in range(20):
+            jsonld._inverse_context_cache['filler%d' % index] = {'x': index}
+        spies['control']['armed'] = True
+        with pytest.raises(Interrupt):
+            verifier.verify(copy.deepcopy(signed))
+        for _ in range(3):                  # enough derivations to evict
+            verifier.verify(copy.deepcopy(signed))
+
+    def test_an_interrupted_call_discards_the_threads_contexts(self, base_vc):
+        real = document_loader()
+        guard._discard_thread_contexts()                # cold: it will fetch
+        thread_cache = guard._thread_contexts()
+        thread_cache['poisoned'] = object()
+
+        def loader(url, options=None):
+            raise Interrupt()
+        with pytest.raises(Interrupt):
+            ldp._canonize(copy.deepcopy(base_vc), loader)
+        assert guard._thread_contexts() is not thread_cache
+        assert 'poisoned' not in guard._thread_contexts()
+        assert ldp._canonize(copy.deepcopy(base_vc), real)
+
+    def test_a_rejected_document_costs_the_next_call_a_cold_start_only(
+            self, base_vc):
+        # Any exception out of a pyld call, a plain rejection included, drops
+        # the thread's contexts: it cannot tell a refusal from an interrupt.
+        loader = document_loader()
+        expected = ldp._canonize(copy.deepcopy(base_vc), loader)
+        warm = guard._thread_contexts()
+        assert warm
+        stranger = copy.deepcopy(base_vc)
+        stranger['@context'] = stranger['@context'] + [
+            'https://example.org/not-bundled']
+        with pytest.raises(OB3VerificationError, match='not in the bundled'):
+            ldp._canonize(stranger, loader)
+        assert guard._thread_contexts() is not warm
+        assert ldp._canonize(copy.deepcopy(base_vc), loader) == expected
+
+    def test_a_threads_contexts_are_bounded(self):
+        cache = guard._Cache(3)
+        for key in 'abcde':
+            cache[key] = key
+        assert list(cache) == ['c', 'd', 'e']
+        cache['d'] = 'again'                    # a known key makes no room
+        assert list(cache) == ['c', 'd', 'e']
+
+    def test_a_threads_contexts_are_its_own(self):
+        seen = []
+        threading.Thread(target=lambda: seen.append(
+            guard._thread_contexts())).start()
+        time.sleep(0.2)
+        assert seen and seen[0] is not guard._thread_contexts()
+
+    def test_the_output_is_the_same_on_a_cold_and_a_warm_cache(self, base_vc):
+        for name, doc, loader in _documents(base_vc):
+            guard._discard_thread_contexts()
+            cold = ldp._canonize(copy.deepcopy(doc), loader)
+            warm = ldp._canonize(copy.deepcopy(doc), loader)
+            assert cold == warm == _stock(doc, loader), name
+
+    def test_a_legitimate_check_does_not_queue_behind_a_hostile_one(
+            self, base_vc, ed25519_keypair, verifier):
+        # One request that passes every screen and costs well over a tenth of
+        # a second to refuse (1,400 distinct tags: 980,000 duplicate checks)
+        # is in flight. A legitimate check, which costs a few milliseconds
+        # alone, finishes while it is still running; behind the old
+        # process-wide lock it waited for the hostile one to be done.
+        priv, pub = ed25519_keypair
+        signed = add_data_integrity_proof(
+            copy.deepcopy(base_vc), priv, _method(pub))
+        hostile = _with_bogus_proof(flat_tags(base_vc, 1400), pub)
+        verifier.verify(copy.deepcopy(signed))              # warm
+        verifier.verify(copy.deepcopy(signed))
+
+        def attack():
+            with pytest.raises(OB3VerificationError):
+                verifier.verify(copy.deepcopy(hostile))
+        attacker = threading.Thread(target=attack)
+        attacker.start()
+        overlapped = 0
+        waits = []
+        try:
+            time.sleep(0.05)
+            for _ in range(5):
+                started = time.perf_counter()
+                verifier.verify(copy.deepcopy(signed))
+                waits.append(time.perf_counter() - started)
+                overlapped += attacker.is_alive()
+        finally:
+            attacker.join(120)
+        assert overlapped >= 3, overlapped
+        # (7 to 20 ms measured on a loaded laptop, 0.6 s and more before)
+        assert min(waits) < 0.25 * _coverage_slowdown(), waits
+
+    def test_a_pyld_that_ignores_the_cache_it_is_given_is_refused(
+            self, base_vc, verifier, ed25519_keypair, monkeypatch):
+        from cachetools import LRUCache
+        real = jsonld.ContextResolver
+        monkeypatch.setattr(
+            jsonld, 'ContextResolver',
+            lambda cache, loader: real(LRUCache(maxsize=10), loader))
+        with pytest.raises(OB3GuardUnavailable,
+                           match='without using the cache'):
+            verifier.verify(_with_bogus_proof(base_vc, ed25519_keypair[1]))
+
+    def test_a_pyld_without_the_inverse_context_hook_is_refused(
+            self, base_vc, verifier, ed25519_keypair, monkeypatch):
+        monkeypatch.delattr(jsonld.JsonLdProcessor, '_get_inverse_context')
+        with pytest.raises(OB3GuardUnavailable, match='_get_inverse_context'):
+            verifier.verify(_with_bogus_proof(base_vc, ed25519_keypair[1]))
+
+    def test_a_pyld_that_never_asks_for_an_inverse_context_is_refused(
+            self, base_vc, verifier, ed25519_keypair, monkeypatch):
+        monkeypatch.setattr(jsonld.JsonLdProcessor, 'compact',
+                            lambda self, document, context, options: document)
+        with pytest.raises(OB3GuardUnavailable,
+                           match='without asking for an inverse'):
+            verifier.verify(_with_bogus_proof(base_vc, ed25519_keypair[1]))
+
+
+class TestStorm:
+    def test_a_mixed_storm_never_fails_spuriously(
+            self, base_vc, ed25519_keypair):
+        # Signing, verifying, context validation, the typed and the
+        # many-values documents that pass every screen, and a poison graph,
+        # sixteen threads, the interpreter switching threads every 10
+        # microseconds.
+        loader = document_loader()
+        priv, pub = ed25519_keypair
+        method = _method(pub)
+        signed = add_data_integrity_proof(copy.deepcopy(base_vc), priv, method)
+        typed = _with_bogus_proof(_evidence(base_vc, [
+            {'type': ['DataIntegrityProof']} for _ in range(150)]), pub)
+        tags = _with_bogus_proof(flat_tags(base_vc, 500), pub)
+        poison = _with_bogus_proof(identical_children(base_vc, 9), pub)
+
+        def work(index):
+            kind = index % 5
+            if kind == 0:
+                verify_data_integrity_proof(copy.deepcopy(signed), pub)
+                ldp._check_json_ld_form(
+                    {k: v for k, v in signed.items() if k != 'proof'},
+                    signed['proof'], loader)
+            elif kind == 1:
+                add_data_integrity_proof(copy.deepcopy(base_vc), priv, method)
+            elif kind == 2:
+                for doc in (typed, tags):
+                    with pytest.raises(OB3VerificationError,
+                                       match='signature'):
+                        verify_data_integrity_proof(copy.deepcopy(doc), pub)
+            elif kind == 3:
+                with pytest.raises(OB3VerificationError, match=REFUSED):
+                    verify_data_integrity_proof(copy.deepcopy(poison), pub)
+            else:
+                assert ldp._canonize(copy.deepcopy(base_vc), loader)
+        errors, _ = TestThreadSafety()._hammer(work, threads=16, rounds=3)
+        assert errors == []
+        verify_data_integrity_proof(copy.deepcopy(signed), pub)   # not poisoned
 
 
 # ── the signing side ─────────────────────────────────────────────────────────

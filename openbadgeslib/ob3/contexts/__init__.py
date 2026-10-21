@@ -166,16 +166,18 @@ def document_loader(
         if url in extras:
             # extra_contexts vary per loader instance (a test's examples
             # context, openvc's delegated set). pyld caches resolved contexts
-            # in a *process-global* map keyed by URL, so tagging one 'static'
-            # would let a later call with different content for the same URL
-            # be served this call's stale term definitions. Leave extras
-            # untagged — pyld re-resolves them on every normalize.
+            # in a map keyed by URL that outlives the call (one per thread on
+            # the Data Integrity path, ob3/_canon_guard.py; pyld's own, shared
+            # by the process, elsewhere), so tagging one 'static' would let a
+            # later call with different content for the same URL be served
+            # this call's stale term definitions. Leave extras untagged — pyld
+            # re-resolves them on every call.
             return {'contextUrl': None, 'documentUrl': url,
                     'document': extras[url]}
         # A bundled allowlist entry is immutable for the life of the process
-        # (pinned in the wheel), so tag it 'static': this primes pyld's global
-        # resolved-context cache and skips re-creating ~101 term definitions on
-        # every normalize (~1.6x faster LDP sign/verify).
+        # (pinned in the wheel), so tag it 'static': this primes the calling
+        # thread's resolved-context cache and skips re-creating ~101 term
+        # definitions on every call (~1.6x faster LDP sign/verify).
         return {'contextUrl': None, 'documentUrl': url,
                 'document': load_context(url), 'tag': 'static'}
 
