@@ -240,11 +240,17 @@ from the network** — canonicalization uses the contexts bundled with the
 library (see [[Security Model]]); `extra_contexts` extends that allowlist per
 call. `ecdsa-sd-2023` (selective disclosure) is verified by delegating to
 `openvc-core` (the `[ldp-sd]` extra), which runs its own context validation;
-an openvc-core older than 1.33.2 is refused. A presentation of more than 2,500
+an openvc-core older than 1.33.2 is refused. A presentation of more than 1,600
 statements (`openbadgeslib.ob3.ldp.MAX_DELEGATED_QUADS`; real ones hold tens to
-a few hundred) is refused before openvc-core sees it, because what it spends
-grows with the square of that number. A cryptosuite the library supports
-neither natively nor by delegation (e.g. `ecdsa-rdfc-2019`) fails closed naming
+a few hundred, a credential with 100 alignments and 100 pieces of evidence
+1,428) is refused before openvc-core sees it, because what it spends grows with
+the square of that number (a CLR is not one of them: its context is not one the
+delegate is given, so an `ecdsa-sd-2023` CLR is not verifiable here at all). So
+is one openvc-core cannot canonicalize (a Unicode line separator, U+0085, VT, FF,
+FS, GS or RS in a literal, a `>` in an IRI: its N-Quads parser breaks the line
+there). A `proof` array is accepted when exactly one entry is a supported
+`DataIntegrityProof`; the other entries are ignored, for both cryptosuites. A
+cryptosuite the library supports neither natively nor by delegation (e.g. `ecdsa-rdfc-2019`) fails closed naming
 the supported ones. An `ecdsa-sd-2023` presentation that omits `validFrom`,
 `validUntil` or `credentialStatus` is rejected: a holder must not be able to
 hide a future start, expiry or revocation. So is one whose disclosed
