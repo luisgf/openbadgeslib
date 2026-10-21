@@ -99,7 +99,7 @@ CLAIMS = [
      ['screen.MAX_CONTEXT_ENTRIES', 'screen.MAX_CONTEXT_ENTRIES_TOTAL']),
     ('screen: the CLR limits are twice those',
      r'CLR of more than ' + N + r' typed objects or ' + N + r' type entries',
-     ['screen.CLR_TYPED', 'screen.CLR_ENTRIES']),
+     ['screen.CLR_TYPED', 'screen.CLR_ENTRIES'], None, True),
     ('screen: the CLR limits, spelled out',
      r'\(' + N + r' typed objects, ' + N + r' type entries and ' + N + r' objects',
      ['screen.CLR_TYPED', 'screen.CLR_ENTRIES', 'screen.CLR_NODES'], None, True),
