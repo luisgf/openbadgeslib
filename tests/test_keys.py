@@ -72,9 +72,11 @@ class TestKeyLoadErrorContract:
 
     v47 changed the contract: loading a key of an unsupported algorithm raises
     `UnsupportedAlgorithm` — which is NOT a ValueError — where earlier versions
-    raised ValueError. Our floor (>=45) spans that change, so both are asserted
-    here; a catch-clause that handled only one would let a raw crypto exception
-    escape as a traceback on half the supported range.
+    raised ValueError. Our floor (>=50) is past that change, so a supported
+    install raises the second, but a garbage PEM is still a ValueError and the
+    library keeps catching both (keys._PEM_LOAD_ERRORS): both are asserted
+    here, because a catch-clause that handled only one would let a raw crypto
+    exception escape as a traceback.
     """
 
     GARBAGE = b'-----BEGIN PUBLIC KEY-----\nbm90IGEga2V5\n-----END PUBLIC KEY-----\n'
@@ -92,7 +94,7 @@ class TestKeyLoadErrorContract:
             KeyECC().read_private_key(b'-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----\n')
 
     @pytest.mark.parametrize('raised', [
-        ValueError('unsupported key type'),            # cryptography <47
+        ValueError('unsupported key type'),            # cryptography <47 (historic)
         UnsupportedAlgorithm('unsupported key type'),  # cryptography >=47
     ])
     def test_both_exception_contracts_map_to_the_taxonomy(self, monkeypatch,
