@@ -47,8 +47,9 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     `validFrom`/`validUntil` and a proof's `created`/`expires` too), and the one
     place that converts to UTC now writes such an instant with its own offset
     (`9999-12-31T23:59:59-05:00`), which names the same instant. Every other
-    value is written as before, except that a year below 1000 is zero-padded on
-    every platform (`0001-01-01T00:00:00Z`). A remote CryptographicKey whose
+    value is written as before, except that a year below 1000 is zero-padded
+    whatever the platform (glibc's strftime left it bare: `1-01-01T00:00:00Z`
+    for `0001-01-01T00:00:00Z`). A remote CryptographicKey whose
     `publicKeyPem` holds a lone surrogate raised UnicodeEncodeError, even on
     the hosted path that is documented never to fail the verdict; it is an
     OB2VerificationError now.
@@ -623,8 +624,9 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
       `AssertionFormatIncorrect`), and OB1's `get_badge_status` returns its
       VerifyInfo where it raised: code that matches on the old text, or
       catches the bare exceptions, should use those.
-    - Cost. Signing and verifying a Data Integrity document takes more CPU:
-      CPython 3.14, minimum of 5 runs against 4.6.2, a badge with 200
+    - Cost. Signing and verifying an eddsa-rdfc-2022 document takes more CPU
+      (these figures are for that suite; the ecdsa-sd-2023 entries above give
+      theirs): CPython 3.14, minimum of 5 runs against 4.6.2, a badge with 200
       alignments 0.083 to 0.100 s to verify and one with 1,000 alignments
       0.51 to 0.60 s (about 1.2 times), a CLR of 100 member credentials
       (135 KB) 0.15 to 0.26 s and of 150 (202 KB) 0.23 to 0.40 s (about 1.8
