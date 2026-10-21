@@ -203,18 +203,26 @@ def sign_clr_credential(document: dict[str, Any], signing_key_pem: Any,
 
 def _split_advice(document: Any, extra_contexts: Mapping[str, Any]) -> str:
     """When *document* is a CLR too big for one signed document, how big its
-    pieces should be, from the members it holds; '' when that is not why
+    pieces should be, from the entries it holds; '' when that is not why
     signing failed. Never raises: it runs after a refusal."""
     try:
         from . import _structure_screen as structure
         from .ldp import MAX_LDP_DOCUMENT_BYTES
-        members = document["credentialSubject"]["verifiableCredential"]
-        if not isinstance(members, list) or len(members) < 2:
+        subject = document["credentialSubject"]
+        # what makes a CLR big: member credentials embedded by value, or
+        # achievements and associations listed in it
+        count, _, name = max(
+            (len(subject[key]), rank, name) for rank, (key, name) in enumerate((
+                ("association", "associations"),
+                ("achievement", "achievements"),
+                ("verifiableCredential", "member credentials")))
+            if isinstance(subject.get(key), list))
+        if count < 2:
             return ""
         size = len(json.dumps(document, ensure_ascii=False,
                               separators=(",", ":")).encode("utf-8"))
-        # How many times over would fit (the proof takes ~0.4 KB more); a CLR
-        # holds more members in proportion.
+        # How many times over would fit (the proof takes ~0.4 KB more); the
+        # CLR holds more entries in proportion.
         fits = (MAX_LDP_DOCUMENT_BYTES - 512) / size
         if size <= MAX_LDP_DOCUMENT_BYTES:
             # Within the size cap, so cheap to walk: was it the structure?
@@ -229,9 +237,9 @@ def _split_advice(document: Any, extra_contexts: Mapping[str, Any]) -> str:
                 2 * structure.MAX_NODES / max(stats.nodes, 1))
         if fits >= 1:
             return ""
-        return ("this CLR holds %d member credentials of about %d bytes "
-                "each; sign it as several CLRs of at most about %d members"
-                % (len(members), size // len(members),
-                   max(1, int(len(members) * fits * 0.95))))
+        return ("this CLR holds %d %s of about %d bytes each; sign it as "
+                "several CLRs of at most about %d %s"
+                % (count, name, size // count,
+                   max(1, int(count * fits * 0.95)), name))
     except Exception:                                   # noqa: BLE001
         return ""

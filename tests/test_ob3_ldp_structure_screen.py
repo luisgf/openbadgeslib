@@ -923,6 +923,17 @@ class TestLowLevelVerifyBoundsTheBytesFirst:
         with pytest.raises(OB3VerificationError, match='nested more than'):
             verify_data_integrity_proof(doc, keypair[1])
 
+    def test_a_recursion_error_of_the_encoder_alone_is_still_typed(
+            self, keypair, monkeypatch):
+        # The encoder can run out of stack for a caller that is already deep
+        # while the document is within the nesting bound: refused, typed.
+        def too_deep(*args, **kwargs):
+            raise RecursionError('maximum recursion depth exceeded')
+        monkeypatch.setattr(ldp.json, 'dumps', too_deep)
+        with pytest.raises(OB3VerificationError, match='nested too deeply'):
+            verify_data_integrity_proof(_secured(_credential(), keypair[1]),
+                                        keypair[1])
+
     def test_values_json_cannot_encode_are_a_typed_refusal(self, keypair):
         doc = _secured(_credential(), keypair[1])
         doc['lone'] = '\ud800'
@@ -1310,6 +1321,36 @@ class TestAClrIsBoundedByItsBytesFirst:
             sign_clr_credential(clr, priv, vm)
         assert 'type entries' in str(caught.value)
         assert 'sign it as several CLRs' in str(caught.value)
+
+    def test_a_clr_listing_achievements_and_associations_gets_advice_too(
+            self, clr_of):
+        # 800 achievements (an alignment each) and as many associations are
+        # 320 KB; about 650 of each fit
+        from openbadgeslib.ob3 import sign_clr_credential
+        clr, priv, vm = clr_of('minimal', 1)
+        subject = clr['credentialSubject']
+        subject['achievement'] = [
+            {'id': 'urn:uuid:%032x' % i, 'type': ['Achievement'],
+             'name': 'Achievement %d' % i, 'description': 'd',
+             'criteria': {'narrative': 'n'},
+             'alignment': [{'type': ['Alignment'], 'targetName': 'T',
+                            'targetUrl': 'https://u.example/%d' % i}]}
+            for i in range(800)]
+        subject['association'] = [
+            {'type': 'Association', 'associationType': 'isParentOf',
+             'sourceId': 'urn:uuid:%032x' % i,
+             'targetId': 'urn:uuid:%032x' % ((i + 1) % 800)}
+            for i in range(800)]
+        with pytest.raises(ErrorSigningFile) as caught:
+            sign_clr_credential(clr, priv, vm)
+        message = str(caught.value)
+        assert 'holds 800 achievements' in message
+        advised = int(message.rsplit('about ', 1)[1].split()[0])
+        assert 580 <= advised <= 651
+        # ... and what it advises signs
+        subject['achievement'] = subject['achievement'][:advised]
+        subject['association'] = subject['association'][:advised]
+        sign_clr_credential(clr, priv, vm)
 
     def test_other_signing_failures_are_not_given_a_split_hint(
             self, keypair, clr_of):
