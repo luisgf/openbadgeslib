@@ -17,8 +17,10 @@ These tests pin that
 * the JSON-LD to RDF conversion that precedes canonicalization is bounded too
   (the duplicate checks pyld makes there, @reverse included);
 * the guard fails CLOSED when pyld is not the implementation its cost model
-  was fitted to, never touches process-global state, and serializes pyld's
-  thread-unsafe JSON-LD processor.
+  was fitted to, never patches process-global state, and keeps pyld's
+  thread-unsafe context caches per thread, so one hostile request does not
+  hold the others up (a lock remains only for the inverse-context cache pyld
+  insists on writing).
 
 The hostile documents only use members the pinned contexts define (the
 propagating ``alignment`` term, under ``evidence``), which the credential model
@@ -1195,7 +1197,8 @@ class TestThreadSafety:
     LRU caches shared by the whole process: concurrent expand / compact /
     to_rdf calls interleave inside them, a cachetools LRUCache that raced
     keeps a stale key at its head, and every later call that must evict then
-    fails with a KeyError for as long as the process lives (signing too)."""
+    fails with a KeyError for as long as the process lives (signing too).
+    The path keeps its own (TestPrivateCaches); these are the soak tests."""
 
     def _hammer(self, work, threads=16, rounds=4):
         errors = []

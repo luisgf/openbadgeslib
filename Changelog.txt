@@ -170,7 +170,10 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     identical blank Results). Symmetry on purpose is where it stops: two
     identical blank parents with five identical blank children each pass
     (48,000 units), with six they are refused (297,000), and so is a clique
-    of six labelled blank nodes (1.08 million; five pass, 115,000). The
+    of six labelled blank nodes (1.08 million; five pass, 115,000), counted
+    on the tests' modelled credential as the root (on 1EdTech's Complete
+    example the same shapes cost 41,000, 350,000, 117,000 and 1.08 million: the
+    verdicts are the same). The
     budget comes with one CPU-time allowance of 1.0 s inside URDNA2015, read
     from the thread's own CPU clock (a request queued behind another, or a
     loaded host, is not charged for waiting). The clock is the bound that
@@ -180,8 +183,17 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     the model says. Each of the shapes above is refused with
     `OB3VerificationError` ("refusing to canonicalize the credential";
     `ErrorSigningFile` on the signing side) after 0.05 to 0.22 s of CPU on
-    CPython 3.10 to 3.15, 0.85 s at most inside that window, and 1.05 to
-    1.12 s on 3.11/3.12 with the unit budget out of the way. The whole suite,
+    CPython 3.10 to 3.15, 0.9 s at most inside that window (in our sweeps;
+    the allowance caps it at 1.1 s), and 1.04 to 1.11 s on every interpreter
+    with the unit budget out of the way. That is a poison graph on its own.
+    The allowance covers URDNA2015 only, and a document that also carries a
+    flood of the typed nodes of the structure entry below, which costs 1.0 to
+    1.4 s of CPU before canonicalization starts, pays both: 1,260 typed nodes
+    and a 148-node circulant (102 KB) cost `OB3LdpVerifier.verify` 1.2 to 1.6
+    s, and 2.1 to 2.3 s on CPython 3.11 to 3.15 and 2.4 to 2.5 s on 3.10 when
+    the unit budget does not trip first (as in the 3.11/3.12 window, where a
+    review reached the deadline with it in force and measured 2.24 s). The
+    whole suite,
     including the W3C vectors and the Complete example, spends at most 0.5%
     of the budget with byte-identical canonical output. The conversion
     before it has a cost no hook can meter: pyld compares every new value of
@@ -193,14 +205,16 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     included, and a document over 1,000,000 of them, summed over every
     property of every node of the document and its proof options (one
     property of 1,414 distinct values, or two of about 1,000), is refused
-    before pyld builds the node map (0.35 to 0.5 s of CPU at the limit).
-    No pyld state is patched, so other users of pyld are unaffected; but
-    pyld's JSON-LD processor keeps its context caches in plain LRU caches
-    that are not thread-safe (concurrent verifications corrupted them and,
-    once corrupted, every later verification or signature in the process
-    failed), so every pyld call of the Data Integrity path now runs under one
-    process-wide lock, which is released while URDNA2015 runs, so a poison
-    graph burning its allowance does not hold up other threads. The guard
+    before pyld builds the node map (0.35 to 0.5 s of CPU at the limit). A
+    credential issued with 4.6.2 that has more distinct values than that in one
+    property (1,500 tags or evidence entries, say; 4.6.2 verified one in 0.6 to
+    3.5 s of CPU) therefore no longer verifies: it is refused with "the
+    document puts too many values on its node properties", which names the
+    property and the node.
+    No pyld state is patched, so other users of pyld are unaffected. pyld's
+    JSON-LD processor keeps its context caches in plain LRU caches shared by
+    the whole process, which are not thread-safe; the path keeps them apart
+    per thread (next entry). The guard
     is fitted to pyld 3.3.0 and fails closed if the installed pyld is not the
     one it was calibrated on (another major version, a changed hook, a
     canary document that no longer canonicalizes to the known output, in the
@@ -228,6 +242,89 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     within the same budget, which refuses the shapes above before the
     delegate runs, and the number of statements is capped too (below). Both
     screen what the delegate is handed; neither bounds what it then spends.
+
+  - security(ldp): the Data Integrity path is thread-safe, and one hostile
+    request does not hold the others up. pyld's JSON-LD processor keeps its
+    resolved contexts and its inverse contexts in two plain LRU caches shared
+    by the whole process, which concurrent calls corrupt, and a corrupted cache
+    fails every later verification and signature of the process until it
+    restarts: 4.6.2 failed 459 of 480 verifications run by 8 threads on CPython
+    3.14 and 182 of 480 on 3.10. One process-wide lock around the pyld calls
+    cures that and makes every thread wait for whoever holds it, and a document
+    that passes every screen (42 KB of 1,200 typed nodes, say) spends about a
+    second of CPU in pyld's linear JSON-LD phase, 98% of it with the lock held:
+    a legitimate verification that takes 5 ms alone waited a median 1.1 s
+    behind one such request, 4.4 s behind four and 17 s behind sixteen (CPython
+    3.14, one verification every 20 ms; a signature waits the same). So the
+    caches are kept apart instead. `expand`, `compact` and `to_rdf` of the path
+    now run on a resolved-context cache that belongs to the calling thread
+    (through the `contextResolver` option pyld takes for internal use) instead
+    of pyld's shared one, and a compaction keeps the inverse contexts it
+    derives for itself. The canonical output does not change (the caches only
+    remember work) and the guard's canary now proves that pyld answers from the
+    cache it is handed, failing closed with `OB3GuardUnavailable` if a pyld
+    does not (as it now does before context validation, not after). A thread's
+    cache is bounded like pyld's (100 contexts; about 1 to 2 MiB once a
+    credential has been through), is built by the thread's first call (6.2 ms
+    for a small credential instead of 4.4) and is dropped by any call that
+    raises, a refusal included, so the next call on that thread starts cold.
+    `PYLD_LOCK` is left for what still uses pyld's shared caches: pyld writes
+    every inverse context it derives into its own process-wide cache, so
+    deriving one takes the lock (about 50 microseconds; 8 times per legitimate
+    verification, about 1,300 per hostile request of the kind above, which
+    holds it for 8% of its second), as do the build of the guard, fork() and
+    the openvc-core delegate of ecdsa-sd-2023, which uses pyld's shared caches
+    and is called under it. With one such hostile request in flight a
+    legitimate verification now takes 12 to 14 ms at the median and 21 to 24 ms
+    at p99; with four, 13 to 29 ms and about 0.5 s; with sixteen, 37 to 47 ms
+    and 0.4 to 0.9 s, the slowest single one 1 to 2 s (CPython 3.10, 3.12 and
+    3.14, best of three runs of 12 s; behind the lock, 0.9 to 1.1 s, 3.8 to 5.0
+    s and 15 to 19 s at the median). What is left of the p99 is that lock: a
+    thread that finds it taken has to win the GIL back from the CPU-bound ones,
+    up to 60 ms each time. With the lock taken out (not safe) the p99 is 95 ms
+    with four hostile requests and 0.7 s with sixteen, and 66 and 248 ms when
+    the other threads only burn CPU in pure Python. A deployment with a process
+    per request (gunicorn sync workers, a process pool) never had the problem.
+    An exception out of a pyld call, an interrupt included (a signal handler
+    that raises a timeout, KeyboardInterrupt), no longer leaves a half-updated
+    cache behind: the thread's cache is dropped, and pyld's shared
+    inverse-context cache, which an interrupt can tear (a stale key at the head
+    of the LRU makes every later eviction fail, for good: reproduced on CPython
+    3.10 within a few thousand interrupts of a verification) is emptied in
+    place if the exception comes out of its derivation. fork() waits for the
+    lock and releases it on both sides, as `logging` does for its own, so a
+    child is not born with a half-written cache, and a fork taken inside the
+    lock no longer ends in "cannot release un-acquired lock". Not covered: a
+    signal handler that verifies a credential on the thread it interrupted
+    (never supported), and CPython 3.14.8, where any `with lock:` can leak the
+    lock when an asynchronous exception arrives between acquiring it and
+    entering the block (a plain Lock, an RLock and acquire/try/finally alike,
+    hundreds of times in 3,000 interrupts; 3.10 to 3.13 and 3.15 do not): the
+    lock is now held for tens of microseconds a derivation instead of a whole
+    verification, which narrows the window, and a leaked one stops the next
+    derivation of every other thread until the process restarts. The CPU
+    deadline reads `time.thread_time`, which on Windows is GetThreadTimes and
+    advances once per scheduler tick (CPython reports 15.625 ms; not measured
+    here, there is no Windows host): a span is over- or under-charged by up to
+    a tick, a refusal comes a tick or two after the allowance, and no real
+    document (1 to 100 ms, in two spans) is refused for it; the tests run with
+    a clock quantized that way. A platform without a per-thread clock falls
+    back to `process_time`, which counts every thread of the process, so there
+    a legitimate canonicalization could be refused under load (it fails
+    closed). What the Data Integrity hardening of this release costs a
+    legitimate user, against 4.6.2 (CPython 3.14 and 3.10; a loop of `verify()`
+    or `add_data_integrity_proof()` with one deep copy per call; best of three
+    6-second runs): verifying a small credential 257 to 205 operations per
+    second on one thread (-20%; 3.10: -19%) and 270 to 200 on eight (-26%),
+    1EdTech's Complete example 22.9 to 19.3 (-16%), signing with
+    `add_data_integrity_proof` 935 to 509 (-46%; 3.10: -45%), about 0.9 ms more
+    per signature and 1 ms more per verification (the structure screen, an
+    extra expansion to count the duplicate checks, the metered URDNA2015 and,
+    for the signer, the context validation of what it signed). The per-thread
+    caches cost nothing in steady state: the same as the single lock on one
+    thread, 1 to 8% less on eight threads that only do legitimate work, where
+    4.6.2 returned errors (57 of about 170 verifications of the Complete
+    example in six seconds on CPython 3.10, 11 on 3.14).
 
   - security(ldp): the statements an ecdsa-sd-2023 credential discloses are
     indexed under the work budget, on the graph openvc-core verified.

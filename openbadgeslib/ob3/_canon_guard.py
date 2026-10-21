@@ -219,8 +219,9 @@ PYLD_LOCK = threading.RLock()
 #: document that exhausts the budget is refused after 0.05 to 0.22 s of CPU
 #: in all, expansion included (0.16 to 0.22 s at most, per interpreter);
 #: inside the CPython 3.11/3.12 window of the module comment a unit costs up
-#: to 3.4 microseconds and the same refusal took up to 0.85 s, which is what
-#: MAX_CANON_SECONDS bounds.
+#: to 3.4 microseconds and the same refusal took up to 0.9 s in our sweeps,
+#: which is what MAX_CANON_SECONDS bounds (1.1 s in all, whatever the model
+#: says).
 MAX_CANON_WORK = 250_000
 
 #: CPU seconds one signature check may spend inside URDNA2015 (the proof
@@ -228,8 +229,20 @@ MAX_CANON_WORK = 250_000
 #: interpreter whatever the unit model says. A legitimate canonicalization
 #: takes milliseconds (a real credential: 1 ms; the 161,000 units above:
 #: 0.05 s on 3.14, 0.075 s on 3.10). With the unit budget out of the way, a
-#: poison graph is refused after 1.05 to 1.12 s of CPU in all on CPython 3.11
-#: and 3.12, at the caller stack depths (0 and 20) and hash seeds tried.
+#: poison graph that is the whole document (148 blank nodes, 19 KB) is refused
+#: after 1.04 to 1.11 s of CPU in all on CPython 3.10 to 3.15.
+#:
+#: That is the allowance, not what a verification costs: it comes on top of
+#: whatever pyld spent before URDNA2015 started, which this clock does not
+#: meter (expansion, RDF conversion and context validation: 1.0 to 1.4 s for
+#: the most the structure screen and MAX_NODE_MAP_PAIRS admit). A document
+#: that carries a flood of typed nodes AND a poison graph pays both, measured
+#: through ``OB3LdpVerifier.verify`` (1,260 typed nodes and a 148-node
+#: circulant, 102 KB, unit budget out of the way): 2.1 to 2.3 s of CPU on
+#: CPython 3.11 to 3.15 and 2.4 to 2.5 s on 3.10. With the unit budget in
+#: force the graph is refused after 0.1 to 0.25 s and the same document costs
+#: 1.2 to 1.6 s, except in the 3.11/3.12 window of the module comment, where a
+#: review reached the deadline with it in force and measured up to 2.24 s.
 MAX_CANON_SECONDS = 1.0
 
 #: Cap on the duplicate-check comparisons pyld's JSON-LD to RDF conversion
