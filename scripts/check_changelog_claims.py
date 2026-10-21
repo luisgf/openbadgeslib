@@ -71,13 +71,16 @@ def load_constants(tree):
 
 N = r'(\d[\d,]*(?:\.\d+)?)'
 
-#: (what, regex, [constant per capture group]). Whitespace is normalised to
-#: single spaces before matching, so a claim may span lines.
+#: (what, regex, [constant per capture group], optional substrings of the file
+#: labels it applies to, optional: True when the text may not exist). Whitespace
+#: is normalised to single spaces before matching, so a claim may span lines.
 CLAIMS = [
     ('download budget', r'(\d+)-second (?:time )?budget', ['util.MAX_DOWNLOAD_SECONDS']),
     ('download per-operation timeout',
      r'bounded per operation \((\d+) seconds\)', ['util._SOCKET_TIMEOUT']),
-    ('download size cap', r'(\d+) MiB', ['util.MAX_DOWNLOAD_SIZE_MIB']),
+    ('download size cap',
+     r'(?:capped at|MAX_DOWNLOAD_SIZE[^.]{0,20}\() ?(\d+) MiB',
+     ['util.MAX_DOWNLOAD_SIZE_MIB'], ['Security-Model', 'util.py', 'Changelog']),
     ('canonicalization work budget', r'budget is ' + N + r' model units',
      ['canon.MAX_CANON_WORK']),
     ('canonicalization CPU allowance', r'CPU-time allowance of ' + N + r' s',
@@ -86,24 +89,33 @@ CLAIMS = [
     ('document cap (signing)', r'document over (\d+) KiB', ['ldp.DOC_KIB']),
     ('statement cap', r'more than ' + N + r' statements', ['ldp.MAX_DELEGATED_QUADS']),
     ('screen: typed objects, type entries, objects',
-     r'more than ' + N + r' typed objects, ' + N + r' type entries or ' + N
-     + r' objects', ['screen.MAX_TYPED_NODES', 'screen.MAX_TYPE_ENTRIES',
-                     'screen.MAX_NODES']),
-    ('screen: types per node', r'lists more than (\d+)', ['screen.MAX_TYPES_PER_NODE']),
+     r'more than \**' + N + r' typed objects\**, \**' + N + r' type entries\**'
+     r'.{0,500}? or \**' + N + r' objects',
+     ['screen.MAX_TYPED_NODES', 'screen.MAX_TYPE_ENTRIES', 'screen.MAX_NODES']),
+    ('screen: types per node', r'lists more than (\d+)', ['screen.MAX_TYPES_PER_NODE'],
+     ['Changelog']),
     ('screen: @context entries',
      r'@context` array of more than (\d+) entries or ' + N + r' entries in all',
      ['screen.MAX_CONTEXT_ENTRIES', 'screen.MAX_CONTEXT_ENTRIES_TOTAL']),
     ('screen: the CLR limits are twice those',
      r'CLR of more than ' + N + r' typed objects or ' + N + r' type entries',
      ['screen.CLR_TYPED', 'screen.CLR_ENTRIES']),
-    ('screen: the CLR object limit', r'and ' + N + r' objects in all',
-     ['screen.CLR_NODES']),
+    ('screen: the CLR limits, spelled out',
+     r'\(' + N + r' typed objects, ' + N + r' type entries and ' + N + r' objects',
+     ['screen.CLR_TYPED', 'screen.CLR_ENTRIES', 'screen.CLR_NODES'], None, True),
+    ('screen: the CLR limits, as a triple',
+     r'\(' + N + r' / ' + N + r' / ' + N + r'\)',
+     ['screen.CLR_TYPED', 'screen.CLR_ENTRIES', 'screen.CLR_NODES'], None, True),
     ('pair budget', r'a document over ' + N + r' of them', ['canon.MAX_NODE_MAP_PAIRS']),
     ('values of one property', r'one property of ' + N + r' distinct values',
      ['canon.MAX_ONE_PROPERTY']),
     ('JSON nesting', r'(\d+) levels(?: of nesting|, no lone surrogate)',
      ['safejson.MAX_JSON_DEPTH']),
 ]
+
+#: "<size> KB ... (about <members>" in the CLR docstring: members that fit the
+#: document cap, at a KB of 1000 bytes. Tolerance in percent.
+MEMBERS = (r'([\d.]+) KB[^()]{0,160}?\(about (\d+)\b', ['openbadgeslib/ob3/clr.py'], 8)
 
 
 def number(text):
@@ -121,9 +133,14 @@ def section(text, version):
 
 def check_claims(c, texts):
     problems, notes = [], []
-    for what, pattern, names in CLAIMS:
+    for claim in CLAIMS:
+        what, pattern, names = claim[:3]
+        only = claim[3] if len(claim) > 3 else None
+        optional = len(claim) > 4 and claim[4]
         found = 0
         for label, text in texts.items():
+            if only and not any(part in label for part in only):
+                continue
             flat = re.sub(r'\s+', ' ', text)
             for m in re.finditer(pattern, flat):
                 found += 1
@@ -134,8 +151,20 @@ def check_claims(c, texts):
                     if number(group) != want:
                         problems.append('%s: %s says %s, the code has %s (%s)'
                                         % (label, what, group, want, name))
-        if not found:
+        if not found and not optional:
             notes.append('NOT FOUND: %s (/%s/)' % (what, pattern))
+    pattern, only, tolerance = MEMBERS
+    cap = c['ldp.MAX_LDP_DOCUMENT_BYTES']
+    for label, text in texts.items():
+        if not any(part in label for part in only):
+            continue
+        for m in re.finditer(pattern, re.sub(r'\s+', ' ', text)):
+            kb, members = float(m.group(1)), int(m.group(2))
+            fits = cap / (kb * 1000)
+            if abs(members - fits) * 100 > tolerance * fits:
+                problems.append(
+                    '%s: %s KB per member fits about %d members in %d bytes, the '
+                    'text says %d' % (label, m.group(1), round(fits), cap, members))
     return problems, notes
 
 
