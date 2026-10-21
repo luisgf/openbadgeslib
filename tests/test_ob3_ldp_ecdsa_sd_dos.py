@@ -579,6 +579,70 @@ class TestStatementCap:
             ldp._prescreen_canonicalization(document, document['proof'])
         assert len(delegate_calls) == 1
 
+    def test_the_statements_are_counted_before_the_quadratic_parse(
+            self, derived, delegate_calls, monkeypatch):
+        # pyld's N-Quads parser compares each statement with all the earlier
+        # ones: a document over the cap must be refused on the count of its
+        # text, before anything parses it.
+        from pyld.jsonld import JsonLdProcessor
+        document, pub_pem, _ = derived
+        hostile = copy.deepcopy(document)
+        hostile['evidence'] = _dense(1000, 9)
+        parsed = []
+        real = JsonLdProcessor.parse_nquads
+        monkeypatch.setattr(JsonLdProcessor, 'parse_nquads', staticmethod(
+            lambda text: parsed.append(1) or real(text)))
+        with _within(60), pytest.raises(OB3VerificationError,
+                                        match=REFUSED_QUADS):
+            verify_data_integrity_proof(hostile, pub_pem)
+        assert not parsed and not delegate_calls
+
+    def test_the_duplicate_checks_of_the_conversion_are_counted_here_too(
+            self, derived, delegate_calls):
+        # One property of 1,500 distinct values is 1.1 million comparisons in
+        # pyld's JSON-LD to RDF conversion, over the allowance shared with the
+        # guard: refused before the conversion and before the delegate.
+        document, pub_pem, _ = derived
+        hostile = copy.deepcopy(document)
+        hostile['evidence'] = [{'type': ['Evidence'],
+                                'audience': ['a%d' % i for i in range(1500)]}]
+        with _within(60), pytest.raises(OB3VerificationError,
+                                        match='too many values'):
+            verify_data_integrity_proof(hostile, pub_pem)
+        assert not delegate_calls
+
+    def test_a_clr_is_not_verifiable_with_ecdsa_sd_at_all(self, derived,
+                                                          delegate_calls):
+        # The delegate is given the bundled OB3 contexts alone, and so is the
+        # screen: the CLR context (extra_contexts is ignored for this
+        # cryptosuite) is unknown to both, so a CLR presentation, however
+        # many statements it holds, is refused for that before any count.
+        from openbadgeslib.ob3.clr import (CLR_CONTEXT_URL, bundled_clr_contexts,
+                                           build_clr_credential)
+        document, pub_pem, did = derived
+        member = {k: v for k, v in document.items() if k != 'proof'}
+        clr = build_clr_credential(did, [], [member], credential_id='urn:uuid:1')
+        assert CLR_CONTEXT_URL in json.dumps(clr['@context'])
+        clr['proof'] = document['proof']
+        with pytest.raises(OB3VerificationError, match='context'):
+            verify_data_integrity_proof(
+                clr, pub_pem, extra_contexts=bundled_clr_contexts())
+        assert not delegate_calls
+
+    def test_a_guard_that_cannot_run_never_falls_back_to_pyld(
+            self, derived, delegate_calls, monkeypatch):
+        from openbadgeslib.ob3 import OB3GuardUnavailable
+        from openbadgeslib.ob3._canon_guard import CanonicalizationGuardUnavailable
+        document, pub_pem, _ = derived
+
+        def down(*args, **kwargs):
+            raise CanonicalizationGuardUnavailable('no meter')
+
+        monkeypatch.setattr(ldp, 'canonize_dataset', down)
+        with pytest.raises(OB3GuardUnavailable, match='cannot canonicalize safely'):
+            verify_data_integrity_proof(document, pub_pem)
+        assert not delegate_calls
+
     def test_a_document_at_the_cap_reaches_the_delegate(self, derived,
                                                         delegate_calls):
         # (its signature is wrong: the point is that the delegate was asked)
@@ -605,7 +669,7 @@ class TestStatementCap:
             {'type': ['Evidence'], 'id': 'https://e.example/%d' % i,
              'name': 'Evidence %d' % i, 'description': 'd', 'narrative': 'n',
              'genre': 'g', 'audience': 'a'} for i in range(100)]
-        assert 1400 < _statements(doc) < MAX_DELEGATED_QUADS * 0.6
+        assert 1400 < _statements(doc) <= MAX_DELEGATED_QUADS / 1.1
         secured, _ = _hand_signed(doc, issuer)
         with _within(60):
             OB3LdpVerifier(pubkey_pem=issuer.pub_pem).verify(secured)

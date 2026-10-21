@@ -464,22 +464,36 @@ def _p256_pem_to_jwk(pubkey_pem: bytes) -> dict[str, str]:
             'x': _b64u(numbers.x), 'y': _b64u(numbers.y)}
 
 
-#: Most statements (canonical N-Quads lines) the credential a derived
-#: ecdsa-sd-2023 proof is presented with may hold. openvc-core 1.35 and 1.36
-#: round-trip the dataset through N-Quads text to canonicalize it, and pyld
-#: checks every statement it parses against all the earlier ones, so that
-#: part costs about 1.2e-7 s * statements**2 of CPU on CPython 3.12-3.15 and
-#: 1.7e-7 on 3.10, before the signature is looked at and with no blank node
-#: involved. Measured on an Apple-silicon laptop (openvc-core alone, 3.10 /
-#: 3.12 / 3.13 / 3.14 / 3.15): 2,525 statements cost 1.04 / 0.63 / 0.76 /
-#: 0.81 / 0.67 s, and 12,000 about 14 s on 3.14. A presentation carries the
-#: statements the holder chose to disclose: the repository's fixtures hold 28
-#: to 273, a credential with 100 alignments and 100 pieces of evidence holds
-#: 1,428. 2,500 leaves that nearly twofold of room and keeps the delegate
-#: near a second even on the slowest interpreter (a whole verification of a
-#: document just under the cap: 0.9 to 1.5 s of CPU on 3.12-3.15, 1.5 s on
-#: 3.10, most of it the delegate's).
-MAX_DELEGATED_QUADS = 2_500
+#: Most statements (lines of the credential's N-Quads text) the credential a
+#: derived ecdsa-sd-2023 proof is presented with may hold. openvc-core 1.35 to
+#: 1.37 write the dataset as N-Quads text and parse it back, twice, to
+#: canonicalize it, and pyld's parser compares each statement it reads with
+#: all the earlier ones, so each parse costs time quadratic in the number of
+#: statements whatever the graph looks like, before the signature is looked
+#: at; the screen replays the same pipeline (:func:`_sd_canonical_lines`), so
+#: a credential pays it twice. The shape that costs most is one node with
+#: several properties of many distinct values, where nearly every comparison
+#: gets to the object. Measured as the CPU of OB3LdpVerifier().verify() on
+#: such a credential signed with the attacker's own did:key (the default
+#: verifier accepts any), a document the cap lets through (about 1,600
+#: statements, 156 KB), min of 5, Apple-silicon laptop under a load of 7 to
+#: 10, openvc-core 1.37.0: CPython 3.10 about 2.0 s (1.97 interpolated, 2.28
+#: measured at 1,602), 3.13 and 3.14 1.5 to 1.6, 3.11, 3.12 and 3.15 1.3 to
+#: 1.5; openvc-core 1.35.0 on 3.12 within the noise of 1.37.0 (the files are
+#: identical). Half is the screen, half the delegate; the signature checks are
+#: negligible. Spread over many small nodes (the usual shape) the same
+#: count costs 1.1 s on 3.10. The cap is thus both a CPU bound of about two
+#: seconds and the longest time the delegate holds the pyld lock (half of
+#: the total). A presentation carries the statements the holder chose to
+#: disclose: the repository's fixtures hold 28 to 273, 1EdTech's "Complete"
+#: example 322 and a credential with 100 alignments and 100 pieces of
+#: evidence 1,428, which this leaves 12% of room above. What falls over it is
+#: refused with an OB3VerificationError: roughly more than 110 fully described
+#: alignments together with as many evidence entries. (A CLR is not one of them: its
+#: context is not one the delegate is given, so ecdsa-sd-2023 CLRs are not
+#: verifiable here at all.) The cap goes when openvc-core canonicalizes the
+#: dataset directly.
+MAX_DELEGATED_QUADS = 1_600
 
 #: Multibase ``u`` (base64url, no padding) and the first two bytes of an
 #: ecdsa-sd-2023 proof value, the CBOR tag 0xd95d: what every base and derived
