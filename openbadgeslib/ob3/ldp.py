@@ -329,25 +329,31 @@ def _canonize(document: dict[str, Any], loader: Any,
     jsonld = _require_jsonld()
     try:
         return canonize(jsonld, document, loader, budget)
-    except CanonicalizationWorkExceeded as exc:
-        raise OB3VerificationError(
-            "refusing to canonicalize the credential: %s" % exc) from exc
-    except CanonicalizationGuardUnavailable as exc:
-        raise OB3GuardUnavailable(
-            "cannot canonicalize safely: %s" % exc) from exc
     except Exception as exc:
-        cause: Optional[BaseException] = exc
-        while cause is not None:                    # unwrap pyld's JsonLdError
-            if isinstance(cause, UnknownContextError):
-                raise OB3VerificationError(str(cause)) from exc
-            cause = cause.__cause__
-        # pyld's JsonLdError text carries a fragment of the offending
-        # document: keep the lead (message and code) and bound the rest.
-        detail = str(exc) or repr(exc)
-        if len(detail) > 300:
-            detail = detail[:300] + '...'
-        raise OB3VerificationError(
-            "could not canonicalize the credential: %s" % detail) from exc
+        raise _canonization_failure(exc) from exc
+
+
+def _canonization_failure(exc: Exception) -> OB3VerificationError:
+    """The error to raise for *exc*, whatever stopped a guarded
+    canonicalization: over budget, a guard that cannot run, an unbundled
+    context, or pyld's own error."""
+    if isinstance(exc, CanonicalizationWorkExceeded):
+        return OB3VerificationError(
+            "refusing to canonicalize the credential: %s" % exc)
+    if isinstance(exc, CanonicalizationGuardUnavailable):
+        return OB3GuardUnavailable("cannot canonicalize safely: %s" % exc)
+    cause: Optional[BaseException] = exc
+    while cause is not None:                        # unwrap pyld's JsonLdError
+        if isinstance(cause, UnknownContextError):
+            return OB3VerificationError(str(cause))
+        cause = cause.__cause__
+    # pyld's JsonLdError text carries a fragment of the offending
+    # document: keep the lead (message and code) and bound the rest.
+    detail = str(exc) or repr(exc)
+    if len(detail) > 300:
+        detail = detail[:300] + '...'
+    return OB3VerificationError(
+        "could not canonicalize the credential: %s" % detail)
 
 
 def _hash_data(unsecured_doc: dict[str, Any], proof_config: dict[str, Any], loader: Any) -> bytes:
