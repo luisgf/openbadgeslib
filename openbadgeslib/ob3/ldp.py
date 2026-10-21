@@ -93,9 +93,10 @@ from .verifier import (OB3VerificationError, _check_recipient,
 #: its own work and CPU-time budget, ob3/_canon_guard.py (MAX_CANON_WORK,
 #: MAX_CANON_SECONDS), and the duplicate checks of the JSON-LD to RDF
 #: conversion by MAX_NODE_MAP_PAIRS. The verifier measures the document as
-#: received; add_data_integrity_proof, which has no "as received", measures
-#: its compact UTF-8 form. The ecdsa-sd-2023 suite is delegated to openvc-core,
-#: whose own work no budget here bounds; what is screened before it runs is
+#: received; add_data_integrity_proof and verify_data_integrity_proof, which
+#: are handed a dict and have no "as received", measure its compact UTF-8
+#: form. The ecdsa-sd-2023 suite is delegated to openvc-core, whose own work
+#: no budget here bounds; what is screened before it runs is
 #: the poison-graph work and the number of statements (MAX_DELEGATED_QUADS),
 #: see _prescreen_canonicalization.
 MAX_LDP_DOCUMENT_BYTES = 256 * 1024
@@ -158,6 +159,36 @@ def _screen_structure(document: Any, *, scale: int = 1,
     except StructureLimitExceeded as exc:
         raise OB3VerificationError(
             "refusing the credential: %s" % exc) from None
+
+
+def _require_within_size_cap(document: dict[str, Any]) -> None:
+    """Refuse a document whose compact UTF-8 form (the smallest text it can be
+    sent as, the measure ``add_data_integrity_proof`` applies) is over
+    ``MAX_LDP_DOCUMENT_BYTES``, before anything walks it in Python: a caller
+    that hands ``verify_data_integrity_proof`` a dict has bounded nothing
+    (:meth:`OB3LdpVerifier.verify` bounds the document as received). The
+    serialization runs in C: a dict of 10 million empty objects costs 0.13 s
+    here against 2 s and 700 MiB for the walk that follows. Raises
+    :class:`OB3VerificationError`."""
+    try:
+        size = len(json.dumps(document, ensure_ascii=False,
+                              separators=(',', ':')).encode('utf-8'))
+    except RecursionError:
+        # Nested past what the encoder follows: check_json says by how much.
+        try:
+            check_json(document)
+        except ValueError as exc:
+            raise OB3VerificationError(
+                "credential document is not usable JSON: %s" % exc) from exc
+        raise OB3VerificationError(
+            "credential document is nested too deeply") from None
+    except (TypeError, ValueError) as exc:          # incl. a lone surrogate
+        raise OB3VerificationError(
+            "credential document is not usable JSON: %s" % exc) from exc
+    if size > MAX_LDP_DOCUMENT_BYTES:
+        raise OB3VerificationError(
+            "credential document exceeds the %d-byte limit"
+            % MAX_LDP_DOCUMENT_BYTES)
 
 
 def _check_json_ld_form(document: dict[str, Any], proof: dict[str, Any],
@@ -571,6 +602,7 @@ def verify_data_integrity_proof(
     """
     if not isinstance(document, dict):
         raise OB3VerificationError("credential document must be a JSON object")
+    _require_within_size_cap(document)
     try:
         # Nesting, lone surrogates and non-finite numbers: copy.deepcopy below
         # and the hash (UTF-8 encode) would otherwise raise RecursionError or

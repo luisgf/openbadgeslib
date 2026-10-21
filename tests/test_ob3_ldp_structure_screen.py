@@ -725,6 +725,102 @@ class TestLowLevelFunctions:
             add_data_integrity_proof(doc, keypair[0], '')
 
 
+class TestLowLevelVerifyBoundsTheBytesFirst:
+    """verify_data_integrity_proof is handed a dict and had no byte cap of its
+    own (the 256 KiB cap lives in OB3LdpVerifier's parse): it now measures the
+    compact UTF-8 form, as add_data_integrity_proof does, before anything
+    walks the dict in Python."""
+
+    @staticmethod
+    def _padded(keypair, size, filler='x'):
+        """A secured document whose compact UTF-8 form is exactly *size*."""
+        doc = _secured(_credential(note=''), keypair[1])
+        base = len(json.dumps(doc, ensure_ascii=False,
+                              separators=(',', ':')).encode('utf-8'))
+        width = len(filler.encode('utf-8'))
+        doc['note'] = (filler * ((size - base) // width)
+                       + 'x' * ((size - base) % width))
+        assert len(json.dumps(doc, ensure_ascii=False, separators=(',', ':'))
+                   .encode('utf-8')) == size
+        return doc
+
+    def test_a_document_over_the_cap_is_refused(self, keypair):
+        doc = self._padded(keypair, ldp.MAX_LDP_DOCUMENT_BYTES + 1)
+        with pytest.raises(OB3VerificationError,
+                           match='exceeds the %d-byte limit'
+                           % ldp.MAX_LDP_DOCUMENT_BYTES):
+            verify_data_integrity_proof(doc, keypair[1])
+
+    def test_a_document_at_the_cap_gets_through(self, keypair, stub_suites):
+        doc = self._padded(keypair, ldp.MAX_LDP_DOCUMENT_BYTES)
+        with pytest.raises(Reached):
+            verify_data_integrity_proof(doc, keypair[1])
+
+    def test_the_cap_counts_utf8_bytes_of_the_compact_form(self, keypair,
+                                                           stub_suites):
+        # 'é' is two bytes, and the compact form has no spaces and no \u
+        # escapes: a document that fits there fits whatever the verifier is
+        # sent, and one that does not fit never will.
+        doc = self._padded(keypair, ldp.MAX_LDP_DOCUMENT_BYTES, filler='é')
+        with pytest.raises(Reached):
+            verify_data_integrity_proof(doc, keypair[1])
+        doc['note'] += 'é'
+        with pytest.raises(OB3VerificationError, match='-byte limit'):
+            verify_data_integrity_proof(doc, keypair[1])
+
+    def test_it_is_checked_before_anything_walks_the_dict(self, keypair,
+                                                          monkeypatch):
+        def walked(*args, **kwargs):
+            raise AssertionError('the dict was walked in Python')
+        monkeypatch.setattr(ldp, 'check_json', walked)
+        monkeypatch.setattr(ldp, 'screen_structure', walked)
+        doc = _secured(_credential(), keypair[1])
+        doc['pad'] = [{} for _ in range(40_000)]            # ~ 80 KB: fine
+        doc['more'] = [{} for _ in range(200_000)]          # ~ 480 KB
+        with pytest.raises(OB3VerificationError, match='-byte limit'):
+            verify_data_integrity_proof(doc, keypair[1])
+
+    def test_a_huge_dict_is_refused_in_milliseconds(self, keypair):
+        doc = _secured(_credential(), keypair[1])
+        doc['flood'] = [{} for _ in range(2_000_000)]
+        started = time.monotonic()
+        with pytest.raises(OB3VerificationError, match='-byte limit'):
+            verify_data_integrity_proof(doc, keypair[1])
+        assert time.monotonic() - started < 2.0
+
+    def test_a_dict_nested_past_the_encoder_still_names_the_bound(
+            self, keypair):
+        doc = _secured(_credential(), keypair[1])
+        node = doc
+        for _ in range(5000):
+            node['x'] = {}
+            node = node['x']
+        with pytest.raises(OB3VerificationError, match='nested more than'):
+            verify_data_integrity_proof(doc, keypair[1])
+
+    def test_values_json_cannot_encode_are_a_typed_refusal(self, keypair):
+        doc = _secured(_credential(), keypair[1])
+        doc['lone'] = '\ud800'
+        with pytest.raises(OB3VerificationError, match='not usable JSON'):
+            verify_data_integrity_proof(doc, keypair[1])
+        doc['lone'] = {1, 2}
+        with pytest.raises(OB3VerificationError, match='not usable JSON'):
+            verify_data_integrity_proof(doc, keypair[1])
+        loop = _secured(_credential(), keypair[1])
+        loop['again'] = loop
+        with pytest.raises(OB3VerificationError, match='not usable JSON'):
+            verify_data_integrity_proof(loop, keypair[1])
+
+    def test_the_verifier_path_is_unchanged(self, keypair, stub_suites):
+        # OB3LdpVerifier measures the document as received (spaces and
+        # escapes included), which is never smaller than the compact form it
+        # is then measured at.
+        doc = _secured(_credential(), keypair[1])
+        with pytest.raises(OB3VerificationError, match='-byte limit'):
+            OB3LdpVerifier(pubkey_pem=keypair[1]).verify(
+                json.dumps(dict(doc, pad='x' * ldp.MAX_LDP_DOCUMENT_BYTES)))
+
+
 class TestEveryScopedTermIsBounded:
     """A term with an @context of its own, used as a property KEY, costs a
     type entry per value whether the bundled context scopes it to a type or to
