@@ -73,7 +73,9 @@ from ._canon_guard import (CanonicalizationGuardUnavailable,
                            CanonicalizationWorkExceeded, WorkBudget, canonize,
                            isolate, require_guard)
 from ._context_validation import validate_document
-from ._structure_screen import StructureLimitExceeded, screen as screen_structure
+from ._structure_screen import (StructureLimitExceeded,
+                                bundled_scoped_terms, scoped_terms,
+                                screen as screen_structure)
 from .contexts import UnknownContextError, bundled_contexts, document_loader
 from .credential import OpenBadgeCredential, _iso, _parse_iso
 from .did import (_b58btc_decode, _b58btc_encode, _public_key_to_pem,
@@ -134,17 +136,25 @@ def _require_jsonld() -> Any:
 
 
 def _screen_structure(document: Any, *, scale: int = 1,
-                      contexts: bool = True) -> None:
+                      contexts: bool = True,
+                      extra_contexts: Optional[Mapping[str, Any]] = None
+                      ) -> None:
     """Refuse a document over the structural limits of
     ob3/_structure_screen.py (type multiplicity, typed-node, node and
     @context counts) before any JSON-LD processor touches it: the cost of
     those is paid on input nobody has authenticated, and the size cap does not
     bound it. Where context validation runs on the path it bounds the
     ``@context`` arrays itself (*contexts* false); where it does not, *scale*
-    is 2. Raises :class:`OB3VerificationError`; the message never echoes the
-    document."""
+    is 2. *extra_contexts* are the contexts a low-level function hands the
+    JSON-LD processor besides the pinned ones: the terms they define with an
+    ``@context`` of their own are counted too. Raises
+    :class:`OB3VerificationError`; the message never echoes the document."""
+    scoped = None
+    if extra_contexts:
+        scoped = bundled_scoped_terms() | scoped_terms(extra_contexts.values())
     try:
-        screen_structure(document, scale=scale, contexts=contexts)
+        screen_structure(document, scale=scale, contexts=contexts,
+                         scoped=scoped)
     except StructureLimitExceeded as exc:
         raise OB3VerificationError(
             "refusing the credential: %s" % exc) from None
@@ -576,7 +586,8 @@ def verify_data_integrity_proof(
     # screened the document already, and this second pass costs about a
     # millisecond: both are public entry points.)
     _screen_structure(document,
-                      scale=1 if proof['cryptosuite'] == 'ecdsa-sd-2023' else 2)
+                      scale=1 if proof['cryptosuite'] == 'ecdsa-sd-2023' else 2,
+                      extra_contexts=extra_contexts)
     _validate_proof(proof, expected_proof_purpose)
     loader = document_loader(extra_contexts)
     pem = key_to_pem(pubkey_pem)
@@ -640,7 +651,7 @@ def add_data_integrity_proof(
     if not isinstance(verification_method, str) or not verification_method:
         raise ErrorSigningFile('a proof needs a verificationMethod URL')
     try:
-        _screen_structure(document, scale=2)
+        _screen_structure(document, scale=2, extra_contexts=extra_contexts)
     except OB3VerificationError as exc:
         raise ErrorSigningFile(str(exc)) from None
 

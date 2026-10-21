@@ -44,6 +44,16 @@ VC2 = 'https://www.w3.org/ns/credentials/v2'
 OB3 = 'https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json'
 REFUSED = 'refusing the credential'
 SENTINEL = 'SENTINEL-TYPE-NAME'
+#: Every term the pinned contexts define with an @context of their own.
+BUNDLED_SCOPED = (
+    'Achievement', 'AchievementSubject', 'Address', 'Alignment',
+    'BitstringStatusList', 'BitstringStatusListEntry', 'DataIntegrityProof',
+    'EndorsementSubject', 'Evidence', 'GeoCoordinates', 'IdentifierEntry',
+    'IdentityObject', 'Image', 'JsonSchema', 'Multikey', 'Profile', 'Related',
+    'Result', 'ResultDescription', 'RubricCriterionLevel',
+    'VerifiableCredential', 'VerifiablePresentation', 'cnf', 'proofPurpose',
+    'statusMessage', 'verifiableCredential')
+CLR_SCOPED = ('Association', 'ClrCredential', 'ClrSubject')
 
 
 def _screen():
@@ -173,12 +183,21 @@ def _hostile(scale=1):
         'endorsed-flood': dict(base, endorsement=[_endorsement(
             1, evidence=[_tree(scale * s.MAX_TYPED_NODES // 2 + 50,
                                ['Profile'])])]),
+        # a type term as a property KEY: pyld applies its scoped context to
+        # each value (130,000 integers cost 6 to 9 s through verify)
+        'type-term-as-key': dict(
+            base, DataIntegrityProof=[0] * (scale * s.MAX_TYPE_ENTRIES + 100)),
+        'type-term-as-key-nested': dict(
+            base, Achievement=[[0] * (scale * s.MAX_TYPE_ENTRIES + 100)]),
+        'type-term-as-key-endorsed': dict(base, endorsement=[_endorsement(
+            1, Profile=[0] * (scale * s.MAX_TYPE_ENTRIES + 100))]),
     }
 
 
 HOSTILE = ['dupmany', 'one-node-20000-types', 'dup-in-an-endorsement',
            'distinct-typed-flood', 'two-types-per-node', 'untyped-flood',
-           'scoped-property-flood', 'endorsed-flood']
+           'scoped-property-flood', 'endorsed-flood', 'type-term-as-key',
+           'type-term-as-key-nested', 'type-term-as-key-endorsed']
 
 
 @pytest.fixture(scope='module')
@@ -212,6 +231,16 @@ def no_json_ld(monkeypatch):
     monkeypatch.setattr(ldp, '_require_jsonld', reached)
     monkeypatch.setattr(ldp, '_canonize', reached)
     monkeypatch.setattr(ldp, '_hash_data', reached)
+
+
+@pytest.fixture()
+def stub_suites(monkeypatch):
+    """The cryptosuites stop at Reached: whatever got there passed the
+    screen."""
+    def reached(*args, **kwargs):
+        raise Reached()
+    monkeypatch.setitem(ldp._CRYPTOSUITES, 'eddsa-rdfc-2022', reached)
+    monkeypatch.setitem(ldp._CRYPTOSUITES, 'ecdsa-sd-2023', reached)
 
 
 # ── the screen itself ────────────────────────────────────────────────────────
@@ -249,20 +278,20 @@ class TestCounting:
         assert stats.type_entries == 1 + 3 + 1
         assert stats.typed_nodes == 0
 
-    def test_the_scoped_properties_are_the_ones_the_bundled_contexts_define(
-            self):
-        # A pinned context that gains a property with a scoped @context of
-        # its own must be added to _SCOPED_PROPERTIES (and the limits timed
-        # again): pyld applies it to every value of the property.
+    def test_the_scoped_terms_are_derived_from_the_bundled_contexts(self):
+        # Every term that has an @context of its own, a type's or a property's
+        # (``Achievement`` as much as ``cnf``): pyld applies it to each value
+        # of a property named like it. An independent walk of the pinned
+        # contexts must give the set the screen derives.
         from openbadgeslib.ob3.contexts import bundled_contexts
         found = set()
 
         def walk(node):
             if isinstance(node, dict):
                 for term, definition in node.items():
-                    if (isinstance(definition, dict) and '@context' in definition
-                            and not term.startswith('@')
-                            and not term[:1].isupper()):
+                    if (isinstance(definition, dict)
+                            and '@context' in definition
+                            and not term.startswith('@')):
                         found.add(term)
                     walk(definition)
             elif isinstance(node, list):
@@ -270,7 +299,55 @@ class TestCounting:
                     walk(item)
         for document in bundled_contexts().values():
             walk(document)
-        assert found == set(_screen()._SCOPED_PROPERTIES)
+        assert found == set(_screen().bundled_scoped_terms())
+        assert 'DataIntegrityProof' in found and 'cnf' in found
+
+    def test_a_new_term_with_a_context_of_its_own_is_noticed(self):
+        # The pinned set. A context bump that adds a term with a scoped
+        # @context changes it; this fails then, so that the limits are timed
+        # again with a flood of that term (tests/test_ob3_ldp_structure_screen
+        # TestEveryScopedTermIsBounded does it for the ones listed here).
+        assert _screen().bundled_scoped_terms() == frozenset(BUNDLED_SCOPED)
+
+    def test_scoped_terms_reads_nested_definitions_and_ignores_keywords(self):
+        s = _screen()
+        contexts = [
+            {'@context': [{'a': {'@id': 'x:a', '@context': {
+                'inner': {'@id': 'x:i', '@context': {'deep': 'x:d'}}}}},
+                'https://x.example/ctx']},
+            {'@context': {'@protected': {'@context': {}}, 'plain': 'x:p',
+                          'b': {'@id': 'x:b', '@type': '@id'}}},
+            {'@context': {'c': {'@id': 'x:c', '@context': None}}}]
+        assert s.scoped_terms(contexts) == {'a', 'inner', 'c'}
+
+    def test_the_scoped_terms_of_the_clr_context_are_not_bundled_ones(self):
+        from openbadgeslib.ob3 import bundled_clr_contexts
+        s = _screen()
+        clr = s.scoped_terms(bundled_clr_contexts().values())
+        assert {'ClrCredential', 'ClrSubject', 'Association'} <= clr
+        assert not {'ClrCredential', 'ClrSubject', 'Association'} & set(
+            s.bundled_scoped_terms())
+
+    def test_nested_arrays_are_flattened_by_json_ld_so_every_leaf_counts(self):
+        s = _screen()
+        stats = s.screen({'cnf': [[1, 2, [3, 4]], 5, {'kid': 'x'}]})
+        assert stats.type_entries == 6      # 1, 2, 3, 4, 5 and the object
+        # a flood hidden one array deep is refused like a flat one
+        with pytest.raises(s.StructureLimitExceeded, match='type entries'):
+            s.screen({'DataIntegrityProof': [[0] * (s.MAX_TYPE_ENTRIES + 1)]})
+
+    def test_a_scoped_value_that_is_an_object_is_one_entry_and_one_object(self):
+        stats = _screen().screen({'Image': {'id': 'x'}, 'verifiableCredential':
+                                  [{'id': 'a'}, {'id': 'b'}]})
+        assert stats.type_entries == 3
+        assert stats.nodes == 4
+
+    def test_the_caller_can_name_the_scoped_terms(self):
+        s = _screen()
+        doc = {'x': [0, 0, 0], 'cnf': [0, 0]}
+        assert s.screen(doc, scoped=frozenset({'x'})).type_entries == 3
+        assert s.screen(doc, scoped=frozenset()).type_entries == 0
+        assert s.screen(doc).type_entries == 2
 
     def test_the_inside_of_a_context_is_not_walked(self):
         # Term definitions are not nodes; an inline context is bounded by the
@@ -566,7 +643,7 @@ class TestVerifierRefusesBeforeJsonLd:
         doc = _secured(_credential(), keypair[1])
         with pytest.raises(Reached):
             OB3LdpVerifier(pubkey_pem=keypair[1]).verify(doc)
-        assert seen == [{'scale': 1, 'contexts': False}]
+        assert seen == [{'scale': 1, 'contexts': False, 'scoped': None}]
 
     def test_a_document_at_the_limit_gets_through_the_screen(
             self, keypair, monkeypatch):
@@ -587,15 +664,6 @@ class TestVerifierRefusesBeforeJsonLd:
 
 
 class TestLowLevelFunctions:
-    @pytest.fixture()
-    def stub_suites(self, monkeypatch):
-        """The cryptosuites stop at Reached: whatever got there passed the
-        screen."""
-        def reached(*args, **kwargs):
-            raise Reached()
-        monkeypatch.setitem(ldp._CRYPTOSUITES, 'eddsa-rdfc-2022', reached)
-        monkeypatch.setitem(ldp._CRYPTOSUITES, 'ecdsa-sd-2023', reached)
-
     @pytest.mark.parametrize('name', HOSTILE)
     def test_verify_data_integrity_proof(self, keypair, no_json_ld, name):
         doc = _secured(_hostile(2)[name], keypair[1])
@@ -657,6 +725,89 @@ class TestLowLevelFunctions:
             add_data_integrity_proof(doc, keypair[0], '')
 
 
+class TestEveryScopedTermIsBounded:
+    """A term with an @context of its own, used as a property KEY, costs a
+    type entry per value whether the bundled context scopes it to a type or to
+    a property (the first version of the screen knew four of them)."""
+
+    @pytest.mark.parametrize('term', sorted(BUNDLED_SCOPED))
+    def test_the_screen_counts_a_value_per_entry(self, term):
+        s = _screen()
+        flat = s.screen({term: [0] * 7})
+        assert flat.type_entries == 7 and flat.typed_nodes == 0
+        assert s.screen({term: [[0, 0], [0] * 5]}).type_entries == 7
+        assert s.screen({term: {'id': 'x'}}).type_entries == 1
+        with pytest.raises(s.StructureLimitExceeded, match='type entries'):
+            s.screen({term: [0] * (s.MAX_TYPE_ENTRIES + 1)})
+
+    @pytest.mark.parametrize('term', sorted(BUNDLED_SCOPED))
+    def test_the_verifier_refuses_it_before_json_ld(self, keypair, no_json_ld,
+                                                    term):
+        s = _screen()
+        for doc in (
+                _credential(**{term: [0] * (s.MAX_TYPE_ENTRIES + 1)}),
+                _credential(**{term: [[0] * (s.MAX_TYPE_ENTRIES + 1)]}),
+                _credential(endorsement=[_endorsement(
+                    1, **{term: [0] * (s.MAX_TYPE_ENTRIES // 2 + 1)})])):
+            with pytest.raises(OB3VerificationError, match=REFUSED):
+                OB3LdpVerifier(pubkey_pem=keypair[1]).verify(
+                    _secured(doc, keypair[1]))
+
+    @pytest.mark.parametrize('term', sorted(BUNDLED_SCOPED))
+    def test_the_low_level_functions_refuse_it_at_twice_the_total(
+            self, keypair, no_json_ld, term):
+        s = _screen()
+        doc = _credential(**{term: [0] * (2 * s.MAX_TYPE_ENTRIES + 1)})
+        with pytest.raises(OB3VerificationError, match=REFUSED):
+            verify_data_integrity_proof(_secured(doc, keypair[1]), keypair[1])
+        with pytest.raises(ErrorSigningFile, match=REFUSED):
+            add_data_integrity_proof(doc, keypair[0], 'did:example:vm')
+
+    @pytest.mark.parametrize('term', sorted(CLR_SCOPED))
+    def test_the_terms_of_extra_contexts_count_too(self, keypair, no_json_ld,
+                                                   term):
+        # The CLR context is not a pinned one: the low-level functions are
+        # handed it as ``extra_contexts``, and so are its scoped terms.
+        from openbadgeslib.ob3 import bundled_clr_contexts
+        s = _screen()
+        extra = bundled_clr_contexts()
+        doc = _credential(**{term: [0] * (2 * s.MAX_TYPE_ENTRIES + 1)})
+        with pytest.raises(OB3VerificationError, match='type entries'):
+            verify_data_integrity_proof(_secured(doc, keypair[1]), keypair[1],
+                                        extra_contexts=extra)
+        with pytest.raises(ErrorSigningFile, match='type entries'):
+            add_data_integrity_proof(doc, keypair[0], 'did:example:vm',
+                                     extra_contexts=extra)
+
+    def test_extra_contexts_are_the_only_way_to_know_a_clr_term(
+            self, keypair, stub_suites):
+        # Without the CLR context the term is just a property name here (and
+        # canonicalization, which comes after, refuses the unknown context).
+        s = _screen()
+        doc = _credential(Association=[0] * (2 * s.MAX_TYPE_ENTRIES + 1))
+        with pytest.raises(Reached):
+            verify_data_integrity_proof(_secured(doc, keypair[1]), keypair[1])
+
+    def test_a_context_of_the_caller_adds_its_own_terms(
+            self, keypair, no_json_ld):
+        s = _screen()
+        extra = {'https://x.example/ctx': {'@context': {
+            'Flood': {'@id': 'https://x.example/Flood',
+                      '@context': {'a': 'https://x.example/a'}}}}}
+        doc = _credential(Flood=[0] * (2 * s.MAX_TYPE_ENTRIES + 1))
+        with pytest.raises(OB3VerificationError, match='type entries'):
+            verify_data_integrity_proof(_secured(doc, keypair[1]), keypair[1],
+                                        extra_contexts=extra)
+
+    def test_a_scoped_flood_inside_the_limit_gets_through(
+            self, keypair, stub_suites):
+        s = _screen()
+        doc = _credential(DataIntegrityProof=[0] * 1500)
+        with pytest.raises(Reached):
+            verify_data_integrity_proof(_secured(doc, keypair[1]), keypair[1])
+        assert s.screen(doc).type_entries < s.MAX_TYPE_ENTRIES
+
+
 class TestSigner:
     @pytest.fixture()
     def signer(self, keypair):
@@ -705,8 +856,9 @@ class TestSigner:
                             lambda *a, **k: (_ for _ in ()).throw(Reached()))
         with pytest.raises(Reached):
             signer.sign(issue(_credential()))
-        assert calls == [{'scale': 1, 'contexts': False},
-                         {'scale': 2, 'contexts': True}]
+        assert calls == [
+            {'scale': 1, 'contexts': False, 'scoped': None},
+            {'scale': 2, 'contexts': True, 'scoped': None}]
 
 
 # ── real credentials are untouched, hostile ones cost milliseconds ──────────
@@ -810,4 +962,24 @@ class TestHostileDocumentsAreRefusedInMilliseconds:
         with pytest.raises(ErrorSigningFile, match=REFUSED):
             add_data_integrity_proof(_hostile()['dupmany'], keypair[0],
                                      'did:example:vm')
+        assert time.monotonic() - started < self.DEADLINE
+
+    @pytest.mark.parametrize('shape', ['flat', 'endorsed', 'nested'])
+    def test_a_type_term_as_a_key_at_the_size_cap(self, keypair, shape):
+        # 130,000 integers under "DataIntegrityProof", just under 256 KiB: 6 to
+        # 9 s of CPU through verify on 4.6.2 (11 to 16 s inside an
+        # endorsement), every one ending in "signature mismatch".
+        count = 130_000
+        flood = {'DataIntegrityProof': [0] * count}
+        if shape == 'nested':
+            flood = {'DataIntegrityProof': [[0] * count]}
+        doc = (_credential(endorsement=[_endorsement(1, **flood)])
+               if shape == 'endorsed' else _credential(**flood))
+        text = json.dumps(_secured(doc, keypair[1]), separators=(',', ':'))
+        assert 200_000 < len(text) <= ldp.MAX_LDP_DOCUMENT_BYTES
+        started = time.monotonic()
+        with pytest.raises(OB3VerificationError, match='type entries'):
+            OB3LdpVerifier(pubkey_pem=keypair[1]).verify(text)
+        with pytest.raises(OB3VerificationError, match='type entries'):
+            verify_data_integrity_proof(json.loads(text), keypair[1])
         assert time.monotonic() - started < self.DEADLINE

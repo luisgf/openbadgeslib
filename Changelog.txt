@@ -396,10 +396,15 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     document): a node whose `type` repeats an entry or lists more than 8; a
     document with more than 1,600 typed objects, 2,000 type entries or 8,000
     objects, an embedded endorsement's content counting once more for every
-    credential that holds it and a value of a property whose pinned context
-    carries a scoped `@context` of its own (`cnf`, `proofPurpose`,
-    `statusMessage`, `verifiableCredential`: pyld applies it to every value)
-    counting as one type entry; and, in the two low-level functions (context
+    credential that holds it and a value of a property named like any term
+    that has an `@context` of its own counting as one type entry (26 terms in
+    the pinned contexts, `cnf`, `proofPurpose`, `DataIntegrityProof`,
+    `Achievement`, `Profile` among them; the CLR context's three when the
+    low-level functions are given it, and those of any `extra_contexts`; pyld
+    applies that context to every value, however the arrays are nested: a
+    list of 130,000 integers under the key `DataIntegrityProof` cost 6 to 9 s
+    of CPU through `verify`, 11 to 16 s inside an endorsement); and, in the
+    two low-level functions (context
     validation bounds it for the verifier), an `@context` array of more than
     8 entries or 4,096 entries in all. The low-level functions run no context
     validation, a node takes about half the passes there, and they take

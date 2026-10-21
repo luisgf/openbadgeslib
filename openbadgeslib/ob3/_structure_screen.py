@@ -46,8 +46,8 @@
 # * a ``type`` / ``@type`` array that repeats an entry, or lists more than
 #   MAX_TYPES_PER_NODE of them (a real node has one to three);
 # * more than MAX_TYPED_NODES typed objects, MAX_TYPE_ENTRIES type entries
-#   (a value of a property with a scoped @context of its own counts as one) or
-#   MAX_NODES objects in all;
+#   (a value of a property named like a term that has an @context of its own
+#   counts as one, see scoped_terms) or MAX_NODES objects in all;
 # * an ``@context`` array longer than MAX_CONTEXT_ENTRIES (pyld finds up to
 #   ten entries already processed and re-resolves each one past that), or more
 #   than MAX_CONTEXT_ENTRIES_TOTAL entries in all.
@@ -63,13 +63,20 @@
 # through OB3LdpVerifier.verify on CPython 3.10 to 3.15: wiki/Security-Model.md
 # has the table. They are measured, not derived from a model of pyld.
 #
-# What it does not do: it knows no context, so a ``type`` alias other than
-# ``type`` and ``@type`` (only an extra_contexts entry of the low-level
-# functions could define one) is not counted; it does not bound RDF
-# canonicalization (see _canon_guard.py), the ecdsa-sd-2023 suite openvc-core
-# runs on its own, or the bytes of a document the caller does not cap.
+# What it does not do: it knows no context beyond the set of terms that have an
+# @context of their own (the bundled ones, and those of the extra_contexts a
+# low-level function is given), so a ``type`` alias other than ``type`` and
+# ``@type`` (only an extra_contexts entry of the low-level functions could
+# define one) is not counted; it does not bound RDF canonicalization (see
+# _canon_guard.py), the ecdsa-sd-2023 suite openvc-core runs on its own, or the
+# bytes of a document the caller does not cap.
 
-from typing import Any, List, NamedTuple, Optional, Tuple
+import functools
+
+from typing import (AbstractSet, Any, FrozenSet, Iterable, List, NamedTuple,
+                    Optional, Tuple)
+
+from .contexts import bundled_contexts
 
 #: Most entries one node's ``type`` may list. A real node has one to three
 #: (``["VerifiableCredential", "OpenBadgeCredential"]``, ``["Profile"]``,
@@ -80,9 +87,9 @@ MAX_TYPES_PER_NODE = 8
 #: embedded credentials counted once more per level of nesting.
 MAX_TYPED_NODES = 1_600
 
-#: Most ``type`` entries in a document (and values of the properties that
-#: carry a scoped context, see _SCOPED_PROPERTIES), counted like the typed
-#: nodes.
+#: Most ``type`` entries in a document (and values of the properties named
+#: like a term that has a scoped context, see scoped_terms), counted like the
+#: typed nodes.
 MAX_TYPE_ENTRIES = 2_000
 
 #: Most objects in a document, counted like the typed nodes.
@@ -117,19 +124,54 @@ class StructureStats(NamedTuple):
 _TYPE_KEYS = ('type', '@type')
 _ENDORSEMENT = 'endorsement'
 
-# The terms a bundled context defines WITH a scoped @context of their own (not
-# a type's): pyld applies it to every value of the property, as it applies a
-# type-scoped one per type entry, so each value costs about a third of a type
-# entry and is counted as one. VC 2.0 defines ``cnf`` at the top level and
-# ``verifiableCredential``, ``statusMessage`` and ``proofPurpose`` inside the
-# contexts of a presentation, a status entry and a proof. A test derives this
-# set from the bundled contexts, so a context that adds one fails it.
-_SCOPED_PROPERTIES = frozenset(
-    ('cnf', 'proofPurpose', 'statusMessage', 'verifiableCredential'))
+
+def scoped_terms(contexts: Iterable[Any]) -> FrozenSet[str]:
+    """Every term the JSON-LD context documents *contexts* define WITH an
+    ``@context`` of their own, at any depth of the definitions.
+
+    pyld applies such a context whenever the term is in use: once per ``type``
+    entry that names it (a type-scoped context) and once per value of a
+    property that is named by it (a property-scoped one), in expansion and
+    again in compaction. A term of the first kind written as a property KEY
+    costs the same as one of the second (``"DataIntegrityProof": [0, 0, ...]``
+    in a node: 130,000 values, 6 to 9 s of CPU through OB3LdpVerifier.verify),
+    so what counts is that the term has a context, not which kind it is. A
+    value of such a key costs about a tenth of a type entry (22 to 50
+    microseconds against 0.3 to 0.6 ms) and is counted as one.
+
+    Iterative, so a context of any depth is walked."""
+    found = set()
+    todo: List[Any] = list(contexts)
+    while todo:
+        node = todo.pop()
+        if isinstance(node, dict):
+            for term, definition in node.items():
+                if (isinstance(definition, dict) and '@context' in definition
+                        and isinstance(term, str)
+                        and not term.startswith('@')):
+                    found.add(term)
+                if isinstance(definition, (dict, list)):
+                    todo.append(definition)
+        elif isinstance(node, list):
+            todo.extend(item for item in node
+                        if isinstance(item, (dict, list)))
+    return frozenset(found)
+
+
+@functools.lru_cache(maxsize=1)
+def bundled_scoped_terms() -> FrozenSet[str]:
+    """:func:`scoped_terms` of the pinned contexts (``ob3/contexts``), derived
+    from them the first time it is needed, so a context bump that adds a term
+    with a context of its own is covered with no change here (and a test pins
+    the set, so the limits are timed again). The CLR context is not bundled in
+    that sense: the low-level functions are given it as ``extra_contexts`` and
+    pass its terms in."""
+    return scoped_terms(bundled_contexts().values())
 
 
 def screen(document: Any, *, scale: int = 1, contexts: bool = True,
-           limits: bool = True) -> StructureStats:
+           limits: bool = True,
+           scoped: Optional[AbstractSet[str]] = None) -> StructureStats:
     """Count the structure of *document* (parsed JSON) and, unless *limits*
     is false, raise :class:`StructureLimitExceeded` at the first limit it
     crosses. *scale* multiplies the node, typed-node and type-entry totals:
@@ -137,23 +179,44 @@ def screen(document: Any, *, scale: int = 1, contexts: bool = True,
     about half the passes the verifier does, and pass ``scale=2``. *contexts*
     false leaves the ``@context`` limits to the caller, for the paths where
     context validation bounds them already, before any JSON-LD processing.
+    *scoped* is the set of terms that have an ``@context`` of their own, whose
+    use as a property key costs a type entry per value (default: the bundled
+    contexts', :func:`bundled_scoped_terms`; a caller that hands the JSON-LD
+    processor more contexts adds theirs, :func:`scoped_terms`).
 
     One explicit stack, no recursion. A document that contains itself is
     refused by the node limit; with ``limits=False`` it would not return.
     """
+    scoped_keys = bundled_scoped_terms() if scoped is None else scoped
     typed_cap = MAX_TYPED_NODES * scale
     entries_cap = MAX_TYPE_ENTRIES * scale
     nodes_cap = MAX_NODES * scale
     context_cap = MAX_CONTEXT_ENTRIES_TOTAL
     nodes = typed = entries = context_entries = 0
     longest = longest_context = deepest = 0
-    # (value, weight = 1 + embedding depth, value is an ``endorsement`` entry)
-    stack: List[Tuple[Any, int, bool]] = [(document, 1, False)]
+    # (value, weight = 1 + embedding depth, value is an ``endorsement`` entry,
+    # value is an array under a key with a scoped context: its leaves count)
+    stack: List[Tuple[Any, int, bool, bool]] = [(document, 1, False, False)]
     while stack:
-        value, weight, entry = stack.pop()
+        value, weight, entry, counted = stack.pop()
         if isinstance(value, (list, tuple)):
-            stack.extend((item, weight, False) for item in value
-                         if isinstance(item, (dict, list, tuple)))
+            if not counted:
+                stack.extend((item, weight, False, False) for item in value
+                             if isinstance(item, (dict, list, tuple)))
+                continue
+            # JSON-LD flattens nested arrays: every leaf is a value of the
+            # property, and pyld applies the scoped context to each.
+            leaves = 0
+            for item in value:
+                if isinstance(item, (list, tuple)):
+                    stack.append((item, weight, False, True))
+                    continue
+                leaves += 1
+                if isinstance(item, dict):
+                    stack.append((item, weight, False, False))
+            entries += weight * leaves
+            if limits:
+                _check('type entries', entries, entries_cap, deepest)
             continue
         if not isinstance(value, dict):
             continue
@@ -161,10 +224,8 @@ def screen(document: Any, *, scale: int = 1, contexts: bool = True,
             weight += 1             # an embedded credential: validated again
             deepest = max(deepest, weight - 1)
         nodes += weight
-        node_types = scoped = 0
+        node_types = values = 0
         for key, item in value.items():
-            if key in _SCOPED_PROPERTIES:
-                scoped += len(item) if isinstance(item, (list, tuple)) else 1
             if key in _TYPE_KEYS:
                 if isinstance(item, str):
                     node_types += 1
@@ -192,16 +253,24 @@ def screen(document: Any, *, scale: int = 1, contexts: bool = True,
                     context_entries += 1
             elif key == _ENDORSEMENT:
                 if isinstance(item, dict):
-                    stack.append((item, weight, True))
+                    stack.append((item, weight, True, False))
                 elif isinstance(item, (list, tuple)):
-                    stack.extend((member, weight, True) for member in item
+                    stack.extend((member, weight, True, False)
+                                 for member in item
                                  if isinstance(member, (dict, list, tuple)))
+            elif key in scoped_keys:
+                if isinstance(item, (list, tuple)):
+                    stack.append((item, weight, False, True))   # its leaves
+                else:
+                    values += 1
+                    if isinstance(item, dict):
+                        stack.append((item, weight, False, False))
             elif isinstance(item, (dict, list, tuple)):
-                stack.append((item, weight, False))
+                stack.append((item, weight, False, False))
         if node_types:
             typed += weight
             longest = max(longest, node_types)
-        entries += weight * (node_types + scoped)
+        entries += weight * (node_types + values)
         if limits:
             if node_types > MAX_TYPES_PER_NODE:
                 raise StructureLimitExceeded(
