@@ -1411,3 +1411,63 @@ class TestHostileDocumentsAreRefusedInMilliseconds:
         with pytest.raises(OB3VerificationError, match='type entries'):
             verify_data_integrity_proof(json.loads(text), keypair[1])
         assert time.monotonic() - started < self.DEADLINE
+
+
+# ── @import in an inline @context ────────────────────────────────────────────
+# pyld merges an imported context INTO the document the loader returned, and
+# the loader hands out the one pinned copy the whole process shares
+# (contexts.load_context is an lru_cache): an inline {"@import": <pinned url>}
+# in a document given to the low-level functions rewrote a bundled context for
+# every later verification, in every thread, until the process restarted.
+
+EXTENSIONS = 'https://purl.imsglobal.org/spec/ob/v3p0/extensions.json'
+
+
+class TestNoInlineImport:
+    @pytest.mark.parametrize('context', [
+        [VC2, {'@import': EXTENSIONS}],
+        {'@import': EXTENSIONS},
+        [VC2, [{'@import': EXTENSIONS}]],
+        [VC2, {'Term': {'@id': 'https://x.example/t', '@context': {'@import': EXTENSIONS}}}],
+        [VC2, {'@version': 1.1, 'x': {'@context': [{'@import': EXTENSIONS}]}}],
+    ], ids=['in-a-list', 'alone', 'in-a-nested-list', 'in-a-term-scoped-context',
+            'in-a-list-in-a-term-scoped-context'])
+    def test_the_screen_refuses_an_import_at_any_depth_of_a_context(self, context):
+        with pytest.raises(_screen().StructureLimitExceeded, match='@import'):
+            _screen().screen({'@context': context, 'type': ['VerifiableCredential']})
+
+    def test_an_import_inside_an_embedded_node_is_found_too(self):
+        doc = {'@context': VC2, 'type': ['VerifiableCredential'],
+               'evidence': [{'@context': [VC2, {'@import': EXTENSIONS}], 'type': ['Evidence']}]}
+        with pytest.raises(_screen().StructureLimitExceeded, match='@import'):
+            _screen().screen(doc)
+
+    def test_a_deeply_nested_context_is_scanned_without_recursion(self):
+        deep = {'@import': EXTENSIONS}
+        for _ in range(200_000):
+            deep = {'k': deep}
+        with pytest.raises(_screen().StructureLimitExceeded):
+            _screen().screen({'@context': [VC2, deep]}, limits=True)
+
+    def test_a_context_without_an_import_is_not_affected(self):
+        _screen().screen({'@context': [VC2, OB3], 'type': ['VerifiableCredential']})
+        _screen().screen({'@context': [VC2, {'@vocab': 'https://x.example/'}],
+                          'import': 'a plain member named import is data'})
+
+    @needs_pyld
+    def test_the_low_level_verifier_refuses_it_and_the_pinned_context_stays_as_it_was(
+            self, keypair):
+        from openbadgeslib.ob3.contexts import load_context
+        before = json.dumps(load_context(EXTENSIONS), sort_keys=True)
+        doc = _secured({'@context': [VC2, {'@import': EXTENSIONS, 'EVIL': 'https://evil.example/t'}],
+                        'type': ['VerifiableCredential'], 'EVIL': 'value'}, keypair[1])
+        with pytest.raises(OB3VerificationError, match='@import'):
+            verify_data_integrity_proof(doc, keypair[1])
+        assert json.dumps(load_context(EXTENSIONS), sort_keys=True) == before
+        assert 'EVIL' not in before and 'EVIL' not in json.dumps(load_context(EXTENSIONS))
+
+    @needs_pyld
+    def test_the_low_level_signer_refuses_it_too(self, keypair):
+        doc = {'@context': [VC2, {'@import': EXTENSIONS}], 'type': ['VerifiableCredential']}
+        with pytest.raises(ErrorSigningFile, match='@import'):
+            add_data_integrity_proof(doc, keypair[0], 'did:key:z#z')

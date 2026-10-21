@@ -274,6 +274,14 @@ def screen(document: Any, *, scale: int = 1, contexts: bool = True,
                     node_types += len(item)
                     longest = max(longest, len(item))
             elif key == '@context':
+                if limits and isinstance(item, (dict, list, tuple)) \
+                        and _holds_import(item):
+                    # pyld merges the imported context INTO the document the
+                    # loader returned, and the loader hands out the one pinned
+                    # copy the whole process shares: an inline @import would
+                    # rewrite a bundled context for every later verification.
+                    raise StructureLimitExceeded(
+                        "an @context uses @import, which is not accepted")
                 if isinstance(item, (list, tuple)):
                     if (limits and contexts
                             and len(item) > MAX_CONTEXT_ENTRIES):
@@ -318,6 +326,23 @@ def screen(document: Any, *, scale: int = 1, contexts: bool = True,
                 _check('@context entries', context_entries, context_cap, 0)
     return StructureStats(nodes, typed, entries, context_entries, longest,
                           longest_context, deepest, nesting)
+
+
+def _holds_import(value: Any) -> bool:
+    """True if a JSON value (an inline ``@context``) has an ``@import`` key at
+    any depth. Iterative: it must survive any nesting."""
+    stack = [value]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if '@import' in node:
+                return True
+            stack.extend(item for item in node.values()
+                         if isinstance(item, (dict, list, tuple)))
+        elif isinstance(node, (list, tuple)):
+            stack.extend(item for item in node
+                         if isinstance(item, (dict, list, tuple)))
+    return False
 
 
 def _check(what: str, count: int, cap: int, embedded: int) -> None:

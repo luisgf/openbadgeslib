@@ -504,6 +504,20 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     than 1,600 typed objects (a CLR is bounded by its size first: see the
     entry on CLRs below).
 
+  - security(ldp): `verify_data_integrity_proof` and `add_data_integrity_proof`
+    refuse an inline `@context` that uses `@import`. pyld merges an imported
+    context into the document the loader returned, and the loader hands out
+    the one pinned copy that every call of the process shares, so a document
+    handed to either function with {"@import": <a pinned context URL>} in an
+    inline context rewrote that bundled context for every later verification
+    and signature of the process, in every thread, until it restarted (the
+    definition of a term it added or changed was then the attacker's for
+    everyone). `OB3LdpVerifier` and `OB3LdpSigner` were not exposed: they
+    refuse inline contexts before pyld runs. The two low-level functions
+    (the only CLR verification route, and the W3C vectors) did not. The
+    structure screen now refuses the key at any depth of an `@context`, in
+    the verifier and the signer as well, before any JSON-LD processing.
+
   - security(ldp): `verify_data_integrity_proof` bounds the size of the dict
     it is handed, and `add_data_integrity_proof` the size of the document it
     returns. The 256 KiB cap lived in `OB3LdpVerifier`'s parse and in
