@@ -601,7 +601,7 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
       values in one property (about 1,000 in each of two), an `@context` of
       more than 8 entries in the low-level functions, a canonicalization
       beyond its work or time budget, and an ecdsa-sd-2023 credential of more
-      than 2,500 statements. A real badge is far inside all of them (1EdTech's
+      than 1,600 statements. A real badge is far inside all of them (1EdTech's
       "Complete" example has 104 typed objects and spends 1,124 of the 250,000
       units), but a badge with 1,500 alignments verified in 4.6.2 and does not
       now.
