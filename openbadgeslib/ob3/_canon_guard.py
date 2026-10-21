@@ -985,6 +985,25 @@ def canonize(jsonld: Any, document: Any, loader: Any,
     return _canonicalize(bounded, dataset, budget)
 
 
+def canonize_dataset(dataset: Any, budget: Optional[WorkBudget] = None) -> str:
+    """RDFC-1.0-canonicalize an RDF *dataset* that is already in memory (the
+    dict of ``jsonld.to_rdf`` or ``JsonLdProcessor.parse_nquads``) to N-Quads,
+    bounded by *budget* exactly as :func:`canonize` is, for the caller that
+    builds the dataset itself. The caller owns what happens before this (the
+    JSON-LD to RDF conversion and its duplicate checks, see
+    :func:`node_map_pairs`) and holds :data:`PYLD_LOCK` for it; this runs the
+    algorithm only, which touches no pyld cache. Like pyld's own
+    ``URDNA2015.main`` it rewrites the dataset's blank node labels in place.
+
+    Raises :class:`CanonicalizationWorkExceeded` over any bound and
+    :class:`CanonicalizationGuardUnavailable` when the guard cannot meter the
+    installed pyld."""
+    bounded = _bounded_class()
+    if budget is None:
+        budget = WorkBudget()
+    return _canonicalize(bounded, dataset, budget)
+
+
 def _reinit_after_fork(lock: Any) -> None:
     """Give a forked child a lock nobody holds, whatever state some thread of
     the parent left it in (that thread does not exist there)."""
