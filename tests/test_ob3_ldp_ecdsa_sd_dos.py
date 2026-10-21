@@ -1,15 +1,18 @@
-"""Hostile and oversized documents through the delegated ecdsa-sd-2023 verify,
-with the REAL openvc-core (the screen tests of test_ob3_ldp_canon_guard.py run
-a fake delegate).
+"""Hostile and oversized documents, and credentials with awkward literals,
+through the delegated ecdsa-sd-2023 verify, with the REAL openvc-core (the
+screen tests of test_ob3_ldp_canon_guard.py run a fake delegate).
 
-openvc-core canonicalizes with an unbounded pyld, and round-trips the dataset
-through N-Quads text, which pyld parses in time quadratic in the number of
-statements. ob3.ldp therefore screens a credential before delegating
-(``_prescreen_canonicalization``: the poison-graph work under the work budget,
-and ``MAX_DELEGATED_QUADS``), and canonicalizes it once more, after the
-signature has verified, to index the statements the mandatory-lifecycle check
-reads (``_sd_disclosed_statements``). That second pass must be metered too, and
-must read the very graph openvc verified.
+openvc-core canonicalizes with an unbounded pyld, and not the dataset the JSON
+expands to: it writes the dataset as N-Quads text and parses it back, which
+pyld does in time quadratic in the number of statements and does not invert
+for a literal with a backslash followed by t, n or r. ob3.ldp therefore
+replays that pipeline before delegating (``_sd_canonical_lines``, the
+URDNA2015 step under the work budget) and screens on what it makes
+(``_prescreen_canonicalization``: the poison-graph work, and
+``MAX_DELEGATED_QUADS``); the lines it computes are the ones the
+mandatory-lifecycle check reads once the signature has verified
+(``_sd_disclosed_statements``), so the check, the screen and the delegate all
+see one graph, and the delegate runs under the pyld lock.
 
 The signer below is a test helper: it hand-signs a derived proof over the
 document AS PRESENTED, the way openvc-core's ``verify`` recomputes it, with
@@ -336,6 +339,23 @@ class TestStatementIndexingRefusals:
         with pytest.raises(OB3VerificationError) as caught:
             ldp._sd_disclosed_statements(document, document['proof'])
         assert str(caught.value) == 'refusing to canonicalize: over budget'
+
+    def test_lines_the_proof_does_not_sign_are_refused(self, derived):
+        # The lifecycle check is handed the lines the screen computed; a list
+        # that does not have as many statements as the proof signs is not the
+        # one the delegate verified.
+        document, _, _ = derived
+        with pytest.raises(OB3VerificationError, match='do not match'):
+            ldp._sd_disclosed_statements(
+                document, document['proof'], ['<urn:a:b> <urn:a:c> <urn:a:d> .'])
+
+    def test_the_lines_of_the_screen_are_those_the_check_would_compute(
+            self, derived):
+        document, _, _ = derived
+        lines = ldp._prescreen_canonicalization(document, document['proof'])
+        assert ldp._sd_disclosed_statements(
+            document, document['proof'], lines) == ldp._sd_disclosed_statements(
+            document, document['proof'])
 
     def test_a_proof_value_that_does_not_decode_is_refused(self, derived):
         document, _, _ = derived
@@ -863,6 +883,27 @@ class TestLegitimateCredentialsAreAccepted:
                 doc, issuer, selective=['/evidence'])
             OB3LdpVerifier(pubkey_pem=issuer.pub_pem).verify(derived_doc)
 
+    @pytest.mark.parametrize('selective', [
+        [], ['/credentialSchema'], ['/evidence', '/credentialSchema'],
+        ['/credentialSubject/achievement'], ['/evidence']])
+    def test_whatever_the_holder_discloses(self, ob3_credential, issuer,
+                                           selective):
+        # openvc-core issues and derives; its verify and this library read
+        # the same statements and the same mandatory indexes.
+        for trial in range(6):
+            doc = _credential(ob3_credential, issuer)
+            doc['credentialStatus'] = [{
+                'type': 'BitstringStatusListEntry', 'statusPurpose': 'revocation',
+                'statusListIndex': str(trial),
+                'statusListCredential': 'https://example.com/status/1'}]
+            doc['evidence'] = [{'type': ['Evidence'], 'name': 'a\\nb \\theta%d' % i}
+                               for i in range(5)]
+            derived_doc = _openvc_issue_and_derive(doc, issuer, selective=selective)
+            OB3LdpVerifier(pubkey_pem=issuer.pub_pem).verify(derived_doc)
+            assert ldp._sd_disclosed_statements(
+                derived_doc, derived_doc['proof']) == _verify_statements(
+                derived_doc, issuer.pub_pem)
+
     def test_a_status_entry_the_issuer_left_selective_is_still_refused(
             self, ob3_credential, issuer):
         # The other direction: with the same literals, an issuer who left the
@@ -962,7 +1003,7 @@ class TestNQuadsRoundTripCollapse:
             with _within(20), pytest.raises(OB3VerificationError,
                                             match='refusing to canonicalize'):
                 verifier.verify(hostile)
-        assert time.process_time() - start < 3.0
+        assert time.process_time() - start < 10.0     # (22 to 29 s unscreened)
         assert not delegate_calls
 
     def test_through_the_low_level_entry_too(self, attack, delegate_calls):

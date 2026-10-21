@@ -496,11 +496,11 @@ def _p256_pem_to_jwk(pubkey_pem: bytes) -> dict[str, str]:
 #: disclose: the repository's fixtures hold 28 to 273, 1EdTech's "Complete"
 #: example 322 and a credential with 100 alignments and 100 pieces of
 #: evidence 1,428, which this leaves 12% of room above. What falls over it is
-#: refused with an OB3VerificationError: roughly more than 110 fully described
-#: alignments together with as many evidence entries. (A CLR is not one of them: its
-#: context is not one the delegate is given, so ecdsa-sd-2023 CLRs are not
-#: verifiable here at all.) The cap goes when openvc-core canonicalizes the
-#: dataset directly.
+#: refused with an OB3VerificationError: roughly more than 110 fully
+#: described alignments together with as many evidence entries. (A CLR is
+#: not one of them: its context is not one the delegate is given, so
+#: ecdsa-sd-2023 CLRs are not verifiable here at all.) The cap goes when
+#: openvc-core canonicalizes the dataset directly.
 MAX_DELEGATED_QUADS = 1_600
 
 #: Multibase ``u`` (base64url, no padding) and the first two bytes of an
