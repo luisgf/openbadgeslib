@@ -957,6 +957,7 @@ class TestLowLevelVerifyBoundsTheBytesFirst:
                 json.dumps(dict(doc, pad='x' * ldp.MAX_LDP_DOCUMENT_BYTES)))
 
 
+@needs_pyld
 class TestWhatIsSignedFitsWhatIsVerified:
     """add_data_integrity_proof measured the document without the proof it
     adds (~0.4 KB): one within that of the cap was signed and then refused by
