@@ -378,6 +378,27 @@ class TestOB3Dates:
                          'expires': PAST_THE_LATE_END[0]}, 'assertionMethod')
 
 
+class TestOB2HostedDocumentGivenAsADict:
+    """verify_hosted takes the assertion as a dict its caller has already
+    parsed, so nothing here bounds the nesting the way the loaders do; what it
+    does with a value nested past the recursion limit is end in the typed
+    failure (the value is never recursed into, only compared and refused)."""
+
+    @pytest.mark.parametrize('place', ['unknown-member', 'evidence', 'salt'])
+    def test_a_deeply_nested_value(self, place):
+        from openbadgeslib.ob2 import OB2VerificationError, OB2Verifier
+        deep = []
+        for _ in range(DEEPER // 2):
+            deep = [deep]
+        document = _ob2_hosted_payload()
+        if place == 'salt':
+            document['recipient'] = dict(document['recipient'], salt=deep)
+        else:
+            document['x' if place == 'unknown-member' else place] = deep
+        with pytest.raises(OB2VerificationError):
+            OB2Verifier(download=lambda url: b'{}').verify_hosted(document)
+
+
 class TestOB2RemoteKey:
     """F13: a lone surrogate in a CryptographicKey's publicKeyPem raised
     UnicodeEncodeError when verify() encoded the PEM, including on the hosted
