@@ -1,9 +1,7 @@
-#!/usr/bin/env python3
 """
         OpenBadges Library
 
         Copyright (c) 2014-2026, Luis González Fernández, luisgf@luisgf.es
-        Copyright (c) 2014-2026, Jesús Cea Avión, jcea@jcea.es
 
         All rights reserved.
 
