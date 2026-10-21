@@ -1554,6 +1554,13 @@ class TestFork:
         assert guard.PYLD_LOCK.acquire(timeout=5)
         guard.PYLD_LOCK.release()
 
+    def test_the_child_gives_back_the_lock_the_hook_took(self):
+        guard._before_fork()
+        guard._after_fork_in_child()                # (what the child runs)
+        assert guard.PYLD_LOCK.acquire(timeout=5)
+        guard.PYLD_LOCK.release()
+        assert not guard.PYLD_LOCK._is_owned()
+
     @pytest.mark.skipif(not hasattr(os, 'fork'), reason='needs fork()')
     def test_a_fork_inside_the_lock_leaves_both_sides_a_usable_lock(self):
         code = textwrap.dedent("""
