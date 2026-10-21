@@ -199,11 +199,14 @@ jobs:
 
       - name: Test the ecdsa-sd-2023 delegate and type-check it
         # The [ldp-sd] suite FAILs (not skips) if openvc or pyld stops
-        # importing here, as in the main test job (#221).
+        # importing here, as in the main test job (#221). The _dos file runs
+        # the statement cap and the statement indexing against the real
+        # delegate, through the private openvc helpers they call, so it has to
+        # run at the floor too.
         env:
           OPENBADGES_REQUIRE_LDP_SD: '1'
         run: |
-          pytest tests/test_ob3_ldp_ecdsa_sd.py -v
+          pytest tests/test_ob3_ldp_ecdsa_sd.py tests/test_ob3_ldp_ecdsa_sd_dos.py -v
           mypy openbadgeslib/ob3/ldp.py
 
   publish:
