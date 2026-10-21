@@ -108,12 +108,15 @@ MAX_NODES = 8_000
 #: loop whose calls straddle a chunk boundary pays an allocation per call.
 #: pyld's duplicate check for the values of a node property
 #: (``compare_values``, up to MAX_NODE_MAP_PAIRS of them, see ``_canon_guard``)
-#: is such a loop: 28 KB of JSON cost 5 to 10 s of CPU instead of 0.35 s. The
+#: is such a loop: 28 KB of JSON cost 5 to 10 s of CPU instead of 0.35 s while
+#: the allowance was 1,000,000 comparisons; it is 150,000 on these two
+#: interpreters now, which bounds what a hit costs to about 1.3 s. The
 #: boundary's place relative to the document depends on how deep the caller
 #: already is. For the worst document shape (objects nested directly, 400
 #: values) at least 86 % of the caller depths have a hit at some nesting depth
 #: within the 128 levels ``_safejson`` allows, and 22 % at or below this bound.
-#: It lowers the odds, it does not remove the cliff: wiki/Security-Model.md.
+#: This lowers the odds of a hit, the allowance bounds its cost:
+#: wiki/Security-Model.md.
 MAX_DEPTH = 36
 
 #: Most entries one ``@context`` array may list. Context validation accepts

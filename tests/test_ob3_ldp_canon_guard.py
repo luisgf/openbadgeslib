@@ -38,6 +38,7 @@ import copy
 import hashlib
 import itertools
 import json
+import math
 import os
 import random
 import re
@@ -149,6 +150,12 @@ def many_cliques(base, count, size):
             nodes.append({'id': '_:c%d_%d' % (c, i), 'alignment': [
                 {'id': '_:c%d_%d' % (c, j)} for j in range(size) if j != i]})
     return _evidence(base, nodes)
+
+
+def widest():
+    """The most distinct values one property can hold under the cap in force
+    (n(n-1)/2 comparisons): 1,414, or 548 on CPython 3.11 and 3.12."""
+    return (1 + math.isqrt(1 + 8 * guard.MAX_NODE_MAP_PAIRS)) // 2
 
 
 def flat_tags(base, n):
@@ -338,14 +345,18 @@ class TestLegitimateDocuments:
         # allowance is lifted so coverage tracing cannot trip it.
         loader = document_loader()
         budget = guard.WorkBudget(seconds=60.0)
-        guard.canonize(jsonld, hub_results(base_vc, 700), loader, budget)
+        guard.canonize(jsonld, hub_results(base_vc, min(700, widest() // 2)),
+                       loader, budget)
         assert budget.spent < guard.MAX_CANON_WORK / 2, budget.spent
         budget = guard.WorkBudget(seconds=60.0)
-        guard.canonize(jsonld, shared_creator(base_vc, 900), loader, budget)
+        guard.canonize(jsonld, shared_creator(base_vc, min(900, widest() - 60)),
+                       loader, budget)
         assert budget.spent == 0
-        # ... up to the node-map cap itself (1,400 Results: 161,000 units).
+        # ... up to the node-map cap itself (1,400 Results: 161,000 units;
+        # 540 where the cap is 150,000).
         budget = guard.WorkBudget(seconds=60.0)
-        guard.canonize(jsonld, hub_results(base_vc, 1400), loader, budget)
+        guard.canonize(jsonld, hub_results(base_vc, min(1400, widest() - 8)),
+                       loader, budget)
         assert budget.spent < guard.MAX_CANON_WORK
 
     def test_option_parity_with_jsonld_normalize(self):
@@ -451,7 +462,7 @@ class TestHostileDocuments:
     def test_recursion_depth_fails_closed(self, base_vc):
         # A ring this long runs out of Python stack before it runs out of a
         # (here enlarged) budget: still a typed refusal, not a RecursionError.
-        budget = guard.WorkBudget(limit=10 ** 9, seconds=600)
+        budget = guard.WorkBudget(limit=10 ** 9, seconds=600, pairs=10 ** 9)
         with pytest.raises(OB3VerificationError,
                            match='could not canonicalize'):
             ldp._canonize(ring(base_vc, 1200), document_loader(), budget)
@@ -704,12 +715,42 @@ class TestNodeMapBound:
         with pytest.raises(OB3VerificationError) as caught:
             ldp._canonize(flat_tags(base_vc, 2000), document_loader())
         text = str(caught.value)
-        assert re.search(r'199\d{4} duplicate checks, 1000000 allowed', text)
+        assert re.search(r'199\d{4} duplicate checks, %d allowed'
+                         % guard.MAX_NODE_MAP_PAIRS, text)
         assert 'holds 2000 values' in text
 
     def test_a_realistic_large_array_passes(self, base_vc):
-        out = ldp._canonize(flat_tags(base_vc, 600), document_loader())
-        assert '"t0"' in out and '"t599"' in out
+        out = ldp._canonize(flat_tags(base_vc, 540), document_loader())
+        assert '"t0"' in out and '"t539"' in out
+
+    def test_the_widest_array_the_cap_admits_passes_and_one_more_does_not(
+            self, base_vc):
+        n = widest()
+        assert n * (n - 1) // 2 <= guard.MAX_NODE_MAP_PAIRS
+        assert (n + 1) * n // 2 > guard.MAX_NODE_MAP_PAIRS
+        assert '"t%d"' % (n - 1) in ldp._canonize(
+            flat_tags(base_vc, n), document_loader())
+        with pytest.raises(OB3VerificationError, match='too many values'):
+            ldp._canonize(flat_tags(base_vc, n + 1), document_loader())
+
+    @pytest.mark.parametrize('implementation, version, chunked', [
+        ('cpython', (3, 10), False), ('cpython', (3, 11), True),
+        ('cpython', (3, 12), True), ('cpython', (3, 13), False),
+        ('cpython', (3, 14), False), ('cpython', (3, 15), False),
+        ('cpython', (3, 12, 13), True), ('pypy', (3, 11), False),
+        ('pypy', (3, 12), False)])
+    def test_only_cpython_3_11_and_3_12_have_the_chunk_cliff(
+            self, implementation, version, chunked):
+        assert guard._has_chunked_data_stack(implementation, version) is chunked
+
+    def test_the_cap_in_force_follows_the_running_interpreter(self):
+        chunked = guard._has_chunked_data_stack(sys.implementation.name,
+                                                sys.version_info[:2])
+        assert guard.MAX_NODE_MAP_PAIRS == (
+            guard.MAX_NODE_MAP_PAIRS_CHUNKED_STACK if chunked
+            else guard.MAX_NODE_MAP_PAIRS_FULL)
+        assert (guard.MAX_NODE_MAP_PAIRS_CHUNKED_STACK
+                < guard.MAX_NODE_MAP_PAIRS_FULL)
 
     def test_pairs(self):
         expanded = [{'@id': 'a', 'p': [{'@value': 1}] * 4, 'q': [{'@id': 'b'}]},
@@ -734,32 +775,34 @@ class TestNodeMapBound:
         # 900 alignments each embedding the same typed creator: pyld stops at
         # the first match, so re-stating it is O(1) per entry. Counting every
         # occurrence as distinct charged 900^2/2 per property and refused it.
-        doc = shared_creator(base_vc, 900)
+        doc = shared_creator(base_vc, min(900, widest() - 60))
         loader = document_loader()
-        assert _model_pairs(doc, loader) <= 1_000_000
+        assert _model_pairs(doc, loader) <= guard.MAX_NODE_MAP_PAIRS
         assert _real_pairs(doc, loader, monkeypatch) <= _model_pairs(doc, loader)
         assert guard.canonize(jsonld, doc, loader) == _stock(doc, loader)
 
     def test_the_cap_is_the_sum_over_every_property(self, base_vc):
         # Documented as such: pyld's cost is the sum of the quadratics, so
         # two 1,100-value properties of one node cost what one 1,553-value
-        # property does.
+        # property does (425 values each where the cap is 150,000).
+        k = int(1.1 * math.isqrt(guard.MAX_NODE_MAP_PAIRS))
         doc = copy.deepcopy(base_vc)
         doc['evidence'] = [{'id': 'https://x.example/e',
                             'alignment': [{'id': 'urn:a:%d' % i}
-                                          for i in range(1100)],
-                            'name': ['u%d' % i for i in range(1100)]}]
-        assert _model_pairs(doc, document_loader()) > 1_000_000
+                                          for i in range(k)],
+                            'name': ['u%d' % i for i in range(k)]}]
+        assert _model_pairs(doc, document_loader()) > guard.MAX_NODE_MAP_PAIRS
         with pytest.raises(OB3VerificationError, match='too many values'):
             ldp._canonize(doc, document_loader())
-        doc['evidence'][0]['name'] = doc['evidence'][0]['name'][:600]
+        doc['evidence'][0]['name'] = doc['evidence'][0]['name'][:k // 2]
         assert ldp._canonize(doc, document_loader())
 
     def test_document_and_proof_options_share_the_allowance(self, base_vc):
         loader = document_loader()
-        tags = flat_tags(base_vc, 1100)             # ~600k pairs: fine alone
+        n = int(0.78 * widest())
+        tags = flat_tags(base_vc, n)    # ~60 % of the cap: fine alone
         config = {'@context': base_vc['@context'], 'type': 'DataIntegrityProof',
-                  'challenge': ['c%d' % i for i in range(1100)]}
+                  'challenge': ['c%d' % i for i in range(n)]}
         ldp._canonize(copy.deepcopy(tags), loader)
         ldp._canonize(copy.deepcopy(config), loader)
         with pytest.raises(OB3VerificationError, match='too many values'):
@@ -1496,15 +1539,17 @@ class TestPrivateCaches:
 
     def test_a_legitimate_check_does_not_queue_behind_a_hostile_one(
             self, base_vc, ed25519_keypair, verifier):
-        # One request that passes every screen and costs well over a tenth of
-        # a second to refuse (1,400 distinct tags: 980,000 duplicate checks)
-        # is in flight. A legitimate check, which costs a few milliseconds
-        # alone, finishes while it is still running; behind the old
-        # process-wide lock it waited for the hostile one to be done.
+        # One request that passes every screen and costs about a second to
+        # refuse (1,200 typed nodes: the node-map cap is not what makes it
+        # long, it is 150,000 comparisons on CPython 3.11 and 3.12) is in
+        # flight. A legitimate check, which costs a few milliseconds alone,
+        # finishes while it is still running; behind the old process-wide
+        # lock it waited for the hostile one to be done.
         priv, pub = ed25519_keypair
         signed = add_data_integrity_proof(
             copy.deepcopy(base_vc), priv, _method(pub))
-        hostile = _with_bogus_proof(flat_tags(base_vc, 1400), pub)
+        hostile = _with_bogus_proof(_evidence(base_vc, [
+            {'type': ['DataIntegrityProof']} for _ in range(1200)]), pub)
         verifier.verify(copy.deepcopy(signed))              # warm
         verifier.verify(copy.deepcopy(signed))
 

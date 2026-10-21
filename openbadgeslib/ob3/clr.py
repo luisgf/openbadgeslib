@@ -36,6 +36,7 @@
 import copy
 import hashlib
 import json
+import math
 
 from datetime import datetime, timezone
 from importlib import resources
@@ -182,11 +183,14 @@ def sign_clr_credential(document: dict[str, Any], signing_key_pem: Any,
     ``len(json.dumps(member, separators=(',', ':'), ensure_ascii=False)
     .encode('utf-8'))``; an achievement with an alignment and its
     association take about 0.4 KB (about 650). A larger CLR has to be split
-    into several. The structural limits of ``ob3/_structure_screen.py``
-    (3,200 typed objects, 4,000 type entries and 16,000 objects, which
-    ``verify_data_integrity_proof`` applies to the CLR as well) come after
-    the size on every shape above: they would allow about 500, 285 and 245
-    members of those three sizes.
+    into several. On CPython 3.11 and 3.12 a CLR that lists that many
+    achievements and associations is over the allowance of duplicate checks
+    that pyld's node map has there (150,000: about 550 entries in one list, or
+    about 390 in each of two) before it is over the bytes. The structural
+    limits of ``ob3/_structure_screen.py`` (3,200 typed objects, 4,000 type
+    entries and 16,000 objects, which ``verify_data_integrity_proof`` applies
+    to the CLR as well) come after the size on every shape above: they would
+    allow about 500, 285 and 245 members of those three sizes.
     """
     from .ldp import add_data_integrity_proof
     extra_contexts = bundled_clr_contexts()
@@ -207,6 +211,7 @@ def _split_advice(document: Any, extra_contexts: Mapping[str, Any]) -> str:
     signing failed. Never raises: it runs after a refusal."""
     try:
         from . import _structure_screen as structure
+        from ._canon_guard import MAX_NODE_MAP_PAIRS
         from .ldp import MAX_LDP_DOCUMENT_BYTES
         subject = document["credentialSubject"]
         # what makes a CLR big: member credentials embedded by value, or
@@ -224,6 +229,16 @@ def _split_advice(document: Any, extra_contexts: Mapping[str, Any]) -> str:
         # How many times over would fit (the proof takes ~0.4 KB more); the
         # CLR holds more entries in proportion.
         fits = (MAX_LDP_DOCUMENT_BYTES - 512) / size
+        # pyld's node map compares every new value of a property with the
+        # ones already there (n(n-1)/2 comparisons for n entries), summed over
+        # the properties, and the allowance of those is 150,000 on CPython
+        # 3.11 and 3.12: past it before the bytes, more entries cost as the
+        # square of the share.
+        pairs = sum(len(entries) * (len(entries) - 1) // 2
+                    for entries in subject.values()
+                    if isinstance(entries, list))
+        if pairs:
+            fits = min(fits, math.sqrt(MAX_NODE_MAP_PAIRS / pairs))
         if size <= MAX_LDP_DOCUMENT_BYTES:
             # Within the size cap, so cheap to walk: was it the structure?
             scoped = structure.bundled_scoped_terms() | structure.scoped_terms(

@@ -489,8 +489,10 @@ def _p256_pem_to_jwk(pubkey_pem: bytes) -> dict[str, str]:
 #: measured at 1,602), 3.13 and 3.14 1.5 to 1.6, 3.11, 3.12 and 3.15 1.3 to
 #: 1.5; openvc-core 1.35.0 on 3.12 within the noise of 1.37.0 (the files are
 #: identical). Half is the screen, half the delegate; the signature checks are
-#: negligible. Spread over many small nodes (the usual shape) the same
-#: count costs 1.1 s on 3.10. The cap is thus both a CPU bound of about two
+#: negligible. On CPython 3.11 and 3.12 the 150,000 duplicate checks the node
+#: map is allowed there (_canon_guard.MAX_NODE_MAP_PAIRS) refuse most of the
+#: shapes that cost this much first, so those figures bound them. Spread over
+#: many small nodes (the usual shape) the same count costs 1.1 s on 3.10. The cap is thus both a CPU bound of about two
 #: seconds and the longest time the delegate holds the pyld lock (half of
 #: the total). A presentation carries the statements the holder chose to
 #: disclose: the repository's fixtures hold 28 to 273, 1EdTech's "Complete"

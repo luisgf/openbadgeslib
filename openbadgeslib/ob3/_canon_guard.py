@@ -199,6 +199,7 @@
 import functools
 import math
 import os
+import sys
 import threading
 import time
 
@@ -261,8 +262,48 @@ MAX_CANON_SECONDS = 1.0
 #: pyld spends 0.35 to 0.5 microseconds per comparison (CPython 3.10 to 3.15),
 #: so a document at the cap (one property of 1,414 distinct values, or two of
 #: about 1,000) takes 0.35 to 0.5 s of CPU to convert, and a refusal costs the
-#: expansion only.
-MAX_NODE_MAP_PAIRS = 1_000_000
+#: expansion only. This is the cap everywhere but on the interpreters of
+#: :data:`MAX_NODE_MAP_PAIRS_CHUNKED_STACK`; :data:`MAX_NODE_MAP_PAIRS` is the
+#: one in force.
+MAX_NODE_MAP_PAIRS_FULL = 1_000_000
+
+#: The cap on CPython 3.11 and 3.12, whose data stack is allocated in 16 KiB
+#: chunks: a tight loop whose calls straddle a chunk boundary pays an
+#: allocation for each call (ob3/_structure_screen.py MAX_DEPTH,
+#: wiki/Security-Model.md). pyld's duplicate check is such a loop, and where
+#: the boundary falls depends on how deep the caller's stack is and how deep
+#: the document nests, so a document chosen to match a deployment pays it
+#: for every comparison: 5.8 to 7.5 microseconds each through
+#: ``OB3LdpVerifier.verify`` (10 through the two low-level functions) instead
+#: of 0.3, measured as the CPU of ``ldp._canonize`` with the caller 0 to 700
+#: frames deep, CPython 3.11.15 and 3.12.13, on documents of 101,000 to
+#: 979,000 comparisons (flat arrays, values merged across arrays, nodes
+#: referenced by identifier): the same 18 to 24 times in 2 % of the caller
+#: depths whatever the size, so that cost is ``pairs`` times 7 microseconds
+#: and the cap sets it. Under the 1,000,000 of the others a hit cost 6.6 to
+#: 6.9 s (a 29 KB document of 34 nested objects around 1,300 distinct ones:
+#: 6.2 s through ``verify``, in 4 of 105 placements); at this cap it is 1.1 to
+#: 1.3 s through ``verify`` and through the low-level functions alike, what a
+#: flood of the most typed nodes the structure screen admits costs anyway (1.0
+#: to 1.8 s).
+#: It refuses a property of more than 548 distinct values (two of about 387)
+#: on these two interpreters, where the 1,414 of the others are accepted.
+MAX_NODE_MAP_PAIRS_CHUNKED_STACK = 150_000
+
+
+def _has_chunked_data_stack(implementation: str,
+                            version: Tuple[int, ...]) -> bool:
+    """Whether an interpreter is CPython 3.11 or 3.12 (3.10 allocates its
+    frames one by one, 3.13 and later changed the data stack: neither has an
+    outlier in 3,408 placements)."""
+    return (implementation == 'cpython'
+            and (3, 11) <= tuple(version[:2]) <= (3, 12))
+
+
+MAX_NODE_MAP_PAIRS = (MAX_NODE_MAP_PAIRS_CHUNKED_STACK
+                      if _has_chunked_data_stack(sys.implementation.name,
+                                                 sys.version_info[:2])
+                      else MAX_NODE_MAP_PAIRS_FULL)
 
 # Cost model, in units. A hash_n_degree_quads call: fixed overhead plus a unit
 # per quad of the node it hashes. A permutation: fixed overhead, plus one unit

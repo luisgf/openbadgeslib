@@ -166,6 +166,17 @@ def _dense(nodes, values):
             for i in range(nodes)]
 
 
+def _dense_spread(nodes, values, per_parent=50):
+    """As :func:`_dense`, held by parents of *per_parent* nodes each. pyld
+    compares every new value of a node property with the ones already there,
+    so one array of 1,000 evidence nodes is 500,000 comparisons, over the
+    allowance of CPython 3.11 and 3.12 (150,000), which would refuse it
+    before the statements are counted; spread, it is about 60,000."""
+    flat = _dense(nodes, values)
+    return [{'alignment': flat[i:i + per_parent]}
+            for i in range(0, nodes, per_parent)]
+
+
 @pytest.fixture(scope='module')
 def issuer():
     _require_ldp_sd()
@@ -568,7 +579,7 @@ class TestStatementCap:
             self, derived, delegate_calls):
         document, pub_pem, _ = derived
         hostile = copy.deepcopy(document)
-        hostile['evidence'] = _dense(1000, 9)
+        hostile['evidence'] = _dense_spread(1000, 9)
         assert _statements(hostile) > 12000
         start = time.process_time()
         with _within(60), pytest.raises(OB3VerificationError,
@@ -580,7 +591,7 @@ class TestStatementCap:
     def test_through_the_verifier(self, derived, delegate_calls):
         document, pub_pem, _ = derived
         hostile = copy.deepcopy(document)
-        hostile['evidence'] = _dense(1000, 9)
+        hostile['evidence'] = _dense_spread(1000, 9)
         for verifier in (OB3LdpVerifier(), OB3LdpVerifier(pubkey_pem=pub_pem)):
             with _within(60), pytest.raises(OB3VerificationError,
                                             match=REFUSED_QUADS):
@@ -607,7 +618,7 @@ class TestStatementCap:
         from pyld.jsonld import JsonLdProcessor
         document, pub_pem, _ = derived
         hostile = copy.deepcopy(document)
-        hostile['evidence'] = _dense(1000, 9)
+        hostile['evidence'] = _dense_spread(1000, 9)
         parsed = []
         real = JsonLdProcessor.parse_nquads
         monkeypatch.setattr(JsonLdProcessor, 'parse_nquads', staticmethod(

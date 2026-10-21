@@ -25,6 +25,7 @@ The screen itself needs no pyld; the end-to-end tests do and skip without it.
 import copy
 import importlib.util
 import json
+import math
 import time
 
 import pytest
@@ -33,6 +34,7 @@ from openbadgeslib.errors import ErrorSigningFile
 from openbadgeslib.ob3 import (
     OB3LdpSigner, OB3LdpVerifier, OB3VerificationError,
     add_data_integrity_proof, verify_data_integrity_proof)
+from openbadgeslib.ob3 import _canon_guard as guard
 from openbadgeslib.ob3 import ldp
 
 from ldp_helpers import b58encode, did_key
@@ -1309,9 +1311,13 @@ class TestAClrIsBoundedByItsBytesFirst:
     def test_with_bytes_to_spare_the_structure_binds_next(
             self, keypair, clr_of, monkeypatch, shape):
         # The structural ceilings the docs quote (500 and 285 members of
-        # those shapes), reached only if the byte cap were out of the way.
+        # those shapes), reached only if the byte cap were out of the way
+        # (and the node-map allowance of CPython 3.11 and 3.12, which a CLR
+        # of 495 members is over, were the one of the other interpreters).
         from openbadgeslib.ob3 import bundled_clr_contexts, sign_clr_credential
         monkeypatch.setattr(ldp, 'MAX_LDP_DOCUMENT_BYTES', 10_000_000)
+        monkeypatch.setattr(guard, 'MAX_NODE_MAP_PAIRS',
+                            guard.MAX_NODE_MAP_PAIRS_FULL)
         top = self.STRUCTURE[shape]
         clr, priv, vm = clr_of(shape, top - 4)
         verify_data_integrity_proof(
@@ -1347,7 +1353,11 @@ class TestAClrIsBoundedByItsBytesFirst:
         message = str(caught.value)
         assert 'holds 800 achievements' in message
         advised = int(message.rsplit('about ', 1)[1].split()[0])
-        assert 580 <= advised <= 651
+        # by the bytes; fewer where the node-map allowance (150,000 on
+        # CPython 3.11 and 3.12) binds first: 800 of each cost 640,000
+        by_pairs = int(0.95 * 800 * math.sqrt(
+            guard.MAX_NODE_MAP_PAIRS / (800 * 799)))
+        assert min(580, by_pairs) <= advised <= min(651, by_pairs + 1)
         # ... and what it advises signs
         subject['achievement'] = subject['achievement'][:advised]
         subject['association'] = subject['association'][:advised]
