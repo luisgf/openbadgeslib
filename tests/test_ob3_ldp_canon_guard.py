@@ -1412,6 +1412,35 @@ class TestPrivateCaches:
         for _ in range(3):                  # enough derivations to evict
             verifier.verify(copy.deepcopy(signed))
 
+    def test_a_cache_torn_by_a_call_without_the_lock_costs_one_verification(
+            self, base_vc, ed25519_keypair, verifier, monkeypatch):
+        # Anyone else's call into pyld (openvc-core's, unless the library
+        # holds the lock around it) can tear the shared inverse-context cache.
+        # The next derivation here finds the stale key, fails that one
+        # verification and empties the cache; it used to fail them all.
+        from cachetools import LRUCache
+        guard._bounded_class()                  # (its probe compacts too)
+        cache = LRUCache(maxsize=20)
+        order = getattr(cache, '_LRUCache__order', None)
+        if order is None:
+            pytest.skip('cachetools keeps its eviction order elsewhere')
+        monkeypatch.setattr(jsonld, '_inverse_context_cache', cache)
+        for index in range(20):
+            cache['filler%d' % index] = {'x': index}
+        order['stale'] = None
+        order.move_to_end('stale', last=False)
+        priv, pub = ed25519_keypair
+        signed = add_data_integrity_proof(
+            copy.deepcopy(base_vc), priv, _method(pub))
+        outcomes = []
+        for _ in range(4):
+            try:
+                verifier.verify(copy.deepcopy(signed))
+                outcomes.append('ok')
+            except OB3VerificationError:
+                outcomes.append('refused')
+        assert outcomes == ['refused', 'ok', 'ok', 'ok']
+
     def test_an_interrupted_call_discards_the_threads_contexts(self, base_vc):
         real = document_loader()
         guard._discard_thread_contexts()                # cold: it will fetch
@@ -1452,9 +1481,10 @@ class TestPrivateCaches:
 
     def test_a_threads_contexts_are_its_own(self):
         seen = []
-        threading.Thread(target=lambda: seen.append(
-            guard._thread_contexts())).start()
-        time.sleep(0.2)
+        worker = threading.Thread(target=lambda: seen.append(
+            guard._thread_contexts()))
+        worker.start()
+        worker.join(30)
         assert seen and seen[0] is not guard._thread_contexts()
 
     def test_the_output_is_the_same_on_a_cold_and_a_warm_cache(self, base_vc):

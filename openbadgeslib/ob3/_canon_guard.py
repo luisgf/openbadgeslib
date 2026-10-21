@@ -130,11 +130,16 @@
 # * resolved contexts: every call is handed a ContextResolver (the
 #   ``contextResolver`` option pyld documents as internal use) over a cache
 #   that belongs to the calling thread. Bounded like pyld's own (100 entries;
-#   about 1 to 2 MiB once a credential has gone through) and dropped by any
-#   call that raises, an interrupted one included, so a half-updated cache is
-#   never reused. A thread's first call, or the first after a refusal, builds
-#   it again: 6.2 ms instead of 4.4 for a small credential. The output is the
-#   same: these caches only remember work.
+#   about 1 to 2 MiB once a credential has gone through, per thread: N worker
+#   threads hold N times that, where pyld's cache held it once) and dropped by
+#   any call that raises, an interrupted one included, so a half-updated cache
+#   is never reused. A thread's first call, or the first after a refusal,
+#   builds it again: 6.2 ms instead of 4.4 for a small credential. The output
+#   is the same: these caches only remember work. The low-level functions
+#   admit inline @context objects, which pyld keys by their text, so a
+#   document can fill a thread's 100 entries with contexts of its own (each as
+#   large as the document: 256 KiB); the verifier refuses inline contexts
+#   before pyld sees them.
 # * inverse contexts (compaction only): derived per compaction and remembered
 #   by it. pyld stores each one in its process-wide cache as well, with no
 #   option to say otherwise, so deriving one takes PYLD_LOCK, for about 50
@@ -182,7 +187,12 @@
 # What PYLD_LOCK does not cover: other libraries that call pyld in the same
 # process share pyld's own caches. The one call this library makes that way is
 # the ecdsa-sd-2023 suite delegated to openvc-core, which calls pyld on its own
-# and without a work bound; it is made under PYLD_LOCK. That path is also
+# and without a work bound. Its calls are as safe as the lock held around them:
+# PYLD_LOCK is exported for ldp to hold around the delegate, and a call made
+# without it (that one, or any other user of pyld in the process) can tear the
+# shared inverse-context cache. That no longer outlives the next derivation
+# here: it finds the stale key, fails once and empties the cache (before, every
+# later call failed until the process restarted). The delegated path is also
 # screened here, before the delegate runs (poison-graph work and the statement
 # count, ldp._prescreen_canonicalization); the statements the lifecycle check
 # indexes after the signature are canonicalized under the guard.

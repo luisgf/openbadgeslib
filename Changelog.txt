@@ -265,66 +265,70 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     cache it is handed, failing closed with `OB3GuardUnavailable` if a pyld
     does not (as it now does before context validation, not after). A thread's
     cache is bounded like pyld's (100 contexts; about 1 to 2 MiB once a
-    credential has been through), is built by the thread's first call (6.2 ms
-    for a small credential instead of 4.4) and is dropped by any call that
-    raises, a refusal included, so the next call on that thread starts cold.
-    `PYLD_LOCK` is left for what still uses pyld's shared caches: pyld writes
-    every inverse context it derives into its own process-wide cache, so
-    deriving one takes the lock (about 50 microseconds; 8 times per legitimate
-    verification, about 1,300 per hostile request of the kind above, which
-    holds it for 8% of its second), as do the build of the guard, fork() and
-    the openvc-core delegate of ecdsa-sd-2023, which uses pyld's shared caches
-    and is called under it. With one such hostile request in flight a
-    legitimate verification now takes 12 to 14 ms at the median and 21 to 24 ms
-    at p99; with four, 13 to 29 ms and about 0.5 s; with sixteen, 37 to 47 ms
-    and 0.4 to 0.9 s, the slowest single one 1 to 2 s (CPython 3.10, 3.12 and
-    3.14, best of three runs of 12 s; behind the lock, 0.9 to 1.1 s, 3.8 to 5.0
-    s and 15 to 19 s at the median). What is left of the p99 is that lock: a
-    thread that finds it taken has to win the GIL back from the CPU-bound ones,
-    up to 60 ms each time. With the lock taken out (not safe) the p99 is 95 ms
-    with four hostile requests and 0.7 s with sixteen, and 66 and 248 ms when
-    the other threads only burn CPU in pure Python. A deployment with a process
-    per request (gunicorn sync workers, a process pool) never had the problem.
-    An exception out of a pyld call, an interrupt included (a signal handler
-    that raises a timeout, KeyboardInterrupt), no longer leaves a half-updated
-    cache behind: the thread's cache is dropped, and pyld's shared
-    inverse-context cache, which an interrupt can tear (a stale key at the head
-    of the LRU makes every later eviction fail, for good: reproduced on CPython
-    3.10 within a few thousand interrupts of a verification) is emptied in
-    place if the exception comes out of its derivation. fork() waits for the
-    lock and releases it on both sides, as `logging` does for its own, so a
-    child is not born with a half-written cache, and a fork taken inside the
-    lock no longer ends in "cannot release un-acquired lock". Not covered: a
-    signal handler that verifies a credential on the thread it interrupted
-    (never supported), and CPython 3.14.8, where any `with lock:` can leak the
-    lock when an asynchronous exception arrives between acquiring it and
-    entering the block (a plain Lock, an RLock and acquire/try/finally alike,
-    hundreds of times in 3,000 interrupts; 3.10 to 3.13 and 3.15 do not): the
-    lock is now held for tens of microseconds a derivation instead of a whole
-    verification, which narrows the window, and a leaked one stops the next
-    derivation of every other thread until the process restarts. The CPU
-    deadline reads `time.thread_time`, which on Windows is GetThreadTimes and
-    advances once per scheduler tick (CPython reports 15.625 ms; not measured
-    here, there is no Windows host): a span is over- or under-charged by up to
-    a tick, a refusal comes a tick or two after the allowance, and no real
-    document (1 to 100 ms, in two spans) is refused for it; the tests run with
-    a clock quantized that way. A platform without a per-thread clock falls
-    back to `process_time`, which counts every thread of the process, so there
-    a legitimate canonicalization could be refused under load (it fails
-    closed). What the Data Integrity hardening of this release costs a
-    legitimate user, against 4.6.2 (CPython 3.14 and 3.10; a loop of `verify()`
-    or `add_data_integrity_proof()` with one deep copy per call; best of three
-    6-second runs): verifying a small credential 257 to 205 operations per
-    second on one thread (-20%; 3.10: -19%) and 270 to 200 on eight (-26%),
-    1EdTech's Complete example 22.9 to 19.3 (-16%), signing with
+    credential has been through, per thread, where pyld's held it once), is
+    built by the thread's first call (6.2 ms for a small credential instead of
+    4.4) and is dropped by any call that raises, a refusal included, so the
+    next call on that thread starts cold. `PYLD_LOCK` is left for what still
+    uses pyld's shared caches: pyld writes every inverse context it derives
+    into its own process-wide cache, so deriving one takes the lock (about 50
+    microseconds; 8 times per legitimate verification, about 1,300 per hostile
+    request of the kind above, which holds it for 8% of its second), as do the
+    build of the guard and fork(). The openvc-core delegate of ecdsa-sd-2023
+    uses pyld's shared caches too, so it is covered only where the library
+    holds `PYLD_LOCK` around it, and so is any other call into pyld made in the
+    process. With one such hostile request in flight a legitimate verification
+    now takes 12 to 14 ms at the median and 21 to 24 ms at p99; with four, 13
+    to 29 ms and about 0.5 s; with sixteen, 37 to 47 ms and 0.4 to 0.9 s, the
+    slowest single one 1 to 2 s (CPython 3.10, 3.12 and 3.14, best of three
+    runs of 12 s; behind the lock, 0.9 to 1.1 s, 3.8 to 5.0 s and 15 to 19 s at
+    the median). What is left of the p99 is that lock: a thread that finds it
+    taken has to win the GIL back from the CPU-bound ones, up to 60 ms each
+    time. With the lock taken out (not safe) the p99 is 95 ms with four hostile
+    requests and 0.7 s with sixteen, and 66 and 248 ms when the other threads
+    only burn CPU in pure Python. A deployment with a process per request
+    (gunicorn sync workers, a process pool) never had the problem. An exception
+    out of a pyld call, an interrupt included (a signal handler that raises a
+    timeout, KeyboardInterrupt), no longer leaves a half-updated cache behind:
+    the thread's cache is dropped, and pyld's shared inverse-context cache,
+    which an interrupt can tear (a stale key at the head of the LRU makes every
+    later eviction fail, for good: reproduced on CPython 3.10 within a few
+    thousand interrupts of a verification) is emptied in place if the exception
+    comes out of its derivation, or if a call made without the lock tore it:
+    the next derivation here finds the stale key, fails that one verification
+    and empties it, where every later call used to fail until the process
+    restarted. fork() waits for the lock and releases it on both sides, as
+    `logging` does for its own, so a child is not born with a half-written
+    cache, and a fork taken inside the lock no longer ends in "cannot release
+    un-acquired lock". Not covered: a signal handler that verifies a credential
+    on the thread it interrupted (never supported), and CPython 3.14.8, where
+    any `with lock:` can leak the lock when an asynchronous exception arrives
+    between acquiring it and entering the block (a plain Lock, an RLock and
+    acquire/try/finally alike, hundreds of times in 3,000 interrupts; 3.10 to
+    3.13 and 3.15 do not): the lock is now held for tens of microseconds a
+    derivation instead of a whole verification, which narrows the window, and a
+    leaked one stops the next derivation of every other thread until the
+    process restarts. The CPU deadline reads `time.thread_time`, which on
+    Windows is GetThreadTimes and advances once per scheduler tick (CPython
+    reports 15.625 ms; not measured here, there is no Windows host): a span is
+    over- or under-charged by up to a tick, a refusal comes a tick or two after
+    the allowance, and no real document (1 to 100 ms, in two spans) is refused
+    for it; the tests run with a clock quantized that way. A platform without a
+    per-thread clock falls back to `process_time`, which counts every thread of
+    the process, so there a legitimate canonicalization could be refused under
+    load (it fails closed). What the Data Integrity hardening of this release
+    costs a legitimate user, against 4.6.2 (CPython 3.14 and 3.10; a loop of
+    `verify()` or `add_data_integrity_proof()` with one deep copy per call;
+    best of three 6-second runs): verifying a small credential 257 to 205
+    operations per second on one thread (-20%; 3.10: -19%) and 270 to 200 on
+    eight (-26%), 1EdTech's Complete example 22.9 to 19.3 (-16%), signing with
     `add_data_integrity_proof` 935 to 509 (-46%; 3.10: -45%), about 0.9 ms more
     per signature and 1 ms more per verification (the structure screen, an
     extra expansion to count the duplicate checks, the metered URDNA2015 and,
     for the signer, the context validation of what it signed). The per-thread
     caches cost nothing in steady state: the same as the single lock on one
     thread, 1 to 8% less on eight threads that only do legitimate work, where
-    4.6.2 returned errors (57 of about 170 verifications of the Complete
-    example in six seconds on CPython 3.10, 11 on 3.14).
+    4.6.2 returned errors (57 of about 400 verifications of the Complete
+    example over three 6-second runs on CPython 3.10, 11 of about 420 on 3.14).
 
   - security(ldp): the statements an ecdsa-sd-2023 credential discloses are
     indexed under the work budget, on the graph openvc-core verified.
