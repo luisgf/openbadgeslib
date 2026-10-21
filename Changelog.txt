@@ -454,13 +454,13 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     86 % of the caller depths have a nesting depth at which the loop sits on
     a boundary within the 128 levels, and 22 % within 36 (the deepest document
     the library accepts, 8 embedded endorsements inside a CLR member, is 28
-    deep; the 1EdTech examples are 6 to 10). **Known limit**: the cap lowers
+    deep; the 49 1EdTech examples and test documents are 2 to 10). **Known limit**: the cap lowers
     the odds, it does not remove the cliff, and a hit costs about 7
     microseconds per comparison through `verify` (10 through the low-level
     function) against 0.35, up to the 1,000,000 the canonicalization guard
     allows: on 3.11 and 3.12, 5 to 10 s of CPU in the unlucky 22 %. CPython
-    3.10 and 3.13 to 3.15 do not have it (no outlier in 3,000 placements
-    each). Run the workers that verify untrusted credentials under a CPU
+    3.10 and 3.13 to 3.15 do not have it (no outlier in 3,408
+    placements each). Run the workers that verify untrusted credentials under a CPU
     limit (a resource limit or a timeout that kills the worker) where 3.11 or
     3.12 is in use.
 
@@ -477,7 +477,8 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     limits come after, at about 500, 285 and 245 members of the three sizes.
     The `ErrorSigningFile` now says what to do: "this CLR holds 300 member
     credentials of about 931 bytes each; sign it as several CLRs of at most
-    about 266 members". **Changed**: 4.6.2 put no cap on a CLR; it signed
+    about 266 member credentials" (or achievements, or associations, for a
+    CLR that lists those). **Changed**: 4.6.2 put no cap on a CLR; it signed
     one of 400 minimal members (505 KB) in 0.4 s and
     `verify_data_integrity_proof`, which is how CLRs are verified, took it.
     Both now refuse a CLR over 256 KiB (compact UTF-8), so one that big

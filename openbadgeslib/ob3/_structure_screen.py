@@ -100,7 +100,7 @@ MAX_NODES = 8_000
 #: document the library accepts is a chain of 8 embedded endorsements, each
 #: nested through the issuer of the one before: 25 levels, 28 inside a CLR
 #: member (context validation refuses a 9th with its own message); the
-#: 1EdTech examples nest 6 to 10. The bound is not about pyld's work, which is
+#: 49 1EdTech examples and test documents nest 2 to 10. The bound is not about pyld's work, which is
 #: linear in depth. It is about where the deepest node sits on the call stack:
 #: CPython 3.11 and 3.12 allocate the data stack in 16 KiB chunks, and a tight
 #: loop whose calls straddle a chunk boundary pays an allocation per call.
