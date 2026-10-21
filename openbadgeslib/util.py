@@ -21,7 +21,7 @@
         License along with this library.
 """
 
-__version__ = '4.6.2'
+__version__ = '4.6.3'
 
 import contextlib
 import functools
