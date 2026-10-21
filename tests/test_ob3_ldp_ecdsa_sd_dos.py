@@ -756,6 +756,36 @@ class TestProofArray:
         with pytest.raises(OB3VerificationError, match='did not make mandatory'):
             OB3LdpVerifier(pubkey_pem=pub_pem).verify(lax)
 
+    @pytest.mark.parametrize('sibling', [
+        {}, 'str', None, 5, [], {'type': 'DataIntegrityProof'},
+        {'type': 'DataIntegrityProof', 'cryptosuite': 'no-such-suite',
+         'proofValue': 'z3abc'},
+        {'type': 'DataIntegrityProof', 'cryptosuite': 'ecdsa-rdfc-2019',
+         'proofValue': 'zXXX'},
+    ], ids=['empty', 'str', 'null', 'int', 'list', 'no-suite', 'unknown-suite',
+            'unsupported-suite'])
+    @pytest.mark.parametrize('first', [True, False], ids=['sd-first', 'sd-last'])
+    def test_siblings_it_cannot_check_are_ignored(self, derived, sibling, first):
+        # The policy of _select_proof, for both cryptosuites: one supported
+        # proof is verified, the rest of the array is neither verified nor
+        # reported, and the caller's document is left as it was.
+        document, pub_pem, did = derived
+        wrapped = copy.deepcopy(document)
+        wrapped['proof'] = ([wrapped['proof'], sibling] if first
+                            else [sibling, wrapped['proof']])
+        before = copy.deepcopy(wrapped)
+        verify_data_integrity_proof(wrapped, pub_pem)
+        assert OB3LdpVerifier(pubkey_pem=pub_pem).verify(wrapped).issuer.id == did
+        assert wrapped == before
+
+    def test_a_tampered_document_is_refused_whatever_the_siblings(self, derived):
+        document, pub_pem, _ = derived
+        wrapped = copy.deepcopy(document)
+        wrapped['proof'] = [wrapped['proof'], {}]
+        wrapped['name'] = 'Bachelor of Villainy'
+        with pytest.raises(OB3VerificationError):
+            OB3LdpVerifier(pubkey_pem=pub_pem).verify(wrapped)
+
     def test_two_proofs_are_still_ambiguous(self, derived):
         document, pub_pem, _ = derived
         twice = copy.deepcopy(document)

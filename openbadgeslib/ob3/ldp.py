@@ -236,6 +236,14 @@ def _select_proof(document: dict[str, Any]) -> dict[str, Any]:
     supported cryptosuite must be present: none fails closed naming what was
     found, and more than one is rejected as ambiguous rather than guessing
     which signature speaks for the credential.
+
+    The other entries of an array (a proof with an unsupported cryptosuite, an
+    empty object, anything that is not an object) are ignored, not verified
+    and not reported: a proof set is allowed to carry proofs this library
+    cannot check, none of them is part of what the supported one signs, and
+    the verifier returns the credential model, not the proof set. That is how
+    eddsa-rdfc-2022 has always behaved, and ecdsa-sd-2023 since 4.6.3, where
+    the delegate is handed the selected proof alone.
     """
     raw = document.get('proof')
     proofs = raw if isinstance(raw, list) else [raw] if raw is not None else []
@@ -505,7 +513,8 @@ def _check_sd_proof_value(proof: dict[str, Any]) -> None:
     """Refuse a proofValue that cannot be an ecdsa-sd-2023 proof, in
     microseconds, before the document is canonicalized for nothing. Only
     the shape: the delegate decodes the value in full and owns every other
-    check of it."""
+    check of it, so a value of the right shape that does not decode still
+    pays the screen (never more than one that decodes does)."""
     value = proof.get('proofValue')
     if not isinstance(value, str) or not value.startswith(_SD_PROOF_VALUE_PREFIX):
         raise OB3VerificationError(
