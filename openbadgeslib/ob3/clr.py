@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 from importlib import resources
 from typing import Any, Mapping, Optional, Sequence, Union
 
-from ..errors import LibOpenBadgesException
+from ..errors import ErrorSigningFile, LibOpenBadgesException
 from . import contexts as _contexts
 from .credential import _iso
 
@@ -170,14 +170,68 @@ def sign_clr_credential(document: dict[str, Any], signing_key_pem: Any,
     remote contexts, so without this injection canonicalization cannot see the
     CLR terms. Requires the optional ``[ldp]`` extra.
 
-    The document is held to the structural limits of
-    ``ob3/_structure_screen.py`` (``ErrorSigningFile`` over them): up to
-    3,200 typed objects, 4,000 type entries and 16,000 objects in all, which
-    is about 280 signed member credentials of a dozen objects each, or a
-    thousand achievements with an alignment each plus a thousand
-    associations (the pair limit of ``_canon_guard`` binds just above that).
+    **Size.** The signed CLR is one JSON document, and Data Integrity
+    documents are capped at 256 KiB (262,144 bytes of compact UTF-8, the same
+    measure :func:`verify_data_integrity_proof` applies, so what is signed
+    here verifies): ``ErrorSigningFile`` over it, with the number of member
+    credentials that does fit. Members are embedded by value, so the CLR is
+    as big as they are: a signed member takes about 0.9 KB at the least (one
+    achievement, no extras: about 280 members), 1.5 KB with three alignments,
+    a result, evidence and an image (about 175) and 1.7 KB with a result
+    description and an achievement image (about 155). Measure your own with
+    ``len(json.dumps(member, separators=(',', ':'), ensure_ascii=False)
+    .encode('utf-8'))``; an achievement with an alignment and its
+    association take about 0.4 KB (about 650). A larger CLR has to be split
+    into several. The structural limits of ``ob3/_structure_screen.py``
+    (3,200 typed objects, 4,000 type entries and 16,000 objects, which
+    ``verify_data_integrity_proof`` applies to the CLR as well) come after
+    the size on every shape above: they would allow about 500, 285 and 245
+    members of those three sizes.
     """
     from .ldp import add_data_integrity_proof
-    return add_data_integrity_proof(
-        document, signing_key_pem, verification_method,
-        extra_contexts=bundled_clr_contexts())
+    extra_contexts = bundled_clr_contexts()
+    try:
+        return add_data_integrity_proof(
+            document, signing_key_pem, verification_method,
+            extra_contexts=extra_contexts)
+    except ErrorSigningFile as exc:
+        advice = _split_advice(document, extra_contexts)
+        if advice:
+            raise ErrorSigningFile("%s (%s)" % (exc, advice)) from exc
+        raise
+
+
+def _split_advice(document: Any, extra_contexts: Mapping[str, Any]) -> str:
+    """When *document* is a CLR too big for one signed document, how big its
+    pieces should be, from the members it holds; '' when that is not why
+    signing failed. Never raises: it runs after a refusal."""
+    try:
+        from . import _structure_screen as structure
+        from .ldp import MAX_LDP_DOCUMENT_BYTES
+        members = document["credentialSubject"]["verifiableCredential"]
+        if not isinstance(members, list) or len(members) < 2:
+            return ""
+        size = len(json.dumps(document, ensure_ascii=False,
+                              separators=(",", ":")).encode("utf-8"))
+        # How many times over would fit (the proof takes ~0.4 KB more); a CLR
+        # holds more members in proportion.
+        fits = (MAX_LDP_DOCUMENT_BYTES - 512) / size
+        if size <= MAX_LDP_DOCUMENT_BYTES:
+            # Within the size cap, so cheap to walk: was it the structure?
+            scoped = structure.bundled_scoped_terms() | structure.scoped_terms(
+                extra_contexts.values())
+            stats = structure.screen(document, scale=2, limits=False,
+                                     scoped=scoped)
+            fits = min(
+                fits,
+                2 * structure.MAX_TYPED_NODES / max(stats.typed_nodes, 1),
+                2 * structure.MAX_TYPE_ENTRIES / max(stats.type_entries, 1),
+                2 * structure.MAX_NODES / max(stats.nodes, 1))
+        if fits >= 1:
+            return ""
+        return ("this CLR holds %d member credentials of about %d bytes "
+                "each; sign it as several CLRs of at most about %d members"
+                % (len(members), size // len(members),
+                   max(1, int(len(members) * fits * 0.95))))
+    except Exception:                                   # noqa: BLE001
+        return ""

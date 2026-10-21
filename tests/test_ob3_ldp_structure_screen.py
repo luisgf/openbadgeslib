@@ -1029,13 +1029,136 @@ class TestLegitimateDocumentsAreUntouched:
         verify_data_integrity_proof(signed, pub,
                                     extra_contexts=bundled_clr_contexts())
 
-    def test_the_accepted_ceiling_leaves_room_for_a_big_clr(self):
-        # What the doubled limits admit: ~280 member badges of eleven typed
-        # objects each, or ~3,000 achievements and associations.
-        s = _screen()
-        assert 2 * s.MAX_TYPED_NODES // 11 >= 280
-        assert 2 * s.MAX_TYPE_ENTRIES // 14 >= 280     # + a proofPurpose each
-        assert 2 * s.MAX_NODES >= 12 * 280
+
+def _member_shape(shape, i):
+    """A member credential: 'minimal' (one achievement, nothing else) or
+    'rich' (three alignments, a result, evidence and an image)."""
+    member = _credential(id='https://issuer.example/credentials/%d' % i)
+    achievement = member['credentialSubject']['achievement']
+    achievement['id'] = 'https://issuer.example/achievements/%d' % i
+    if shape == 'rich':
+        achievement['alignment'] = [_alignment(3 * i + k) for k in range(3)]
+        member['credentialSubject']['result'] = [
+            {'type': ['Result'], 'status': 'Completed', 'value': 'A'}]
+        member['evidence'] = [{'type': ['Evidence'], 'name': 'e'}]
+        member['image'] = {'id': 'https://issuer.example/img/%d.png' % i,
+                           'type': 'Image'}
+    return member
+
+
+@pytest.fixture(scope='module')
+def clr_of(keypair):
+    """clr_of(shape, count) -> (unsigned CLR, signing key, verification
+    method); members are signed once and reused."""
+    from openbadgeslib.ob3 import build_clr_credential
+    priv, pub = keypair
+    did = did_key(pub)
+    vm = '%s#%s' % (did, did[len('did:key:'):])
+    signed = {}
+
+    def make(shape, count):
+        for i in range(count):
+            if (shape, i) not in signed:
+                signed[(shape, i)] = add_data_integrity_proof(
+                    _member_shape(shape, i), priv, vm)
+        clr = build_clr_credential(
+            {'id': did, 'type': ['Profile'], 'name': 'Issuer'},
+            [{'type': 'IdentityObject', 'hashed': True,
+              'identityHash': 'sha256$abc', 'identityType': 'emailAddress',
+              'salt': 's'}],
+            [signed[(shape, i)] for i in range(count)],
+            credential_id='https://issuer.example/clr/1')
+        return clr, priv, vm
+    return make
+
+
+@needs_pyld
+class TestAClrIsBoundedByItsBytesFirst:
+    """A CLR embeds its member credentials by value, so the 256 KiB the
+    verifiers accept, not the structural limits, is what stops it growing:
+    about 280 minimal members (0.93 KB each), 176 with three alignments, a
+    result, evidence and an image (1.5 KB), against 500 and 285 that the
+    structure would allow. sign_clr_credential and verify_data_integrity_proof
+    measure the same thing, so what one signs the other verifies."""
+
+    CEILING = {'minimal': 281, 'rich': 176}              # signable members
+    STRUCTURE = {'minimal': 499, 'rich': 285}            # if bytes were free
+
+    @pytest.mark.parametrize('shape', ['minimal', 'rich'])
+    def test_up_to_the_ceiling_it_signs_and_verifies(self, keypair, clr_of,
+                                                     shape):
+        from openbadgeslib.ob3 import bundled_clr_contexts, sign_clr_credential
+        clr, priv, vm = clr_of(shape, self.CEILING[shape] - 4)
+        signed = sign_clr_credential(clr, priv, vm)
+        size = len(json.dumps(signed, ensure_ascii=False,
+                              separators=(',', ':')).encode('utf-8'))
+        assert size <= ldp.MAX_LDP_DOCUMENT_BYTES
+        assert size > ldp.MAX_LDP_DOCUMENT_BYTES * 0.97       # near the cap
+        verify_data_integrity_proof(signed, keypair[1],
+                                    extra_contexts=bundled_clr_contexts())
+
+    @pytest.mark.parametrize('shape', ['minimal', 'rich'])
+    def test_past_it_signing_says_how_to_split(self, clr_of, shape):
+        from openbadgeslib.ob3 import sign_clr_credential
+        clr, priv, vm = clr_of(shape, self.CEILING[shape] + 4)
+        with pytest.raises(ErrorSigningFile) as caught:
+            sign_clr_credential(clr, priv, vm)
+        message = str(caught.value)
+        assert 'over the %d-byte limit' % ldp.MAX_LDP_DOCUMENT_BYTES in message
+        assert 'sign it as several CLRs of at most about' in message
+        assert 'holds %d member credentials' % (self.CEILING[shape] + 4) in message
+        advised = int(message.rsplit('about ', 1)[1].split()[0])
+        # what it advises does fit (and is not far under what does)
+        assert self.CEILING[shape] * 0.9 <= advised <= self.CEILING[shape]
+
+    @pytest.mark.parametrize('shape', ['minimal', 'rich'])
+    def test_the_verifier_refuses_the_same_size(self, keypair, clr_of, shape):
+        from openbadgeslib.ob3 import bundled_clr_contexts
+        from ldp_helpers import sign_ldp
+        clr, priv, vm = clr_of(shape, self.CEILING[shape] + 4)
+        # signed by the test oracle, which has no cap
+        signed = sign_ldp(clr, priv, keypair[1],
+                          extra_contexts=bundled_clr_contexts())
+        with pytest.raises(OB3VerificationError,
+                           match='exceeds the %d-byte limit'
+                           % ldp.MAX_LDP_DOCUMENT_BYTES):
+            verify_data_integrity_proof(
+                signed, keypair[1], extra_contexts=bundled_clr_contexts())
+
+    @pytest.mark.parametrize('shape', ['minimal', 'rich'])
+    def test_with_bytes_to_spare_the_structure_binds_next(
+            self, keypair, clr_of, monkeypatch, shape):
+        # The structural ceilings the docs quote (500 and 285 members of
+        # those shapes), reached only if the byte cap were out of the way.
+        from openbadgeslib.ob3 import bundled_clr_contexts, sign_clr_credential
+        monkeypatch.setattr(ldp, 'MAX_LDP_DOCUMENT_BYTES', 10_000_000)
+        top = self.STRUCTURE[shape]
+        clr, priv, vm = clr_of(shape, top - 4)
+        verify_data_integrity_proof(
+            sign_clr_credential(clr, priv, vm), keypair[1],
+            extra_contexts=bundled_clr_contexts())
+        clr, priv, vm = clr_of(shape, top + 8)
+        with pytest.raises(ErrorSigningFile) as caught:
+            sign_clr_credential(clr, priv, vm)
+        assert 'type entries' in str(caught.value)
+        assert 'sign it as several CLRs' in str(caught.value)
+
+    def test_other_signing_failures_are_not_given_a_split_hint(
+            self, keypair, clr_of):
+        from openbadgeslib.ob3 import sign_clr_credential
+        clr, priv, vm = clr_of('minimal', 3)
+        with pytest.raises(ErrorSigningFile) as caught:
+            sign_clr_credential(clr, priv, '')
+        assert 'split' not in str(caught.value)
+        assert 'several CLRs' not in str(caught.value)
+
+    def test_the_advice_never_raises_on_odd_documents(self):
+        from openbadgeslib.ob3 import clr
+        for odd in (None, {}, {'credentialSubject': None},
+                    {'credentialSubject': {'verifiableCredential': 5}},
+                    {'credentialSubject': {'verifiableCredential': [{}]}},
+                    {'credentialSubject': {'verifiableCredential': [{}] * 3}}):
+            assert clr._split_advice(odd, {}) == ''
 
 
 @needs_pyld
