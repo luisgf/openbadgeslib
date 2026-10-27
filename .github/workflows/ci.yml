@@ -242,7 +242,7 @@ jobs:
         # SHA-pinned (not the mutable release/v1 branch): this step runs with
         # id-token: write, so a compromised upstream ref could publish under our
         # OIDC identity. Dependabot (.github/dependabot.yml) bumps the pin.
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
           # OIDC Trusted Publishing: no password — the id-token permission
           # above authenticates to PyPI. This REQUIRES a Trusted Publisher
