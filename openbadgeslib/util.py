@@ -203,11 +203,36 @@ class _HTTPSOnlyRedirectHandler(request.HTTPRedirectHandler):
     which never re-checks scheme or host: an https:// URL that 302s to http://
     (or to an attacker-chosen insecure/internal origin) would be followed
     transparently, defeating the HTTPS-only and public-host checks below.
+
+    Nor is the body of a 30x read. The stock handler drains it whole
+    (``fp.read()``, no size) before it follows the Location, although urllib
+    never reuses the connection, so a redirect with a body of any size was
+    buffered in memory, on every hop, behind MAX_DOWNLOAD_SIZE's back (which
+    download_file checks on the response it returns). The response is closed
+    here first, and a closed HTTPResponse reads as ``b''``.
     """
 
     def __init__(self, allow_insecure: bool, allow_private: bool = False) -> None:
         self._allow_insecure = allow_insecure
         self._allow_private = allow_private
+
+    def http_error_302(self, req: Any, fp: Any, code: int, msg: str,
+                       headers: Any) -> Any:
+        # Closed before anything else, so every way out of the stock handler
+        # leaves it closed too: the redirect followed, a target refused by
+        # redirect_request (ValueError), and the HTTPError of a redirect
+        # without a Location or of a redirect loop (download_file closes
+        # those unread as well).
+        fp.close()
+        return super().http_error_302(req, fp, code, msg, headers)
+
+    # urllib binds these names to its own http_error_302 function, not to the
+    # name: without the aliases only a 302 would go through the override.
+    http_error_301 = http_error_303 = http_error_307 = http_error_302
+    if hasattr(request.HTTPRedirectHandler, 'http_error_308'):
+        # CPython 3.11 on. On 3.10 a 308 is not a redirect to urllib, and stays
+        # the HTTPError it was (which download_file closes unread).
+        http_error_308 = http_error_302
 
     def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any,
                          newurl: str) -> Any:
@@ -462,8 +487,9 @@ def download_file(url: str, allow_insecure: bool = False,
     The check is re-applied to redirect targets. HTTPS always, and HTTP when
     ``allow_insecure=True``, pin the socket to the validated IP (DNS
     rebinding). The response body is bounded to MAX_DOWNLOAD_SIZE to limit
-    memory use, and the whole call (every redirect, the status line, headers
-    and body, a chunked body's size lines included) to MAX_DOWNLOAD_SECONDS.
+    memory use (the body of a redirect is not read at all), and the whole call
+    (every redirect, the status line, headers and body, a chunked body's size
+    lines included) to MAX_DOWNLOAD_SECONDS.
 
     Raises:
         ValueError: the URL or a redirect target is refused (a non-HTTPS

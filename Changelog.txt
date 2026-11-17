@@ -56,6 +56,31 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     described was refused again. It now takes the smaller of the two, and what
     it advises signs.
 
+  - security(util): `download_file` no longer reads the body of a redirect.
+    urllib's redirect handler reads the body of a 301, 302, 303, 307 or 308
+    whole before it follows the Location (`fp.read()`, no size), and
+    `MAX_DOWNLOAD_SIZE` (5 MiB) was only checked on the response that
+    `download_file` returns. Any host a badge names (an OB2 `id`, `badge`,
+    issuer or `revocationList` URL, the OB1 `verify.url`, a did:web host, a
+    status list) could therefore answer with a redirect whose body the
+    verifier buffered in memory, on each of up to 10 hops, bounded by nothing
+    but the 60-second budget. A 302 with a 32 MiB body in front of a 12-byte
+    document cost 33,554,607 bytes read and a peak of 48 MiB (64 MiB when
+    chunked), and the download succeeded; a redirect that announced more body
+    than it sent was an `http.client.IncompleteRead`. The response of a
+    redirect is now closed before the Location is followed (urllib never
+    reuses that connection), so the same downloads read 0.2 to 131 KB, the
+    headers and what one buffered read brings with them, on CPython 3.10 to
+    3.15, and the one that announced more than it sent returns its document
+    (so does one whose body arrives a byte at a time, which used to spend the
+    whole time budget). A redirect whose target is refused (not HTTPS, not a
+    public host) closes its response too, where it left the socket to the
+    garbage collector. Unchanged: the HTTPS-only and public-host checks of
+    every redirect target, the pinned IP, the size cap on the response
+    returned, the time budget, and what a redirect loop or a redirect without
+    a Location raises (`HTTPError`; a 308 on CPython 3.10, where urllib does
+    not follow it, likewise).
+
 * v4.6.3 - 2026-10-21
 
   - fix(jws): the native JWS engine (OB1 and OB2 signed badges) answers a

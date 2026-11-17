@@ -670,8 +670,10 @@ def _chunk_truncated(conn, stop):
 
 
 def _chunked_redirect_drip(conn, stop):
-    """A 302 whose chunked body drips its size line; urllib reads and discards
-    that body before it follows the Location (which is never reached)."""
+    """A 302 whose chunked body drips its size line. urllib reads and discards
+    the body of a redirect before it follows the Location, so this drip used to
+    hold the download until the budget ran out; download_file now closes that
+    body unread and goes on to the Location (a closed port)."""
     _drip(conn, stop,
           b'HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:9/\r\n'
           b'Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n', b'0')
@@ -714,9 +716,9 @@ class TestDownloadBudgetOnTheWire:
 
     @pytest.mark.parametrize('behaviour', [
         _body_drip, _header_drip, _status_drip, _chunk_size_drip,
-        _chunk_data_drip, _chunk_trailer_drip, _chunked_redirect_drip,
+        _chunk_data_drip, _chunk_trailer_drip,
     ], ids=['body', 'header', 'status-line', 'chunk-size-line', 'chunk-data',
-            'chunk-trailer', 'redirect-chunked-body'])
+            'chunk-trailer'])
     def test_a_dripping_server_hits_the_budget(self, one_second_budget, behaviour):
         server = _DripServer(behaviour)
         try:
@@ -795,6 +797,194 @@ class TestDownloadBudgetOnTheWire:
             server.close()
         assert finished
         assert isinstance(outcome.get('error'), http.client.IncompleteRead), outcome
+
+
+# ── the body of a redirect ───────────────────────────────────────────────────
+
+_FINAL_DOCUMENT = b'{"ok": true}'
+#: What a redirect hop offers as its body: over three times MAX_DOWNLOAD_SIZE.
+_HOP_BODY = 16 * 1024 * 1024
+#: What download_file may read in all when it follows such a hop: the headers
+#: of each response and whatever one buffered read brings along with them
+#: (io.DEFAULT_BUFFER_SIZE: 8 KiB, 128 KiB on CPython 3.15).
+_HOP_ALLOWANCE = 1024 * 1024
+
+
+def _final_document(conn, stop):
+    conn.sendall(b'HTTP/1.1 200 OK\r\nContent-Length: %d\r\n'
+                 b'Connection: close\r\n\r\n%s'
+                 % (len(_FINAL_DOCUMENT), _FINAL_DOCUMENT))
+
+
+def _redirect_with_body(location, code=302, framing='content-length'):
+    """A behaviour: answer *code* with a Location (None: without one) and a
+    16 MiB body, framed by Content-Length, chunked, or ('short') announced as
+    a terabyte of which ten bytes arrive before the connection closes."""
+    head = b'HTTP/1.1 %d Redirect\r\nConnection: close\r\n' % code
+    if location is not None:
+        head += b'Location: %s\r\n' % location.encode()
+
+    def behaviour(conn, stop):
+        if framing == 'chunked':
+            conn.sendall(head + b'Transfer-Encoding: chunked\r\n\r\n')
+            piece = b'10000\r\n' + b'x' * 65536 + b'\r\n'
+            for _ in range(_HOP_BODY // 65536):
+                conn.sendall(piece)
+            conn.sendall(b'0\r\n\r\n')
+        elif framing == 'short':
+            conn.sendall(head + b'Content-Length: 1000000000000\r\n\r\n'
+                         + b'x' * 10)
+        else:
+            conn.sendall(head + b'Content-Length: %d\r\n\r\n' % _HOP_BODY
+                         + b'x' * _HOP_BODY)
+
+    return behaviour
+
+
+@pytest.fixture()
+def bytes_read(monkeypatch):
+    """Every byte download_file takes off the wire goes through
+    _BudgetReader.readinto: the sizes of those reads, as they happen."""
+    from openbadgeslib import util
+    sizes = []
+    readinto = util._BudgetReader.readinto
+
+    def counting(self, buffer):
+        size = readinto(self, buffer)
+        sizes.append(size or 0)
+        return size
+
+    monkeypatch.setattr(util._BudgetReader, 'readinto', counting)
+    return sizes
+
+
+class TestRedirectBodiesAreNotRead:
+    """#335: urllib's HTTPRedirectHandler reads the body of every 30x whole
+    (``fp.read()``, no size) before it follows the Location, and
+    MAX_DOWNLOAD_SIZE was only checked on the last response: a redirect with a
+    body of any size was buffered in memory, once per hop."""
+
+    def _follow(self, behaviour_for):
+        """download_file against a server that answers *behaviour_for*(the URL
+        of a second server, which serves the final document)."""
+        target = _DripServer(_final_document)
+        server = _DripServer(
+            behaviour_for('http://127.0.0.1:%d/' % target.port))
+        try:
+            return _download('http://127.0.0.1:%d/' % server.port,
+                             allow_insecure=True, allow_private=True)
+        finally:
+            server.close()
+            target.close()
+
+    @pytest.mark.parametrize('code', [301, 302, 303, 307, 308])
+    def test_the_body_of_a_redirect_is_not_read(self, bytes_read, code):
+        import sys
+        from urllib.error import HTTPError
+        outcome, finished = self._follow(
+            lambda location: _redirect_with_body(location, code))
+        assert finished, outcome
+        if code == 308 and sys.version_info < (3, 11):
+            # urllib follows a 308 since CPython 3.11; before that it is an
+            # HTTP error like any other, whose body nothing reads either.
+            assert isinstance(outcome.get('error'), HTTPError), outcome
+            assert outcome['error'].code == 308
+        else:
+            assert outcome.get('value') == _FINAL_DOCUMENT, outcome
+        assert sum(bytes_read) < _HOP_ALLOWANCE
+
+    def test_nor_is_a_chunked_one(self, bytes_read):
+        outcome, finished = self._follow(
+            lambda location: _redirect_with_body(location, framing='chunked'))
+        assert finished and outcome.get('value') == _FINAL_DOCUMENT, outcome
+        assert sum(bytes_read) < _HOP_ALLOWANCE
+
+    def test_a_redirect_that_announces_more_than_it_sends_is_followed(
+            self, bytes_read):
+        """Reading that body to its end was an http.client.IncompleteRead out
+        of the redirect hop."""
+        outcome, finished = self._follow(
+            lambda location: _redirect_with_body(location, framing='short'))
+        assert finished and outcome.get('value') == _FINAL_DOCUMENT, outcome
+        assert sum(bytes_read) < _HOP_ALLOWANCE
+
+    def test_a_redirect_that_drips_its_body_is_followed_at_once(
+            self, one_second_budget):
+        """The same drip that used to spend the whole budget (see
+        _chunked_redirect_drip), here in front of a document."""
+
+        def drip(location):
+            def behaviour(conn, stop):
+                _drip(conn, stop,
+                      b'HTTP/1.1 302 Found\r\nLocation: %s\r\n'
+                      b'Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n'
+                      % location.encode(), b'0')
+            return behaviour
+
+        outcome, finished = self._follow(drip)
+        assert finished and outcome.get('value') == _FINAL_DOCUMENT, outcome
+
+    def test_a_redirect_loop_reads_no_body_either(self, bytes_read):
+        """urllib gives up on a URL that keeps redirecting to itself with an
+        HTTPError built on the last response, which is already closed."""
+        from urllib.error import HTTPError
+        port = []
+        server = _DripServer(lambda conn, stop: _redirect_with_body(
+            'http://127.0.0.1:%d/' % port[0])(conn, stop))
+        port.append(server.port)
+        try:
+            outcome, finished = _download('http://127.0.0.1:%d/' % server.port,
+                                          allow_insecure=True, allow_private=True)
+        finally:
+            server.close()
+        assert finished, outcome
+        assert isinstance(outcome.get('error'), HTTPError), outcome
+        assert 'infinite loop' in str(outcome['error'])
+        assert sum(bytes_read) < _HOP_ALLOWANCE
+
+    def test_a_redirect_without_a_location_is_still_an_http_error(
+            self, bytes_read):
+        from urllib.error import HTTPError
+        server = _DripServer(_redirect_with_body(None))
+        try:
+            outcome, finished = _download('http://127.0.0.1:%d/' % server.port,
+                                          allow_insecure=True, allow_private=True)
+        finally:
+            server.close()
+        assert finished, outcome
+        assert isinstance(outcome.get('error'), HTTPError), outcome
+        assert outcome['error'].code == 302
+        assert sum(bytes_read) < _HOP_ALLOWANCE
+
+    def test_a_refused_redirect_closes_the_response_unread(self):
+        """A Location that redirect_request refuses (not HTTPS, not a public
+        host) raised its ValueError with the response still open, left for
+        the garbage collector to close."""
+        from urllib.request import Request
+        from openbadgeslib.util import _HTTPSOnlyRedirectHandler
+        fp = MagicMock()
+        handler = _HTTPSOnlyRedirectHandler(allow_insecure=False)
+        with pytest.raises(ValueError, match='insecure'):
+            handler.http_error_302(
+                Request('https://example.com/badge.json'), fp, 302, 'Found',
+                {'location': 'http://example.com/badge.json'})
+        fp.close.assert_called_once_with()
+        fp.read.assert_not_called()
+
+    def test_every_status_urllib_redirects_on_goes_through_the_override(self):
+        """urllib binds 301, 303, 307 and (since CPython 3.11) 308 to its own
+        http_error_302 function, not to the name: a subclass that overrides
+        http_error_302 alone still drains the body of the others."""
+        from urllib.request import HTTPRedirectHandler
+        from openbadgeslib.util import _HTTPSOnlyRedirectHandler
+        stock = vars(HTTPRedirectHandler)
+        ours = vars(_HTTPSOnlyRedirectHandler)
+        names = sorted(name for name, function in stock.items()
+                       if function is stock['http_error_302'])
+        assert names[:4] == ['http_error_301', 'http_error_302',
+                             'http_error_303', 'http_error_307']
+        for name in names:
+            assert ours.get(name) is ours['http_error_302'], name
 
 
 def _trusted_tls_server(tmp_path, monkeypatch):
