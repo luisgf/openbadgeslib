@@ -339,7 +339,7 @@ did = did_web_from_url('https://example.com/issuer/')   # did:web:example.com:is
 doc = build_did_document(did, [('badge_1', public_jwk_from_pem(pub_pem))])
 ```
 
-The document round-trips through `resolve_did`. JWT verification picks the method the token's `kid` header names (multi-key issuers / key rotation), so a per-badge `did:web:…#badge_N` key is selected correctly; a token with no `kid` falls back to `verificationMethod[0]`, so order the method most kid-less interop tokens need first.
+The document round-trips through `resolve_did`, which (since 4.6.4) refuses a did:web identifier that is not a DNS host, an optional `%3A` port and well-formed path components before fetching anything, and a document whose `id` is not the DID it was fetched for: serve the `did.json` built for a DID at the URL that DID names. Path components are not decoded (`did:web:example.com:a%20b` is read at `https://example.com/a%20b/did.json`), so give `did_web_from_url` the base URL unencoded: it escapes a `%` like any other character. JWT verification picks the method the token's `kid` header names (multi-key issuers / key rotation), so a per-badge `did:web:…#badge_N` key is selected correctly; a token with no `kid` falls back to `verificationMethod[0]`, so order the method most kid-less interop tokens need first.
 
 ## EUDI SD-JWT VC (selective disclosure)
 

@@ -31,6 +31,8 @@
 #              HTTPS. The bare-DID resolver reads the first verification method;
 #              JWT verification instead selects the method the token's 'kid'
 #              names (see OB3Verifier / pem_for_kid), for multi-key issuers.
+#              The identifier is validated before it becomes a URL and the
+#              document must carry the DID as its 'id' (see _did_web_url).
 #
 # Trust note: did:key needs no external trust (the key is the identifier).
 # did:web is only as trustworthy as the host's DNS and TLS. Neither is a
@@ -38,6 +40,7 @@
 
 import base64
 import json
+import re
 
 from typing import Any, Optional, Sequence, Tuple, cast
 
@@ -65,6 +68,11 @@ def resolve_did(did: str, download: Any = None) -> bytes:
     Supports did:key (offline) and did:web (one HTTPS fetch). Raises
     OB3VerificationError for an unsupported method or any resolution failure.
     ``download`` defaults to util.download_file; it is injectable for testing.
+
+    A did:web identifier is validated before it becomes a URL (a DNS host
+    with an optional ``%3A`` port, then path components that stay
+    percent-encoded as written; nothing is fetched for one that is not), and
+    the document fetched must carry the DID as its ``id``.
     """
     if not isinstance(did, str) or not did.startswith('did:'):
         raise OB3VerificationError("not a DID: %r" % (did,))
@@ -240,18 +248,97 @@ def _resolve_did_web(did: str, fetch: Any) -> bytes:
     return _pem_from_did_document(_fetch_did_web_document(did, fetch))
 
 
-def _fetch_did_web_document(did: str, fetch: Any) -> dict[str, Any]:
-    """Fetch and parse the DID document a did:web identifier resolves to."""
+#: The first component of a did:web identifier: a DNS host name (LDH labels,
+#: so an IDN arrives as punycode) and, optionally, a port behind a
+#: percent-encoded colon. That ``%3A`` is the one thing the method decodes.
+_DID_WEB_HOST_RE = re.compile(
+    r'(?P<host>[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?'
+    r'(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*)'
+    r'(?:%3[Aa](?P<port>[0-9]{1,5}))?')
+
+#: A path component as it may be spelled: the idchar set of the DID syntax
+#: (did-core 3.1) and '~', which did_web_from_url leaves bare because RFC 3986
+#: has it unreserved. A raw '/', '?', '#', '@', ';', a space, a byte outside
+#: ASCII or a '%' that does not start an escape is not a did:web identifier.
+_DID_WEB_SEGMENT_RE = re.compile(r'(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})+')
+
+#: What a path component may not MEAN either, once decoded: a server, a proxy
+#: or a cache in front of it is free to decode before it routes, and these
+#: are the characters that would then change which resource the URL names.
+_DID_WEB_SEGMENT_FORBIDDEN = frozenset('/?#@:\\')
+
+
+def _did_web_url(did: str) -> str:
+    """The HTTPS URL the did:web method reads the DID document of *did* from.
+
+    The identifier is validated, not decoded. The method's read algorithm
+    replaces ':' with '/' and decodes the port's ``%3A`` and nothing else: a
+    path component reaches the URL exactly as the DID spells it, which is also
+    how :func:`did_web_from_url` wrote it. Decoding the whole identifier (as
+    this did before 4.6.4) let it carry a path separator, a query, a fragment,
+    a userinfo or a dot-segment in escaped form, and so name any URL of the
+    host, or of another one: a fragment or a query even drops the mandatory
+    ``/did.json`` suffix. Whoever could place a JSON file anywhere on a host
+    then had a did:web of that host.
+
+    Raises OB3VerificationError, before anything is fetched and without
+    quoting the identifier back.
+    """
     from urllib.parse import unquote
+    # fetch_did_web_document is public and takes what it is given: without
+    # this, the eight characters of any other prefix ('did:key:') were sliced
+    # off and the rest was read as a host.
+    if not isinstance(did, str) or not did.startswith('did:web:'):
+        raise OB3VerificationError("not a did:web identifier")
     ident = did[len('did:web:'):]
     if not ident:
         raise OB3VerificationError("empty did:web identifier")
-    parts = [unquote(p) for p in ident.split(':')]
-    host, path_segments = parts[0], parts[1:]
-    if path_segments:
-        url = 'https://%s/%s/did.json' % (host, '/'.join(path_segments))
-    else:
-        url = 'https://%s/.well-known/did.json' % host
+    authority, *segments = ident.split(':')
+    # fullmatch, not match(...$): '$' also matches before a trailing newline.
+    match = _DID_WEB_HOST_RE.fullmatch(authority)
+    if match is None:
+        raise OB3VerificationError(
+            "invalid did:web identifier: the host is not a DNS name with an "
+            "optional %3A-encoded port")
+    host = match.group('host')
+    port = match.group('port')
+    if port is not None:
+        if int(port) > 65535:
+            raise OB3VerificationError(
+                "invalid did:web identifier: the port is out of range")
+        host = '%s:%s' % (host, port)
+    if not segments:
+        return 'https://%s/.well-known/did.json' % host
+    for segment in segments:
+        if not _DID_WEB_SEGMENT_RE.fullmatch(segment):
+            raise OB3VerificationError(
+                "invalid did:web identifier: a path component is empty or "
+                "holds a character the DID syntax does not allow")
+        decoded = unquote(segment)
+        if decoded in ('.', '..') or any(
+                ch in _DID_WEB_SEGMENT_FORBIDDEN
+                or ord(ch) < 0x20 or 0x7f <= ord(ch) <= 0x9f
+                for ch in decoded):
+            raise OB3VerificationError(
+                "invalid did:web identifier: a path component decodes to a "
+                "dot-segment, a URL delimiter or a control character")
+    return 'https://%s/%s/did.json' % (host, '/'.join(segments))
+
+
+def _did_web_comparison_key(did: str) -> str:
+    """*did* with its host (and the ``%3A`` of a port) in lower case: a DNS
+    name is case-insensitive, the path components after it are not."""
+    host, sep, path = did[len('did:web:'):].partition(':')
+    return host.lower() + sep + path
+
+
+def _fetch_did_web_document(did: str, fetch: Any) -> dict[str, Any]:
+    """Fetch and parse the DID document a did:web identifier resolves to.
+
+    The identifier is validated first (see :func:`_did_web_url`) and the
+    document must carry the DID as its ``id``.
+    """
+    url = _did_web_url(did)
 
     try:
         raw = fetch(url)
@@ -273,6 +360,20 @@ def _fetch_did_web_document(did: str, fetch: Any) -> dict[str, Any]:
         raise OB3VerificationError(
             "DID document at %s is nested more than %d levels deep"
             % (url, MAX_DID_DOCUMENT_DEPTH))
+    # The did:web read algorithm (and did-core: a DID document's id is the DID
+    # it describes): the document resolved for a DID is the one whose id is
+    # that DID. Without this a host answers for every DID that maps to a URL
+    # where it serves some DID document: another tenant's, a stale copy, one
+    # a user uploaded. The served id is not quoted: it is as long, and as
+    # hostile, as the host likes. A DID is ASCII, and str.lower() maps a few
+    # characters outside it onto ASCII letters (the Kelvin sign onto 'k').
+    doc_id = doc.get('id')
+    if (not isinstance(doc_id, str) or not doc_id.isascii()
+            or not doc_id.startswith('did:web:')
+            or _did_web_comparison_key(doc_id) != _did_web_comparison_key(did)):
+        raise OB3VerificationError(
+            "the 'id' of the DID document at %s is not the id it was "
+            "resolved for (%s)" % (url, did))
     return doc
 
 
@@ -290,6 +391,10 @@ def fetch_did_web_document(did: str, download: Any = None) -> dict[str, Any]:
     Public wrapper over the internal fetch, used to read the document once and
     then select a key from it (by JWT ``kid``, see :func:`pem_for_kid`).
     ``download`` defaults to util.download_file; injectable for testing.
+
+    Raises OB3VerificationError for an identifier that is not a did:web one
+    (before any fetch) and for a document whose ``id`` is not *did* (the host
+    compared without regard to case, the path exactly).
     """
     fetch = download if download is not None else download_file
     return _fetch_did_web_document(did, fetch)
@@ -307,7 +412,9 @@ def resolve_verification_method(vm_url: str, download: Any = None) -> bytes:
       resolution fails closed.
     * ``did:web``: the DID document is fetched and the verificationMethod
       entry whose ``id`` equals *vm_url* exactly is used — no match fails
-      closed rather than silently trusting a different key.
+      closed rather than silently trusting a different key. The DID in front
+      of the fragment is validated and the document's ``id`` must be that DID,
+      as in :func:`resolve_did`.
 
     Raises OB3VerificationError for unsupported methods or any failure.
     ``download`` defaults to util.download_file; injectable for testing.
@@ -342,9 +449,10 @@ def resolve_verification_method(vm_url: str, download: Any = None) -> bytes:
 def did_web_from_url(url: str) -> str:
     """Derive the did:web identifier whose DID document lives under *url*.
 
-    Exact inverse of the resolution above: the host keeps any port
-    percent-encoded, path segments join with ':', and a bare host resolves
-    at ``/.well-known/did.json`` while a path resolves at ``<path>/did.json``.
+    Inverse of the resolution above, for a base URL written unencoded (see
+    the last paragraph): the host keeps any port percent-encoded, path
+    segments join with ':', and a bare host resolves at
+    ``/.well-known/did.json`` while a path resolves at ``<path>/did.json``.
     Raises ValueError for a non-HTTPS, hostless or bad-port URL — did:web
     trusts TLS, so there is nothing an http:// identifier could safely mean —
     and for any URL carrying an ``@`` (or ``%40``) *anywhere*, which would
@@ -354,6 +462,13 @@ def did_web_from_url(url: str) -> str:
     The ``@`` rule is deliberately blunt: it also refuses an innocent
     ``https://host/@name/`` base, because once urlsplit has parsed the URL that
     shape is indistinguishable from one hiding a credential (see below).
+
+    A path is read literally, ``%`` included: ``https://host/a b/`` gives
+    ``did:web:host:a%20b``, which resolves at ``https://host/a%20b/did.json``,
+    while an already percent-encoded ``https://host/a%20b/`` gives
+    ``did:web:host:a%2520b``, which the resolver (it no longer decodes path
+    components) reads at ``https://host/a%2520b/did.json``. Write such a base
+    URL unencoded.
     """
     from urllib.parse import quote, urlsplit
     parts = urlsplit(url)

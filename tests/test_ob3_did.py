@@ -39,13 +39,13 @@ def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode('ascii').rstrip('=')
 
 
-def _did_web_doc(vm_public):
+def _did_web_doc(vm_public, did="did:web:issuer.example"):
     return {
-        "id": "did:web:issuer.example",
+        "id": did,
         "verificationMethod": [
-            {"id": "did:web:issuer.example#key-1",
+            {"id": did + "#key-1",
              "type": "JsonWebKey2020",
-             "controller": "did:web:issuer.example",
+             "controller": did,
              **vm_public},
         ],
     }
@@ -108,7 +108,10 @@ class TestDidWeb:
         pub = ser.load_pem_public_key(ed25519_pub_pem)
         raw = pub.public_bytes(ser.Encoding.Raw, ser.PublicFormat.Raw)
         jwk = {"kty": "OKP", "crv": "Ed25519", "x": _b64url(raw)}
-        doc = _did_web_doc({"publicKeyJwk": jwk})
+        # The document a path-based DID resolves to carries that DID as its id
+        # (#338); this fixture used to serve the bare-host document here.
+        doc = _did_web_doc({"publicKeyJwk": jwk},
+                           did='did:web:issuer.example:users:alice')
         fetch = self._fetch(doc, 'https://issuer.example/users/alice/did.json')
         pem = resolve_did('did:web:issuer.example:users:alice', download=fetch)
         assert detect_key_type(pem) is KeyType.ED25519
@@ -527,3 +530,316 @@ def test_an_ordinary_did_document_is_far_below_the_depth_bound():
     assert not _nested_deeper_than(doc, MAX_DID_DOCUMENT_DEPTH)
     assert _nested_deeper_than(doc, 3)
     assert not _nested_deeper_than([], 1) and not _nested_deeper_than('x', 0)
+
+
+# ── #338: the did:web identifier is validated, not decoded; the document's ───
+# ── id must be the DID it was resolved for ────────────────────────────────────
+
+_ABSENT = object()
+
+
+class _Recorder:
+    """A download callable that records every URL and serves one document."""
+
+    def __init__(self, doc=None):
+        self.calls = []
+        self._body = json.dumps(doc if doc is not None else {}).encode('utf-8')
+
+    def __call__(self, url):
+        self.calls.append(url)
+        return self._body
+
+
+def _key_doc(did, pub_pem):
+    """A one-key DID document whose id is *did*."""
+    from openbadgeslib.ob3.did import build_did_document
+    return build_did_document(did, [('key-1', _jwk(pub_pem))])
+
+
+#: The seven identifiers of #338, with the URL each one used to be turned into.
+_HOSTILE_338 = [
+    # a query, then a fragment, neutralises the mandatory /did.json suffix
+    ('did:web:good.example:a%3Fq%3D1', 'https://good.example/a?q=1/did.json'),
+    ('did:web:good.example:a%23frag', 'https://good.example/a#frag/did.json'),
+    # an encoded separator, dot-segments and an empty segment walk the host
+    ('did:web:good.example:a%2Fb', 'https://good.example/a/b/did.json'),
+    ('did:web:good.example:..:..:etc',
+     'https://good.example/../../etc/did.json'),
+    ('did:web:good.example::x', 'https://good.example//x/did.json'),
+    ('did:web:good.example%2F..%2F..%2Fx',
+     'https://good.example/../../x/.well-known/did.json'),
+    # userinfo: the real host is whatever follows the '@'
+    ('did:web:good.example%40evil.example',
+     'https://good.example@evil.example/.well-known/did.json'),
+]
+
+#: More of the same family, none of which may reach the downloader either.
+_HOSTILE_MORE = [
+    'did:web:good.example:%2E%2E:x',         # an encoded dot-segment
+    'did:web:good.example:%2e',
+    'did:web:good.example:.',
+    'did:web:good.example:x:',               # trailing empty segment
+    'did:web:good.example:a%5Cb',            # backslash
+    'did:web:good.example:a%3Ab',            # a second ':' once decoded
+    'did:web:good.example:a%40b',
+    'did:web:good.example:a%00b',            # controls
+    'did:web:good.example:a%0D%0Ab',
+    'did:web:good.example:a%7Fb',
+    'did:web:good.example:a%C2%85b',         # C1 control (NEL)
+    'did:web:good.example:a b',              # not DID characters at all
+    'did:web:good.example:a;b',
+    'did:web:good.example:a?b',
+    'did:web:good.example:a/b',
+    'did:web:good.example:café',
+    'did:web:good.example:a%zz',             # not a percent-encoding
+    'did:web:good.example:a%2',
+    'did:web:good.example\n',                # '$' would let this one through
+    'did:web:good.example:a\n',
+    'did:web:good.example/x',
+    'did:web:good.example?x=1',
+    'did:web:good.example.',
+    'did:web:.good.example',
+    'did:web:good..example',
+    'did:web:-good.example',
+    'did:web:good-.example',
+    'did:web:good_host.example',
+    'did:web:[::1]',
+    'did:web:%5B::1%5D',
+    'did:web:good.example%3A',               # port without digits
+    'did:web:good.example%3A123456',
+    'did:web:good.example%3A99999',          # not a TCP port
+    'did:web:good.example%3A8443%3A1',
+    'did:web:good.example%3Aabc',
+    'did:web:%3A8443',
+    'did:web::x',
+]
+
+
+class TestDidWebIdentifier:
+    @pytest.mark.parametrize('did,old_url', _HOSTILE_338)
+    def test_hostile_identifier_is_refused_before_any_fetch(self, did, old_url):
+        from openbadgeslib.ob3 import resolve_verification_method
+        from openbadgeslib.ob3.did import fetch_did_web_document
+        for resolve in (
+                lambda dl: resolve_did(did, download=dl),
+                lambda dl: fetch_did_web_document(did, download=dl),
+                lambda dl: resolve_verification_method(did + '#k', download=dl),
+                lambda dl: OB3Verifier.for_issuer_did(did, download=dl)):
+            fetch = _Recorder()
+            with pytest.raises(OB3VerificationError,
+                               match='invalid did:web identifier'):
+                resolve(fetch)
+            assert fetch.calls == [], (did, old_url)
+
+    @pytest.mark.parametrize('did', _HOSTILE_MORE)
+    def test_identifier_outside_the_method_syntax_is_refused(self, did):
+        fetch = _Recorder()
+        with pytest.raises(OB3VerificationError,
+                           match='invalid did:web identifier'):
+            resolve_did(did, download=fetch)
+        assert fetch.calls == []
+
+    def test_the_rejection_does_not_quote_the_identifier(self):
+        with pytest.raises(OB3VerificationError) as err:
+            resolve_did('did:web:good.example:s3cr3t%2Fpath',
+                        download=_Recorder())
+        assert 's3cr3t' not in str(err.value)
+
+    def test_empty_identifier_is_refused(self):
+        fetch = _Recorder()
+        with pytest.raises(OB3VerificationError, match='empty did:web'):
+            resolve_did('did:web:', download=fetch)
+        assert fetch.calls == []
+
+    @pytest.mark.parametrize('did', [
+        'did:key:zabc', 'did:WEB:good.example', 'https://good.example/', '',
+        None, b'did:web:good.example'])
+    def test_the_public_fetch_takes_only_a_did_web(self, did):
+        # 'did:key:' is as long as 'did:web:': the slice that drops the prefix
+        # used to read 'zabc' as the host.
+        from openbadgeslib.ob3.did import fetch_did_web_document
+        fetch = _Recorder({'id': 'did:web:zabc'})
+        with pytest.raises(OB3VerificationError, match='not a did:web'):
+            fetch_did_web_document(did, download=fetch)
+        assert fetch.calls == []
+
+    def test_a_did_url_is_not_a_did(self):
+        # resolve_verification_method only splits off the fragment: a path or
+        # a query in front of it must not be read as part of the host.
+        from openbadgeslib.ob3 import resolve_verification_method
+        fetch = _Recorder()
+        with pytest.raises(OB3VerificationError,
+                           match='invalid did:web identifier'):
+            resolve_verification_method('did:web:good.example/x?y#k',
+                                        download=fetch)
+        assert fetch.calls == []
+
+    @pytest.mark.parametrize('did,url', [
+        ('did:web:good.example', 'https://good.example/.well-known/did.json'),
+        ('did:web:good.example%3A8443',
+         'https://good.example:8443/.well-known/did.json'),
+        ('did:web:good.example%3a8443',
+         'https://good.example:8443/.well-known/did.json'),
+        ('did:web:good.example%3A65535:a',
+         'https://good.example:65535/a/did.json'),
+        ('did:web:good.example:users:alice',
+         'https://good.example/users/alice/did.json'),
+        ('did:web:xn--caf-dma.example:a-b_c.d',
+         'https://xn--caf-dma.example/a-b_c.d/did.json'),
+        # A segment stays exactly as the DID spells it: the percent-encoding
+        # is the path's own, not something to undo.
+        ('did:web:good.example:a%20b', 'https://good.example/a%20b/did.json'),
+        ('did:web:good.example:caf%C3%A9',
+         'https://good.example/caf%C3%A9/did.json'),
+        ('did:web:good.example:x%252Fy',
+         'https://good.example/x%252Fy/did.json'),
+        ('did:web:good.example:~alice', 'https://good.example/~alice/did.json'),
+        ('did:web:good.example:...', 'https://good.example/.../did.json'),
+    ])
+    def test_legitimate_identifier_resolves_to_the_method_url(
+            self, did, url, ed25519_pub_pem):
+        fetch = _Recorder(_key_doc(did, ed25519_pub_pem))
+        assert resolve_did(did, download=fetch) == ed25519_pub_pem
+        assert fetch.calls == [url]
+
+    @pytest.mark.parametrize('base,did,url', [
+        ('https://issuer.example/badges/a b/',
+         'did:web:issuer.example:badges:a%20b',
+         'https://issuer.example/badges/a%20b/did.json'),
+        ('https://Issuer.Example:8443/café/',
+         'did:web:issuer.example%3A8443:caf%C3%A9',
+         'https://issuer.example:8443/caf%C3%A9/did.json'),
+    ])
+    def test_round_trip_through_did_web_from_url(self, base, did, url,
+                                                 ed25519_pub_pem):
+        # publish side -> DID -> resolve side: the DID did_web_from_url derives
+        # for a path that needs percent-encoding resolves under that path,
+        # with the encoding the wire carries.
+        from openbadgeslib.ob3.did import did_web_from_url
+        assert did_web_from_url(base) == did
+        fetch = _Recorder(_key_doc(did, ed25519_pub_pem))
+        assert resolve_did(did, download=fetch) == ed25519_pub_pem
+        assert fetch.calls == [url]
+
+
+class TestDidWebDocumentId:
+    """did-core / did:web: the resolved document's id is the DID. Without the
+    check a host answers for any DID with any document it happens to serve."""
+
+    DID = 'did:web:issuer.example'
+
+    def _doc(self, pub_pem, doc_id):
+        doc = _key_doc(self.DID, pub_pem)
+        if doc_id is _ABSENT:
+            del doc['id']
+        else:
+            doc['id'] = doc_id
+        return doc
+
+    @pytest.mark.parametrize('doc_id', [
+        'did:web:somebody.else',
+        'did:web:issuer.example:users:alice',
+        'did:web:issuer.example#key-1',
+        'did:web:issuer.example ',
+        'DID:WEB:issuer.example',
+        'did:key:z6MkTest',
+        'https://issuer.example/.well-known/did.json',
+        '',
+    ])
+    def test_a_different_id_is_refused(self, doc_id, ed25519_pub_pem):
+        from openbadgeslib.ob3 import resolve_verification_method
+        from openbadgeslib.ob3.did import fetch_did_web_document
+        doc = self._doc(ed25519_pub_pem, doc_id)
+        for resolve in (
+                lambda dl: resolve_did(self.DID, download=dl),
+                lambda dl: fetch_did_web_document(self.DID, download=dl),
+                lambda dl: resolve_verification_method(
+                    self.DID + '#key-1', download=dl),
+                lambda dl: OB3Verifier.for_issuer_did(self.DID, download=dl)):
+            fetch = _Recorder(doc)
+            with pytest.raises(OB3VerificationError, match='is not the id'):
+                resolve(fetch)
+            assert fetch.calls == [
+                'https://issuer.example/.well-known/did.json']
+
+    @pytest.mark.parametrize('doc_id', [
+        _ABSENT, None, 0, True, ['did:web:issuer.example'],
+        {'id': 'did:web:issuer.example'}])
+    def test_a_missing_or_non_string_id_is_refused(self, doc_id,
+                                                   ed25519_pub_pem):
+        from openbadgeslib.ob3 import resolve_verification_method
+        from openbadgeslib.ob3.did import fetch_did_web_document
+        doc = self._doc(ed25519_pub_pem, doc_id)
+        for resolve in (
+                lambda dl: resolve_did(self.DID, download=dl),
+                lambda dl: fetch_did_web_document(self.DID, download=dl),
+                lambda dl: resolve_verification_method(
+                    self.DID + '#key-1', download=dl),
+                lambda dl: OB3Verifier.for_issuer_did(self.DID, download=dl)):
+            with pytest.raises(OB3VerificationError, match='is not the id'):
+                resolve(_Recorder(doc))
+
+    def test_case_folding_stays_inside_ascii(self, ed25519_pub_pem):
+        # str.lower() turns the Kelvin sign into 'k': the host comparison must
+        # not make two different strings the same DID.
+        did = 'did:web:kelvin.example'
+        fetch = _Recorder(_key_doc('did:web:Kelvin.example',
+                                   ed25519_pub_pem))
+        with pytest.raises(OB3VerificationError, match='is not the id'):
+            resolve_did(did, download=fetch)
+
+    def test_the_rejection_does_not_quote_the_served_id(self, ed25519_pub_pem):
+        fetch = _Recorder(self._doc(ed25519_pub_pem, 'did:web:s3cr3t.example'))
+        with pytest.raises(OB3VerificationError) as err:
+            resolve_did(self.DID, download=fetch)
+        assert 's3cr3t' not in str(err.value)
+
+    @pytest.mark.parametrize('did,doc_id', [
+        # A host name is case-insensitive, on either side.
+        ('did:web:Issuer.Example', 'did:web:issuer.example'),
+        ('did:web:issuer.example', 'did:web:ISSUER.example'),
+        ('did:web:issuer.example%3A8443', 'did:web:Issuer.Example%3a8443'),
+        ('did:web:Issuer.Example:Users:Alice',
+         'did:web:issuer.example:Users:Alice'),
+    ])
+    def test_host_case_gives_no_false_rejection(self, did, doc_id,
+                                                ed25519_pub_pem):
+        fetch = _Recorder(_key_doc(doc_id, ed25519_pub_pem))
+        assert resolve_did(did, download=fetch) == ed25519_pub_pem
+
+    @pytest.mark.parametrize('did,doc_id', [
+        # A path is case-sensitive, and so is its percent-encoding: the id is
+        # compared as spelled, never decoded.
+        ('did:web:issuer.example:Users:Alice',
+         'did:web:issuer.example:users:alice'),
+        ('did:web:issuer.example:caf%c3%a9',
+         'did:web:issuer.example:caf%C3%A9'),
+        ('did:web:issuer.example:a%20b', 'did:web:issuer.example:a b'),
+    ])
+    def test_path_is_compared_exactly(self, did, doc_id, ed25519_pub_pem):
+        fetch = _Recorder(_key_doc(doc_id, ed25519_pub_pem))
+        with pytest.raises(OB3VerificationError, match='is not the id'):
+            resolve_did(did, download=fetch)
+
+    def test_a_token_does_not_verify_against_another_dids_document(
+            self, ed25519_priv_pem, ed25519_pub_pem):
+        # The end of the chain in #338: a host that serves somebody else's
+        # document (or one an attacker uploaded) for the issuer's DID. The
+        # signature is good and the credential names the DID; only the
+        # document's own id says it was never this DID's document.
+        from openbadgeslib.ob3 import (OB3Signer, Achievement, Issuer,
+                                       OpenBadgeCredential)
+        credential = OpenBadgeCredential(
+            id='urn:uuid:00000000-0000-0000-0000-000000000338',
+            issuer=Issuer(id=self.DID, name='Issuer'),
+            recipient_id='mailto:r@example.com',
+            achievement=Achievement(id='https://a.example/1', name='A',
+                                    description='d', criteria_narrative='c'))
+        token = OB3Signer(privkey_pem=ed25519_priv_pem,
+                          algorithm='EdDSA').sign(credential)
+        good = _Recorder(_key_doc(self.DID, ed25519_pub_pem))
+        assert OB3Verifier.for_issuer_did(
+            self.DID, download=good).verify(token).issuer.id == self.DID
+        other = _Recorder(_key_doc('did:web:somebody.else', ed25519_pub_pem))
+        with pytest.raises(OB3VerificationError, match='is not the id'):
+            OB3Verifier.for_issuer_did(self.DID, download=other)

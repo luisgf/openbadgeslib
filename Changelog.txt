@@ -133,6 +133,42 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     (a refused `-V 3` run does not remove what an earlier run left in the
     output directory) and replace the key pair.
 
+  - security(did): a did:web identifier is validated before it becomes a URL,
+    and the DID document it resolves to must be that DID's. The resolver
+    percent-decoded every component of the identifier, where the method
+    decodes only the `%3A` of a port, so an escaped `/`, `?`, `#` or `@`, a
+    `..` or an empty component chose any URL of the host, or another host:
+    `did:web:good.example:uploads:evil%23` was read from
+    `https://good.example/uploads/evil#/did.json` (the fragment drops the
+    mandatory `/did.json`), `did:web:good.example:api%3Fcb%3D` from
+    `https://good.example/api?cb=/did.json`, and
+    `did:web:good.example%40evil.example` from
+    `https://good.example@evil.example/.well-known/did.json`. Whoever could
+    place a JSON file at any path of a host (an upload, an endpoint that
+    echoes JSON) had an issuer DID of that host, which
+    `verify_badge(..., resolve_did=True)` and `openbadges-verifier
+    --resolve-did` reported as valid and trusted. Now the first component
+    must be a DNS name with an optional `%3A` port (up to 65535), and each
+    path component is non-empty, made of the DID syntax's characters
+    (letters, digits, `.`, `-`, `_`, `~` and well-formed `%XX` escapes) and
+    may not decode to `.`, `..`, or to anything holding `/`, `?`, `#`, `@`,
+    `:`, a backslash or a control character; anything else is an
+    `OB3VerificationError` ("invalid did:web identifier") and nothing is
+    fetched. A path component reaches the URL as the DID spells it, escapes
+    included. This covers `resolve_did`, `resolve_verification_method`,
+    `OB3Verifier.for_issuer_did`, `OB3LdpVerifier` and the CLI.
+    Behaviour change for issuers: a DID document whose `id` differs from the
+    DID it was fetched for, or that has none, is now refused (the host name
+    is compared without regard to case, the path exactly). The `did.json`
+    that `openbadges-publish -V 3` writes carries the right `id`; a
+    hand-written one, or one copied to a URL other than the one its DID
+    names, has to be corrected. A DID whose path holds an escape is read at
+    a different URL than before (`did:web:host:a%20b` at
+    `https://host/a%20b/did.json`, no longer at `https://host/a b/did.json`),
+    so a `publish_url` written already percent-encoded
+    (`https://host/a%20b/`), whose DID is `did:web:host:a%2520b`, no longer
+    resolves where it is served: write it unencoded.
+
 * v4.6.3 - 2026-10-21
 
   - fix(jws): the native JWS engine (OB1 and OB2 signed badges) answers a
