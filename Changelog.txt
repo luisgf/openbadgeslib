@@ -367,6 +367,20 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     such presentation of a badge this library issues, whose `criteria` has
     no id and so carries a label (#346).
 
+  - security(ldp): `OB3LdpVerifier.verify` checks the recipient before the
+    status, as `OB3Verifier.verify` does. With `check_status=True` and an
+    `expected_recipient` that the credential is not for, the status list was
+    downloaded (and its signature verified) before the mismatch was
+    reported; the recipient binding is local and free, so a credential
+    presented for someone else now costs no status list download. The proof,
+    the validity window and the ecdsa-sd-2023 lifecycle checks still come
+    first, so a did:web `verificationMethod` is still resolved before the
+    recipient is looked at. Compatibility: a credential that is presented
+    for the wrong recipient and whose status check would also fail (revoked,
+    suspended, a list that cannot be fetched or verified) is reported as a
+    recipient mismatch, not as the status failure; for the right recipient,
+    and without `expected_recipient`, nothing changes (#336).
+
 * v4.6.3 - 2026-10-21
 
   - fix(jws): the native JWS engine (OB1 and OB2 signed badges) answers a

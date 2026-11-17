@@ -1133,7 +1133,10 @@ class OB3LdpVerifier:
         ``check_status`` and ``verify_status_list`` behave exactly as in
         :meth:`OB3Verifier.verify` — when status is checked the status list's
         own signature is verified too (reusing a pinned key, or resolving the
-        issuer DID), unless ``verify_status_list=False``. ``download`` resolves
+        issuer DID), unless ``verify_status_list=False``. The recipient check
+        runs before the status check, so a recipient mismatch costs no status
+        list download (and a credential that is both revoked and presented
+        for the wrong recipient is reported as a mismatch). ``download`` resolves
         a did:web verificationMethod and status list issuer DID (injectable for
         testing). An ``ecdsa-sd-2023`` presentation that omits ``validFrom``,
         ``validUntil`` or ``credentialStatus`` is rejected so a holder cannot
@@ -1251,6 +1254,12 @@ class OB3LdpVerifier:
 
         _check_validity_window(credential)
 
+        # Before the status check, not after: the recipient binding is local
+        # and free, the status check is a download per status list, so a
+        # credential presented by the wrong holder must not reach the network
+        # (as in OB3Verifier.verify, #336).
+        _check_recipient(credential, expected_recipient)
+
         if check_status:
             from .status import check_credential_status
             # Verify the status list's own signature by default, binding it to
@@ -1259,8 +1268,6 @@ class OB3LdpVerifier:
             check_credential_status(
                 credential, download=download, verify_list=verify_status_list,
                 list_pubkey_pem=self.pubkey_pem)
-
-        _check_recipient(credential, expected_recipient)
 
         return credential
 

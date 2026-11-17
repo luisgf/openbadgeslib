@@ -196,6 +196,84 @@ class TestOB3LdpVerifier:
         finally:
             status_mod.download_file = orig
 
+    @staticmethod
+    def _with_status(ob3_credential, ed25519_keypair, revoked, **members):
+        """(signed credential with a status entry, pinned verifier, a
+        downloader serving its status list, the URLs it was asked for)."""
+        pytest.importorskip('pyld')
+        from openbadgeslib.ob3.status_list import (
+            build_status_list_credential, sign_status_list_credential)
+        priv_pem, pub_pem = ed25519_keypair
+        issuer_did = _did_key(pub_pem)
+        list_url = 'https://issuer.example/status.jwt'
+        doc = dict(ob3_credential.to_vc(), **members)
+        doc['issuer'] = {'id': issuer_did, 'type': ['Profile'], 'name': 'I'}
+        doc['credentialStatus'] = {
+            'type': 'BitstringStatusListEntry', 'statusPurpose': 'revocation',
+            'statusListIndex': '3', 'statusListCredential': list_url}
+        token = sign_status_list_credential(
+            build_status_list_credential(issuer_did, list_url, 'revocation',
+                                         [3] if revoked else []),
+            priv_pem, 'EdDSA')
+        fetched = []
+
+        def download(url):
+            fetched.append(url)
+            return token.encode('utf-8')
+
+        return (_sign_ldp(doc, priv_pem, pub_pem),
+                OB3LdpVerifier(pubkey_pem=pub_pem), download, fetched)
+
+    @pytest.mark.parametrize('revoked', [False, True], ids=['clear', 'revoked'])
+    def test_recipient_mismatch_costs_no_status_download(
+            self, ob3_credential, ed25519_keypair, revoked):
+        # #336: the recipient binding is local and free, the status check is
+        # a download, so a credential presented for someone else must not
+        # reach the network. As in OB3Verifier.verify, a credential that is
+        # revoked AND presented for the wrong recipient is a mismatch.
+        signed, verifier, download, fetched = self._with_status(
+            ob3_credential, ed25519_keypair, revoked)
+        with pytest.raises(OB3VerificationError, match='Recipient mismatch'):
+            verifier.verify(signed, expected_recipient='other@example.com',
+                            check_status=True, download=download)
+        assert fetched == []
+
+    def test_status_is_still_checked_for_the_right_recipient(
+            self, ob3_credential, ed25519_keypair):
+        list_url = 'https://issuer.example/status.jwt'
+        signed, verifier, download, fetched = self._with_status(
+            ob3_credential, ed25519_keypair, True)
+        for recipient in ('recipient@example.com', None):
+            with pytest.raises(OB3VerificationError, match='revocation'):
+                verifier.verify(signed, expected_recipient=recipient,
+                                check_status=True, download=download)
+        assert fetched == [list_url, list_url]
+        signed, verifier, download, fetched = self._with_status(
+            ob3_credential, ed25519_keypair, False)
+        assert verifier.verify(signed, expected_recipient='recipient@example.com',
+                               check_status=True, download=download)
+        assert fetched == [list_url]
+
+    def test_proof_and_validity_still_come_before_the_recipient(
+            self, ob3_credential, ed25519_keypair):
+        # Only the status check moved after the recipient check: a document
+        # whose proof does not verify, or an expired one, is reported as that
+        # whoever it is presented for, and nothing is fetched either.
+        signed, verifier, download, fetched = self._with_status(
+            ob3_credential, ed25519_keypair, False)
+        tampered = copy.deepcopy(signed)
+        tampered['name'] = 'Another badge'
+        with pytest.raises(OB3VerificationError, match='signature mismatch'):
+            verifier.verify(tampered, expected_recipient='other@example.com',
+                            check_status=True, download=download)
+        expired, verifier, download, fetched_expired = self._with_status(
+            ob3_credential, ed25519_keypair, False,
+            validUntil='2026-06-01T00:00:00Z')
+        with pytest.raises(OB3VerificationError, match='expired'):
+            verifier.verify(expired, expected_recipient='other@example.com',
+                            check_status=True, download=download)
+        assert fetched == fetched_expired == []
+
     def test_non_did_issuer_unpinned_fails_closed(self, ob3_credential,
                                                   ed25519_keypair):
         # #214: with no pinned key and a NON-DID (https:) issuer, the proof's

@@ -249,6 +249,26 @@ class TestEcdsaSdVerify:
         with pytest.raises(OB3VerificationError, match='did not make mandatory'):
             OB3LdpVerifier(pubkey_pem=pub_pem).verify(derived)
 
+    def test_lifecycle_refusal_comes_before_the_recipient_check(
+            self, ob3_credential):
+        # The recipient is checked before the status list is fetched (#336),
+        # but still after the proof and the lifecycle check: a presentation
+        # refused for those is refused as that for any expected recipient,
+        # and nothing is fetched.
+        _require_ldp_sd()
+        derived, pub_pem, _ = _issue_and_derive(
+            _lifecycle_credential(ob3_credential),
+            selective=['/validUntil', '/credentialStatus'],
+            mandatory=LAX_MANDATORY)
+
+        def download(url):
+            raise AssertionError('nothing must be fetched: %s' % url)
+
+        with pytest.raises(OB3VerificationError, match='did not make mandatory'):
+            OB3LdpVerifier(pubkey_pem=pub_pem).verify(
+                derived, expected_recipient='other@example.com',
+                check_status=True, download=download)
+
     def test_omitted_valid_from_is_rejected(self, ob3_credential):
         _require_ldp_sd()
         derived, pub_pem, _ = _issue_and_derive(
