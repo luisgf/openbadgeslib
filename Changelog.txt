@@ -169,6 +169,30 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     (`https://host/a%20b/`), whose DID is `did:web:host:a%2520b`, no longer
     resolves where it is served: write it unencoded.
 
+  - security(ob2): the HostedBadge `startsWith` scope is tested on the path a
+    server resolves, not on the one written in the assertion `id` (#339). The
+    origin and path-segment comparison of 4.4.3 ran on the path as written,
+    and the request goes out with that path untouched while the server that
+    answers normalises it: under `startsWith:
+    https://issuer.example/assertions/` the id
+    `https://issuer.example/assertions/../uploads/evil.json` (or `%2e%2e`, or
+    `./../`) was in scope and was served from `/uploads/`, so whoever could
+    write a JSON file anywhere on the issuer's origin minted hosted assertions
+    that `OB2Verifier.verify` and `verify_hosted` reported as that issuer's.
+    The path of the id and of each declared prefix is now decoded once and is
+    in no scope unless servers can read it one way only: no `.` or `..`
+    segment (bare or with path parameters, `..;x`), no empty segment (`//`),
+    no backslash or encoded slash (`%5c`, `%2f`), no escape left after the one
+    decoding (`%252e`), no control character and no escape that is not UTF-8
+    (the overlong `%c0%ae`). Such an id fails with "outside the issuer's
+    declared startsWith scope". The two sides are compared decoded, so `%41`
+    in a prefix now matches `A` in an id. Compatibility: under `startsWith`
+    an id with an encoded percent sign followed by two hex digits (`%2520`)
+    or with escapes in a legacy encoding (`caf%e9`) is refused, and
+    `/assertions;v=1` no longer counts as the prefix `/assertions` itself.
+    Issuers that declare no `startsWith` (the same-origin default,
+    `allowedOrigins`) are not affected.
+
 * v4.6.3 - 2026-10-21
 
   - fix(jws): the native JWS engine (OB1 and OB2 signed badges) answers a

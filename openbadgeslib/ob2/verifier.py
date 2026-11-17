@@ -21,9 +21,10 @@
 """
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Callable, List, Optional, Union
-from urllib.parse import urlparse
+from urllib.parse import unquote_to_bytes, urlparse, urlsplit
 
 from .models import Assertion, CryptographicKey, hash_identity, _parse_iso
 from ..errors import ErrorParsingFile, UnknownKeyType, LibOpenBadgesException
@@ -534,20 +535,73 @@ def _same_origin(a: str, b: str) -> bool:
     return (pa.scheme, pa.hostname, pa.port) == (pb.scheme, pb.hostname, pb.port)
 
 
+# A percent-escape still there after one decoding: the path was encoded twice.
+_RESIDUAL_ESCAPE = re.compile(r'%[0-9A-Fa-f]{2}')
+
+
+def _scope_path(raw: str) -> Optional[str]:
+    """The path every server resolves *raw* to, or None if they can disagree.
+
+    *raw* is a URL path as written. The request goes out with it untouched and
+    the server that answers normalises it, so a scope test on the written
+    form says nothing about the file that is served: ``/assertions/../uploads/
+    x.json`` starts with ``/assertions/`` and is ``/uploads/x.json`` (#339).
+    Rather than guess which normalisation a given server applies, the path is
+    decoded once and refused unless that form can only be read one way:
+
+    * no ``.`` or ``..`` segment, bare or with path parameters (``..;x``,
+      which a servlet container strips before it resolves the segment);
+    * no empty segment (``//``) other than what a trailing slash leaves;
+    * no backslash and no encoded slash (``%5c``, ``%2f``), which some servers
+      take for a separator and some for part of a name;
+    * no escape left after the one decoding (``%252e``), which a second
+      decoder downstream would turn into any of the above;
+    * no control character, which a URL parser may drop (``.%09.``) or stop at
+      (``%00``), and no escape that is not UTF-8, which covers the overlong
+      spellings of ``.`` and ``/`` (``%c0%ae``, ``%c0%af``).
+
+    What is returned is the decoded path, so the two sides of the comparison
+    agree on ``%41`` and ``A``.
+    """
+    raw = raw or '/'
+    try:
+        path = unquote_to_bytes(raw).decode('utf-8')
+    except UnicodeError:
+        return None
+    if (path.count('/') != raw.count('/') or '\\' in path
+            or _RESIDUAL_ESCAPE.search(path)
+            or any(c < ' ' or c == '\x7f' for c in path)):
+        return None
+    segments = path.split('/')
+    # The leading slash leaves an empty first item and a trailing one an empty
+    # last item; an empty item anywhere else is a "//".
+    if '' in segments[1:-1]:
+        return None
+    if any(s.partition(';')[0] in ('.', '..') for s in segments):
+        return None
+    return path
+
+
 def _url_starts_with(url: str, prefix: str) -> bool:
     """True if *url* is in the hosted scope declared by *prefix*.
 
     A raw ``str.startswith`` treats ``https://issuer.example`` as a prefix of
     ``https://issuer.example.attacker.tld/…`` (and similar userinfo tricks).
     Require the same origin, then a path that equals the prefix path or is
-    a strict path-segment descendant (#314).
+    a strict path-segment descendant (#314). The paths compared are the ones
+    a server resolves (:func:`_scope_path`); a URL or a prefix whose path
+    servers can read in more than one way is in no scope (#339).
     """
     if not prefix:
         return False
     if not _same_origin(url, prefix):
         return False
-    u, p = urlparse(url), urlparse(prefix)
-    upath, ppath = u.path or '/', p.path or '/'
+    # urlsplit, not urlparse: the latter moves the ";parameters" of the last
+    # segment out of the path, and they are part of what is compared here.
+    upath = _scope_path(urlsplit(url).path)
+    ppath = _scope_path(urlsplit(prefix).path)
+    if upath is None or ppath is None:
+        return False
     if upath == ppath:
         return True
     if not ppath.endswith('/'):

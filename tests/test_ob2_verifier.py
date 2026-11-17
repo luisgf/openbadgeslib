@@ -9,6 +9,7 @@ from openbadgeslib.ob2 import (
     OB2_CONTEXT, OB2Signer, OB2Verifier, OB2VerificationError,
     Assertion, IdentityObject, Verification,
 )
+from openbadgeslib.ob2.verifier import _url_starts_with
 
 ISSUER = 'https://example.com/organization.json'
 BADGE = 'https://example.com/badge.json'
@@ -203,6 +204,62 @@ class TestHosted:
             with pytest.raises(OB2VerificationError, match='startsWith'):
                 OB2Verifier().verify(token)
 
+    @pytest.mark.parametrize('tail', [
+        '../uploads/x.json',              # plain dot segment
+        '%2e%2e/uploads/x.json',          # the same, percent-encoded
+        '%2E%2E/uploads/x.json',
+        './x.json',                       # a server drops the "." segment
+        '/x.json',                        # empty segment ("//")
+        '..%2fuploads/x.json',            # encoded slash
+        '%252e%252e/uploads/x.json',      # double encoding
+    ])
+    def test_starts_with_rejects_dot_segment_escape(self, rsa_priv_pem, tail):
+        # The id is under the declared prefix as text, but the server that
+        # answers it normalises the path and serves a file from outside it
+        # (/uploads/x.json), which names itself with the same URL so the
+        # local/fetched reconciliation passes. The scope test must run on the
+        # path a server resolves, not on the one written (#339).
+        token, a = _hosted(rsa_priv_pem,
+                           aid='https://example.com/assertions/' + tail)
+        issuer = {'id': 'https://other.test/org.json',
+                  'verification': {'startsWith': ['https://example.com/assertions/']}}
+        url_map = {a.id: a.to_dict(),
+                   BADGE: {'issuer': 'https://other.test/org.json'},
+                   'https://other.test/org.json': issuer}
+        with patch(PATCH_TARGET, side_effect=_dl(url_map)):
+            with pytest.raises(OB2VerificationError, match='startsWith'):
+                OB2Verifier().verify(token)
+
+    def test_starts_with_ambiguous_declared_prefix_scopes_nothing(self, rsa_priv_pem):
+        # The same rule on the issuer's side. The paths are compared decoded,
+        # so without it this prefix ("/assertions%2F", one segment as written)
+        # would decode to "/assertions/" and take in a whole directory the
+        # issuer may not have meant (#339).
+        token, a = _hosted(rsa_priv_pem)
+        issuer = {'id': 'https://other.test/org.json',
+                  'verification': {
+                      'startsWith': ['https://example.com/assertions%2F']}}
+        url_map = {a.id: a.to_dict(),
+                   BADGE: {'issuer': 'https://other.test/org.json'},
+                   'https://other.test/org.json': issuer}
+        with patch(PATCH_TARGET, side_effect=_dl(url_map)):
+            with pytest.raises(OB2VerificationError, match='startsWith'):
+                OB2Verifier().verify(token)
+
+    def test_starts_with_accepts_escaped_id_under_slashless_prefix(self, rsa_priv_pem):
+        # What must keep verifying after #339: a harmless percent-escape in
+        # the id, and a declared prefix without its trailing slash.
+        token, a = _hosted(rsa_priv_pem,
+                           aid='https://example.com/assertions/my%20badge.json')
+        issuer = {'id': 'https://other.test/org.json',
+                  'verification': {'startsWith': ['https://example.com/assertions']}}
+        url_map = {a.id: a.to_dict(),
+                   BADGE: {'issuer': 'https://other.test/org.json'},
+                   'https://other.test/org.json': issuer}
+        with patch(PATCH_TARGET, side_effect=_dl(url_map)):
+            result = OB2Verifier().verify(token, expected_recipient=RECIPIENT)
+        assert result.id == 'https://example.com/assertions/my%20badge.json'
+
     def test_starts_with_scope_rejects_outside_prefix(self, rsa_priv_pem):
         # Reject-side of startsWith: the assertion id matches no declared
         # prefix, so it is outside the issuer's hosted scope (the accept-side
@@ -355,6 +412,100 @@ class TestHosted:
         with patch(PATCH_TARGET, side_effect=_dl(url_map)):
             with pytest.raises(OB2VerificationError, match='not a valid'):
                 OB2Verifier().verify(token, expected_recipient=RECIPIENT)
+
+
+# ── the startsWith predicate on its own (#314, #339) ────────────────────────────
+
+SCOPE = 'https://example.com/assertions/'
+
+
+class TestUrlStartsWith:
+    @pytest.mark.parametrize('url', [
+        SCOPE + '../uploads/x.json',
+        SCOPE + '%2e%2e/uploads/x.json',
+        SCOPE + '%2E%2E/uploads/x.json',
+        SCOPE + './../uploads/x.json',
+        SCOPE + './x.json',
+        SCOPE + 'x/..',                            # dot segment in last place
+        SCOPE + '/x.json',                         # empty segment
+        SCOPE + '..%2fuploads/x.json',             # encoded slash
+        SCOPE + '..%2Fuploads/x.json',
+        SCOPE + '%2e%2e%2fuploads%2fx.json',
+        SCOPE + 'a%2Fb.json',                      # ... with no dot segment
+        SCOPE + '..\\uploads\\x.json',            # backslash, raw and encoded
+        SCOPE + '..%5cuploads%5cx.json',
+        SCOPE + '%252e%252e/uploads/x.json',       # double and triple encoding
+        SCOPE + '%25252e%25252e/uploads/x.json',
+        SCOPE + '..%252fuploads/x.json',
+        SCOPE + '100%2520off.json',                # any escape left after one decode
+        SCOPE + '..;v=1/uploads/x.json',           # servlet path parameters
+        SCOPE + '.;v=1/x.json',
+        SCOPE + '.%09./uploads/x.json',            # controls a parser may strip
+        SCOPE + 'x.json%00/y',
+        SCOPE + 'x%7f.json',
+        SCOPE + '%c0%ae%c0%ae/uploads/x.json',     # overlong UTF-8 for ".."
+        SCOPE + '..%c0%afuploads/x.json',          # ... and for "/"
+        SCOPE + 'caf%e9.json',                     # escapes that are not UTF-8
+        SCOPE + '\ud800.json',                     # lone surrogate
+    ])
+    def test_ambiguous_path_is_out_of_scope(self, url):
+        assert _url_starts_with(url, SCOPE) is False
+
+    @pytest.mark.parametrize('prefix', [
+        'https://example.com/uploads/../assertions/',
+        'https://example.com/%2e%2e/assertions/',
+        'https://example.com/./assertions/',
+        'https://example.com//assertions/',
+        'https://example.com/assertions//',
+        'https://example.com/x%2f../assertions/',
+        'https://example.com/assertions%2f',       # would decode to SCOPE
+        'https://example.com/x%5c../assertions/',
+        'https://example.com/%252e%252e/assertions/',
+        'https://example.com/assertions/..',
+    ])
+    def test_ambiguous_prefix_scopes_nothing(self, prefix):
+        # Not even the URL that equals it, or one that is a descendant as text.
+        assert _url_starts_with(prefix, prefix) is False
+        assert _url_starts_with(prefix + 'x.json', prefix) is False
+        assert _url_starts_with(SCOPE + 'x.json', prefix) is False
+
+    @pytest.mark.parametrize('url,prefix', [
+        ('https://example.com/uploads/x.json', SCOPE),
+        ('https://example.com/assertionsX/x.json', 'https://example.com/assertions'),
+        ('https://example.com/assertions', SCOPE),           # the parent itself
+        ('https://example.com/assertions;v=1', 'https://example.com/assertions'),
+        ('https://example.com.evil.test/assertions/x.json', SCOPE),
+        ('https://example.com@evil.test/assertions/x.json', SCOPE),
+        ('http://example.com/assertions/x.json', SCOPE),
+        ('https://example.com:8443/assertions/x.json', SCOPE),
+        (SCOPE + 'x.json', ''),
+    ])
+    def test_out_of_scope(self, url, prefix):
+        assert _url_starts_with(url, prefix) is False
+
+    @pytest.mark.parametrize('url,prefix', [
+        (SCOPE + 'x.json', SCOPE),
+        (SCOPE + 'a/b/c.json', SCOPE),
+        (SCOPE, SCOPE),                                       # equality
+        ('https://example.com/assertions', 'https://example.com/assertions'),
+        (SCOPE + 'x.json', 'https://example.com/assertions'),  # slashless prefix
+        (SCOPE, 'https://example.com/assertions'),
+        (SCOPE + 'x.json', 'https://example.com'),            # bare origin
+        (SCOPE + 'x.json', 'https://example.com/'),
+        ('https://example.com', 'https://example.com/'),
+        (SCOPE + 'my%20badge.json', SCOPE),                   # harmless escapes
+        (SCOPE + 'caf%C3%A9.json', SCOPE),
+        (SCOPE + 'café/x.json', SCOPE + 'caf%C3%A9/'),   # IRI and URI forms
+        ('https://example.com/Assertions/x.json', 'https://example.com/%41ssertions/'),
+        ('https://example.com/my%20badges/x.json', 'https://example.com/my badges/'),
+        (SCOPE + '.well-known/x..json', SCOPE),               # dots, not dot segments
+        (SCOPE + '.../x.json', SCOPE),
+        (SCOPE + 'x.json;v=1', SCOPE),
+        (SCOPE + 'x.json?next=../../uploads/#../f', SCOPE),   # not part of the path
+        (SCOPE + '100%25.json', SCOPE),                       # a literal percent sign
+    ])
+    def test_in_scope(self, url, prefix):
+        assert _url_starts_with(url, prefix) is True
 
 
 # ── hosted JSON (no JWS) ────────────────────────────────────────────────────────
