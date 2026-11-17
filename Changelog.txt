@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v4.6.4 - unreleased
+* v4.6.4 - 2026-11-18
 
   - security(ldp): on CPython 3.11 and 3.12 the JSON-LD to RDF conversion may
     make at most 150,000 duplicate checks (1,000,000 on every other
