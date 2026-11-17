@@ -139,6 +139,23 @@
 # "described once" nor an "exact copy" rule holds, and a member the model
 # reads can still be left only in the other.
 #
+# Fifth (_reject_blank_node_ids), a blank node label is no identifier. It is
+# not part of the dataset -- canonicalization relabels blank nodes -- so
+# "id": "_:b7" written on a node signed without an id is the same dataset
+# under the same signature, the compacted form keeps the label, and the model
+# reads it as the id of the credential, of the issuer, of the subject
+# (recipient_id) or of a status entry. A label is refused in those four
+# positions, of the credential and of every embedded one, in whatever JSON
+# spelling ("id", "@id", a bare reference, an entry of an array). Only
+# there: openvc-core's ecdsa-sd-2023 derive writes a label on every node of a
+# presentation that has no id (the criteria of every badge this library
+# issues), so a rule for all nodes would refuse those presentations. For the
+# same reason, when the proof is an ecdsa-sd-2023 one (*derived*) only the
+# credential's and the issuer's ids are held to it -- OB 3.0 requires those,
+# so a label there never comes from a conforming credential -- and a subject
+# or status entry, whose id is optional, keeps the label the delegate gave
+# it: that presentation verifies, and its model still shows the label.
+#
 # OB 3.0 adaptations (the 1EdTech "Complete OpenBadgeCredential" example must
 # validate):
 #
@@ -291,7 +308,8 @@ _Loader = Callable[..., Any]
 
 
 def validate_document(unsecured: dict[str, Any], proof_config: dict[str, Any],
-                      loader: _Loader, jsonld: Any) -> None:
+                      loader: _Loader, jsonld: Any, *,
+                      derived: bool = False) -> None:
     """Require *unsecured* (the document without ``proof``) and *proof_config*
     (the proof without ``proofValue``, carrying the document ``@context``) to
     be in the canonical compacted form described in the module comment, else
@@ -299,10 +317,14 @@ def validate_document(unsecured: dict[str, Any], proof_config: dict[str, Any],
 
     *loader* is the fail-closed bundled document loader canonicalization uses
     (contexts are never fetched); *jsonld* is the pyld ``jsonld`` module,
-    imported by the caller through its actionable-error helper.
+    imported by the caller through its actionable-error helper. *derived*
+    says the proof is an ecdsa-sd-2023 one, whose presentations carry the
+    blank node labels the delegate writes (see _reject_blank_node_ids).
     """
     try:
-        _check_form(unsecured, loader, jsonld, what="credential", depth=0)
+        _reject_blank_node_ids(unsecured, "credential", derived)
+        _check_form(unsecured, loader, jsonld, what="credential", depth=0,
+                    derived=derived)
         _check_form(proof_config, loader, jsonld, what="proof", depth=0)
     except OB3VerificationError:
         raise
@@ -315,7 +337,7 @@ def validate_document(unsecured: dict[str, Any], proof_config: dict[str, Any],
 # ── one document ─────────────────────────────────────────────────────────────
 
 def _check_form(document: dict[str, Any], loader: _Loader, jsonld: Any, *,
-                what: str, depth: int) -> None:
+                what: str, depth: int, derived: bool = False) -> None:
     _check_context(document.get("@context"), loader, what)
     if depth == 0:
         # The expansion below also applies every nested @context, those of
@@ -366,11 +388,12 @@ def _check_form(document: dict[str, Any], loader: _Loader, jsonld: Any, *,
 
     for path, credential in embedded:
         _check_embedded(credential, path, loader, jsonld, what=what,
-                        depth=depth + 1)
+                        depth=depth + 1, derived=derived)
 
 
 def _check_embedded(credential: dict[str, Any], path: _Path, loader: _Loader,
-                    jsonld: Any, *, what: str, depth: int) -> None:
+                    jsonld: Any, *, what: str, depth: int,
+                    derived: bool) -> None:
     """Validate an embedded EndorsementCredential against its own @context
     (already bounded, as its nesting, by _check_nested_contexts)."""
     where = _embedded_where(path, what)
@@ -379,7 +402,51 @@ def _check_embedded(credential: dict[str, Any], path: _Path, loader: _Loader,
     if not (isinstance(types, list) and _ENDORSEMENT_CREDENTIAL in types):
         raise OB3VerificationError("%s is not an %s"
                                    % (where, _ENDORSEMENT_CREDENTIAL))
-    _check_form(credential, loader, jsonld, what=where, depth=depth)
+    _reject_blank_node_ids(credential, where, derived)
+    _check_form(credential, loader, jsonld, what=where, depth=depth,
+                derived=derived)
+
+
+# Where the model reads an identifier besides the credential's own ``id``
+# (compact JSON key, how a refusal names it, whether OB 3.0 requires the id).
+_IDENTIFIED: Tuple[Tuple[str, str, bool], ...] = (
+    ("issuer", "the id of its issuer", True),
+    ("credentialSubject", "the id of its credentialSubject", False),
+    ("credentialStatus", "the id of a credentialStatus entry", False),
+)
+
+
+def _reject_blank_node_ids(credential: dict[str, Any], what: str,
+                           derived: bool) -> None:
+    """Refuse a blank node label as the id of *credential* (compact JSON, as
+    the model reads it), of its issuer, of a credentialSubject or of a
+    credentialStatus entry: the proof does not cover it (see the module
+    comment). With *derived*, an ecdsa-sd-2023 presentation, only where
+    OB 3.0 requires an id: the delegate labels every node that has none.
+
+    A few dictionary reads on a credential already at hand, before any
+    JSON-LD processing; nothing is walked."""
+    _reject_blank_node_id(credential, what, "its id")
+    for key, whose, required in _IDENTIFIED:
+        if derived and not required:
+            continue
+        value = credential.get(key)
+        for node in (value if isinstance(value, list) else [value]):
+            _reject_blank_node_id(node, what, whose)
+
+
+def _reject_blank_node_id(node: Any, what: str, whose: str) -> None:
+    # "id" is what the model reads; "@id" and a bare reference say the same
+    # to the JSON-LD processor.
+    labels = ([node.get("id"), node.get("@id")] if isinstance(node, dict)
+              else [node])
+    for label in labels:
+        if isinstance(label, str) and label.startswith("_:"):
+            raise OB3VerificationError(
+                "the %s has the blank node label %s as %s: a blank node "
+                "label is not signed (RDF canonicalization relabels blank "
+                "nodes), so it identifies nothing; an id must be an IRI"
+                % (what, _brief(label), whose))
 
 
 def _check_context(context: Any, loader: _Loader, what: str) -> None:

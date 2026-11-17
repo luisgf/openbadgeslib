@@ -1704,6 +1704,204 @@ class TestEndorsementSubjectRelocation:
                   % SUBJECT_MEMBER, verifier)
 
 
+# ── a blank node label where the model reads an identifier ──────────────────
+
+PINNED_ISSUER = 'https://issuer.example/i'
+UNIDENTIFIED_STATUS = {k: v for k, v in STATUS_ENTRY.items() if k != 'id'}
+HASHED_IDENTITY = [IdentityObject.create('alice@example.com')]
+
+
+def _first(value):
+    return value[0] if isinstance(value, list) else value
+
+
+# position: (the JSON object the id goes on, the id the model reports for
+#            it, how the refusal names it)
+ID_POSITIONS = {
+    'credential': (lambda doc: doc, lambda c: c.id, 'as its id'),
+    'issuer': (lambda doc: doc['issuer'], lambda c: c.issuer.id,
+               'as the id of its issuer'),
+    'subject': (lambda doc: _first(doc['credentialSubject']),
+                lambda c: c.recipient_id, 'as the id of its credentialSubject'),
+    'status': (lambda doc: _first(doc['credentialStatus']),
+               lambda c: c.credential_status[0].get('id'),
+               'as the id of a credentialStatus entry'),
+}
+
+
+def _unidentified(position):
+    """An unsecured credential with no id at *position*. Its subject (a
+    hashed identifier only) and its status entry never carry one, which
+    OB 3.0 allows; the credential and the issuer must, so without theirs the
+    model refuses it."""
+    body = _credential(PINNED_ISSUER, recipient_id=None,
+                       identifiers=list(HASHED_IDENTITY),
+                       credential_status=[dict(UNIDENTIFIED_STATUS)]).to_vc()
+    if position == 'credential':
+        del body['id']
+    elif position == 'issuer':
+        del body['issuer']['id']
+    return body
+
+
+class TestBlankNodeIds:
+    """A blank node label is not part of the RDF dataset: canonicalization
+    relabels blank nodes, so ``"id": "_:b7"`` written on a node that was
+    signed without an id leaves the signature valid, and the model read the
+    label as the identifier of the credential, the issuer, the subject or a
+    status entry. With eddsa-rdfc-2022 no label is accepted in those four
+    positions, of the credential and of each embedded one."""
+
+    @pytest.fixture()
+    def keys(self, ed25519_keypair):
+        priv, pub = ed25519_keypair
+        return priv, pub, _did_vm(pub)[1], OB3LdpVerifier(pubkey_pem=pub)
+
+    def _labelled(self, keys, position):
+        priv, pub, vm, _ = keys
+        signed = add_data_integrity_proof(_unidentified(position), priv, vm)
+        labelled = copy.deepcopy(signed)
+        ID_POSITIONS[position][0](labelled)['id'] = '_:b7'
+        verify_data_integrity_proof(labelled, pub)                   # same dataset
+        return signed, labelled
+
+    def test_identifier_only_credential_verifies(self, issuer):
+        priv, _, did, _ = issuer
+        signed = OB3LdpSigner(priv).sign(_credential(
+            did, recipient_id=None, identifiers=list(HASHED_IDENTITY),
+            credential_status=[dict(UNIDENTIFIED_STATUS)]))
+        for verifier in (OB3LdpVerifier(), OB3LdpVerifier.for_issuer_did(did)):
+            credential = verifier.verify(signed)
+            assert credential.recipient_id is None
+            assert credential.credential_status == [UNIDENTIFIED_STATUS]
+
+    @pytest.mark.parametrize('position', sorted(ID_POSITIONS))
+    def test_label_added_after_signing_is_refused(self, keys, position):
+        _, labelled = self._labelled(keys, position)
+        match = "credential has the blank node label '_:b7' %s" % (
+            ID_POSITIONS[position][2],)
+        with pytest.raises(OB3VerificationError, match=match):
+            _check(labelled)
+        _rejected(labelled, match, keys[3])
+
+    @pytest.mark.parametrize('position', sorted(ID_POSITIONS))
+    def test_label_was_read_as_an_identifier_before_the_fix(
+            self, keys, position, monkeypatch):
+        # What the rule closes, pinned so the test above cannot pass for
+        # another reason. Without a label the model has no id to report for
+        # the subject or the status entry, and refuses a credential or an
+        # issuer without one; with it, it reported the label.
+        signed, labelled = self._labelled(keys, position)
+        read = ID_POSITIONS[position][1]
+        if position in ('credential', 'issuer'):
+            _rejected(signed, 'missing required field', keys[3])
+        else:
+            assert read(keys[3].verify(signed)) is None
+        monkeypatch.setattr(cv, '_reject_blank_node_ids', lambda *args: None)
+        assert read(keys[3].verify(labelled)) == '_:b7'
+
+    def test_expected_recipient_cannot_be_a_label(self, issuer):
+        priv, pub, did, _ = issuer
+        signed = OB3LdpSigner(priv).sign(_credential(
+            did, recipient_id=None, identifiers=list(HASHED_IDENTITY)))
+        signed['credentialSubject']['id'] = '_:b7'
+        verify_data_integrity_proof(signed, pub)
+        for verifier in (OB3LdpVerifier(), OB3LdpVerifier.for_issuer_did(did),
+                         OB3LdpVerifier(pubkey_pem=pub)):
+            _rejected(signed, 'blank node label', verifier)
+            _rejected(signed, 'blank node label', verifier,
+                      expected_recipient='_:b7')
+
+    @pytest.mark.parametrize('position', ['subject', 'status'])
+    def test_label_on_an_entry_of_an_array(self, keys, position):
+        # [x] and x are one spelling to compaction, and the model reads the
+        # first subject and every status entry of an array.
+        _, labelled = self._labelled(keys, position)
+        key = {'subject': 'credentialSubject', 'status': 'credentialStatus'}[position]
+        labelled[key] = [labelled[key]]
+        verify_data_integrity_proof(labelled, keys[1])
+        _rejected(labelled, "blank node label '_:b7' %s" % ID_POSITIONS[position][2],
+                  keys[3])
+
+    @pytest.mark.parametrize('members, whose', [
+        ({'@id': '_:c'}, 'as its id'),
+        ({'issuer': '_:i'}, 'as the id of its issuer'),
+        ({'issuer': {'@id': '_:i'}}, 'as the id of its issuer'),
+        ({'issuer': [{'id': '_:i'}]}, 'as the id of its issuer'),
+        ({'credentialSubject': {'@id': '_:s'}}, 'as the id of its credentialSubject'),
+        ({'credentialSubject': [{'id': 'did:example:1'}, {'id': '_:s'}]},
+         'as the id of its credentialSubject'),
+        ({'credentialSubject': '_:s'}, 'as the id of its credentialSubject'),
+        ({'credentialStatus': [dict(STATUS_ENTRY), dict(STATUS_ENTRY, id='_:e')]},
+         'as the id of a credentialStatus entry'),
+        ({'credentialStatus': {'@id': '_:e', 'type': 'BitstringStatusListEntry'}},
+         'as the id of a credentialStatus entry'),
+    ], ids=['credential-@id', 'issuer-string', 'issuer-@id', 'issuer-array',
+            'subject-@id', 'subject-array', 'subject-string', 'status-array',
+            'status-@id'])
+    def test_every_spelling_of_the_id(self, members, whose):
+        # The keyword spelling, a bare reference and an array are not the
+        # compacted form or not what the model takes; refused all the same,
+        # before the JSON-LD processor sees them.
+        document = dict(_credential(PINNED_ISSUER).to_vc(), **members)
+        with pytest.raises(OB3VerificationError,
+                           match="the credential has the blank node label "
+                                 "'_:[cise]' %s: " % whose):
+            cv._reject_blank_node_ids(document, 'credential', False)
+
+    def test_only_labels_in_those_positions(self):
+        # An IRI that merely contains the prefix, an id that is no string
+        # (the model's and the processor's to refuse), an entry nested in an
+        # array (not the compacted form) and any other node are not this
+        # rule's: ecdsa-sd-2023 presentations label criteria, for one.
+        document = _credential('urn:_:i', id='urn:uuid:_:1',
+                               credential_status=[dict(STATUS_ENTRY)]).to_vc()
+        document['credentialSubject']['id'] = 7
+        document['credentialSubject']['achievement']['criteria']['id'] = '_:b0'
+        document['credentialStatus'] = [[dict(STATUS_ENTRY, id='_:e')]]
+        document['evidence'] = [{'id': '_:b1', 'type': ['Evidence']}]
+        cv._reject_blank_node_ids(document, 'credential', False)
+
+    @pytest.mark.parametrize('position', sorted(ID_POSITIONS))
+    def test_label_inside_an_embedded_endorsement(self, keys, position):
+        priv, pub, vm, verifier = keys
+        document = _complete_document()
+        find = ID_POSITIONS[position][0]
+        del find(document['endorsement'][0])['id']
+        signed = add_data_integrity_proof(document, priv, vm)
+        verifier.verify(signed)                       # an id is not required
+        labelled = copy.deepcopy(signed)
+        find(labelled['endorsement'][0])['id'] = '_:b7'
+        verify_data_integrity_proof(labelled, pub)                   # same dataset
+        _rejected(labelled, "endorsement at /endorsement/0 of the credential has "
+                            "the blank node label '_:b7' %s"
+                  % ID_POSITIONS[position][2], verifier)
+
+    @pytest.mark.parametrize('fields, whose', [
+        (dict(recipient_id='_:r'), 'as the id of its credentialSubject'),
+        (dict(id='_:c'), 'as its id'),
+        (dict(credential_status=[dict(STATUS_ENTRY, id='_:e')]),
+         'as the id of a credentialStatus entry'),
+    ], ids=['subject', 'credential', 'status'])
+    def test_signer_does_not_issue_a_label(self, issuer, fields, whose):
+        priv, pub, did, vm = issuer
+        credential = _credential(did, **fields)
+        with pytest.raises(ErrorSigningFile, match="does not cover: the credential "
+                           "has the blank node label '_:[rce]' %s" % whose):
+            OB3LdpSigner(priv).sign(credential)
+        # The low-level signer stays schema-agnostic, and its proof verifies
+        # low-level: only the dataset is at stake there.
+        signed = add_data_integrity_proof(credential.to_vc(), priv, vm)
+        verify_data_integrity_proof(signed, pub)
+        _rejected(signed, 'blank node label')
+
+    def test_jwt_vc_is_not_concerned(self, ob3_ed25519_signer,
+                                     ob3_ed25519_verifier, ob3_credential):
+        # A JWT signs its bytes: whatever id it carries is what was issued.
+        token = ob3_ed25519_signer.sign(replace(ob3_credential, recipient_id='_:b7'))
+        assert ob3_ed25519_verifier.verify(token).recipient_id == '_:b7'
+
+
 # ── ecdsa-sd-2023: validated before the delegation; openvc version guard ────
 
 class TestEcdsaSd:
@@ -1866,3 +2064,50 @@ class TestEcdsaSdPartialStatus:
         doc = dict(document, id='_:b0')
         with pytest.raises(OB3VerificationError, match='cannot find the statements'):
             ldp._reject_selective_sd_lifecycle(doc, doc['proof'])
+
+
+class TestEcdsaSdBlankNodeIds:
+    """openvc-core's derive writes a blank node label on every node of a
+    presentation that has no id (criteria, in every one of them), so with
+    ecdsa-sd-2023 a label is refused only where OB 3.0 requires an id, the
+    credential and the issuer: on a subject or a status entry, whose id is
+    optional, it is the delegate's own."""
+
+    @pytest.fixture(autouse=True)
+    def _sd(self):
+        from test_ob3_ldp_ecdsa_sd import _require_ldp_sd
+        _require_ldp_sd()
+
+    @staticmethod
+    def _derived(ob3_credential, **fields):
+        from test_ob3_ldp_ecdsa_sd import (_issue_and_derive,
+                                           _lifecycle_credential)
+        return _issue_and_derive(
+            replace(_lifecycle_credential(ob3_credential), **fields), selective=[])
+
+    def test_presentation_of_a_status_entry_without_id_verifies(self, ob3_credential):
+        document, pub, did = self._derived(
+            ob3_credential, credential_status=[dict(UNIDENTIFIED_STATUS)])
+        # The premise: if the delegate stops labelling, the exemption can go.
+        assert document['credentialStatus']['id'].startswith('_:')
+        assert document['credentialSubject']['achievement']['criteria'][
+            'id'].startswith('_:')
+        for verifier in (OB3LdpVerifier(), OB3LdpVerifier(pubkey_pem=pub)):
+            assert verifier.verify(document).issuer.id == did
+        # The same JSON under eddsa-rdfc-2022, whose signers write no label.
+        with pytest.raises(OB3VerificationError, match='blank node label'):
+            cv._reject_blank_node_ids(document, 'credential', False)
+
+    @pytest.mark.parametrize('position', ['credential', 'issuer'])
+    def test_label_where_an_id_is_required_is_refused(
+            self, ob3_credential, monkeypatch, position):
+        document, pub, _ = self._derived(ob3_credential)
+        doc = copy.deepcopy(document)
+        ID_POSITIONS[position][0](doc)['id'] = '_:b7'
+
+        def delegate(*args, **kwargs):
+            raise AssertionError('the delegate must not run')
+
+        monkeypatch.setitem(ldp._CRYPTOSUITES, 'ecdsa-sd-2023', delegate)
+        _rejected(doc, "credential has the blank node label '_:b7' %s"
+                  % ID_POSITIONS[position][2], OB3LdpVerifier(pubkey_pem=pub))

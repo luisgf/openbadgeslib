@@ -225,8 +225,14 @@ def _check_json_ld_form(document: dict[str, Any], proof: dict[str, Any],
     # As in canonicalization: the proof options are read in the context of
     # the secured document.
     proof_config['@context'] = document.get('@context')
+    # A blank node label is no identifier (it is not signed), and is refused
+    # where the model reads one. The delegate that derives an ecdsa-sd-2023
+    # presentation labels every node without an id, so there only where
+    # OB 3.0 requires an id; every other proof gets the whole rule.
+    derived = proof.get('cryptosuite') == 'ecdsa-sd-2023'
     # On this thread's own context caches, not pyld's shared ones (_canon_guard).
-    validate_document(unsecured, proof_config, loader, isolate(jsonld))
+    validate_document(unsecured, proof_config, loader, isolate(jsonld),
+                      derived=derived)
 
 
 def _select_proof(document: dict[str, Any]) -> dict[str, Any]:
@@ -1147,8 +1153,13 @@ class OB3LdpVerifier:
         context is not bundled (a VC 1.1 ``expirationDate``, a
         ``StatusList2021Entry``), ``@included``/``@reverse``/a
         top-level ``@graph``, a re-description of the credential's own node,
-        or anything the RDF conversion drops (relative or malformed IRIs,
-        undefined terms) is rejected.
+        a blank node label (``_:b7``, which no proof covers) as the ``id`` of
+        the credential, of its issuer, of a ``credentialSubject`` or of a
+        ``credentialStatus`` entry (with ``ecdsa-sd-2023``, whose
+        presentations carry the labels the delegate writes on nodes without
+        an id, of the credential or of its issuer only), or anything the RDF
+        conversion drops (relative or malformed IRIs, undefined terms) is
+        rejected.
         """
         doc = self._parse_document(document)
         # Before anything reads or processes it, JSON-LD processor included.

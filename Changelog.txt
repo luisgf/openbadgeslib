@@ -343,6 +343,30 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     where a member can still be left only in the description the model does
     not read (#345).
 
+  - security(ldp): a blank node label (`_:b7`) is refused as the `id` of a
+    Data Integrity credential, of its issuer, of a `credentialSubject` or of
+    a `credentialStatus` entry, in the credential and in each embedded
+    endorsement. A label is not part of the signed dataset (RDF
+    canonicalization relabels blank nodes), so `"id": "_:b7"` written on a
+    node that was signed without an id kept the signature valid and the
+    document its own compacted form, and `OB3LdpVerifier.verify` returned the
+    label as an identifier: as `recipient_id` for a subject signed with a
+    hashed `identifier` only (and `expected_recipient="_:b7"` matched it), as
+    the id of a status entry, and as the id of a credential or of an issuer
+    signed without one, which is refused as malformed when no label is
+    added. `OB3LdpSigner` no longer issues a credential with such an id
+    (`ErrorSigningFile`); the low-level functions, which check the proof
+    alone, are unchanged, and so is the JWT-VC path, where every byte is
+    signed. With ecdsa-sd-2023 only the credential's and the issuer's ids
+    are held to the rule: openvc-core's derive writes a label on every node
+    of a presentation that has no id, and OB 3.0 makes the id of a subject
+    and of a status entry optional, so a presentation of a credential whose
+    status entry has no id carries one there, keeps verifying, and still
+    shows it. The ids of other nodes (the achievement, an evidence, an
+    image) are not covered either: a rule for every node would refuse every
+    such presentation of a badge this library issues, whose `criteria` has
+    no id and so carries a label (#346).
+
 * v4.6.3 - 2026-10-21
 
   - fix(jws): the native JWS engine (OB1 and OB2 signed badges) answers a
