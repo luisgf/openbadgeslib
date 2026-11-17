@@ -323,6 +323,26 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     proof key with a stray `oth` member was issued with it, in both formats,
     and `handle_credential_request` now raises `IssuanceError` for it.
 
+  - security(ldp): the subject of an embedded endorsement credential may
+    carry only `id`, `type` and `endorsementComment`, the members of an
+    EndorsementSubject. An embedded endorsement names the node it endorses
+    (the achievement, the issuer) as its `credentialSubject`, and RDF lets a
+    node be described under any JSON object that references it, so the holder
+    of a Data Integrity badge could move the achievement's `description`,
+    `image` or `alignment` (the issuer's `name`, `url`, `image` or
+    `description`) into that subject: the same signed dataset, the same
+    signature, the document still its own compacted form, and
+    `OB3LdpVerifier.verify` returned a credential without them (an empty
+    description, no issuer name). Validity, status, recipient and issuer
+    verdicts were not affected. The rule goes by the position, not by the
+    subject's EndorsementSubject type, which a holder could move out the same
+    way. Compatibility: a badge whose embedded endorsement gives its subject
+    any other member, an extension included, no longer verifies. Not covered:
+    a node the issuer itself describes twice in the credential (the issuer
+    again as `achievement.creator`, a `criteria` with the achievement's id),
+    where a member can still be left only in the description the model does
+    not read (#345).
+
 * v4.6.3 - 2026-10-21
 
   - fix(jws): the native JWS engine (OB1 and OB2 signed badges) answers a

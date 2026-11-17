@@ -121,6 +121,24 @@
 # credential that describes its status node under a second property with
 # more than its id is refused too.
 #
+# Fourth, the subject of an embedded credential carries only what an
+# EndorsementSubject has: id, type and endorsementComment. An embedded
+# endorsement names the node it endorses -- the achievement, the issuer -- as
+# its credentialSubject, so for the same reason a holder could move that
+# node's description, image or alignment (name, url) out of the object the
+# model reads into that subject, with the dataset and the signature
+# unchanged. The rule is by position, every node reached through
+# credentialSubject while an embedded credential is validated, not by the
+# subject's EndorsementSubject type: a type is a statement about the node
+# too, and moves out with endorsementComment as the description moves in.
+# The cost: an endorsement whose subject carries an extension member is
+# refused. A node the issuer describes twice in the credential itself (the
+# issuer again as achievement.creator, a criteria with the achievement's id,
+# both in the credential the tests model on the 1EdTech example) is NOT
+# covered: the two descriptions differ there by design, so neither a
+# "described once" nor an "exact copy" rule holds, and a member the model
+# reads can still be left only in the other.
+#
 # OB 3.0 adaptations (the 1EdTech "Complete OpenBadgeCredential" example must
 # validate):
 #
@@ -194,6 +212,12 @@ _RDF_IRI = re.compile(r"^([A-Za-z][A-Za-z0-9+-.]*|_):[^\s]*$")
 _CRED = "https://www.w3.org/2018/credentials#"
 _REFRESH_SERVICE = _CRED + "refreshService"
 _CREDENTIAL_STATUS = _CRED + "credentialStatus"
+_CREDENTIAL_SUBJECT = _CRED + "credentialSubject"
+# All the subject of an embedded credential may carry (expanded form): the
+# members of an OB 3.0 EndorsementSubject.
+_ENDORSEMENT_SUBJECT_MEMBERS = frozenset((
+    "@id", "@type",
+    "https://purl.imsglobal.org/spec/vc/ob/vocab.html#endorsementComment"))
 _STATUS = "https://www.w3.org/ns/credentials/status#"
 _STATUS_LIST_2021 = "https://w3id.org/vc/status-list#"
 
@@ -214,7 +238,7 @@ _POLICY_TERMS: Mapping[str, str] = MappingProxyType({
     _CRED + "expirationDate": "expirationDate",             # VC 1.1 only
     _CREDENTIAL_STATUS: "credentialStatus",
     _CRED + "credentialSchema": "credentialSchema",
-    _CRED + "credentialSubject": "credentialSubject",
+    _CREDENTIAL_SUBJECT: "credentialSubject",
     _CRED + "issuer": "issuer",
     "https://w3id.org/security#expiration": "expires",
     _STATUS + "BitstringStatusListEntry": "BitstringStatusListEntry",
@@ -307,7 +331,7 @@ def _check_form(document: dict[str, Any], loader: _Loader, jsonld: Any, *,
     if "@graph" in node:
         raise OB3VerificationError(
             "the %s uses a top-level @graph, which is not accepted" % what)
-    _check_expanded(node, node.get("@id"), what, top=True)
+    _check_expanded(node, node.get("@id"), what, top=True, embedded=depth > 0)
     _check_status_in_place(node, what)
 
     compacted = _jsonld_call(jsonld.compact, what, expanded,
@@ -498,14 +522,17 @@ def _is_node_iri(value: Any) -> bool:
 
 
 def _check_expanded(value: Any, top_id: Any, what: str, *, top: bool = False,
-                    via: Optional[str] = None) -> None:
+                    via: Optional[str] = None, embedded: bool = False) -> None:
     """Walk the expanded form: refuse the keywords that detach statements from
     their node, a nested re-description of the document's own node, and
     anything the RDF conversion would silently drop -- so the dataset holds
-    exactly what the JSON says. *via* is the predicate that led here."""
+    exactly what the JSON says. *via* is the predicate that led here.
+    *embedded* marks the walk of an embedded credential, whose subject may
+    carry only the members of an EndorsementSubject (see the module
+    comment)."""
     if isinstance(value, list):
         for item in value:
-            _check_expanded(item, top_id, what, via=via)
+            _check_expanded(item, top_id, what, via=via, embedded=embedded)
         return
     if not isinstance(value, dict):
         return
@@ -532,13 +559,20 @@ def _check_expanded(value: Any, top_id: Any, what: str, *, top: bool = False,
         raise OB3VerificationError(
             "the %s's own node %s is described again inside it"
             % (what, _brief(top_id)))
+    subject = embedded and via == _CREDENTIAL_SUBJECT
     for key, item in value.items():
         if not key.startswith("@") and not _is_predicate(key):
             raise OB3VerificationError(
                 "the %s has a property the signed dataset drops: %s"
                 % (what, _brief(key)))
+        if subject and key not in _ENDORSEMENT_SUBJECT_MEMBERS:
+            raise OB3VerificationError(
+                "the %s gives its credentialSubject a member other than id, "
+                "type and endorsementComment (%s): a member of the node it "
+                "endorses, signed all the same there, would be out of the "
+                "object the model reads it from" % (what, _brief(key)))
         if key not in ("@id", "@type"):
-            _check_expanded(item, top_id, what,
+            _check_expanded(item, top_id, what, embedded=embedded,
                             via=None if key.startswith("@") else key)
 
 

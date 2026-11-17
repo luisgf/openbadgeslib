@@ -1565,6 +1565,145 @@ class TestCompleteExample:
         _rejected(doc, 'compacted form', verifier)
 
 
+# ── the node an embedded endorsement names as its subject ───────────────────
+
+def _achievement(document):
+    return document['credentialSubject']['achievement']
+
+
+# node: (its JSON object, the subject of the embedded endorsement naming it)
+ENDORSED = {
+    'achievement': (
+        _achievement,
+        lambda doc: _achievement(doc)['endorsement'][0]['credentialSubject']),
+    'issuer': (lambda doc: doc['issuer'],
+               lambda doc: doc['endorsement'][0]['credentialSubject']),
+}
+SUBJECT_MEMBER = 'gives its credentialSubject a member other than'
+
+
+class TestEndorsementSubjectRelocation:
+    """An embedded endorsement names the node it endorses as its
+    credentialSubject, and RDF lets a node be described under any JSON object
+    that references it: a holder could move the achievement's description,
+    image or alignment (the issuer's name, url, image or description) into
+    that subject with the dataset, and the signature, unchanged, and the model
+    built from the JSON no longer showed them. The subject of an embedded
+    credential may carry only id, type and endorsementComment, which is all
+    an EndorsementSubject has."""
+
+    @pytest.fixture()
+    def endorsed(self, ed25519_keypair):
+        """(signed, public key, pinned verifier) of the complete document
+        with its achievement-level endorsement endorsing the achievement
+        itself; the credential-level one endorses the issuer, as there."""
+        priv, pub = ed25519_keypair
+        _, vm = _did_vm(pub)
+        document = _complete_document()
+        ENDORSED['achievement'][1](document)['id'] = ACH_ID
+        signed = add_data_integrity_proof(document, priv, vm)
+        return signed, pub, OB3LdpVerifier(pubkey_pem=pub)
+
+    def test_untouched_endorsements_verify(self, endorsed):
+        signed, _, verifier = endorsed
+        _check(signed)
+        credential = verifier.verify(signed)
+        assert credential.achievement.description == 'University Degree Description'
+        assert credential.achievement.image_url == ACH_ID + '/image'
+        assert [a.target_code for a in credential.achievement.alignments] == ['degree']
+        assert credential.issuer.name == 'Example University'
+        assert credential.issuer.url == 'https://university.example'
+
+    @pytest.mark.parametrize('node, member', [
+        ('achievement', 'description'), ('achievement', 'image'),
+        ('achievement', 'alignment'), ('issuer', 'name'), ('issuer', 'url'),
+        ('issuer', 'image'), ('issuer', 'description')])
+    def test_member_moved_into_the_subject_is_refused(self, endorsed, node, member):
+        signed, pub, verifier = endorsed
+        moved = copy.deepcopy(signed)
+        described, subject = (find(moved) for find in ENDORSED[node])
+        subject[member] = described.pop(member)
+        verify_data_integrity_proof(moved, pub)                      # same dataset
+        where = {'achievement': '/credentialSubject/achievement/endorsement/0',
+                 'issuer': '/endorsement/0'}[node]
+        with pytest.raises(OB3VerificationError, match='endorsement at %s of the '
+                           'credential %s' % (where, SUBJECT_MEMBER)):
+            _check(moved)
+        _rejected(moved, SUBJECT_MEMBER, verifier)
+
+    def test_subject_type_moved_out_with_it(self, endorsed):
+        # The rule cannot hang on the subject's EndorsementSubject type: a
+        # type is a statement about the node like any other, so it (and the
+        # endorsementComment its scoped context defines) moves to the outer
+        # object while the description moves in.
+        signed, pub, verifier = endorsed
+        moved = copy.deepcopy(signed)
+        described, subject = (find(moved) for find in ENDORSED['achievement'])
+        described['type'] = ['Achievement'] + subject.pop('type')
+        described['endorsementComment'] = subject.pop('endorsementComment')
+        subject['description'] = described.pop('description')
+        assert subject == {'id': ACH_ID,
+                           'description': 'University Degree Description'}
+        verify_data_integrity_proof(moved, pub)                      # same dataset
+        _rejected(moved, SUBJECT_MEMBER, verifier)
+
+    def test_copied_member_is_refused_too(self, endorsed):
+        # The cost: the subject may not repeat a member either, since a
+        # repeated statement is the same dataset and the next step is to
+        # drop it from the object the model reads.
+        signed, pub, verifier = endorsed
+        copied = copy.deepcopy(signed)
+        described, subject = (find(copied) for find in ENDORSED['issuer'])
+        subject['name'] = described['name']
+        verify_data_integrity_proof(copied, pub)
+        _rejected(copied, SUBJECT_MEMBER, verifier)
+
+    def test_member_of_another_scope_was_refused_already(self, endorsed):
+        # criteria is a term of the Achievement type only: under the
+        # endorsement subject it is no term, so the dataset loses it and the
+        # endorsement is not its own compacted form (a regression assertion;
+        # the rule above is not what refuses this one).
+        signed, pub, verifier = endorsed
+        moved = copy.deepcopy(signed)
+        described, subject = (find(moved) for find in ENDORSED['achievement'])
+        subject['criteria'] = described.pop('criteria')
+        with pytest.raises(OB3VerificationError, match='signature mismatch'):
+            verify_data_integrity_proof(moved, pub)
+        _rejected(moved, r'endorsement at \S+ of the credential is not in '
+                         r'compacted form .*/credentialSubject/criteria', verifier)
+
+    def test_issuer_signed_extra_subject_member_is_refused(self, ed25519_keypair):
+        # Not only a holder's move: an embedded endorsement whose subject
+        # carries more than an EndorsementSubject has is not accepted.
+        priv, pub = ed25519_keypair
+        _, vm = _did_vm(pub)
+        document = _complete_document()
+        ENDORSED['issuer'][1](document)['name'] = 'Example University'
+        signed = add_data_integrity_proof(document, priv, vm)
+        _rejected(signed, r'endorsement at /endorsement/0 of the credential %s '
+                          r'id, type and endorsementComment \(%s\)'
+                  % (SUBJECT_MEMBER, re.escape("'https://schema.org/name'")),
+                  OB3LdpVerifier(pubkey_pem=pub))
+
+    def test_nested_endorsement_subject(self, ed25519_keypair):
+        # An endorsement of the endorser, embedded in the endorsement: its
+        # subject is held to the same members.
+        priv, pub = ed25519_keypair
+        _, vm = _did_vm(pub)
+        document = _complete_document()
+        inner = _endorsement(6)
+        inner['credentialSubject'] = {
+            'id': 'https://accreditor.example/issuers/1',
+            'type': ['EndorsementSubject'], 'endorsementComment': 'Listed'}
+        document['endorsement'][0]['issuer']['endorsement'] = [inner]
+        verifier = OB3LdpVerifier(pubkey_pem=pub)
+        verifier.verify(add_data_integrity_proof(document, priv, vm))
+        inner['credentialSubject']['name'] = 'Accrediting Agency'
+        _rejected(add_data_integrity_proof(document, priv, vm),
+                  r'endorsement at /endorsement/0 of the credential %s'
+                  % SUBJECT_MEMBER, verifier)
+
+
 # ── ecdsa-sd-2023: validated before the delegation; openvc version guard ────
 
 class TestEcdsaSd:
