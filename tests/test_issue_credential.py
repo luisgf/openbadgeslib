@@ -182,6 +182,49 @@ class TestHolderBinding:
             issue_credential_from_conf(conf, 'badge_1', 'r@example.com',
                                        holder_jwk={'no': 'kty'})
 
+    @pytest.mark.parametrize(
+        'member', ['d', 'k', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'priv'])
+    def test_each_private_member_is_refused(self, tmp_path, member):
+        # #343: the did:jwk IS the JWK, so a private member in the holder key
+        # would be signed into `sub` and published with the credential. `oth`
+        # (RSA multi-prime, RFC 7518 §6.3.2.7) used to get through.
+        conf = _write_conf(tmp_path, status=True)
+        leaky = dict(HOLDER_JWK, **{member: 'c2VjcmV0'})
+        with pytest.raises(IssuanceError,
+                           match='invalid holder key.*private members') as exc:
+            issue_credential_from_conf(conf, 'badge_1', 'r@example.com',
+                                       holder_jwk=leaky)
+        assert repr(member) in str(exc.value)
+        assert 'c2VjcmV0' not in str(exc.value)
+        # Refused before the status registry is written: no index is spent on
+        # a credential that is never issued.
+        assert not (tmp_path / 'status' / 'badge_1.json').exists()
+
+    @pytest.mark.parametrize('not_a_jwk', ['not-a-jwk', [], ['d'], 42])
+    def test_a_holder_key_that_is_no_jwk_object_is_refused(self, tmp_path,
+                                                           not_a_jwk):
+        # Not a mapping, so there are no members to look for: it is turned
+        # down as a malformed key, with the module's own error. ['d'] is the
+        # one a naive `'d' in holder_jwk` would call a private key.
+        conf = _write_conf(tmp_path, status=True)
+        with pytest.raises(IssuanceError,
+                           match='invalid holder key.*JWK object'):
+            issue_credential_from_conf(conf, 'badge_1', 'r@example.com',
+                                       holder_jwk=not_a_jwk)
+        assert not (tmp_path / 'status' / 'badge_1.json').exists()
+
+    def test_public_members_of_a_jwk_are_not_private_ones(self, tmp_path):
+        # kid/use/alg/key_ops/x5c belong in a public JWK; the refusal above is
+        # a denylist of private members, not an allowlist of public ones.
+        from openbadgeslib.ob3.did import did_jwk_from_jwk
+        conf = _write_conf(tmp_path)
+        jwk = dict(HOLDER_JWK, kid='holder-1', use='sig', alg='ES256',
+                   key_ops=['verify'], x5c=['MIIB'])
+        result = issue_credential_from_conf(conf, 'badge_1', 'r@example.com',
+                                            holder_jwk=jwk)
+        assert result.holder_did == did_jwk_from_jwk(jwk)
+        assert _claims(result.token)['sub'] == result.holder_did
+
     def test_bound_credential_round_trips_through_the_verifier(self, tmp_path):
         from openbadgeslib.ob3 import OB3Verifier
         conf = _write_conf(tmp_path)
@@ -255,6 +298,43 @@ class TestSdJwtIssuance:
         verified = verify_badge_sd_jwt(result.token, pubkey_pem=pubkey)
         # The cnf must be the key the wallet proved possession of.
         assert verified.confirmation['jwk']['x'] == HOLDER_JWK['x']
+
+    def test_cnf_is_the_holder_jwk_with_its_public_members(self, tmp_path):
+        pytest.importorskip('openvc')
+        from openbadgeslib.ob3.eudi import verify_badge_sd_jwt
+        conf = _write_conf(tmp_path, key_type='ECC', priv='test_sign_ecc.pem',
+                           pub='test_verify_ecc.pem')
+        jwk = dict(HOLDER_JWK, kid='holder-1', use='sig', alg='ES256',
+                   key_ops=['verify'], x5c=['MIIB'])
+        result = issue_credential_from_conf(
+            conf, 'badge_1', 'r@example.com',
+            credential_format=FORMAT_SD_JWT_VC, holder_jwk=jwk)
+        pubkey = (TESTS_DIR / 'test_verify_ecc.pem').read_bytes()
+        verified = verify_badge_sd_jwt(result.token, pubkey_pem=pubkey)
+        assert verified.confirmation == {'jwk': jwk}
+
+    @pytest.mark.parametrize('member', ['d', 'oth'])
+    def test_a_private_member_never_reaches_cnf(self, tmp_path, member):
+        # #343: refused at the binding step, before the SD-JWT issuer runs.
+        conf = _write_conf(tmp_path, key_type='ECC', priv='test_sign_ecc.pem',
+                           pub='test_verify_ecc.pem')
+        with pytest.raises(IssuanceError,
+                           match='invalid holder key.*private members'):
+            issue_credential_from_conf(
+                conf, 'badge_1', 'r@example.com',
+                credential_format=FORMAT_SD_JWT_VC,
+                holder_jwk=dict(HOLDER_JWK, **{member: 'c2VjcmV0'}))
+
+    def test_a_symmetric_key_type_never_reaches_cnf(self, tmp_path):
+        # A `kty: oct` JWK that withholds `k` names no private member, so the
+        # did:jwk step lets it by; cnf.jwk still has to be an asymmetric
+        # public key, and the SD-JWT issuer refuses it.
+        conf = _write_conf(tmp_path, key_type='ECC', priv='test_sign_ecc.pem',
+                           pub='test_verify_ecc.pem')
+        with pytest.raises(IssuanceError, match='unsupported kty'):
+            issue_credential_from_conf(
+                conf, 'badge_1', 'r@example.com',
+                credential_format=FORMAT_SD_JWT_VC, holder_jwk={'kty': 'oct'})
 
     def test_uses_the_issuer_vct_when_configured(self, tmp_path):
         pytest.importorskip('openvc')

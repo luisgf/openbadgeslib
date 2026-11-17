@@ -460,10 +460,23 @@ def _bind_holder(credential: Any, recipient: str,
 
     The salt is fresh per credential, so the same address hashed for two badges
     does not correlate them. Returns the did:jwk.
+
+    A did:jwk IS its JWK, and the SD-JWT path signs the same JWK into ``cnf``,
+    so a private member in *holder_jwk* would be published with the credential.
+    It is refused here, before anything is allocated or signed, and never
+    stripped: the list is the SD-JWT issuer's own, which also names ``oth``
+    (the RSA multi-prime member) that the did:jwk encoder does not look for.
     """
     from .ob3 import IdentityObject
     from .ob3.did import did_jwk_from_jwk
+    from .ob3.eudi import _private_jwk_members
 
+    leaked = _private_jwk_members(holder_jwk)
+    if leaked:
+        raise IssuanceError(
+            'invalid holder key: the JWK carries private members %s; a holder '
+            'key must be a public key, and it is signed into the credential'
+            % leaked)
     try:
         holder_did = did_jwk_from_jwk(holder_jwk)
     except ValueError as exc:

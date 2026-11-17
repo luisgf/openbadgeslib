@@ -300,6 +300,29 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     result has the mode of a newly signed badge (from the umask) rather than
     the mode of the file it replaced.
 
+  - security(eudi): `issue_badge_sd_jwt` binds a holder key only if it is a
+    public key (#343). `holder_jwk` was signed into `cnf.jwk` as given, with
+    no look at it, and `cnf` travels with the credential: a caller that
+    forwarded the whole key its wallet or client sent had the holder's private
+    key issued inside the badge (a private P-256 or Ed25519 JWK kept its `d`,
+    a symmetric `oct` key its `k`), and a str or a list became the `jwk`
+    itself. RFC 7800 section 3.2 wants a public key there. Now a value that is
+    not a JWK object, a JWK that carries any of the private members `d`, `k`,
+    `p`, `q`, `dp`, `dq`, `qi`, `oth` or `priv`, and a `kty` other than `EC`,
+    `OKP` or `RSA` raise `EudiError` before anything is signed. The key is
+    refused, never reduced to its public half: stripping would bind and
+    publish a key the caller did not mean to hand over. A public JWK is bound
+    as before, with its `kid`, `use`, `alg`, `key_ops` or `x5c` if it has
+    them. `issue_credential_from_conf(holder_jwk=...)` refuses the same
+    members before it derives the did:jwk; it already refused all of them but
+    `oth` (the RSA multi-prime member), which went into the signed `sub` of a
+    `jwt_vc_json` credential and into the `cnf` of a `vc+sd-jwt` one. The
+    OID4VCI credential endpoint never issued a key proof whose `jwk` header
+    carries `d`, `k`, `p`, `q`, `dp`, `dq`, `qi` or `priv` (openvc-core
+    answers `invalid_proof`), but it does not look for `oth` either: a P-256
+    proof key with a stray `oth` member was issued with it, in both formats,
+    and `handle_credential_request` now raises `IssuanceError` for it.
+
 * v4.6.3 - 2026-10-21
 
   - fix(jws): the native JWS engine (OB1 and OB2 signed badges) answers a

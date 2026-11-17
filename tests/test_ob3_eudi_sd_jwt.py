@@ -144,6 +144,159 @@ class TestSdJwtBadge:
             issue_badge_sd_jwt(ob3_credential, privkey_pem=p521)
 
 
+# ── #343: cnf.jwk is a public key, or nothing is issued ──────────────────────
+
+def _jwk_of(pem, *, private):
+    """The JWK of a PEM private key: its public half, or (*private*) all of it —
+    what a caller that forwards "the wallet's key" without looking hands over."""
+    import json
+
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+    from jwt.algorithms import ECAlgorithm, OKPAlgorithm
+
+    key = load_pem_private_key(pem, password=None)
+    algorithm = (ECAlgorithm if isinstance(key, ec.EllipticCurvePrivateKey)
+                 else OKPAlgorithm)
+    return json.loads(algorithm.to_jwk(key if private else key.public_key()))
+
+
+class TestHolderJwkIsPublic:
+    """RFC 7800 §3.2: ``cnf.jwk`` is a public key. Whatever ``holder_jwk`` holds
+    is signed into the credential and travels with it, so a private or
+    symmetric key there is published by the issuer. The refusals need no
+    openvc: they happen before the delegate is imported."""
+
+    def test_private_ec_jwk_is_refused(self, ob3_credential, ed25519_priv_pem,
+                                       ecc_priv_pem):
+        private = _jwk_of(ecc_priv_pem, private=True)
+        assert private['kty'] == 'EC' and 'd' in private
+        with pytest.raises(EudiError, match='private members') as excinfo:
+            issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                               holder_jwk=private)
+        # The member is named; its value is never echoed.
+        assert "'d'" in str(excinfo.value)
+        assert private['d'] not in str(excinfo.value)
+
+    def test_private_okp_jwk_is_refused(self, ob3_credential, ed25519_priv_pem):
+        private = _jwk_of(ed25519_priv_pem, private=True)
+        assert private['kty'] == 'OKP' and 'd' in private
+        with pytest.raises(EudiError, match='private members') as excinfo:
+            issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                               holder_jwk=private)
+        assert private['d'] not in str(excinfo.value)
+
+    @pytest.mark.parametrize(
+        'member', ['d', 'k', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'priv'])
+    def test_each_private_member_is_refused(self, ob3_credential,
+                                            ed25519_priv_pem, ecc_priv_pem,
+                                            member):
+        # Refused, never stripped: dropping the member would bind (and publish)
+        # a key the caller did not mean to hand over. `oth` is the RSA
+        # multi-prime one (RFC 7518 §6.3.2.7), `priv` the RFC 9964 one.
+        jwk = dict(_jwk_of(ecc_priv_pem, private=False), **{member: 'c2VjcmV0'})
+        with pytest.raises(EudiError, match='private members') as excinfo:
+            issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                               holder_jwk=jwk)
+        assert repr(member) in str(excinfo.value)
+        assert 'c2VjcmV0' not in str(excinfo.value)
+
+    @pytest.mark.parametrize('not_a_jwk', ['not-a-jwk', [], b'{}', 42, True])
+    def test_a_non_mapping_is_refused(self, ob3_credential, ed25519_priv_pem,
+                                      not_a_jwk):
+        with pytest.raises(EudiError, match='must be a JWK object'):
+            issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                               holder_jwk=not_a_jwk)
+
+    def test_a_symmetric_key_is_refused(self, ob3_credential, ed25519_priv_pem):
+        with pytest.raises(EudiError, match='private members'):
+            issue_badge_sd_jwt(
+                ob3_credential, privkey_pem=ed25519_priv_pem,
+                holder_jwk={'kty': 'oct', 'k': 'c2VjcmV0LXNlY3JldC1zZWNyZXQ'})
+
+    @pytest.mark.parametrize('jwk', [
+        {'kty': 'oct'},                             # symmetric, key withheld
+        {'crv': 'P-256', 'x': 'eA', 'y': 'eQ'},     # no kty at all
+        {'kty': 'ec', 'crv': 'P-256', 'x': 'eA', 'y': 'eQ'},   # case matters
+        {'kty': None, 'crv': 'P-256', 'x': 'eA', 'y': 'eQ'},
+        {'kty': ['EC'], 'crv': 'P-256', 'x': 'eA', 'y': 'eQ'},  # unhashable
+        {},
+    ])
+    def test_a_kty_that_is_no_public_key_type_is_refused(
+            self, ob3_credential, ed25519_priv_pem, jwk):
+        with pytest.raises(EudiError, match='unsupported kty'):
+            issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                               holder_jwk=jwk)
+
+    def test_refused_before_anything_else_runs(self, monkeypatch, ob3_credential,
+                                               ed25519_priv_pem, ecc_priv_pem):
+        # The check is an argument check: it does not wait for the delegate
+        # (or need it installed) to turn the key down.
+        import openbadgeslib.ob3.eudi as eudi
+
+        def _unreachable():
+            raise AssertionError('the delegate was reached with a private JWK')
+        monkeypatch.setattr(eudi, '_require_openvc', _unreachable)
+        with pytest.raises(EudiError, match='private members'):
+            issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                               holder_jwk=_jwk_of(ecc_priv_pem, private=True))
+
+    # ── what a legitimate public key still gets ──────────────────────────────
+
+    def _cnf(self, token, pubkey_pem):
+        return verify_badge_sd_jwt(token, pubkey_pem=pubkey_pem).confirmation
+
+    def test_public_ec_jwk_with_extra_public_members_is_bound_verbatim(
+            self, ob3_credential, ed25519_priv_pem, ed25519_pub_pem,
+            ecc_priv_pem):
+        pytest.importorskip("openvc")
+        # kid/use/alg/key_ops/x5c are public members of a JWK (RFC 7517 §4):
+        # the check is a denylist of private ones, not an allowlist.
+        jwk = dict(_jwk_of(ecc_priv_pem, private=False), kid='holder-1',
+                   use='sig', alg='ES256', key_ops=['verify'], x5c=['MIIB'])
+        before = dict(jwk)
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   holder_jwk=jwk)
+        assert self._cnf(token, ed25519_pub_pem) == {'jwk': before}
+        assert jwk == before                        # the input is not touched
+
+    def test_public_okp_jwk_is_bound_verbatim(self, ob3_credential,
+                                              ed25519_priv_pem, ed25519_pub_pem):
+        pytest.importorskip("openvc")
+        jwk = _jwk_of(ed25519_priv_pem, private=False)
+        assert sorted(jwk) == ['crv', 'kty', 'x']
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   holder_jwk=jwk)
+        assert self._cnf(token, ed25519_pub_pem) == {'jwk': jwk}
+
+    def test_public_rsa_jwk_is_bound_verbatim(self, ob3_credential,
+                                              ed25519_priv_pem, ed25519_pub_pem,
+                                              rsa_pub_pem):
+        pytest.importorskip("openvc")
+        from openbadgeslib.keys import public_jwk_from_pem
+        jwk = public_jwk_from_pem(rsa_pub_pem)
+        assert jwk['kty'] == 'RSA' and 'd' not in jwk
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   holder_jwk=jwk)
+        assert self._cnf(token, ed25519_pub_pem) == {'jwk': jwk}
+
+    def test_a_read_only_mapping_is_a_jwk_too(self, ob3_credential,
+                                              ed25519_priv_pem, ed25519_pub_pem,
+                                              ecc_priv_pem):
+        pytest.importorskip("openvc")
+        from types import MappingProxyType
+        jwk = _jwk_of(ecc_priv_pem, private=False)
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem,
+                                   holder_jwk=MappingProxyType(jwk))
+        assert self._cnf(token, ed25519_pub_pem) == {'jwk': jwk}
+
+    def test_no_holder_key_means_no_cnf(self, ob3_credential, ed25519_priv_pem,
+                                        ed25519_pub_pem):
+        pytest.importorskip("openvc")
+        token = issue_badge_sd_jwt(ob3_credential, privkey_pem=ed25519_priv_pem)
+        assert self._cnf(token, ed25519_pub_pem) is None
+
+
 # ── behaviour without the [eudi] extra (runs with or without openvc) ─────────
 
 class TestExtraAbsent:

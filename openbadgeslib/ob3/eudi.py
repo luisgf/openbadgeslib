@@ -84,6 +84,17 @@ _MAX_TIMESTAMP_CHARS = 64
 # it keeps the exp a number every verifier can read.
 _MAX_EXPIRES_IN_S = 10 ** 10
 
+# JWK members that only ever hold private or symmetric key material: the EC/OKP
+# and RSA private exponent "d" and the RSA CRT ones, "oth" among them (RFC 7518
+# §6.2.2 and §6.3.2, RFC 8037 §2), the symmetric key "k" (§6.4.1) and the "priv"
+# of an RFC 9964 AKP key. A holder key is signed into the credential and travels
+# with it, so one of these in it is published by the issuer.
+_PRIVATE_JWK_MEMBERS = ("d", "k", "p", "q", "dp", "dq", "qi", "oth", "priv")
+
+# The key types a cnf.jwk may name: the asymmetric ones (RFC 7800 §3.2 wants a
+# public key there). "oct" is a shared secret, whether or not it shows its "k".
+_HOLDER_JWK_KTYS = ("EC", "OKP", "RSA")
+
 _INSTALL_HINT = (
     "SD-JWT VC support needs the [eudi] extra: pip install openbadgeslib[eudi]")
 
@@ -509,13 +520,54 @@ def _not_before(claims: Mapping[str, Any]) -> Optional[int]:
         raise EudiError("cannot derive the start of this badge: %s" % exc) from exc
 
 
+def _private_jwk_members(jwk: Any) -> list[str]:
+    """The names of the private-key members *jwk* carries, sorted; none for a
+    public JWK (and for anything that is not a mapping, which is not a JWK).
+
+    Names only: the values are key material and never belong in a message."""
+    if not isinstance(jwk, Mapping):
+        return []
+    return sorted(name for name in _PRIVATE_JWK_MEMBERS if name in jwk)
+
+
+def _public_holder_jwk(holder_jwk: Any) -> dict[str, Any]:
+    """*holder_jwk* as the ``cnf.jwk`` of a credential, or :class:`EudiError`.
+
+    Whatever goes into ``cnf`` is signed and handed to everyone the credential
+    is shown to, so it has to be a public key (RFC 7800 §3.2). A key that is
+    not one is REFUSED, not reduced to its public half: stripping would bind,
+    and publish, a key the caller did not mean to hand over, and would hide
+    from both sides that a private key was sent to the issuer.
+
+    A denylist of private members rather than an allowlist of public ones: a
+    public JWK legitimately carries ``kid``, ``use``, ``alg``, ``key_ops`` or
+    ``x5c`` (RFC 7517 §4), and they are bound as given. Returns a copy.
+    """
+    if not isinstance(holder_jwk, Mapping):
+        raise EudiError(
+            "holder_jwk must be a JWK object (a mapping), not %s"
+            % type(holder_jwk).__name__)
+    leaked = _private_jwk_members(holder_jwk)
+    if leaked:
+        raise EudiError(
+            "holder_jwk carries private members %s; cnf.jwk must be a public "
+            "key, and it is signed into the credential. Refusing rather than "
+            "stripping them: pass the holder's public JWK." % leaked)
+    kty = holder_jwk.get("kty")
+    if not isinstance(kty, str) or kty not in _HOLDER_JWK_KTYS:
+        raise EudiError(
+            "holder_jwk has an unsupported kty; cnf.jwk must be an asymmetric "
+            "public key (kty %s)" % ", ".join(_HOLDER_JWK_KTYS))
+    return dict(holder_jwk)
+
+
 def issue_badge_sd_jwt(
     credential: OpenBadgeCredential,
     *,
     privkey_pem: Any,
     kid: Optional[str] = None,
     disclosable: Iterable[str] = DEFAULT_DISCLOSABLE,
-    holder_jwk: Optional[dict[str, Any]] = None,
+    holder_jwk: Optional[Mapping[str, Any]] = None,
     expires_in_s: Optional[int] = None,
     vct: str = OB3_SD_JWT_VCT,
     vct_integrity: Optional[str] = None,
@@ -531,6 +583,16 @@ def issue_badge_sd_jwt(
     undetected (an expired badge would present as one with no expiry). Pass
     *holder_jwk* to bind the credential to a holder key (``cnf``) for a later
     Key-Binding presentation. Ed25519, P-256 or P-384 keys only.
+
+    HOLDER KEY: *holder_jwk* is signed into the credential as ``cnf.jwk`` exactly
+    as given and travels with it, so it must be the holder's **public** JWK
+    (RFC 7800 §3.2): a JWK object of ``kty`` ``EC``, ``OKP`` or ``RSA``. One
+    that carries a private member (``d``, ``k``, ``p``, ``q``, ``dp``, ``dq``,
+    ``qi``, ``oth``, ``priv``), a symmetric ``oct`` key, or anything that is not
+    a JWK object raises :class:`EudiError` and nothing is issued. The private
+    members are refused, never stripped — strip them yourself if the public
+    half is what you mean to bind. Public members such as ``kid``, ``use``,
+    ``alg``, ``key_ops`` and ``x5c`` are kept.
 
     EXPIRY: the credential's ``validUntil`` is also written as the issuer JWT's
     ``exp``, the claim every SD-JWT VC verifier enforces (a flat IETF payload's
@@ -599,6 +661,7 @@ def issue_badge_sd_jwt(
             "meant to be withheld."
             % (", ".join(refused), "it" if len(refused) == 1 else "them",
                "it" if len(refused) == 1 else "them"))
+    cnf_jwk = _public_holder_jwk(holder_jwk) if holder_jwk is not None else None
     status_claim = _status_claim(status) if status is not None else None
     _, _, _, SdJwtVcProofSuite = _require_openvc()
     signing_key = _signing_key(privkey_pem, kid or ("%s#key-1" % credential.issuer.id))
@@ -619,7 +682,7 @@ def issue_badge_sd_jwt(
     try:
         return cast(str, SdJwtVcProofSuite().issue(
             claims, signing_key=signing_key, disclosable=present, vct=vct,
-            holder_jwk=holder_jwk, x5c=x5c))
+            holder_jwk=cnf_jwk, x5c=x5c))
     except EudiError:
         raise
     except Exception as exc:
