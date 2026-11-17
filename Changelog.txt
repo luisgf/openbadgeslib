@@ -81,6 +81,26 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     a Location raises (`HTTPError`; a 308 on CPython 3.10, where urllib does
     not follow it, likewise).
 
+  - security(ob3): one credential can no longer make a status check download
+    without limit. With `check_status=True` (`--check-status`) every
+    `credentialStatus` entry cost one download of the list it names, each
+    with its own 60-second budget, the same list again for every entry that
+    named it, and the number of entries is chosen by whoever built the
+    credential (a did:key credential is the presenter's own): a JWT-VC of
+    about 500 KB with 2,000 entries made 2,000 downloads. A credential with
+    more than 8 `credentialStatus` entries is now refused before anything is
+    fetched (`MAX_STATUS_ENTRIES` in `openbadgeslib/ob3/status.py`; a W3C
+    credential carries one entry per status purpose and this library issues
+    at most two), and within one check each distinct `statusListCredential`
+    URL is downloaded once, while every entry is still checked in full
+    against the list it names (purpose, index, `statusSize`, validity window
+    and, when the list is verified, its issuer and proof). Both live in
+    `check_credential_status`, so they hold for JWT-VC and Data Integrity
+    credentials alike. `OB3Verifier.verify` also checks the recipient before
+    the status, so a recipient mismatch costs no download; a credential that
+    is both revoked and presented for the wrong recipient is now reported as
+    a recipient mismatch.
+
 * v4.6.3 - 2026-10-21
 
   - fix(jws): the native JWS engine (OB1 and OB2 signed badges) answers a

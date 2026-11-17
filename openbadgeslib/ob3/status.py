@@ -55,6 +55,14 @@ _STANDARD_TO_URLSAFE = str.maketrans('+/', '-_')
 #: attacker-influenced: it is fetched from a URL named in an untrusted VC).
 MAX_STATUS_LIST_BYTES = 5 * 1024 * 1024  # 5 MiB
 
+#: Upper bound on the credentialStatus entries of one credential. Whoever built
+#: the credential chooses how many it carries (a did:key credential is the
+#: presenter's own), and each distinct list they name costs a download with its
+#: own time budget and size cap. A W3C credential carries one entry per status
+#: purpose and this library issues at most two, so eight is ample; more are
+#: refused before anything is fetched.
+MAX_STATUS_ENTRIES = 8
+
 
 def check_credential_status(
         credential: OpenBadgeCredential,
@@ -76,12 +84,32 @@ def check_credential_status(
     key, e.g. the one that verified the badge), or rely on DID resolution when
     the badge issuer is a ``did:web``/``did:key``. Off by default so a status
     check stays a single offline-friendly fetch.
+
+    The work one credential can ask for is bounded: more than
+    :data:`MAX_STATUS_ENTRIES` entries are refused before anything is
+    fetched, and within one call each distinct ``statusListCredential`` URL is
+    downloaded once, however many entries name it. Only the download is
+    shared: every entry is still checked in full against the list it names
+    (purpose, index, ``statusSize``, validity window and, with
+    ``verify_list=True``, the list's issuer and proof). Nothing is remembered
+    between calls; pass a :class:`~openbadgeslib.util.CachingDownloader` for
+    that.
     """
+    entries = credential.credential_status
+    if len(entries) > MAX_STATUS_ENTRIES:
+        raise OB3VerificationError(
+            "the credential has %d credentialStatus entries, more than the %d "
+            "a status check accepts" % (len(entries), MAX_STATUS_ENTRIES))
     fetch = download if download is not None else download_file
     badge_issuer = credential.issuer.id if credential.issuer else None
-    for entry in credential.credential_status:
+    # Status lists already downloaded by this call, by the exact URL an entry
+    # names. Local to the call on purpose: a later verification must see a
+    # revocation published in between.
+    fetched: dict[str, bytes] = {}
+    for entry in entries:
         _check_entry(entry, fetch, badge_issuer=badge_issuer,
-                     verify_list=verify_list, list_pubkey_pem=list_pubkey_pem)
+                     verify_list=verify_list, list_pubkey_pem=list_pubkey_pem,
+                     fetched=fetched)
 
 
 def _reject_multibit_status_size(raw_size: Any, where: str) -> None:
@@ -108,7 +136,13 @@ def _reject_multibit_status_size(raw_size: Any, where: str) -> None:
 def _check_entry(entry: dict[str, Any], download: Callable[[str], bytes],
                  *, badge_issuer: Optional[str] = None,
                  verify_list: bool = False,
-                 list_pubkey_pem: Optional[Union[str, bytes]] = None) -> None:
+                 list_pubkey_pem: Optional[Union[str, bytes]] = None,
+                 fetched: Optional[dict[str, bytes]] = None) -> None:
+    # *fetched* holds the lists check_credential_status has downloaded so far
+    # for this credential, by URL; only the download is skipped on a hit. An
+    # entry checked on its own starts with none.
+    if fetched is None:
+        fetched = {}
     # Only string members can name a type or a purpose. A holder may respell
     # a signed one as a one-element array (the same RDF dataset), and an
     # issuer may sign a language-tagged value: neither is hashable, so each
@@ -133,12 +167,18 @@ def _check_entry(entry: dict[str, Any], download: Callable[[str], bytes],
     # also checked below as defence in depth). Fail closed on a multi-bit entry.
     _reject_multibit_status_size(entry.get("statusSize"), "credentialStatus entry")
 
-    try:
-        raw = download(list_url)
-    except Exception as exc:
-        # HTTPS enforcement / size cap / network errors all fail closed.
-        raise OB3VerificationError(
-            "could not fetch status list %s: %s" % (list_url, exc)) from exc
+    # One download per distinct list URL: several entries may name the same
+    # list (one per purpose is the usual shape), and each fetch has its own
+    # time budget. A failed fetch is not remembered; it raises, which ends the
+    # whole check.
+    if list_url not in fetched:
+        try:
+            fetched[list_url] = download(list_url)
+        except Exception as exc:
+            # HTTPS enforcement / size cap / network errors all fail closed.
+            raise OB3VerificationError(
+                "could not fetch status list %s: %s" % (list_url, exc)) from exc
+    raw = fetched[list_url]
 
     try:
         doc = _status_list_document(raw)

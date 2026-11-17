@@ -539,3 +539,270 @@ class TestVerifyListProof:
             check_credential_status(
                 self._cred('https://issuer.example', [_status_entry(5)]),
                 download=_served_token(token), verify_list=True)
+
+
+# ── #336: bounded fan-out (entry cap, one fetch per list URL) ────────────────
+
+def _counting(data):
+    """A downloader serving *data* for any URL, and the list of URLs asked."""
+    payload = (data if isinstance(data, bytes)
+               else data.encode('utf-8') if isinstance(data, str)
+               else json.dumps(data).encode('utf-8'))
+    calls = []
+
+    def _dl(url):
+        calls.append(url)
+        return payload
+    return _dl, calls
+
+
+def _entry_at(url, index=5, purpose='revocation'):
+    entry = _status_entry(index, purpose=purpose)
+    entry['statusListCredential'] = url
+    return entry
+
+
+class TestStatusFanOut:
+    """The number of credentialStatus entries is chosen by whoever built the
+    credential, and each one used to cost a download with its own time budget.
+    More than MAX_STATUS_ENTRIES are refused before any fetch, and within one
+    check each distinct statusListCredential URL is fetched once (#336)."""
+
+    def test_cap_is_eight(self):
+        from openbadgeslib.ob3.status import MAX_STATUS_ENTRIES
+        assert MAX_STATUS_ENTRIES == 8
+
+    def test_nine_entries_refused_before_any_download(self):
+        dl, calls = _counting(_status_list_doc([]))
+        cred = _credential([_status_entry(i) for i in range(9)])
+        with pytest.raises(OB3VerificationError,
+                           match='9 credentialStatus entries'):
+            check_credential_status(cred, download=dl)
+        assert calls == []
+
+    def test_nine_entries_refused_even_when_the_first_is_revoked(self):
+        # The cap is not a way to skip the check: nothing is read, and the
+        # credential fails either way.
+        dl, calls = _counting(_status_list_doc([0]))
+        cred = _credential([_status_entry(i) for i in range(9)])
+        with pytest.raises(OB3VerificationError, match='credentialStatus entries'):
+            check_credential_status(cred, download=dl)
+        assert calls == []
+
+    def test_eight_entries_still_pass(self):
+        dl, calls = _counting(_status_list_doc([]))
+        cred = _credential([_status_entry(i) for i in range(8)])
+        check_credential_status(cred, download=dl)
+        assert calls == [LIST_URL]
+
+    def test_eight_distinct_lists_are_each_fetched_once(self):
+        dl, calls = _counting(_status_list_doc([]))
+        urls = ['https://issuer.example/status/%d' % i for i in range(8)]
+        check_credential_status(_credential([_entry_at(u) for u in urls]),
+                                download=dl)
+        assert calls == urls
+
+    def test_two_entries_one_list_one_download(self):
+        dl, calls = _counting(_status_list_doc([]))
+        cred = _credential([_status_entry(5), _status_entry(6)])
+        check_credential_status(cred, download=dl)
+        assert calls == [LIST_URL]
+
+    def test_default_downloader_is_shared_too(self, monkeypatch):
+        import openbadgeslib.ob3.status as status_mod
+        dl, calls = _counting(_status_list_doc([]))
+        monkeypatch.setattr(status_mod, 'download_file', dl)
+        check_credential_status(_credential([_status_entry(5), _status_entry(6)]))
+        assert calls == [LIST_URL]
+
+    def test_urls_are_compared_exactly(self):
+        # No normalisation: two spellings are two lists (and two fetches,
+        # within the cap), never one list answering for another.
+        dl, calls = _counting(_status_list_doc([]))
+        urls = [LIST_URL, LIST_URL + '?', 'https://ISSUER.example/status/1']
+        check_credential_status(_credential([_entry_at(u) for u in urls]),
+                                download=dl)
+        assert calls == urls
+
+    def test_the_memo_does_not_outlive_the_call(self):
+        # A revocation published between two verifications must be seen.
+        dl, calls = _counting(_status_list_doc([]))
+        cred = _credential([_status_entry(5), _status_entry(6)])
+        check_credential_status(cred, download=dl)
+        check_credential_status(cred, download=dl)
+        assert calls == [LIST_URL, LIST_URL]
+
+    # Only the fetch is shared: every entry is still checked in full.
+
+    def test_second_entry_revoked_on_a_shared_list(self):
+        dl, calls = _counting(_status_list_doc([6]))
+        cred = _credential([_status_entry(5), _status_entry(6)])
+        with pytest.raises(OB3VerificationError, match='index 6'):
+            check_credential_status(cred, download=dl)
+        assert calls == [LIST_URL]
+
+    def test_second_entry_purpose_checked_on_a_shared_list(self):
+        dl, calls = _counting(_status_list_doc([]))
+        cred = _credential([_status_entry(5),
+                            _status_entry(6, purpose='suspension')])
+        with pytest.raises(OB3VerificationError, match='statusPurpose'):
+            check_credential_status(cred, download=dl)
+        assert calls == [LIST_URL]
+
+    def test_second_entry_index_checked_on_a_shared_list(self):
+        dl, calls = _counting(_status_list_doc([]))
+        cred = _credential([_status_entry(5), _status_entry(9_999_999)])
+        with pytest.raises(OB3VerificationError, match='out of range'):
+            check_credential_status(cred, download=dl)
+        assert calls == [LIST_URL]
+
+    def test_second_entry_statussize_checked_on_a_shared_list(self):
+        dl, calls = _counting(_status_list_doc([]))
+        multibit = _status_entry(6)
+        multibit['statusSize'] = 2
+        cred = _credential([_status_entry(5), multibit])
+        with pytest.raises(OB3VerificationError, match='statusSize'):
+            check_credential_status(cred, download=dl)
+        assert calls == [LIST_URL]
+
+    def test_list_proof_verified_for_every_entry(self, ed25519_keypair,
+                                                 monkeypatch):
+        import openbadgeslib.ob3.status as status_mod
+        from openbadgeslib.ob3.status_list import (
+            build_status_list_credential, sign_status_list_credential)
+        priv, pub = ed25519_keypair
+        token = sign_status_list_credential(
+            build_status_list_credential('https://issuer.example', LIST_URL,
+                                         'revocation', []), priv, 'EdDSA')
+        dl, calls = _counting(token)
+        verified = []
+        real = status_mod._verify_list_proof
+
+        def _spy(raw, doc, list_url, *args):
+            verified.append(list_url)
+            return real(raw, doc, list_url, *args)
+        monkeypatch.setattr(status_mod, '_verify_list_proof', _spy)
+        cred = _credential([_status_entry(5), _status_entry(6)])
+        check_credential_status(cred, download=dl, verify_list=True,
+                                list_pubkey_pem=pub)
+        assert calls == [LIST_URL]
+        assert verified == [LIST_URL, LIST_URL]
+
+    def test_shared_list_with_a_bad_proof_is_rejected(self, ed25519_keypair):
+        from openbadgeslib.keys import KeyEd25519
+        from openbadgeslib.ob3.status_list import (
+            build_status_list_credential, sign_status_list_credential)
+        priv, _pub = ed25519_keypair
+        _priv2, wrong_pub = KeyEd25519().generate_keypair()
+        token = sign_status_list_credential(
+            build_status_list_credential('https://issuer.example', LIST_URL,
+                                         'revocation', []), priv, 'EdDSA')
+        dl, calls = _counting(token)
+        cred = _credential([_status_entry(5), _status_entry(6)])
+        with pytest.raises(OB3VerificationError, match='proof is invalid'):
+            check_credential_status(cred, download=dl, verify_list=True,
+                                    list_pubkey_pem=wrong_pub)
+        assert calls == [LIST_URL]
+
+    def test_fetch_failure_fails_closed_and_is_not_remembered(self):
+        calls = []
+
+        def _boom(url):
+            calls.append(url)
+            raise ValueError('download budget exhausted')
+        cred = _credential([_status_entry(5), _status_entry(6)])
+        for _ in range(2):
+            with pytest.raises(OB3VerificationError, match='could not fetch'):
+                check_credential_status(cred, download=_boom)
+        assert calls == [LIST_URL, LIST_URL]
+
+    def test_failure_on_a_later_list_fails_closed(self):
+        good = json.dumps(_status_list_doc([])).encode('utf-8')
+        other = 'https://issuer.example/status/2'
+        calls = []
+
+        def _dl(url):
+            calls.append(url)
+            if url == other:
+                raise ValueError('unreachable')
+            return good
+        cred = _credential([_status_entry(5), _entry_at(other),
+                            _status_entry(6)])
+        with pytest.raises(OB3VerificationError, match='could not fetch'):
+            check_credential_status(cred, download=_dl)
+        assert calls == [LIST_URL, other]
+
+    # ── through the verifiers ────────────────────────────────────────────────
+
+    def test_jwt_verify_refuses_nine_entries_without_fetching(
+            self, ob3_rsa_signer, ob3_rsa_verifier):
+        dl, calls = _counting(_status_list_doc([]))
+        token = ob3_rsa_signer.sign(
+            _credential([_status_entry(i) for i in range(9)]))
+        with pytest.raises(OB3VerificationError, match='credentialStatus entries'):
+            ob3_rsa_verifier.verify(token, check_status=True, download=dl)
+        assert calls == []
+        # The public OB3Verifier.check_status helper is the same code path.
+        with pytest.raises(OB3VerificationError, match='credentialStatus entries'):
+            ob3_rsa_verifier.check_status(
+                _credential([_status_entry(i) for i in range(9)]), download=dl)
+        assert calls == []
+
+    def test_jwt_verify_fetches_a_shared_list_once(
+            self, ob3_rsa_signer, ob3_rsa_verifier, rsa_priv_pem):
+        dl, calls = _counting(
+            TestVerifyWithStatus._signed_list(rsa_priv_pem, []))
+        token = ob3_rsa_signer.sign(
+            _credential([_status_entry(5), _status_entry(6)]))
+        assert ob3_rsa_verifier.verify(token, check_status=True, download=dl)
+        assert calls == [LIST_URL]
+
+    def test_recipient_mismatch_costs_no_download(
+            self, ob3_rsa_signer, ob3_rsa_verifier, rsa_priv_pem):
+        # The recipient check is local and free: it runs before the status
+        # check, so a credential presented by the wrong holder never reaches
+        # the network.
+        dl, calls = _counting(
+            TestVerifyWithStatus._signed_list(rsa_priv_pem, []))
+        token = ob3_rsa_signer.sign(_credential([_status_entry(94)]))
+        with pytest.raises(OB3VerificationError, match='Recipient mismatch'):
+            ob3_rsa_verifier.verify(
+                token, expected_recipient='other@example.com',
+                check_status=True, download=dl)
+        assert calls == []
+
+    def test_matching_recipient_still_has_its_status_checked(
+            self, ob3_rsa_signer, ob3_rsa_verifier, rsa_priv_pem):
+        dl, calls = _counting(
+            TestVerifyWithStatus._signed_list(rsa_priv_pem, [94]))
+        token = ob3_rsa_signer.sign(_credential([_status_entry(94)]))
+        with pytest.raises(OB3VerificationError, match='revocation'):
+            ob3_rsa_verifier.verify(
+                token, expected_recipient='r@example.com',
+                check_status=True, download=dl)
+        assert calls == [LIST_URL]
+
+    def test_data_integrity_verify_refuses_nine_entries_without_fetching(
+            self, ob3_credential, ed25519_keypair):
+        # OB3LdpVerifier.verify calls check_credential_status, so the cap
+        # covers the Data Integrity path without a line of its own there.
+        pytest.importorskip('pyld')
+        from ldp_helpers import did_key, sign_ldp
+        from openbadgeslib.ob3.ldp import OB3LdpVerifier
+        priv_pem, pub_pem = ed25519_keypair
+        doc = ob3_credential.to_vc()
+        doc['issuer'] = {'id': did_key(pub_pem), 'type': ['Profile'],
+                         'name': 'I'}
+        doc['credentialStatus'] = [
+            {'id': '%s#%d' % (LIST_URL, i),
+             'type': 'BitstringStatusListEntry',
+             'statusPurpose': 'revocation', 'statusListIndex': str(i),
+             'statusListCredential': LIST_URL} for i in range(9)]
+        signed = sign_ldp(doc, priv_pem, pub_pem)
+        verifier = OB3LdpVerifier(pubkey_pem=pub_pem)
+        assert verifier.verify(signed)              # without status: passes
+        dl, calls = _counting(_status_list_doc([]))
+        with pytest.raises(OB3VerificationError,
+                           match='9 credentialStatus entries'):
+            verifier.verify(signed, check_status=True, download=dl)
+        assert calls == []

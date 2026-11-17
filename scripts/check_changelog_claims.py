@@ -44,6 +44,7 @@ MODULES = {
     'screen': 'openbadgeslib.ob3._structure_screen',
     'ldp': 'openbadgeslib.ob3.ldp',
     'safejson': 'openbadgeslib._safejson',
+    'status': 'openbadgeslib.ob3.status',
 }
 
 
@@ -132,6 +133,8 @@ CLAIMS = [
      ['canon.MAX_ONE_PROPERTY']),
     ('JSON nesting', r'(\d+) levels(?: of nesting|, no lone surrogate)',
      ['safejson.MAX_JSON_DEPTH']),
+    ('status entries per credential',
+     r'more than (\d+) `credentialStatus` entries', ['status.MAX_STATUS_ENTRIES']),
 ]
 
 #: "<size> KB ... (about <members>" in the CLR docstring: members that fit the

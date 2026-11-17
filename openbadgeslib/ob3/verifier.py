@@ -239,7 +239,11 @@ class OB3Verifier:
         ``credentialStatus`` (revocation) — this performs an HTTPS fetch of the
         referenced status list and fails closed if the credential is revoked or
         its status cannot be determined. It is off by default because
-        verification is otherwise offline.
+        verification is otherwise offline. The recipient check runs first, so
+        a recipient mismatch costs no download; a credential with more
+        ``credentialStatus`` entries than
+        :data:`~openbadgeslib.ob3.status.MAX_STATUS_ENTRIES` is refused before
+        any fetch, and a list several entries name is downloaded once.
 
         When status is checked, the status list's own JWT-VC signature is
         verified too (bound to this credential's issuer), so a compromised
@@ -275,11 +279,14 @@ class OB3Verifier:
         # check_expiration().
         _check_validity_window(credential)
 
+        # Before the status check, not after: the recipient binding is local
+        # and free, the status check is a download per status list, so a
+        # credential presented by the wrong holder must not reach the network.
+        _check_recipient(credential, expected_recipient)
+
         if check_status:
             self.check_status(credential, verify_list=verify_status_list,
                               download=download)
-
-        _check_recipient(credential, expected_recipient)
 
         return credential
 
