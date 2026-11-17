@@ -193,6 +193,42 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     Issuers that declare no `startsWith` (the same-origin default,
     `allowedOrigins`) are not affected.
 
+  - security(baking): the filter that strips active content from an SVG badge
+    image before the token is baked into it (#328) let four things through,
+    a plain `<script>` among them (#340). It walked the subtree of the first
+    element named `svg` rather than the document, so a script beside that
+    element survived (`<svg:svg ...><svg:script>` around a nested `<svg>`, or
+    an XHTML document that merely contains an `<svg>`); it kept an
+    `<?xml-stylesheet?>` processing instruction, whose XSLT sheet can emit
+    script; it trimmed the ends of a URL before testing its scheme, where a
+    browser also drops tab, LF and CR inside it (`java&#10;script:`); and it
+    kept a SMIL `<set attributeName="href" to="javascript:...">`, which gives
+    its target the URL the filter had removed. `baking.bake_svg` now filters
+    the whole document: elements are matched by local name whatever their
+    prefix, every element in the XHTML namespace goes, `set` / `animate*`
+    elements that target `href` / `src` / `action` or an `on*` attribute go
+    (animations of `opacity`, `fill`, `transform` and the like stay),
+    `xml-stylesheet` instructions and every processing instruction inside the
+    tree go, the DOCTYPE's internal subset goes (an `<!ATTLIST svg onload
+    CDATA "...">` default put the handler back when the baked file was
+    parsed), and C0 controls and spaces are removed from a URL before the
+    scheme test. Namespace declarations are now left alone: an `xmlns:`
+    prefix that began with `on`, or was called `href`, `src` or `action` with
+    a `javascript:` or `data:` namespace name, was removed as if it were a
+    handler or a link, which left the baked file with an unbound prefix that
+    no parser reads (`xmlns:ont="..."` in the metadata was enough) and would
+    have let an element fall back to an outer XHTML binding after it had been
+    judged. Compatibility: the root element must be `svg` in the
+    `http://www.w3.org/2000/svg` namespace, and the token is appended to it. A
+    root written with a prefix (`<s:svg xmlns:s="...">`), which used to end in
+    an `AttributeError`, now bakes; a document with any other root, or an
+    `<svg>` with no `xmlns` (which a browser does not render as an image), is
+    refused with `BadgeImgFormatUnsupported`, which the signers report as
+    `ErrorSigningFile` ("Unable to bake SVG ...: The image is not an SVG
+    document ..."). `has_svg` and `extract_svg` are unchanged, so badges baked
+    by earlier versions read as before, and an SVG that holds none of the
+    above bakes to the same bytes as before.
+
 * v4.6.3 - 2026-10-21
 
   - fix(jws): the native JWS engine (OB1 and OB2 signed badges) answers a

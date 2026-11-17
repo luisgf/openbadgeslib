@@ -26,6 +26,7 @@
 # implementation here stops the two paths from drifting (e.g. two PNG readers,
 # one fixed-offset and one structured).
 
+import re
 from struct import pack
 from zlib import crc32
 
@@ -39,6 +40,7 @@ from png import Reader, signature as _png_signature
 # accepts it as a real export) — `baking.DecompressionLimitExceeded` and
 # `from openbadgeslib.baking import DecompressionLimitExceeded` keep working.
 from .errors import DecompressionLimitExceeded as DecompressionLimitExceeded
+from .errors import BadgeImgFormatUnsupported
 
 # OB 2.0 document-format identifiers.
 ITXT_KEYWORD = b'openbadges'
@@ -81,6 +83,13 @@ def _bounded_inflate(data: bytes, limit: int = MAX_ITXT_DECOMPRESSED) -> bytes:
 # javascript: URLs in the source SVG would execute in that context (#328).
 # `opacity` is the one SVG presentation attribute whose local name starts
 # with "on" and is not an event handler.
+#
+# The filter covers the whole document, not the subtree of one element (#340):
+# every element (matched by local name, whatever its prefix), every processing
+# instruction inside the tree, the xml-stylesheet ones beside the root and the
+# DOCTYPE's internal subset.
+_SVG_XMLNS = 'http://www.w3.org/2000/svg'
+_XHTML_XMLNS = 'http://www.w3.org/1999/xhtml'
 _ACTIVE_SVG_ELEMENTS = frozenset({
     'script', 'foreignobject', 'iframe', 'embed', 'object', 'handler',
 })
@@ -88,24 +97,30 @@ _URL_ATTRS = frozenset({'href', 'src', 'action'})
 _SAFE_DATA_IMAGE_TYPES = (
     'image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp',
 )
+# What a browser's URL parser throws away before it reads the scheme: C0
+# controls and spaces at both ends, tab/LF/CR anywhere. Removing all of them
+# everywhere is the superset; no URL this filter lets through needs one.
+_URL_IGNORED_CHARS = re.compile(r'[\x00-\x20]+')
+_STYLESHEET_PI = 'xml-stylesheet'
 
 
 def _svg_local_name(node: Any) -> str:
     return str(node.tagName).split(':')[-1].lower()
 
 
-def _iter_svg_elements(node: Any) -> List[Any]:
-    found: List[Any] = []
-    if getattr(node, 'nodeType', None) == node.ELEMENT_NODE:
-        found.append(node)
-        for child in list(node.childNodes):
-            found.extend(_iter_svg_elements(child))
-    return found
+def _is_handler_attr(local: str) -> bool:
+    return local.startswith('on') and local != 'opacity'
 
 
 def _is_active_url(value: str) -> bool:
-    """True for javascript:/vbscript: and for data: that is not a raster image."""
-    lowered = value.strip().lower()
+    """True for javascript:/vbscript: and for data: that is not a raster image.
+
+    The scheme is read the way a browser reads it: ``java&#10;script:`` is
+    ``javascript:`` to the WHATWG URL parser, so whitespace and control
+    characters are removed from the whole value before the test rather than
+    trimmed off its ends (#340).
+    """
+    lowered = _URL_IGNORED_CHARS.sub('', value).strip().lower()
     if lowered.startswith('javascript:') or lowered.startswith('vbscript:'):
         return True
     if not lowered.startswith('data:'):
@@ -114,26 +129,69 @@ def _is_active_url(value: str) -> bool:
     return not any(payload.startswith(kind) for kind in _SAFE_DATA_IMAGE_TYPES)
 
 
-def _strip_svg_active_content(root: Any) -> None:
-    """Drop script-class elements, on* handlers and active URLs under *root*."""
-    if root is None:
-        return
-    for el in _iter_svg_elements(root):
-        if _svg_local_name(el) in _ACTIVE_SVG_ELEMENTS:
-            parent = el.parentNode
-            if parent is not None:
-                parent.removeChild(el)
-    for el in _iter_svg_elements(root):
-        attrs = el.attributes
-        if attrs is None:
-            continue
-        for name in list(attrs.keys()):
-            local = name.split(':')[-1].lower()
-            if local.startswith('on') and local != 'opacity':
-                el.removeAttribute(name)
+def _animates_active_attr(el: Any) -> bool:
+    """True for a SMIL ``set`` / ``animate*`` element that targets a URL or an
+    event-handler attribute: ``<set attributeName="href" to="javascript:…"/>``
+    gives its target the URL that the attribute filter would have removed.
+    Animations of presentation attributes (``opacity``, ``fill``, …) are kept.
+    """
+    local = _svg_local_name(el)
+    if local != 'set' and not local.startswith('animate'):
+        return False
+    target = _URL_IGNORED_CHARS.sub('', el.getAttribute('attributeName'))
+    target = target.split(':')[-1].lower()
+    return target in _URL_ATTRS or _is_handler_attr(target)
+
+
+def _is_active_element(el: Any) -> bool:
+    # Anything in the XHTML namespace is active inside an image: <h:script>,
+    # <h:iframe>, <h:img onerror>, <h:link>, <h:meta http-equiv>, …
+    return (el.namespaceURI == _XHTML_XMLNS
+            or _svg_local_name(el) in _ACTIVE_SVG_ELEMENTS
+            or _animates_active_attr(el))
+
+
+def _strip_svg_active_content(svg_doc: Any) -> None:
+    """Drop from the document *svg_doc*: script-class and XHTML elements, on*
+    handlers, active URLs and the animations that would set either; the
+    ``xml-stylesheet`` processing instructions beside the root (an XSLT sheet
+    can emit script) and every processing instruction inside the tree; and the
+    DOCTYPE's internal subset (an ``<!ATTLIST>`` default would put a handler
+    back when the baked file is parsed)."""
+    doctype = svg_doc.doctype
+    if doctype is not None:
+        doctype.internalSubset = None
+    for node in list(svg_doc.childNodes):
+        if (node.nodeType == node.PROCESSING_INSTRUCTION_NODE
+                and str(node.target).lower() == _STYLESHEET_PI):
+            svg_doc.removeChild(node)
+    # Iterative walk, so the depth of the source image is not a recursion
+    # limit here. The subtree of a removed node is never visited.
+    pending: List[Any] = [svg_doc.documentElement]
+    while pending:
+        el = pending.pop()
+        for name in list(el.attributes.keys()):
+            # A namespace declaration is neither a handler nor a link, and it
+            # must be written back as it was read: the verdicts above and below
+            # (is this the SVG root? is that element XHTML?) hold only for the
+            # bindings the parser saw. Judging xmlns:ont or xmlns:href by its
+            # prefix left the baked file with an unbound prefix, or let an
+            # element fall back to an outer XHTML binding.
+            if name == 'xmlns' or name.startswith('xmlns:'):
                 continue
-            if local in _URL_ATTRS and _is_active_url(attrs[name].value):
+            local = name.split(':')[-1].lower()
+            if _is_handler_attr(local):
                 el.removeAttribute(name)
+            elif local in _URL_ATTRS and _is_active_url(el.getAttribute(name)):
+                el.removeAttribute(name)
+        for child in list(el.childNodes):
+            if child.nodeType == child.PROCESSING_INSTRUCTION_NODE:
+                el.removeChild(child)
+            elif child.nodeType == child.ELEMENT_NODE:
+                if _is_active_element(child):
+                    el.removeChild(child)
+                else:
+                    pending.append(child)
 
 
 def bake_svg(image_bytes: bytes, token: str, comment: Optional[str] = None, *,
@@ -148,14 +206,26 @@ def bake_svg(image_bytes: bytes, token: str, comment: Optional[str] = None, *,
     secured with a Data Integrity proof, whose payload is a JSON document
     rather than a compact JWT (OB 3.0 §5.3).
 
-    Active content in the source SVG (``<script>``, event-handler attributes,
-    ``javascript:`` / hostile ``data:`` URLs) is stripped before the token is
-    attached, so the baked carrier is not an XSS gadget (#328).
+    The document element must be ``svg`` in the SVG namespace, with or without
+    a prefix; anything else raises :class:`BadgeImgFormatUnsupported` (a
+    document of another vocabulary that merely contains an ``<svg>`` is not a
+    badge image, and a filter written for SVG cannot vouch for it).
+
+    Active content in the source SVG (``<script>``, XHTML elements,
+    event-handler attributes, ``javascript:`` / hostile ``data:`` URLs, the
+    SMIL animations that would set either, ``xml-stylesheet`` processing
+    instructions, the DOCTYPE's internal subset) is stripped from the whole
+    document before the token is attached, so the baked carrier is not an XSS
+    gadget (#328, #340).
     """
     svg_doc = parseString(image_bytes)
     try:
-        svg_tag = svg_doc.getElementsByTagName('svg').item(0)
-        _strip_svg_active_content(svg_tag)
+        svg_tag = svg_doc.documentElement
+        if svg_tag.namespaceURI != _SVG_XMLNS or svg_tag.localName != 'svg':
+            raise BadgeImgFormatUnsupported(
+                'The image is not an SVG document: its root element is not '
+                '<svg> in the %s namespace' % _SVG_XMLNS)
+        _strip_svg_active_content(svg_doc)
         node = svg_doc.createElement(element)
         node.attributes['xmlns:openbadges'] = namespace
         if as_text:
