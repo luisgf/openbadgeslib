@@ -258,6 +258,26 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     `record_tx_failure` an offer closes after two wrong PINs instead of
     three. The SQLite schema is unchanged.
 
+  - security(oid4vci): two more cases in which the token endpoint answered a
+    request according to the kind of grant its code names (4.4.4 closed the
+    missing-PIN one), and one unhandled exception at the credential endpoint.
+    A `tx_code` that is not a string (a JSON number from a naive decoder,
+    bytes nobody decoded) was `invalid_grant` for an unknown code,
+    `invalid_request` for a live offer without a PIN, and an AttributeError
+    out of scrypt for a live PIN-gated one: a 500, for a guess that was not
+    counted as an attempt. `handle_token_request` now refuses it before the
+    store is asked anything, as `invalid_request` ("the tx_code parameter
+    must be a string"), the same for every code, and nothing is spent. That
+    includes `0`, `False` and `b''`, which were taken for no `tx_code` at
+    all. A string `tx_code` sent to a live offer that does not use one was
+    answered at once, where an unknown code costs a scrypt; it now burns the
+    same `dummy_tx_verification()` first. Its error code has not changed: it
+    is still `invalid_request` where every other rejection is
+    `invalid_grant`, so that answer still says "live, and no PIN" to whoever
+    holds the code. And `handle_credential_request` answers an `access_token`
+    that is not a string with the 401 `invalid_token` of a missing one,
+    instead of an AttributeError.
+
 * v4.6.3 - 2026-10-21
 
   - fix(jws): the native JWS engine (OB1 and OB2 signed badges) answers a

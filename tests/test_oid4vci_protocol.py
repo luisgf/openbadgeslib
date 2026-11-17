@@ -1657,3 +1657,108 @@ class TestTxCodeAttemptReservation:
                                      store=any_store)
         assert token.access_token
         assert any_store.find_grant(offer.grant_id).tx_code_attempts == 0
+
+
+#: What a naive form or JSON decoder can hand the endpoints in the place of a
+#: string: a JSON number, boolean, array or object, or the undecoded bytes.
+NOT_A_STRING = [123456, 0, 1.5, True, False, b'123456', b'', ['123456'],
+                {'tx_code': '123456'}]
+
+
+class TestTheTokenEndpointDoesNotTellGrantKindsApart:
+    """#344: what the answer to a request shows about the code it carried.
+
+    A ``tx_code`` that was not a string got ``invalid_grant`` for an unknown
+    code, ``invalid_request`` for a live PIN-less one and an AttributeError
+    (a 500, with the attempt not counted) for a live PIN-gated one; and a
+    string ``tx_code`` on a PIN-less offer was answered without the scrypt an
+    unknown code costs.
+    """
+
+    @pytest.mark.parametrize('bad', NOT_A_STRING, ids=repr)
+    def test_a_tx_code_that_is_not_a_string_gets_one_answer_for_every_code(
+            self, conf, any_store, monkeypatch, bad):
+        tally = _Tally(monkeypatch)
+        plain = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=any_store)
+        gated = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=any_store, tx_code=True)
+        tally.right = gated.tx_code
+        answers = []
+        for code in ('no-such-code', plain.pre_authorized_code,
+                     gated.pre_authorized_code):
+            with pytest.raises(OID4VCIError) as caught:
+                handle_token_request(conf, code=code, tx_code=bad,
+                                     store=any_store)
+            answers.append((caught.value.error, caught.value.http_status,
+                            caught.value.description))
+        assert answers == [(INVALID_REQUEST, 400,
+                            'the tx_code parameter must be a string')] * 3
+        # Nor does the cost depend on the code: neither scrypt ran for any.
+        assert (tally.verified, tally.dummies) == ([], 0)
+        # Nothing was spent: no attempt counted, both offers still live.
+        grant = any_store.find_grant(gated.grant_id)
+        assert (grant.tx_code_attempts, grant.state) == (0, STATE_OFFERED)
+        assert any_store.find_grant(plain.grant_id).state == STATE_OFFERED
+        assert handle_token_request(conf, code=plain.pre_authorized_code,
+                                    store=any_store).access_token
+        assert handle_token_request(conf, code=gated.pre_authorized_code,
+                                    tx_code=gated.tx_code,
+                                    store=any_store).access_token
+
+    @pytest.mark.parametrize('bad', NOT_A_STRING, ids=repr)
+    def test_such_a_tx_code_is_refused_before_the_store_is_asked(self, conf,
+                                                                 bad):
+        # "Whatever the code is" by construction: a store with no methods at
+        # all, so any lookup would be an AttributeError.
+        with pytest.raises(OID4VCIError) as caught:
+            handle_token_request(conf, code='any-code', tx_code=bad,
+                                 store=object())
+        assert caught.value.error == INVALID_REQUEST
+
+    def test_an_unexpected_tx_code_costs_what_an_unknown_code_costs(
+            self, conf, store, monkeypatch):
+        tally = _Tally(monkeypatch)
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=store)
+        with pytest.raises(OID4VCIError) as caught:
+            handle_token_request(conf, code=offer.pre_authorized_code,
+                                 tx_code='123456', store=store)
+        # The code is still its own (unifying it with invalid_grant is the
+        # maintainer's call); the time no longer is.
+        assert caught.value.error == INVALID_REQUEST
+        assert (tally.verified, tally.dummies) == ([], 1)
+        with pytest.raises(OID4VCIError):
+            handle_token_request(conf, code='no-such-code', tx_code='123456',
+                                 store=store)
+        assert (tally.verified, tally.dummies) == ([], 2)
+        # Sending a PIN the offer does not use does not spend the offer.
+        assert store.find_grant(offer.grant_id).state == STATE_OFFERED
+        assert handle_token_request(conf, code=offer.pre_authorized_code,
+                                    store=store).access_token
+
+    def test_an_empty_tx_code_is_still_no_tx_code(self, conf, store):
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=store)
+        assert handle_token_request(conf, code=offer.pre_authorized_code,
+                                    tx_code='', store=store).access_token
+
+    @pytest.mark.parametrize('bad', [value for value in NOT_A_STRING if value],
+                             ids=repr)
+    def test_an_access_token_that_is_not_a_string_is_invalid_token(
+            self, conf, store, nonces, bad):
+        with pytest.raises(OID4VCIError) as caught:
+            handle_credential_request(conf, b'{}', access_token=bad,
+                                      store=store, nonces=nonces)
+        assert (caught.value.error, caught.value.http_status) == (
+            INVALID_TOKEN, 401)
+
+    @pytest.mark.parametrize('bad', [value for value in NOT_A_STRING if value],
+                             ids=repr)
+    def test_such_an_access_token_is_refused_before_the_store_is_asked(
+            self, conf, bad):
+        with pytest.raises(OID4VCIError) as caught:
+            handle_credential_request(conf, b'{}', access_token=bad,
+                                      store=object(), nonces=None)
+        assert (caught.value.error, caught.value.http_status) == (
+            INVALID_TOKEN, 401)

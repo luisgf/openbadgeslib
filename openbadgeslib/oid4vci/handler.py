@@ -136,7 +136,11 @@ def handle_token_request(conf: configparser.ConfigParser, *, code: str,
     ``tx_code``, all produce the SAME ``invalid_grant`` with the same
     message and, by way of :func:`~openbadgeslib.oid4vci.codes.
     dummy_tx_verification`, in the same time — otherwise the endpoint becomes
-    an oracle for which codes exist and which of them are PIN-gated.
+    an oracle for which codes exist and which of them are PIN-gated. Two
+    answers are ``invalid_request`` instead: a ``tx_code`` that is not a
+    string, refused before the code is looked up and so identically for every
+    code; and a ``tx_code`` on a live offer that does not use one, which
+    costs the same time as the rest but keeps its own error code.
 
     A PIN-gated offer gets ``tx_code_max_attempts`` verifications of a
     ``tx_code`` in total, however the guesses arrive: each one is reserved in
@@ -152,6 +156,14 @@ def handle_token_request(conf: configparser.ConfigParser, *, code: str,
     if not code or not isinstance(code, str):
         raise OID4VCIError(INVALID_REQUEST,
                            'the pre-authorized_code parameter is required')
+    if tx_code is not None and not isinstance(tx_code, str):
+        # A JSON number, or bytes nobody decoded. Refused here, before the
+        # store is asked anything, so the answer cannot depend on the code:
+        # further down the same value was invalid_grant for an unknown code,
+        # invalid_request for a PIN-less offer, and an AttributeError out of
+        # scrypt — with the attempt not counted — for a PIN-gated one (#344).
+        raise OID4VCIError(INVALID_REQUEST,
+                           'the tx_code parameter must be a string')
 
     grant = store.find_grant_by_code(secret_id(code), now=moment)
     if grant is None:
@@ -201,6 +213,14 @@ def handle_token_request(conf: configparser.ConfigParser, *, code: str,
             store.record_tx_failure(grant.grant_id)
             raise OID4VCIError(INVALID_GRANT, _GRANT_REJECTED)
     elif tx_code:
+        # Burn what an unknown code burns before answering, so this live,
+        # PIN-less offer is not the one request the endpoint answers at once.
+        # The error code is still its own (invalid_request, not the
+        # invalid_grant of every other rejection), so a caller holding a live
+        # code can still read "PIN-less" off the answer; folding it into
+        # _GRANT_REJECTED, as #328 did for the missing PIN, changes the wire
+        # contract and is left to the maintainer (#344).
+        dummy_tx_verification()
         raise OID4VCIError(INVALID_REQUEST,
                            'this offer does not use a tx_code')
 
@@ -293,7 +313,10 @@ def handle_credential_request(conf: configparser.ConfigParser,
     # or oversized request is refused without importing anything — and, on an
     # issuer that never installed the extra, it gets the accurate answer rather
     # than a packaging complaint about a request that was invalid anyway.
-    if not access_token:
+    if not access_token or not isinstance(access_token, str):
+        # Absent, empty, or not a string at all (bytes off the header, a JSON
+        # number): none of them can name a token, and hashing one for the
+        # lookup would be an AttributeError — a 500 — instead of this (#344).
         raise OID4VCIError(INVALID_TOKEN, 'an access token is required',
                            http_status=401)
     grant = store.grant_for_token(secret_id(access_token), now=moment)
