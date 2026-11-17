@@ -137,6 +137,11 @@ def handle_token_request(conf: configparser.ConfigParser, *, code: str,
     message and, by way of :func:`~openbadgeslib.oid4vci.codes.
     dummy_tx_verification`, in the same time — otherwise the endpoint becomes
     an oracle for which codes exist and which of them are PIN-gated.
+
+    A PIN-gated offer gets ``tx_code_max_attempts`` verifications of a
+    ``tx_code`` in total, however the guesses arrive: each one is reserved in
+    the store before it is verified, and a request that finds none left is
+    refused unverified (and closes the offer).
     """
     moment = now or datetime.now(tz=timezone.utc)
     cfg = oid4vci_config(conf)
@@ -174,8 +179,25 @@ def handle_token_request(conf: configparser.ConfigParser, *, code: str,
             raise OID4VCIError(INVALID_GRANT, _GRANT_REJECTED)
         assert grant.tx_code_kdf is not None
         assert grant.tx_code_salt is not None and grant.tx_code_digest is not None
+        # Take an attempt BEFORE spending scrypt on the guess. `grant` is a
+        # snapshot: testing its counter here, or counting the failure only
+        # after the verification, gives every request that read the grant
+        # before the last failure landed a full check of its guess — a burst
+        # of N guesses got N verifications, not tx_code_max_attempts (#341).
+        # The store decides and counts in one operation, so at most that many
+        # verifications ever run against one grant.
+        if not store.reserve_tx_attempt(grant.grant_id):
+            # No attempt left, or the grant stopped being offered since it was
+            # read. Either way this guess is not verified, the offer is over
+            # (as it is for a replayed code, above), and the answer costs and
+            # says what any other rejection does.
+            dummy_tx_verification()
+            store.invalidate_grant(grant.grant_id)
+            raise OID4VCIError(INVALID_GRANT, _GRANT_REJECTED)
         if not verify_tx_code(tx_code, grant.tx_code_kdf, grant.tx_code_salt,
                               grant.tx_code_digest):
+            # Already counted by the reservation; this closes the offer if
+            # that was its last attempt and nobody redeemed it meanwhile.
             store.record_tx_failure(grant.grant_id)
             raise OID4VCIError(INVALID_GRANT, _GRANT_REJECTED)
     elif tx_code:

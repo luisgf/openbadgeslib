@@ -73,6 +73,20 @@ def _burn_in_subprocess(path):
         store.close()
 
 
+def _reserve_in_subprocess(job):
+    """Open the store fresh and try to reserve one tx_code attempt.
+
+    Module level and one picklable argument, for the same 'spawn' reason as
+    ``_burn_in_subprocess``.
+    """
+    path, grant_id = job
+    store = SqliteOID4VCIStore(path, timeout=30.0)
+    try:
+        return store.reserve_tx_attempt(grant_id)
+    finally:
+        store.close()
+
+
 @pytest.fixture(params=['sqlite', 'memory'])
 def store(request, tmp_path):
     if request.param == 'sqlite':
@@ -195,16 +209,90 @@ class TestGrantLifecycle:
 
 
 class TestTxCode:
+    def test_reservations_stop_at_the_cap(self, store):
+        _, grant = _grant(tx_code='123456', tx_code_max_attempts=3)
+        store.save_grant(grant)
+        assert [store.reserve_tx_attempt(grant.grant_id) for _ in range(5)] \
+            == [True, True, True, False, False]
+        found = store.find_grant(grant.grant_id)
+        # A refused reservation is not counted, and reserving the last attempt
+        # does not kill the offer: that attempt may be the right PIN.
+        assert found.tx_code_attempts == 3
+        assert found.state == STATE_OFFERED
+
     def test_attempts_increment_and_cap_invalidates(self, store):
         _, grant = _grant(tx_code='123456', tx_code_max_attempts=3)
         store.save_grant(grant)
+        assert store.reserve_tx_attempt(grant.grant_id) is True
         assert store.record_tx_failure(grant.grant_id) == 1
         assert store.find_grant(grant.grant_id).state == STATE_OFFERED
+        assert store.reserve_tx_attempt(grant.grant_id) is True
         assert store.record_tx_failure(grant.grant_id) == 2
+        assert store.find_grant(grant.grant_id).state == STATE_OFFERED
+        assert store.reserve_tx_attempt(grant.grant_id) is True
         assert store.record_tx_failure(grant.grant_id) == 3
         # The third wrong guess burns the grant, so a fourth try has nothing
         # left to guess against.
         assert store.find_grant(grant.grant_id).state == STATE_INVALIDATED
+        assert store.reserve_tx_attempt(grant.grant_id) is False
+        assert store.find_grant(grant.grant_id).tx_code_attempts == 3
+
+    def test_a_failure_is_counted_once_by_its_reservation(self, store):
+        # The attempt was counted when it was reserved. Counting it again when
+        # it fails would spend two of the three attempts on one wrong PIN.
+        _, grant = _grant(tx_code='123456', tx_code_max_attempts=3)
+        store.save_grant(grant)
+        assert store.reserve_tx_attempt(grant.grant_id) is True
+        assert store.record_tx_failure(grant.grant_id) == 1
+        assert store.record_tx_failure(grant.grant_id) == 1
+        found = store.find_grant(grant.grant_id)
+        assert (found.tx_code_attempts, found.state) == (1, STATE_OFFERED)
+
+    def test_an_unknown_grant_reserves_nothing(self, store):
+        assert store.reserve_tx_attempt('no-such-grant') is False
+        assert store.record_tx_failure('no-such-grant') == 0
+
+    @pytest.mark.parametrize('state', [STATE_REDEEMED, STATE_ISSUED,
+                                       STATE_INVALIDATED])
+    def test_only_an_offered_grant_can_be_reserved(self, store, state):
+        _, grant = _grant(tx_code='123456', tx_code_max_attempts=3)
+        store.save_grant(grant)
+        self._move_to(store, grant, state)
+        assert store.reserve_tx_attempt(grant.grant_id) is False
+        found = store.find_grant(grant.grant_id)
+        assert (found.tx_code_attempts, found.state) == (0, state)
+
+    @pytest.mark.parametrize('state', [STATE_REDEEMED, STATE_ISSUED])
+    def test_a_late_failure_does_not_degrade_a_spent_grant(self, store, state):
+        # Three attempts reserved at once, the right PIN among them: it redeems
+        # the code while the two wrong ones are still being verified. When they
+        # report their failure the count is at the cap, and the grant they
+        # would invalidate is one whose credential is being (or was) issued.
+        _, grant = _grant(tx_code='123456', tx_code_max_attempts=3)
+        store.save_grant(grant)
+        for _ in range(3):
+            assert store.reserve_tx_attempt(grant.grant_id) is True
+        token = self._move_to(store, grant, state)
+        assert store.record_tx_failure(grant.grant_id) == 3
+        assert store.record_tx_failure(grant.grant_id) == 3
+        assert store.find_grant(grant.grant_id).state == state
+        assert store.grant_for_token(secret_id(token), now=NOW) is not None
+
+    @staticmethod
+    def _move_to(store, grant, state):
+        """Take an offered grant to *state*; return its access token, if any."""
+        if state == STATE_INVALIDATED:
+            store.invalidate_grant(grant.grant_id)
+            return None
+        assert store.redeem_grant(grant.grant_id, now=NOW) is True
+        token = new_secret()
+        store.mint_token(secret_id(token), grant.grant_id,
+                         expires_at=NOW + timedelta(minutes=5))
+        if state == STATE_ISSUED:
+            fingerprint = issuance_fingerprint('badge_1_jwt_vc_json', ['thumb'])
+            assert store.claim_issuance(grant.grant_id, fingerprint,
+                                        now=NOW) == CLAIM_OK
+        return token
 
     def test_digest_round_trips_and_rejects_a_wrong_code(self, store):
         _, grant = _grant(tx_code='042190')
@@ -215,15 +303,35 @@ class TestTxCode:
         assert not verify_tx_code('042191', stored.tx_code_kdf,
                                   stored.tx_code_salt, stored.tx_code_digest)
 
-    def test_concurrent_failures_are_all_counted(self, store):
+    def test_concurrent_reservations_are_all_counted(self, store):
         # A read-modify-write counter would lose increments here, and losing
         # increments means the cap never trips on a 20-bit secret.
         _, grant = _grant(tx_code='123456', tx_code_max_attempts=50)
         store.save_grant(grant)
         with ThreadPoolExecutor(max_workers=8) as pool:
-            list(pool.map(lambda _: store.record_tx_failure(grant.grant_id),
-                          range(40)))
+            results = list(pool.map(
+                lambda _: store.reserve_tx_attempt(grant.grant_id), range(40)))
+        assert results == [True] * 40
         assert store.find_grant(grant.grant_id).tx_code_attempts == 40
+
+    def test_a_concurrent_burst_reserves_exactly_the_cap(self, store):
+        # The control itself (#341). Thirty-two guesses arrive together; each
+        # True is a scrypt verification of a guess, so more than three is the
+        # attacker choosing the size of their own attempt budget.
+        _, grant = _grant(tx_code='123456', tx_code_max_attempts=3)
+        store.save_grant(grant)
+        barrier = threading.Barrier(32)
+
+        def _race(_):
+            barrier.wait(timeout=60)
+            return store.reserve_tx_attempt(grant.grant_id)
+
+        with ThreadPoolExecutor(max_workers=32) as pool:
+            results = list(pool.map(_race, range(32)))
+        assert results.count(True) == 3
+        assert results.count(False) == 29
+        found = store.find_grant(grant.grant_id)
+        assert (found.tx_code_attempts, found.state) == (3, STATE_OFFERED)
 
 
 class TestAccessTokens:
@@ -337,6 +445,41 @@ class TestSqliteConnectionLifecycle:
             results = pool.map(_burn_in_subprocess, [path] * 4)
         assert results.count(True) == 1
         assert results.count(False) == 3
+
+    def test_exactly_the_cap_is_reserved_across_processes(self, tmp_path):
+        # The same property as test_a_concurrent_burst_reserves_exactly_the_
+        # cap, where it has to hold in production: several workers, each with
+        # its own connection, and only SQLite's writer lock between them.
+        import multiprocessing
+        path = str(tmp_path / 'state' / 'oid4vci.sqlite3')
+        wall = datetime.now(tz=timezone.utc)   # the workers run on wall time
+        _, grant = _grant(tx_code='123456', tx_code_max_attempts=3,
+                          expires_at=wall + timedelta(minutes=10))
+        store = SqliteOID4VCIStore(path)
+        try:
+            store.save_grant(grant)
+            context = multiprocessing.get_context('spawn')
+            with context.Pool(4) as pool:
+                results = pool.map(_reserve_in_subprocess,
+                                   [(path, grant.grant_id)] * 12)
+            assert results.count(True) == 3
+            assert results.count(False) == 9
+            found = store.find_grant(grant.grant_id)
+            assert (found.tx_code_attempts, found.state) == (3, STATE_OFFERED)
+        finally:
+            store.close()
+
+    def test_the_cap_is_shared_between_connections(self, sqlite_store,
+                                                   tmp_path):
+        other = _sqlite(str(tmp_path / 'state' / 'oid4vci.sqlite3'))
+        try:
+            _, grant = _grant(tx_code='123456', tx_code_max_attempts=3)
+            sqlite_store.save_grant(grant)
+            results = [handle.reserve_tx_attempt(grant.grant_id)
+                       for handle in (sqlite_store, other, sqlite_store, other)]
+            assert results == [True, True, True, False]
+        finally:
+            other.close()
 
     def test_exactly_one_connection_wins(self, sqlite_store, tmp_path):
         # Two SQLite connections to the same file is the in-process stand-in

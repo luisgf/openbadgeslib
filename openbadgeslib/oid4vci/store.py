@@ -171,13 +171,14 @@ class OID4VCIStore(Protocol):
     which is what a multi-host deployment needs.
 
     IF YOU IMPLEMENT THIS, the contract that matters is atomicity.
-    :meth:`burn_nonce`, :meth:`redeem_grant`, :meth:`record_tx_failure` and
-    :meth:`claim_issuance` each decide something *and* record it, and each must
-    do so as one indivisible operation — a `SET NX`, an `INSERT ... ON
-    CONFLICT`, a `DELETE ... RETURNING`, or a transaction. Implementing any of
-    them as a read followed by a write reopens the replay window that the key
-    proof exists to close, and no test that runs one request at a time will
-    notice.
+    :meth:`burn_nonce`, :meth:`redeem_grant`, :meth:`reserve_tx_attempt`,
+    :meth:`record_tx_failure` and :meth:`claim_issuance` each decide something
+    *and* record it, and each must do so as one indivisible operation — a
+    `SET NX`, an `INSERT ... ON CONFLICT`, a `DELETE ... RETURNING`, a
+    conditional `UPDATE`, or a transaction. Implementing any of them as a read
+    followed by a write reopens the replay window that the key proof exists to
+    close (or, for the tx_code attempts, the guessing budget the counter
+    exists to cap), and no test that runs one request at a time will notice.
     """
 
     #: False for a backend that cannot coordinate across processes. The issuer
@@ -231,13 +232,36 @@ class OID4VCIStore(Protocol):
         """
         ...
 
-    def record_tx_failure(self, grant_id: str) -> int:
-        """Count one wrong tx_code attempt; return the new total.
+    def reserve_tx_attempt(self, grant_id: str) -> bool:
+        """Take one of the grant's tx_code attempts; True if there was one.
 
-        Must increment and (on reaching the grant's maximum) invalidate in a
-        single operation. Two concurrent wrong guesses that both read "2
-        attempts used" and both write "3" would hand an attacker unlimited
-        tries at a 20-bit secret.
+        Called BEFORE the guess is verified, and the only thing that counts
+        attempts. It must test and increment in a single operation, and only
+        for a grant that is still offered and has an attempt left::
+
+            UPDATE ... SET attempts = attempts + 1
+            WHERE grant_id = ? AND state = 'offered' AND attempts < max
+
+        Counting the attempt after verifying it instead — however atomically —
+        caps nothing: every request that read the grant before the last
+        failure was recorded has its guess checked, so the budget becomes the
+        server's concurrency rather than the grant's maximum (#341). False
+        means no verification may run; it says nothing about why, and the
+        refused call must leave the count as it was.
+        """
+        ...
+
+    def record_tx_failure(self, grant_id: str) -> int:
+        """Note that a reserved attempt was a wrong tx_code; return the total.
+
+        Does NOT count the attempt: :meth:`reserve_tx_attempt` already did,
+        and counting it twice would spend the budget in half the guesses. What
+        it decides is whether that was the last one — when the attempts are
+        used up and the grant is STILL OFFERED it is invalidated, in the same
+        operation as the test. A grant in any other state is left exactly as
+        it is: a wrong guess that was reserved alongside the right one reports
+        its failure after the code was redeemed, and must not take away the
+        credential of whoever held the PIN. Returns 0 for an unknown grant.
         """
         ...
 

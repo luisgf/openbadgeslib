@@ -4,8 +4,11 @@ The credential-endpoint tests need openvc-core's openid4vci module (the
 [oid4vci] extra); everything else runs without it, which is the point of
 keeping the error mapping and the discovery documents free of openvc imports.
 """
+import importlib
 import json
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -17,6 +20,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from openbadgeslib.errors import ConfigError
 from openbadgeslib.oid4vci import (FORMAT_JWT_VC_JSON, FORMAT_SD_JWT_VC,
                                    InMemoryOID4VCIStore, NonceIssuer,
+                                   SqliteOID4VCIStore, TokenResponse,
                                    build_authorization_server_metadata,
                                    build_credential_offer,
                                    build_issuer_metadata,
@@ -24,14 +28,18 @@ from openbadgeslib.oid4vci import (FORMAT_JWT_VC_JSON, FORMAT_SD_JWT_VC,
                                    handle_credential_request,
                                    handle_nonce_request, handle_token_request,
                                    offered_badges)
+from openbadgeslib.oid4vci.codes import secret_id
 from openbadgeslib.oid4vci.errors import (INVALID_CREDENTIAL_REQUEST,
                                           INVALID_ENCRYPTION_PARAMETERS,
                                           INVALID_GRANT, INVALID_NONCE,
                                           INVALID_PROOF, INVALID_REQUEST,
                                           INVALID_TOKEN, OID4VCIError,
                                           as_oid4vci_error)
+from openbadgeslib.oid4vci.handler import _GRANT_REJECTED
 from openbadgeslib.oid4vci.metadata import parse_credential_configuration_id
 from openbadgeslib.oid4vci.offer import OFFER_SCHEME
+from openbadgeslib.oid4vci.store import (STATE_INVALIDATED, STATE_OFFERED,
+                                         STATE_REDEEMED)
 
 TESTS_DIR = Path(__file__).parent
 ISSUER = 'https://issuer.example/issuer/'
@@ -1335,3 +1343,317 @@ class TestLoneSurrogates:
         with pytest.raises(IssuanceError, match='not valid Unicode'):
             build_credential_offer(conf, 'badge_1', '\ud800@example.org',
                                    store=store)
+
+
+BURST = 32
+
+
+@pytest.fixture(params=['memory', 'sqlite'])
+def any_store(request, tmp_path):
+    """Both reference stores: the attempt cap is the store's to keep."""
+    if request.param == 'sqlite':
+        made = SqliteOID4VCIStore(str(tmp_path / 'state' / 'oid4vci.sqlite3'),
+                                  timeout=30.0)
+    else:
+        made = InMemoryOID4VCIStore()
+    yield made
+    made.close()
+
+
+class _Tally:
+    """Stand-ins for the two scrypt calls of the token endpoint, counted.
+
+    The tests below are about how many guesses get verified, not about scrypt:
+    the stand-in for ``verify_tx_code`` records the guess and compares it with
+    the PIN it was told is right. A guess listed in ``park`` is held inside the
+    verification until ``release`` is set, which is how a test pins down "this
+    request reserved its attempt and has not answered yet" without a clock
+    (the timeouts only turn a hang into a failure).
+    """
+
+    def __init__(self, monkeypatch):
+        self.right = None
+        self.verified = []
+        self.answered = []
+        self.dummies = 0
+        self.park = set()
+        self.release = threading.Event()
+        self.changed = threading.Condition()
+        module = importlib.import_module('openbadgeslib.oid4vci.handler')
+        monkeypatch.setattr(module, 'verify_tx_code', self._verify)
+        monkeypatch.setattr(module, 'dummy_tx_verification', self._dummy)
+
+    def _verify(self, tx_code, kdf, salt, digest):
+        with self.changed:
+            self.verified.append(tx_code)
+            self.changed.notify_all()
+        if tx_code in self.park:
+            assert self.release.wait(timeout=60)
+        return tx_code == self.right
+
+    def _dummy(self):
+        with self.changed:
+            self.dummies += 1
+
+    def answer(self, conf, store, offer, pin):
+        """One token request; the token response or the refusal, not raised."""
+        try:
+            return handle_token_request(conf, code=offer.pre_authorized_code,
+                                        tx_code=pin, store=store)
+        except OID4VCIError as exc:
+            return exc
+        finally:
+            with self.changed:
+                self.answered.append(pin)
+                self.changed.notify_all()
+
+    def wait_until(self, *, verifying_or_answered):
+        """Block until that many guesses are in a verification or answered."""
+        with self.changed:
+            assert self.changed.wait_for(
+                lambda: len(set(self.verified) | set(self.answered))
+                >= verifying_or_answered, timeout=60)
+
+
+def _wrong_pins(right, count):
+    return [pin for pin in ('%06d' % n for n in range(count + 1))
+            if pin != right][:count]
+
+
+def _is_the_one_rejection(answer):
+    return (isinstance(answer, OID4VCIError)
+            and answer.error == INVALID_GRANT and answer.http_status == 400
+            and answer.description == _GRANT_REJECTED)
+
+
+class TestTxCodeAttemptReservation:
+    """#341: the attempt is reserved before the PIN is verified.
+
+    The cap used to be tested on the snapshot each request read, so every
+    request that read the grant before the third failure was recorded got a
+    full verification of its guess: the attempt budget was the server's
+    concurrency, not three.
+    """
+
+    def test_a_burst_gets_no_more_verifications_than_the_cap(
+            self, conf, any_store, monkeypatch):
+        tally = _Tally(monkeypatch)
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=any_store, tx_code=True)
+        tally.right = offer.tx_code
+        pins = _wrong_pins(offer.tx_code, BURST)
+        # Every verification is held until the whole burst has either reached
+        # one or been answered, so no request runs after another has finished:
+        # the worst interleaving, made the only one.
+        tally.park = set(pins)
+        barrier = threading.Barrier(BURST)
+
+        def _guess(pin):
+            barrier.wait(timeout=60)
+            return tally.answer(conf, any_store, offer, pin)
+
+        with ThreadPoolExecutor(max_workers=BURST) as pool:
+            futures = [pool.submit(_guess, pin) for pin in pins]
+            try:
+                tally.wait_until(verifying_or_answered=BURST)
+            finally:
+                tally.release.set()
+            answers = [future.result(timeout=60) for future in futures]
+
+        assert len(tally.verified) == 3
+        assert all(_is_the_one_rejection(answer) for answer in answers)
+        # The 29 that found no attempt left paid for one all the same.
+        assert tally.dummies == BURST - 3
+        grant = any_store.find_grant(offer.grant_id)
+        assert (grant.tx_code_attempts, grant.state) == (3, STATE_INVALIDATED)
+
+    def test_the_right_pin_in_a_burst_wins_only_from_a_reserved_attempt(
+            self, conf, any_store, monkeypatch):
+        tally = _Tally(monkeypatch)
+        reserved = []
+        current = threading.local()
+        reserve = any_store.reserve_tx_attempt
+
+        def _spy(grant_id):
+            won = reserve(grant_id)
+            if won:
+                reserved.append(current.pin)       # list.append is atomic
+            return won
+        monkeypatch.setattr(any_store, 'reserve_tx_attempt', _spy)
+
+        def _guess(job):
+            barrier, offer, pin = job
+            current.pin = pin
+            barrier.wait(timeout=60)
+            return tally.answer(conf, any_store, offer, pin)
+
+        now = datetime.now(tz=timezone.utc)
+        with ThreadPoolExecutor(max_workers=BURST) as pool:
+            for trial in range(12):
+                offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                               store=any_store, tx_code=True)
+                tally.right = offer.tx_code
+                del tally.verified[:], reserved[:]
+                wrong = _wrong_pins(offer.tx_code, BURST - 1)
+                # The right PIN starts from a different place in the queue
+                # each trial, so it is sometimes among the first to reserve.
+                at = (trial * 5) % BURST
+                pins = wrong[:at] + [offer.tx_code] + wrong[at:]
+                barrier = threading.Barrier(BURST)
+                answers = dict(zip(pins, pool.map(
+                    _guess, [(barrier, offer, pin) for pin in pins])))
+
+                assert len(reserved) <= 3
+                # A guess is verified if and only if it holds a reservation.
+                assert sorted(tally.verified) == sorted(reserved)
+                for pin in wrong:
+                    assert _is_the_one_rejection(answers[pin])
+                right = answers[offer.tx_code]
+                if offer.tx_code not in reserved:
+                    assert _is_the_one_rejection(right)
+                grant = any_store.find_grant(offer.grant_id)
+                assert grant.tx_code_attempts == len(reserved)
+                if isinstance(right, TokenResponse):
+                    # The burst kept presenting the code after it was spent,
+                    # which is a replay: the grant and its token are revoked,
+                    # unless every other request had been answered by then.
+                    assert grant.state in (STATE_REDEEMED, STATE_INVALIDATED)
+                    live = any_store.grant_for_token(
+                        secret_id(right.access_token), now=now)
+                    assert (live is not None) == (grant.state == STATE_REDEEMED)
+                else:
+                    assert _is_the_one_rejection(right)
+                    assert grant.state == STATE_INVALIDATED
+
+    def test_the_right_pin_is_refused_unverified_once_the_cap_is_reserved(
+            self, conf, any_store, monkeypatch):
+        tally = _Tally(monkeypatch)
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=any_store, tx_code=True)
+        tally.right = offer.tx_code
+        wrong = _wrong_pins(offer.tx_code, 3)
+        tally.park = set(wrong)
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = [pool.submit(tally.answer, conf, any_store, offer, pin)
+                       for pin in wrong]
+            try:
+                # Three guesses hold the three attempts and none has answered.
+                tally.wait_until(verifying_or_answered=3)
+                late = tally.answer(conf, any_store, offer, offer.tx_code)
+            finally:
+                tally.release.set()
+            answers = [future.result(timeout=60) for future in futures]
+        assert _is_the_one_rejection(late)
+        assert offer.tx_code not in tally.verified
+        assert tally.dummies == 1
+        assert all(_is_the_one_rejection(answer) for answer in answers)
+        grant = any_store.find_grant(offer.grant_id)
+        assert (grant.tx_code_attempts, grant.state) == (3, STATE_INVALIDATED)
+
+    def test_a_late_wrong_pin_does_not_kill_the_grant_the_right_one_redeemed(
+            self, conf, any_store, monkeypatch):
+        tally = _Tally(monkeypatch)
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=any_store, tx_code=True)
+        tally.right = offer.tx_code
+        wrong = _wrong_pins(offer.tx_code, 2)
+        tally.park = set(wrong)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(tally.answer, conf, any_store, offer, pin)
+                       for pin in wrong]
+            try:
+                tally.wait_until(verifying_or_answered=2)
+                # The third and last attempt is the right PIN, and it answers
+                # while the two wrong guesses are still being verified.
+                token = tally.answer(conf, any_store, offer, offer.tx_code)
+            finally:
+                tally.release.set()
+            answers = [future.result(timeout=60) for future in futures]
+        assert isinstance(token, TokenResponse)
+        assert all(_is_the_one_rejection(answer) for answer in answers)
+        # Their failures land on a count already at the cap. They were made
+        # against a live offer, before the code was spent: not a replay, and
+        # not a reason to take the credential away from who held the PIN.
+        grant = any_store.find_grant(offer.grant_id)
+        assert (grant.tx_code_attempts, grant.state) == (3, STATE_REDEEMED)
+        assert any_store.grant_for_token(
+            secret_id(token.access_token),
+            now=datetime.now(tz=timezone.utc)) is not None
+
+    def test_two_wrong_pins_then_the_right_one_still_redeems(self, conf,
+                                                             any_store):
+        # Real scrypt, one request at a time: what a person typing a PIN sees,
+        # which the reservation must not change.
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=any_store, tx_code=True)
+        for pin in _wrong_pins(offer.tx_code, 2):
+            with pytest.raises(OID4VCIError) as caught:
+                handle_token_request(conf, code=offer.pre_authorized_code,
+                                     tx_code=pin, store=any_store)
+            assert _is_the_one_rejection(caught.value)
+        grant = any_store.find_grant(offer.grant_id)
+        assert (grant.tx_code_attempts, grant.state) == (2, STATE_OFFERED)
+        token = handle_token_request(conf, code=offer.pre_authorized_code,
+                                     tx_code=offer.tx_code, store=any_store)
+        assert token.access_token
+        grant = any_store.find_grant(offer.grant_id)
+        assert (grant.tx_code_attempts, grant.state) == (3, STATE_REDEEMED)
+
+    def test_the_third_wrong_pin_invalidates_and_a_fourth_is_not_verified(
+            self, conf, any_store, monkeypatch):
+        tally = _Tally(monkeypatch)
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=any_store, tx_code=True)
+        tally.right = offer.tx_code
+        for pin in _wrong_pins(offer.tx_code, 3):
+            assert _is_the_one_rejection(
+                tally.answer(conf, any_store, offer, pin))
+        grant = any_store.find_grant(offer.grant_id)
+        assert (grant.tx_code_attempts, grant.state) == (3, STATE_INVALIDATED)
+        assert (len(tally.verified), tally.dummies) == (3, 0)
+        # Even the right PIN is useless now, and costs what a guess costs.
+        assert _is_the_one_rejection(
+            tally.answer(conf, any_store, offer, offer.tx_code))
+        assert (len(tally.verified), tally.dummies) == (3, 1)
+        assert any_store.find_grant(offer.grant_id).tx_code_attempts == 3
+
+    def test_an_exhausted_offer_nobody_closed_is_closed_by_the_next_request(
+            self, conf, any_store, monkeypatch):
+        # A worker that died between reserving the last attempt and answering
+        # leaves the count at the cap and the grant offered. The next request
+        # finds no attempt to reserve: it must not be verified, and the offer
+        # must not stay open for whoever comes after it.
+        tally = _Tally(monkeypatch)
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=any_store, tx_code=True)
+        tally.right = offer.tx_code
+        for _ in range(3):
+            assert any_store.reserve_tx_attempt(offer.grant_id) is True
+        assert any_store.find_grant(offer.grant_id).state == STATE_OFFERED
+        assert _is_the_one_rejection(
+            tally.answer(conf, any_store, offer, offer.tx_code))
+        assert (tally.verified, tally.dummies) == ([], 1)
+        grant = any_store.find_grant(offer.grant_id)
+        assert (grant.tx_code_attempts, grant.state) == (3, STATE_INVALIDATED)
+
+    def test_a_missing_pin_spends_no_attempt(self, conf, any_store):
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=any_store, tx_code=True)
+        with pytest.raises(OID4VCIError):
+            handle_token_request(conf, code=offer.pre_authorized_code,
+                                 store=any_store)
+        grant = any_store.find_grant(offer.grant_id)
+        assert (grant.tx_code_attempts, grant.state) == (0, STATE_OFFERED)
+
+    def test_an_offer_without_a_pin_reserves_nothing(self, conf, any_store,
+                                                     monkeypatch):
+        def _never(grant_id):
+            raise AssertionError('a PIN-less offer has no attempts to reserve')
+        monkeypatch.setattr(any_store, 'reserve_tx_attempt', _never,
+                            raising=False)
+        offer = build_credential_offer(conf, 'badge_1', 'r@example.org',
+                                       store=any_store)
+        token = handle_token_request(conf, code=offer.pre_authorized_code,
+                                     store=any_store)
+        assert token.access_token
+        assert any_store.find_grant(offer.grant_id).tx_code_attempts == 0

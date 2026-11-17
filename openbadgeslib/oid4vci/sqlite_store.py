@@ -456,25 +456,41 @@ class SqliteOID4VCIStore:
                          % _GRANT_COLUMNS, (credential_id,))
         return _row_to_grant(row) if row is not None else None
 
-    def record_tx_failure(self, grant_id: str) -> int:
-        """Increment the attempt counter, invalidating the grant at the cap.
+    def reserve_tx_attempt(self, grant_id: str) -> bool:
+        """Count one tx_code attempt, if the grant has one left to give.
 
-        Both effects in one UPDATE. Read-modify-write here would let two
-        simultaneous wrong guesses each read the same count and each write the
-        same increment, so the cap would never be reached and a 20-bit PIN
-        would be open to unlimited guessing.
+        The test and the increment are one UPDATE, so of any number of guesses
+        arriving together exactly ``txc_max`` see rowcount 1 — the same
+        argument as burn_nonce in the module docstring, with the WHERE clause
+        in the place of the primary key. Read-modify-write here would let two
+        simultaneous guesses each read the same count and each write the same
+        increment, and a 20-bit PIN would be open to unlimited guessing.
         """
-        def _bump(conn: sqlite3.Connection) -> int:
+        def _reserve(conn: sqlite3.Connection) -> bool:
+            cur = conn.execute(
+                'UPDATE grant_record SET txc_attempts = txc_attempts + 1 '
+                'WHERE grant_id = ? AND state = ? AND txc_attempts < txc_max',
+                (grant_id, STATE_OFFERED))
+            return bool(cur.rowcount == 1)
+        return bool(self._write(_reserve))
+
+    def record_tx_failure(self, grant_id: str) -> int:
+        """Invalidate a still-offered grant whose attempts are used up.
+
+        The attempt itself was counted by reserve_tx_attempt. The state is
+        part of the WHERE clause, not read first: a failure that arrives after
+        the code was redeemed must find nothing to update.
+        """
+        def _settle(conn: sqlite3.Connection) -> int:
             conn.execute(
-                'UPDATE grant_record SET txc_attempts = txc_attempts + 1, '
-                'state = CASE WHEN txc_attempts + 1 >= txc_max THEN ? '
-                'ELSE state END WHERE grant_id = ?',
-                (STATE_INVALIDATED, grant_id))
+                'UPDATE grant_record SET state = ? '
+                'WHERE grant_id = ? AND state = ? AND txc_attempts >= txc_max',
+                (STATE_INVALIDATED, grant_id, STATE_OFFERED))
             row = conn.execute(
                 'SELECT txc_attempts FROM grant_record WHERE grant_id = ?',
                 (grant_id,)).fetchone()
             return int(row[0]) if row is not None else 0
-        return int(self._write(_bump))
+        return int(self._write(_settle))
 
     def redeem_grant(self, grant_id: str, *, now: datetime) -> bool:
         def _cas(conn: sqlite3.Connection) -> bool:

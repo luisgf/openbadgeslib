@@ -96,13 +96,25 @@ class InMemoryOID4VCIStore:
                     return copy.deepcopy(grant)
             return None
 
+    def reserve_tx_attempt(self, grant_id: str) -> bool:
+        with self._lock:
+            grant = self._grants.get(grant_id)
+            if grant is None or grant.state != STATE_OFFERED \
+                    or grant.tx_code_attempts >= grant.tx_code_max_attempts:
+                return False
+            grant.tx_code_attempts += 1
+            return True
+
     def record_tx_failure(self, grant_id: str) -> int:
         with self._lock:
             grant = self._grants.get(grant_id)
             if grant is None:
                 return 0
-            grant.tx_code_attempts += 1
-            if grant.tx_code_attempts >= grant.tx_code_max_attempts:
+            # The attempt was counted when it was reserved. Only an offered
+            # grant is closed: a redeemed or issued one is somebody's
+            # credential by now.
+            if grant.state == STATE_OFFERED \
+                    and grant.tx_code_attempts >= grant.tx_code_max_attempts:
                 grant.state = STATE_INVALIDATED
             return grant.tx_code_attempts
 

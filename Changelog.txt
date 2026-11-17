@@ -229,6 +229,35 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     by earlier versions read as before, and an SVG that holds none of the
     above bakes to the same bytes as before.
 
+  - security(oid4vci): the `tx_code` attempt cap holds against a burst of
+    guesses. The token endpoint tested the cap on the copy of the grant each
+    request had read, verified the guess (scrypt) and only then counted the
+    failure, so every request that read the grant before the third failure
+    was recorded had its guess verified: 32 wrong PINs sent at once to an
+    offer with 3 attempts got 32 verifications on `InMemoryOID4VCIStore` and
+    13 to 15 on `SqliteOID4VCIStore`, and the guessing budget of a PIN-gated
+    offer was the concurrency of the server. `handle_token_request` now
+    reserves the attempt before it verifies anything, through a new store
+    method, `reserve_tx_attempt(grant_id) -> bool`, that counts it only while
+    the grant is offered and has one left (one conditional UPDATE in SQLite,
+    one test-and-increment under the lock in memory). At most
+    `tx_code_max_attempts` verifications ever run against a grant: the same
+    burst gets 3, on both stores. A request that finds no attempt left is not
+    verified; it pays the scrypt any other rejection pays, closes the offer
+    and gets the same `invalid_grant`. One request at a time nothing changes:
+    two wrong PINs and then the right one redeem the code, the third wrong
+    one invalidates the offer. A right PIN now counts as an attempt as well.
+    `record_tx_failure` no longer counts (the reservation did) and no longer
+    touches a grant that is not offered: it used to mark the grant
+    invalidated at the cap whatever its state, so a wrong guess reported
+    after the code was redeemed could take the credential from whoever held
+    the PIN. API change, for a custom `OID4VCIStore` only: it needs
+    `reserve_tx_attempt`, and its `record_tx_failure` must stop incrementing
+    and must guard the state; without the new method a PIN-gated token
+    request fails with AttributeError, and with it but an old
+    `record_tx_failure` an offer closes after two wrong PINs instead of
+    three. The SQLite schema is unchanged.
+
 * v4.6.3 - 2026-10-21
 
   - fix(jws): the native JWS engine (OB1 and OB2 signed badges) answers a
