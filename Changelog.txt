@@ -278,6 +278,28 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     that is not a string with the 401 `invalid_token` of a missing one,
     instead of an AttributeError.
 
+  - security(cli): `openbadges-signer` no longer writes a badge through a
+    symlink planted in the output directory (#342). The output names are
+    predictable (`badge_<n>_<recipient>.<ext>` and `.assertion.json`), the
+    already-signed check used `os.path.isfile`, which follows links and is
+    false for a dangling one, and the file was written with a plain `open()`:
+    a local user able to write to a shared `-o` directory could make the
+    operator create a file anywhere the operator can write or, with
+    `--force`, overwrite an existing one, with badge bytes. Anything at the
+    output name now counts as already signed (a symlink included, whatever it
+    points to), the file is created exclusively, and `--force` writes a new
+    file beside it and renames it over the name, so a symlink or a hard link
+    is replaced and what it pointed to is left untouched. On POSIX a link that
+    appears between the check and the write ends in the usual "Could not write
+    badge" exit. This covers `-V 1`, `-V 2` and `-V 3`, batch mode and the `-H`
+    assertion JSON. Compatibility: with `-H`, an existing `.assertion.json`
+    is now a reason to refuse (single badge) or skip (batch; the skipped
+    entry names it as `assertion_file`) unless `--force` is given, where it
+    used to be overwritten when the badge file itself was absent; and
+    `--force` replaces the file instead of truncating it in place, so the
+    result has the mode of a newly signed badge (from the umask) rather than
+    the mode of the file it replaced.
+
 * v4.6.3 - 2026-10-21
 
   - fix(jws): the native JWS engine (OB1 and OB2 signed badges) answers a

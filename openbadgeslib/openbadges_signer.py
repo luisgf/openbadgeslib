@@ -32,6 +32,7 @@
 import argparse
 import configparser
 import logging
+import secrets
 import sys
 import os
 import os.path
@@ -82,6 +83,82 @@ def _append_signer_log(path: str, line: str) -> None:
         if fd >= 0:
             os.close(fd)
         raise
+
+
+def _write_new_file(path: str, data: bytes, force: bool) -> None:
+    """Write *data* to *path* without ever writing through what is there.
+
+    The output names are predictable (``badge_<n>_<recipient>.<ext>``), so a
+    local user with write access to a shared ``-o`` directory can plant a
+    symlink under the name the signer is about to use; ``open(path, 'wb')``
+    followed it and created or truncated the link's target with the
+    operator's rights (#342).
+
+    Without *force* the file is created exclusively: ``O_CREAT | O_EXCL``
+    fails with ``FileExistsError`` on anything already at *path*, a symlink
+    (dangling or not) included, so a link planted after the caller's
+    already-signed check is refused too. With *force* the bytes go to a new
+    file beside *path* which is then renamed over it: ``os.replace`` replaces
+    the directory entry itself (a regular file, a symlink, a hard link to
+    some other file), never what it points to, and a reader never sees a
+    truncated badge.
+
+    Either way the file is created with mode 0o666 less the umask, which is
+    what ``open()`` gave a new badge. ``O_NOFOLLOW`` is redundant next to a
+    POSIX ``O_EXCL`` and is passed as defence in depth where it exists.
+    Windows has no ``O_NOFOLLOW`` and this code does not rely on what its
+    exclusive create does with a dangling link: there the caller's
+    ``lexists`` check is the protection without *force* (and creating a
+    symlink takes a privilege ordinary accounts lack), ``os.replace`` with it.
+    """
+    flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL
+             | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0))
+    if not force:
+        with os.fdopen(os.open(path, flags, 0o666), 'wb') as f:
+            f.write(data)
+        return
+    # A short random name: unguessable, and no longer than a badge name, so a
+    # recipient near the file-name limit can still be re-signed.
+    tmp_path = os.path.join(os.path.dirname(path),
+                            '.obl-%s.tmp' % secrets.token_hex(8))
+    fd = os.open(tmp_path, flags, 0o666)
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _hosted_assertion_path(badge_file_out: str) -> str:
+    """Where the OB2 HostedBadge assertion JSON of *badge_file_out* goes."""
+    return os.path.splitext(badge_file_out)[0] + '.assertion.json'
+
+
+def _existing_output(args: argparse.Namespace,
+                     badge_file_out: str) -> Optional[str]:
+    """The output path of this badge that is already taken, or None when the
+    badge can be written (nothing there, or ``--force`` replaces it).
+
+    ``lexists``, not ``isfile``: a symlink counts as existing whatever it
+    points to. ``isfile`` follows the link and is False for a dangling one,
+    which is how a planted link got past this check (#342). With ``-H`` the
+    assertion JSON is an output too, and it is checked here, before issuing,
+    so a taken name does not leave a badge on disk without its assertion.
+    """
+    if args.force:
+        return None
+    candidates = [badge_file_out]
+    if args.hosted:
+        candidates.append(_hosted_assertion_path(badge_file_out))
+    for path in candidates:
+        if os.path.lexists(path):
+            return path
+    return None
 
 
 # Entry Point
@@ -255,8 +332,9 @@ def _sign_single(args: argparse.Namespace, conf: configparser.ConfigParser,
 
     badge_file_out = os.path.join(args.output, fbase)
 
-    if os.path.isfile(badge_file_out) and not args.force:
-        print('A %s OpenBadge has already signed for %s in %s' % (args.badge, recipient, badge_file_out))
+    existing = _existing_output(args, badge_file_out)
+    if existing is not None:
+        print('A %s OpenBadge has already signed for %s in %s' % (args.badge, recipient, existing))
         sys.exit(1)
 
     if args.ob_version == '3':
@@ -267,16 +345,17 @@ def _sign_single(args: argparse.Namespace, conf: configparser.ConfigParser,
 
 
 def _write_badge_and_log(conf: configparser.ConfigParser, badge_file_out: str,
-                         badge_bytes: bytes, msg: str) -> None:
+                         badge_bytes: bytes, msg: str,
+                         force: bool = False) -> None:
     """Persist the signed badge, append the audit line and print the location —
     the shared tail of every successful OB2/OB3 signing. A log-write failure is
     reported but does not lose the already-written badge. A badge-write failure
     aborts with a clean message (the status index may already be allocated;
     ``_ensure_output_dir`` is the primary guard against that, this is the
-    backstop for a race or full disk — #282)."""
+    backstop for a race or full disk — #282). The badge is never written
+    through a symlink at *badge_file_out*: see ``_write_new_file`` (#342)."""
     try:
-        with open(badge_file_out, 'wb') as f:
-            f.write(badge_bytes)
+        _write_new_file(badge_file_out, badge_bytes, force)
     except OSError as err:
         sys.exit('[!] Could not write badge to %s: %s' % (badge_file_out, err))
     try:
@@ -305,14 +384,16 @@ def _ob3_log_line(badge: str, recipient: str, result: SignResult) -> str:
     return msg
 
 
-def _write_hosted_assertion(badge_file_out: str, result: SignResult) -> None:
+def _write_hosted_assertion(badge_file_out: str, result: SignResult,
+                            force: bool = False) -> None:
     """Write the OB2 HostedBadge assertion JSON next to the badge and print
     where to publish it (only when `-H`/hosted produced one)."""
-    hosted_out = os.path.splitext(badge_file_out)[0] + '.assertion.json'
+    hosted_out = _hosted_assertion_path(badge_file_out)
+    assert result.hosted_json is not None
     try:
-        with open(hosted_out, 'w', encoding='ascii') as f:
-            assert result.hosted_json is not None
-            f.write(result.hosted_json)
+        # hosted_json is one line of ASCII (json.dumps with ensure_ascii and
+        # no indent), so these are the bytes the text-mode write produced.
+        _write_new_file(hosted_out, result.hosted_json.encode('ascii'), force)
     except OSError as err:
         sys.exit('[!] Could not write hosted assertion to %s: %s'
                  % (hosted_out, err))
@@ -335,10 +416,10 @@ def _sign_ob2(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
         sys.exit('[!] %s' % exc)
 
     _write_badge_and_log(conf, badge_file_out, result.badge_bytes,
-                         _ob2_log_line(badge, recipient))
+                         _ob2_log_line(badge, recipient), args.force)
 
     if args.hosted and result.hosted_json is not None:
-        _write_hosted_assertion(badge_file_out, result)
+        _write_hosted_assertion(badge_file_out, result, args.force)
 
     if args.mail_badge:
         print('[i] --mail-badge is not supported for -V 2 yet; the badge was saved '
@@ -386,9 +467,15 @@ def _sign_ob1(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
         # a raw OSError out of the CLI and lost the already-signed badge; mirror
         # the OB2 path — save, then log inside try/except. Badge write is also
         # guarded (#282): _ensure_output_dir is the primary guard, this is the
-        # backstop.
+        # backstop. BadgeSigned.save_to_file() is a plain open(path, 'wb'),
+        # which follows a symlink planted at the output name (#342), so the
+        # bytes are written here and file_out is set as save_to_file() does
+        # (the mail attachment is named after it). A caller that built args
+        # without `force` gets the exclusive create.
         try:
-            badge_signed.save_to_file(badge_file_out)
+            _write_new_file(badge_file_out, badge_signed.signed,
+                            getattr(args, 'force', False))
+            badge_signed.file_out = badge_file_out
         except OSError as err:
             sys.exit('[!] Could not write badge to %s: %s'
                      % (badge_file_out, err))
@@ -450,7 +537,7 @@ def _sign_ob3(args: argparse.Namespace, conf: configparser.ConfigParser, badge: 
         print('[i] %s' % notice)
 
     _write_badge_and_log(conf, badge_file_out, result.badge_bytes,
-                         _ob3_log_line(badge, recipient, result))
+                         _ob3_log_line(badge, recipient, result), args.force)
 
     if args.mail_badge:
         print('[i] --mail-badge is not supported for -V 3; the badge was saved '
@@ -467,12 +554,13 @@ def _present_batch_item(args: argparse.Namespace,
     OB2 hosted assertion JSON, and any informational notices."""
     if result.ob_version == '2':
         _write_badge_and_log(conf, path, result.badge_bytes,
-                             _ob2_log_line(badge, recipient))
+                             _ob2_log_line(badge, recipient), args.force)
         if args.hosted and result.hosted_json is not None:
-            _write_hosted_assertion(path, result)
+            _write_hosted_assertion(path, result, args.force)
     else:
         _write_badge_and_log(conf, path, result.badge_bytes,
-                             _ob3_log_line(badge, recipient, result))
+                             _ob3_log_line(badge, recipient, result),
+                             args.force)
     for notice in result.notices:
         print('[i] %s' % notice)
 
@@ -499,9 +587,13 @@ def _sign_batch(args: argparse.Namespace, conf: configparser.ConfigParser,
             skipped.append({'recipient': recipient, 'reason': str(exc)})
             continue
         path = os.path.join(args.output, fbase)
-        if os.path.isfile(path) and not args.force:
-            skipped.append({'recipient': recipient, 'reason': 'exists',
-                            'badge_file': path})
+        existing = _existing_output(args, path)
+        if existing is not None:
+            skip: dict[str, Any] = {'recipient': recipient, 'reason': 'exists',
+                                    'badge_file': path}
+            if existing != path:        # the badge is free, its -H JSON is not
+                skip['assertion_file'] = existing
+            skipped.append(skip)
             continue
         to_issue.append(recipient)
         paths[recipient] = path
@@ -538,7 +630,8 @@ def _sign_batch(args: argparse.Namespace, conf: configparser.ConfigParser,
             signed.append(entry)
 
     for skip in skipped:
-        detail = skip.get('badge_file', skip['reason'])
+        detail = (skip.get('assertion_file')
+                  or skip.get('badge_file', skip['reason']))
         print('[i] skipped %s (%s)' % (skip['recipient'], detail))
     if args.mail_badge:
         print('[i] --mail-badge is not supported for batch issuance; the badges '
