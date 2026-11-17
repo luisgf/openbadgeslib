@@ -40,11 +40,10 @@
 import configparser
 import os
 import posixpath
-import shutil
 import tempfile
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple, Union
 from urllib.parse import urljoin, urlparse
 
 from ..errors import LibOpenBadgesException
@@ -60,6 +59,82 @@ class PublishError(LibOpenBadgesException):
     def __init__(self, message: str, cli_exit: int = 255) -> None:
         super().__init__(message)
         self.cli_exit = cli_exit
+
+
+class PublicKeyRefused(PublishError):
+    """A badge's configured ``public_key`` file was read and is not a key that
+    may be published: it holds private key material, it is not an RSA, EC or
+    Ed25519 public key, or it is not the public half of the badge's
+    ``private_key``. The message names the file and the reason, never the
+    file's contents."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, cli_exit=1)
+
+
+def load_publishable_public_key(public_key_path: str,
+                                private_key_path: Optional[str] = None
+                                ) -> bytes:
+    """Read a badge's ``public_key`` file and return the PEM to publish.
+
+    Every publish path (OB1, OB2, OB3) used to copy the configured file as
+    ``verify.pem``, whatever it held: one crossed path in the config (the
+    ``private_key`` path under ``public_key``) served the signing key at a
+    public URL (#337). The file is now only ever an input to this function,
+    and what gets written is the key it returns, re-serialised:
+
+      * a file with ``PRIVATE KEY`` anywhere in it is refused before it is
+        parsed (a public block followed by a private one would parse);
+      * it must load as an RSA, EC or Ed25519 public key (any PEM flavour
+        ``cryptography`` reads, PKCS#1 ``RSA PUBLIC KEY`` included);
+      * when *private_key_path* names a readable private key, the public key
+        must be its public half. A missing or unloadable private key (the
+        publishing host need not hold it) leaves nothing to compare against,
+        and is not an error here.
+
+    Returns the SubjectPublicKeyInfo ``PUBLIC KEY`` PEM. Raises
+    :class:`PublicKeyRefused` for a file that was read and rejected, and lets
+    the ``OSError`` of an unreadable *public_key_path* through, so a caller can
+    tell "not generated yet" from "refused".
+    """
+    from cryptography.hazmat.primitives.asymmetric import ec, rsa
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+        Ed25519PublicKey)
+    from ..keys import _load_private_pem, _load_public_pem, _public_pem
+
+    with open(public_key_path, 'rb') as f:
+        data = f.read()
+    if b'PRIVATE KEY' in data:
+        raise PublicKeyRefused(
+            'public_key file %s holds a private key and was not published '
+            '(if an earlier publish served it as verify.pem, replace the key '
+            'pair)' % public_key_path)
+    try:
+        key = _load_public_pem(data)
+    except LibOpenBadgesException as exc:
+        raise PublicKeyRefused(
+            'public_key file %s is not a public key and was not published '
+            '(%s)' % (public_key_path, exc)) from exc
+    if not isinstance(key, (rsa.RSAPublicKey, ec.EllipticCurvePublicKey,
+                            Ed25519PublicKey)):
+        raise PublicKeyRefused(
+            'public_key file %s is not an RSA, EC or Ed25519 public key and '
+            'was not published' % public_key_path)
+    pem = _public_pem(key)
+
+    if private_key_path:
+        try:
+            with open(private_key_path, 'rb') as f:
+                private_key = _load_private_pem(f.read())
+        except (OSError, LibOpenBadgesException):
+            private_key = None
+        if private_key is not None \
+                and _public_pem(private_key.public_key()) != pem:
+            raise PublicKeyRefused(
+                'public_key file %s does not match the private_key %s (it is '
+                'not its public half) and was not published'
+                % (public_key_path, private_key_path))
+    return pem
 
 
 class CredentialNotFound(PublishError):
@@ -120,7 +195,9 @@ class PublishResult:
     ``files_written`` are output-relative paths (did.json, per-badge
     ``<purpose>.jwt`` and ``verify.pem``, optional Type Metadata). ``did_skipped``
     / ``status_skipped`` are ``(badge, reason)`` for badges left out of did.json
-    or whose status lists could not be regenerated; ``no_status_config`` lists
+    or whose status lists could not be regenerated; a badge whose ``public_key``
+    was refused (:class:`PublicKeyRefused`) is in both, whether or not it has
+    status lists, and nothing is written for it. ``no_status_config`` lists
     badges without ``status_lists``. ``no_validity_bound`` lists revocable badges
     whose status lists were published with no ``validUntil`` (no anti-replay
     freshness — set ``status_validity_days`` and republish regularly).
@@ -158,14 +235,22 @@ def _dump(obj: dict[str, Any]) -> str:
     return json.dumps(obj, sort_keys=True, ensure_ascii=True)
 
 
-def _write_atomic(path: str, data: str) -> None:
+def _write_atomic(path: str, data: Union[str, bytes]) -> None:
     """Write *path* via a same-directory temp file + rename, so re-publishing
-    over a served directory can never expose a truncated artefact."""
+    over a served directory can never expose a truncated artefact.
+
+    ``bytes`` are written as they are: a multi-line PEM written in text mode
+    would get CRLF line ends on Windows, and verify.pem must be the same bytes
+    on every platform (and under every -V)."""
     directory = os.path.dirname(path) or '.'
     fd, tmp_path = tempfile.mkstemp(dir=directory, suffix='.tmp')
     try:
-        with os.fdopen(fd, 'w', encoding='ascii') as f:
-            f.write(data)
+        if isinstance(data, bytes):
+            with os.fdopen(fd, 'wb') as binary:
+                binary.write(data)
+        else:
+            with os.fdopen(fd, 'w', encoding='ascii') as f:
+                f.write(data)
         os.replace(tmp_path, path)
     except BaseException:
         os.unlink(tmp_path)
@@ -319,7 +404,9 @@ def publish_ob3(conf: configparser.ConfigParser, output: str, *,
 
     Regenerates, from the per-badge status registries: the issuer's did:web
     document (``did.json``), every configured badge's signed Bitstring Status
-    List credentials plus its ``verify.pem``, and (opt-in) the SD-JWT VC Type
+    List credentials plus its ``verify.pem`` (the badge's public key,
+    validated and re-serialised by :func:`load_publishable_public_key`, never
+    a copy of the configured file), and (opt-in) the SD-JWT VC Type
     Metadata. With ``revoke``/``suspend``/``unsuspend`` (a jti or recipient) the
     registry is updated first, so the regenerated lists carry the change;
     ``reason`` annotates a revoke/suspend, ``badge`` scopes the operation to one
@@ -390,24 +477,45 @@ def publish_ob3(conf: configparser.ConfigParser, output: str, *,
     files_written: List[str] = []
     type_metadata: Optional[TypeMetadata] = None
 
+    # Every badge's public key is read and validated once, before anything is
+    # written: the same validated PEM feeds did.json and verify.pem, and the
+    # configured file itself is never copied (#337).
+    public_pems: dict[str, bytes] = {}
+    key_refused: dict[str, str] = {}
+    key_unread: dict[str, str] = {}
+    methods = []
+    for name in status_confs:
+        try:
+            public_pem = load_publishable_public_key(
+                conf[name]['public_key'], conf[name].get('private_key'))
+            methods.append((name, public_jwk_from_pem(public_pem)))
+            public_pems[name] = public_pem
+        except PublicKeyRefused as exc:
+            # The file is there and is not this badge's public key (a private
+            # key, something else, another pair's key): refuse the badge as a
+            # whole, and make the publish report it (exit 2).
+            key_refused[name] = str(exc)
+            did_skipped.append((name, str(exc)))
+        except (OSError, KeyError, LibOpenBadgesException) as exc:
+            # A badge whose keys were never generated must not block the others'
+            # publication — skip it in did.json (its own status lists, if any,
+            # still fail hard below: they cannot be signed without the key).
+            key_unread[name] = str(exc)
+            did_skipped.append((name, str(exc)))
+    if not methods:
+        if key_refused:
+            raise PublishError(
+                'No badge public key could be published: %s' % '; '.join(
+                    '[%s] %s' % item for item in key_refused.items()),
+                cli_exit=1)
+        raise PublishError('No badge public key could be read; generate key '
+                           'pairs with openbadges-keygenerator first',
+                           cli_exit=1)
+
     umask = os.umask(0o077)  # rwx------
     try:
         os.makedirs(output, exist_ok=True)
 
-        methods = []
-        for name in status_confs:
-            # A badge whose keys were never generated must not block the others'
-            # publication — skip it in did.json (its own status lists, if any,
-            # still fail hard below: they cannot be signed without the key).
-            try:
-                with open(conf[name]['public_key'], 'rb') as key:
-                    methods.append((name, public_jwk_from_pem(key.read())))
-            except (OSError, KeyError, LibOpenBadgesException) as exc:
-                did_skipped.append((name, str(exc)))
-        if not methods:
-            raise PublishError('No badge public key could be read; generate key '
-                               'pairs with openbadges-keygenerator first',
-                               cli_exit=1)
         _write_atomic(os.path.join(output, 'did.json'),
                       _dump(build_did_document(did, methods)))
         files_written.append('did.json')
@@ -418,6 +526,9 @@ def publish_ob3(conf: configparser.ConfigParser, output: str, *,
                 sd_jwt_vct, publish_url, output, files_written)
 
         for name, status_conf in status_confs.items():
+            if name in key_refused:
+                status_skipped.append((name, key_refused[name]))
+                continue
             if status_conf is None:
                 no_status_config.append(name)
                 continue
@@ -458,8 +569,16 @@ def publish_ob3(conf: configparser.ConfigParser, output: str, *,
                     # os.sep, or a Windows backslash would break both.
                     files_written.append('%s/%s.jwt' % (name, purpose))
 
-                shutil.copyfile(conf[name]['public_key'],
-                                os.path.join(badge_dir, 'verify.pem'))
+                if name not in public_pems:
+                    # The public key file could not be read (as opposed to
+                    # refused): the lists above are regenerated all the same,
+                    # so a revocation still gets out, and the badge is
+                    # reported as skipped for its missing verify.pem — what
+                    # the failed file copy did here before.
+                    status_skipped.append((name, key_unread[name]))
+                    continue
+                _write_atomic(os.path.join(badge_dir, 'verify.pem'),
+                              public_pems[name])
                 files_written.append('%s/verify.pem' % name)
             except (StatusError, OSError, KeyError, LibOpenBadgesException) as exc:
                 status_skipped.append((name, str(exc)))

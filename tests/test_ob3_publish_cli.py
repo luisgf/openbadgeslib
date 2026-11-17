@@ -233,8 +233,10 @@ class TestPublishGeneration:
 
         assert (pub / 'badge_1' / 'revocation.jwt').is_file()
         assert (pub / 'badge_1' / 'suspension.jwt').is_file()
+        # verify.pem is the validated public key, re-serialised (#337), not a
+        # byte copy of the configured file (which has no trailing newline).
         assert (pub / 'badge_1' / 'verify.pem').read_bytes() == \
-            (TESTS_DIR / 'test_verify_rsa.pem').read_bytes()
+            _spki((TESTS_DIR / 'test_verify_rsa.pem').read_bytes())
         doc = json.loads((pub / 'did.json').read_text())
         assert doc['id'] == 'did:web:example.com:issuer'
         assert doc['verificationMethod'][0]['id'] == \
@@ -1007,3 +1009,398 @@ class TestStatusCommand:
         cfg = _write_config(tmp_path)       # no status_lists configured
         with pytest.raises(SystemExit, match='No badge'):
             _status(cfg)
+
+
+# ── the published key is a validated public key, never a file copy (#337) ────
+
+def _spki(pem):
+    """The SubjectPublicKeyInfo PEM publish writes for the public key *pem*."""
+    from openbadgeslib.keys import _load_public_pem, _public_pem
+    return _public_pem(_load_public_pem(pem))
+
+
+def _leaks(root):
+    """Published files that hold private key material (there must be none)."""
+    if not root.exists():
+        return []
+    return sorted(str(p.relative_to(root)) for p in root.rglob('*')
+                  if p.is_file() and b'PRIVATE KEY' in p.read_bytes())
+
+
+def _keys_config(tmp_path, badges):
+    """A config every -V can publish. *badges* is a list of dicts: ``public``
+    (path), and optionally ``private`` (path), ``status_lists``, ``key_type``;
+    they become [badge_1], [badge_2], ..."""
+    lines = [
+        "[paths]", "base = %s" % tmp_path, "base_status = ${base}/status", "",
+        "[issuer]", "name = Test Issuer", "url = https://example.com",
+        "email = issuer@example.com", "image = issuer.png",
+        "publish_url = https://example.com/issuer/",
+        "revocationList = revoked.json",
+    ]
+    for number, badge in enumerate(badges, 1):
+        lines += ["", "[badge_%d]" % number, "name = Badge %d" % number,
+                  "description = Test", "image = badge.svg",
+                  "criteria = https://example.com/criteria.html",
+                  "public_key = %s" % badge['public']]
+        for option, key in (('private_key', 'private'),
+                            ('status_lists', 'status_lists'),
+                            ('key_type', 'key_type')):
+            if badge.get(key) is not None:
+                lines.append("%s = %s" % (option, badge[key]))
+    cfg = tmp_path / 'keys.ini'
+    cfg.write_text("\n".join(lines) + "\n")
+    return cfg
+
+
+def _publish_exit(cfg, out, version, extra=()):
+    """Run openbadges-publish; return its exit status (0 when it returns)."""
+    argv = ['openbadges-publish', '-c', str(cfg), '-o', str(out),
+            '-V', version] + list(extra)
+    with patch.object(sys, 'argv', argv):
+        try:
+            openbadges_publish.main()
+        except SystemExit as exc:
+            return exc.code
+    return 0
+
+
+RSA_PAIR = {'public': TESTS_DIR / 'test_verify_rsa.pem',
+            'private': TESTS_DIR / 'test_sign_rsa.pem'}
+ECC_PAIR = {'public': TESTS_DIR / 'test_verify_ecc.pem',
+            'private': TESTS_DIR / 'test_sign_ecc.pem'}
+# public_key pointing at the private key: the one-line config slip of #337.
+CROSSED = {'public': TESTS_DIR / 'test_sign_rsa.pem',
+           'private': TESTS_DIR / 'test_sign_rsa.pem'}
+
+
+def _unrelated_p256_public(tmp_path):
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from openbadgeslib.keys import _public_pem
+    path = tmp_path / 'unrelated_p256.pem'
+    path.write_bytes(_public_pem(
+        ec.generate_private_key(ec.SECP256R1()).public_key()))
+    return path
+
+
+class TestPublishValidatesPublicKey:
+    # ── OB3 ──────────────────────────────────────────────────────────────────
+    def test_v3_crossed_path_skips_the_badge(self, tmp_path, capsys):
+        cfg = _keys_config(tmp_path, [
+            dict(CROSSED, status_lists='revocation, suspension'),
+            dict(ECC_PAIR, status_lists='revocation')])
+        out = tmp_path / 'pub'
+        code = _publish_exit(cfg, out, '3', ['--json'])
+        result = json.loads(capsys.readouterr().out)
+
+        assert _leaks(out) == []
+        assert code == 2
+        assert result['skipped'] == ['badge_1']
+        # Nothing at all is written for the refused badge...
+        assert not (out / 'badge_1').exists()
+        assert not any(f.startswith('badge_1/')
+                       for f in result['files_written'])
+        # ...it is not advertised in did.json, and the other badge publishes.
+        doc = json.loads((out / 'did.json').read_text())
+        assert [m['id'].rsplit('#')[1] for m in doc['verificationMethod']] == \
+            ['badge_2']
+        assert (out / 'badge_2' / 'verify.pem').read_bytes() == \
+            _spki(ECC_PAIR['public'].read_bytes())
+
+    def test_v3_crossed_path_exits_2_and_says_why(self, tmp_path, capsys):
+        cfg = _keys_config(tmp_path, [
+            dict(CROSSED, status_lists='revocation'),
+            dict(ECC_PAIR, status_lists='revocation')])
+        out = tmp_path / 'pub'
+        code = _publish_exit(cfg, out, '3')
+        text = capsys.readouterr().out
+
+        assert _leaks(out) == []
+        assert code == 2
+        assert 'Skipping [badge_1]' in text
+        assert 'private key' in text
+        assert 'BEGIN' not in text              # the message carries no key
+
+    def test_v3_only_badge_crossed_writes_nothing(self, tmp_path, capsys):
+        # With no publishable key left there is no did.json to write: the
+        # publish fails as a whole, and says which key it refused and why.
+        cfg = _keys_config(tmp_path, [dict(CROSSED, status_lists='revocation')])
+        out = tmp_path / 'pub'
+        code = _publish_exit(cfg, out, '3', ['--json'])
+        result = json.loads(capsys.readouterr().out)
+
+        assert _leaks(out) == []
+        assert code == 1
+        assert 'badge_1' in result['error']
+        assert 'private key' in result['error']
+        assert not out.exists()
+
+    def test_v3_no_key_generated_yet_keeps_its_message(self, tmp_path, capsys):
+        # No key file at all is the "run the keygenerator" case, not a refusal.
+        cfg = _keys_config(tmp_path, [dict(public=tmp_path / 'missing.pem')])
+        out = tmp_path / 'pub'
+        code = _publish_exit(cfg, out, '3', ['--json'])
+        result = json.loads(capsys.readouterr().out)
+
+        assert code == 1
+        assert 'No badge public key could be read' in result['error']
+        assert not out.exists()
+
+    def test_v3_refused_badge_without_status_lists_exits_2(self, tmp_path,
+                                                           capsys):
+        # A refusal is reported even when the badge has no status list to
+        # skip: a crossed config must not publish with exit 0.
+        cfg = _keys_config(tmp_path, [CROSSED, ECC_PAIR])
+        out = tmp_path / 'pub'
+        code = _publish_exit(cfg, out, '3', ['--json'])
+        result = json.loads(capsys.readouterr().out)
+
+        assert _leaks(out) == []
+        assert code == 2
+        assert result['skipped'] == ['badge_1']
+        assert sorted(p.name for p in out.iterdir()) == ['did.json']
+
+    @pytest.mark.parametrize('same_algorithm', [True, False])
+    def test_v3_unrelated_pair_refused(self, tmp_path, capsys, same_algorithm):
+        # public_key is a real public key, but not the badge's: publishing it
+        # would advertise a key the badge's credentials do not verify under.
+        public = _unrelated_p256_public(tmp_path) if same_algorithm \
+            else TESTS_DIR / 'test_verify_rsa.pem'
+        cfg = _keys_config(tmp_path, [
+            dict(public=public, private=ECC_PAIR['private'],
+                 status_lists='revocation'),
+            dict(RSA_PAIR, status_lists='revocation')])
+        out = tmp_path / 'pub'
+        code = _publish_exit(cfg, out, '3', ['--json'])
+        result = json.loads(capsys.readouterr().out)
+
+        assert code == 2
+        assert result['skipped'] == ['badge_1']
+        assert not (out / 'badge_1').exists()
+        doc = json.loads((out / 'did.json').read_text())
+        assert [m['id'].rsplit('#')[1] for m in doc['verificationMethod']] == \
+            ['badge_2']
+
+    def test_v3_unreadable_public_key_still_regenerates_lists(self, tmp_path,
+                                                              capsys):
+        # A public key file that cannot be read is not a refusal: as before
+        # the fix, the badge's lists are regenerated (a revocation must get
+        # out) and the badge is reported as skipped for its missing verify.pem.
+        cfg = _keys_config(tmp_path, [
+            dict(RSA_PAIR, status_lists='revocation'),
+            dict(public=tmp_path / 'missing.pem', private=ECC_PAIR['private'],
+                 status_lists='revocation')])
+        out = tmp_path / 'pub'
+        code = _publish_exit(cfg, out, '3', ['--json'])
+        result = json.loads(capsys.readouterr().out)
+
+        assert code == 2
+        assert result['skipped'] == ['badge_2']
+        assert (out / 'badge_2' / 'revocation.jwt').is_file()
+        assert not (out / 'badge_2' / 'verify.pem').exists()
+        assert 'badge_2/verify.pem' not in result['files_written']
+        assert (out / 'badge_1' / 'verify.pem').is_file()
+
+    def test_v3_facade_reports_the_refusal(self, tmp_path):
+        from openbadgeslib.confparser import read_config_or_exit
+        from openbadgeslib.ob3.publish import publish_ob3
+        cfg = _keys_config(tmp_path, [
+            dict(CROSSED, status_lists='revocation'), ECC_PAIR])
+        result = publish_ob3(read_config_or_exit(str(cfg)),
+                             str(tmp_path / 'pub'))
+        assert [name for name, _ in result.did_skipped] == ['badge_1']
+        assert [name for name, _ in result.status_skipped] == ['badge_1']
+        assert 'private key' in result.status_skipped[0][1]
+        assert result.partial
+        assert result.files_written == ['did.json']
+
+    # ── OB2 / OB1 ────────────────────────────────────────────────────────────
+    @pytest.mark.parametrize('version', ['2', '1'])
+    def test_hosted_crossed_path_publishes_nothing(self, tmp_path, version):
+        # The refused badge is the second one: the first must not have been
+        # written either (the keys are all checked before the first mkdir).
+        cfg = _keys_config(tmp_path, [RSA_PAIR, CROSSED])
+        out = tmp_path / 'pub'
+        code = _publish_exit(cfg, out, version)
+
+        assert _leaks(out) == []
+        assert isinstance(code, str) and code.startswith('[!] [badge_2]')
+        assert 'private key' in code
+        assert 'BEGIN' not in code
+        assert not out.exists()
+
+    @pytest.mark.parametrize('version', ['2', '1'])
+    def test_hosted_unrelated_pair_publishes_nothing(self, tmp_path, version):
+        cfg = _keys_config(tmp_path, [
+            dict(public=_unrelated_p256_public(tmp_path),
+                 private=ECC_PAIR['private'])])
+        out = tmp_path / 'pub'
+        code = _publish_exit(cfg, out, version)
+
+        assert isinstance(code, str) and '[badge_1]' in code
+        assert 'does not match' in code
+        assert not out.exists()
+
+    @pytest.mark.parametrize('version', ['2', '1'])
+    def test_hosted_missing_key_file_exits_cleanly(self, tmp_path, version):
+        # Used to be a FileNotFoundError traceback over a half-written tree.
+        cfg = _keys_config(tmp_path, [
+            RSA_PAIR, dict(public=tmp_path / 'missing.pem')])
+        out = tmp_path / 'pub'
+        code = _publish_exit(cfg, out, version)
+
+        assert isinstance(code, str) and code.startswith('[!] [badge_2]')
+        assert not out.exists()
+
+    @pytest.mark.parametrize('version', ['2', '1'])
+    def test_hosted_missing_public_key_option(self, tmp_path, version):
+        cfg = _keys_config(tmp_path, [RSA_PAIR])
+        cfg.write_text(cfg.read_text().replace('public_key = ', 'pubkey = '))
+        out = tmp_path / 'pub'
+        code = _publish_exit(cfg, out, version)
+
+        assert 'missing required config key' in code
+        assert 'public_key' in code
+        assert not out.exists()
+
+    # ── what the file may hold ───────────────────────────────────────────────
+    def test_public_block_followed_by_private_block_is_refused(self, tmp_path):
+        # The file parses as a public key (the first block), so only the
+        # marker check stands between it and a publish.
+        from openbadgeslib.ob3.publish import (PublicKeyRefused,
+                                               load_publishable_public_key)
+        both = tmp_path / 'both.pem'
+        both.write_bytes(RSA_PAIR['public'].read_bytes() + b'\n'
+                         + RSA_PAIR['private'].read_bytes())
+        with pytest.raises(PublicKeyRefused, match='private key'):
+            load_publishable_public_key(str(both))
+
+        out = tmp_path / 'pub'
+        code = _publish_exit(_keys_config(tmp_path, [dict(public=both)]),
+                             out, '2')
+        assert 'private key' in code
+        assert not out.exists()
+
+    @pytest.mark.parametrize('kind', ['garbage', 'certificate', 'x25519',
+                                      'der-private', 'empty'])
+    def test_not_a_supported_public_key_is_refused(self, tmp_path, kind):
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ec, x25519
+        from openbadgeslib.keys import _public_pem
+        from openbadgeslib.ob3.publish import (PublicKeyRefused,
+                                               load_publishable_public_key)
+        if kind == 'garbage':
+            data = b'not a key at all\n'
+        elif kind == 'certificate':
+            data = (b'-----BEGIN CERTIFICATE-----\nMIIB\n'
+                    b'-----END CERTIFICATE-----\n')
+        elif kind == 'x25519':          # a public key, but not one we sign with
+            data = _public_pem(x25519.X25519PrivateKey.generate().public_key())
+        elif kind == 'der-private':     # private material without a PEM marker
+            data = ec.generate_private_key(ec.SECP256R1()).private_bytes(
+                serialization.Encoding.DER, serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption())
+        else:
+            data = b''
+        path = tmp_path / 'key.pem'
+        path.write_bytes(data)
+        with pytest.raises(PublicKeyRefused) as exc:
+            load_publishable_public_key(str(path))
+        assert str(path) in str(exc.value)
+
+    def test_missing_file_is_an_oserror_not_a_refusal(self, tmp_path):
+        # "Not generated yet" stays distinguishable from "refused": the OB3
+        # publish skips the first in did.json only, as it always did.
+        from openbadgeslib.ob3.publish import load_publishable_public_key
+        with pytest.raises(OSError):
+            load_publishable_public_key(str(tmp_path / 'missing.pem'))
+
+    # ── happy paths ──────────────────────────────────────────────────────────
+    @pytest.mark.parametrize('version', ['3', '2', '1'])
+    def test_verify_pem_is_the_reserialised_key(self, tmp_path, version):
+        # tests/test_verify_rsa.pem has no trailing newline: a byte copy of it
+        # and the re-serialised key differ, and the second is what is written
+        # (LF line ends on every platform, the same bytes under every -V).
+        cfg = _keys_config(tmp_path, [dict(RSA_PAIR, status_lists='revocation')])
+        out = tmp_path / 'pub'
+        assert _publish_exit(cfg, out, version) == 0
+        source = RSA_PAIR['public'].read_bytes()
+        written = (out / 'badge_1' / 'verify.pem').read_bytes()
+        assert written == _spki(source)
+        assert written != source
+        assert written.endswith(b'-----END PUBLIC KEY-----\n')
+        assert b'\r' not in written
+        assert written.split() == source.split()    # same key, same base64
+
+    @pytest.mark.parametrize('version', ['3', '2', '1'])
+    def test_pkcs1_rsa_public_key_still_publishes(self, tmp_path, version):
+        # "BEGIN RSA PUBLIC KEY" (PKCS#1) is a valid public key in another PEM
+        # flavour; it is published as SubjectPublicKeyInfo.
+        from cryptography.hazmat.primitives import serialization
+        from openbadgeslib.keys import _load_public_pem
+        spki = RSA_PAIR['public'].read_bytes()
+        pkcs1 = tmp_path / 'pkcs1.pem'
+        pkcs1.write_bytes(_load_public_pem(spki).public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.PKCS1))
+        assert pkcs1.read_bytes().startswith(b'-----BEGIN RSA PUBLIC KEY-----')
+
+        cfg = _keys_config(tmp_path, [dict(
+            public=pkcs1, private=RSA_PAIR['private'],
+            status_lists='revocation')])
+        out = tmp_path / 'pub'
+        assert _publish_exit(cfg, out, version) == 0
+        assert (out / 'badge_1' / 'verify.pem').read_bytes() == _spki(spki)
+        if version == '2':
+            key = json.loads((out / 'badge_1' / 'key.json').read_text())
+            assert key['publicKeyPem'] == _spki(spki).decode('ascii')
+
+    @pytest.mark.parametrize('key_type', ['RSA', 'ECC', 'ED25519'])
+    @pytest.mark.parametrize('version', ['3', '2', '1'])
+    def test_keygenerator_keys_publish(self, tmp_path, version, key_type):
+        # Whatever openbadges-keygenerator writes must publish, byte for byte.
+        from openbadgeslib import openbadges_keygenerator
+        from openbadgeslib.keys import KeyType, detect_key_type
+        public, private = tmp_path / 'verify.pem', tmp_path / 'sign.pem'
+        cfg = _keys_config(tmp_path, [dict(
+            public=public, private=private, key_type=key_type,
+            status_lists='revocation')])
+        with patch.object(sys, 'argv', ['openbadges-keygenerator', '-c',
+                                        str(cfg), '-g', '1']):
+            openbadges_keygenerator.main()
+        generated = public.read_bytes()
+        assert detect_key_type(generated) is KeyType[key_type]
+
+        out = tmp_path / 'pub'
+        assert _publish_exit(cfg, out, version) == 0
+        assert (out / 'badge_1' / 'verify.pem').read_bytes() == generated
+        assert _leaks(out) == []
+        if version == '3':
+            doc = json.loads((out / 'did.json').read_text())
+            assert len(doc['verificationMethod']) == 1
+            assert (out / 'badge_1' / 'revocation.jwt').is_file()
+        if version == '2':
+            key = json.loads((out / 'badge_1' / 'key.json').read_text())
+            assert key['publicKeyPem'] == generated.decode('ascii')
+
+    @pytest.mark.parametrize('private', ['unset', 'missing', 'unparsable'])
+    @pytest.mark.parametrize('version', ['3', '2', '1'])
+    def test_publishes_without_a_usable_private_key(self, tmp_path, version,
+                                                    private):
+        # Publishing hosted metadata or did.json never needed the private key
+        # (it may live on another machine): with none to compare against, a
+        # valid public key is published as before.
+        badge = dict(public=RSA_PAIR['public'])
+        if private == 'missing':
+            badge['private'] = tmp_path / 'not_here.pem'
+        elif private == 'unparsable':
+            badge['private'] = tmp_path / 'broken.pem'
+            badge['private'].write_bytes(b'not a key\n')
+        cfg = _keys_config(tmp_path, [badge])
+        out = tmp_path / 'pub'
+        assert _publish_exit(cfg, out, version) == 0
+        if version == '3':
+            doc = json.loads((out / 'did.json').read_text())
+            assert len(doc['verificationMethod']) == 1
+        else:
+            assert (out / 'badge_1' / 'verify.pem').read_bytes() == \
+                _spki(RSA_PAIR['public'].read_bytes())

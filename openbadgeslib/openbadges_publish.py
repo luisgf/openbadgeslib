@@ -34,7 +34,6 @@ import configparser
 import json
 import os
 import os.path
-import shutil
 import sys
 
 from typing import Any, List, Optional, TYPE_CHECKING, Tuple
@@ -566,6 +565,35 @@ def _require_issuer_publish_keys(conf: configparser.ConfigParser) -> None:
                      "publish hosted OpenBadges metadata" % key)
 
 
+def _load_badge_public_keys(conf: configparser.ConfigParser,
+                            badge_names: List[str]) -> dict[str, bytes]:
+    """The PEM to publish for every badge of an OB1/OB2 hosted publish, or a
+    clean exit before anything is written.
+
+    Each ``public_key`` goes through
+    :func:`openbadgeslib.ob3.publish.load_publishable_public_key`, the one
+    check the three publish paths share: the file must be an RSA, EC or
+    Ed25519 public key, must hold no private key material, and must be the
+    public half of the badge's ``private_key`` when that one is readable. The
+    configured file is never copied into the published tree (#337). The
+    caller runs this before creating the output directory, so one bad badge
+    publishes none."""
+    from .errors import LibOpenBadgesException
+    from .ob3.publish import load_publishable_public_key
+
+    public_pems: dict[str, bytes] = {}
+    for name in badge_names:
+        try:
+            public_pems[name] = load_publishable_public_key(
+                conf[name]['public_key'], conf[name].get('private_key'))
+        except KeyError as exc:
+            sys.exit("[!] missing required config key %s to publish hosted "
+                     "OpenBadges metadata" % exc)
+        except (OSError, LibOpenBadgesException) as exc:
+            sys.exit('[!] [%s] %s' % (name, exc))
+    return public_pems
+
+
 def _publish_ob2(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     """Publish strict OpenBadges 2.0 hosted metadata.
 
@@ -594,6 +622,7 @@ def _publish_ob2(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
 
     badge_names = [s for s in conf.sections() if s.startswith('badge_')]
     key_urls = {name: urljoin(publish_url, '%s/key.json' % name) for name in badge_names}
+    public_pems = _load_badge_public_keys(conf, badge_names)
 
     umask = os.umask(0o077)  # rwx------
     try:
@@ -632,15 +661,16 @@ def _publish_ob2(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
             with open(os.path.join(badge_path, 'badge.json'), 'w', encoding='ascii') as f:
                 f.write(_dump(badge_class.to_dict()))
 
-            with open(conf[name]['public_key'], 'rb') as key:
-                pubkey_pem = key.read().decode('ascii')
             crypto_key = CryptographicKey(
-                id=key_urls[name], owner=issuer_id, public_key_pem=pubkey_pem)
+                id=key_urls[name], owner=issuer_id,
+                public_key_pem=public_pems[name].decode('ascii'))
             with open(os.path.join(badge_path, 'key.json'), 'w', encoding='ascii') as f:
                 f.write(_dump(crypto_key.to_dict()))
 
-            # Keep the raw PEM alongside for tools that fetch it directly.
-            shutil.copyfile(conf[name]['public_key'], os.path.join(badge_path, 'verify.pem'))
+            # Keep the PEM alongside for tools that fetch it directly: the
+            # validated key, re-serialised, not the configured file's bytes.
+            with open(os.path.join(badge_path, 'verify.pem'), 'wb') as f:
+                f.write(public_pems[name])
     except KeyError as exc:
         # Any issuer/badge config key this path dereferences but the config
         # omits: report it cleanly instead of a raw traceback mid-publish.
@@ -665,6 +695,9 @@ def _publish_ob1(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
 
         _require_issuer_publish_keys(conf)
 
+        badge_names = [s for s in conf.sections() if s.startswith('badge_')]
+        public_pems = _load_badge_public_keys(conf, badge_names)
+
         umask = os.umask(0o077)  # rwx------
         try:
             os.mkdir(args.output)
@@ -684,10 +717,7 @@ def _publish_ob1(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
             with open(revocation_file, "w", encoding='ascii') as f:
                 f.write(revocation)
 
-            for badge_name in conf.sections():
-                if not badge_name.startswith('badge_'):
-                    continue
-
+            for badge_name in badge_names:
                 badge_path = os.path.join(args.output, badge_name)
                 badge_file = os.path.join(badge_path, 'badge.json')
 
@@ -695,10 +725,10 @@ def _publish_ob1(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
                 with open(badge_file, "w", encoding='ascii') as f:
                     f.write(create_badge_json(conf, badge_name))
 
-                """ Copy the verify key for this badge """
-                source = conf[badge_name]['public_key']
-                destination = os.path.join(badge_path, 'verify.pem')
-                shutil.copyfile(source, destination)
+                # The verify key for this badge: the validated public key,
+                # re-serialised, never a copy of the configured file.
+                with open(os.path.join(badge_path, 'verify.pem'), 'wb') as f:
+                    f.write(public_pems[badge_name])
         except KeyError as exc:
             sys.exit("[!] missing required config key %s to publish hosted "
                      "OpenBadges metadata" % exc)

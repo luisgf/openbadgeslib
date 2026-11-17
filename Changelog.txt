@@ -101,6 +101,38 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     is both revoked and presented for the wrong recipient is now reported as
     a recipient mismatch.
 
+  - security(publish): `openbadges-publish` publishes the public key a
+    badge's `public_key` file holds, after checking it, and no longer a copy
+    of the file. All three versions wrote the configured file verbatim as
+    `verify.pem` (`-V 2` also as `publicKeyPem` in `key.json`), so a config
+    with one crossed path (`public_key` naming the private key file) served
+    the signing key at the public URL, with exit 0; `-V 3` reported that the
+    file was not a public key, left the badge out of `did.json`, and
+    published the file all the same. The file is now read once and must be
+    an RSA, EC or Ed25519 public key (any PEM flavour, PKCS#1
+    `RSA PUBLIC KEY` included): a file with `PRIVATE KEY` anywhere in it is
+    refused before it is parsed, and when the badge's `private_key` is
+    readable the public key must be its public half, so the key of another
+    pair is refused too. What is written is that key re-serialised as a
+    SubjectPublicKeyInfo `PUBLIC KEY` PEM, never the file's bytes. On a
+    refusal `-V 1` and `-V 2` exit 1 before creating the output directory (a
+    missing key file is the same clean exit, where it was a traceback over a
+    half-written tree), and `-V 3` writes nothing for that badge: it is left
+    out of `did.json`, listed under `skipped`, and the run exits 2, or 1
+    with nothing written when no badge is left to publish. The status lists
+    of a refused badge are not regenerated either, so a `--revoke` on such a
+    config records the revocation in the registry and does not publish it
+    until the config is fixed; a badge whose key file is merely missing
+    behaves as before. The check is
+    `load_publishable_public_key` in `openbadgeslib/ob3/publish.py`, shared
+    by the three paths.
+    Compatibility: the `verify.pem` of a key file that was not already in
+    that form (PKCS#1, or without a trailing newline) differs in bytes from
+    the file; the key is the same. Whoever published with such a config
+    served the private key: delete the published `verify.pem` and `key.json`
+    (a refused `-V 3` run does not remove what an earlier run left in the
+    output directory) and replace the key pair.
+
 * v4.6.3 - 2026-10-21
 
   - fix(jws): the native JWS engine (OB1 and OB2 signed badges) answers a

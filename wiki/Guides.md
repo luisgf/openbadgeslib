@@ -84,9 +84,11 @@ openbadges-publish -c ./config/config.ini -o ./public -V 2
 This produces, under the output directory:
 - `organization.json` — the issuer `Profile` (`@context`, `type`, `id`, name, url, email, image, a `publicKey` array, `revocationList`), built from the `[issuer]` section.
 - `revoked.json` — a conformant `RevocationList` document (an empty `revokedAssertions` array until a badge is revoked). The filename is the `[issuer]` section's `revocationList` value (`revoked.json` in the scaffolded config).
-- One folder per `[badge_N]` section, each containing `badge.json` (a conformant `BadgeClass`), `key.json` (the `CryptographicKey` that `verification.creator` points at), and a copy of that badge's public key as `verify.pem`.
+- One folder per `[badge_N]` section, each containing `badge.json` (a conformant `BadgeClass`), `key.json` (the `CryptographicKey` that `verification.creator` points at), and that badge's public key as `verify.pem`.
 
 (Legacy `-V 1` writes the same tree in the pre-2.0 shape: no `@context`/`type`, an empty `revoked.json` object, and no `key.json`.)
+
+The published key is never a copy of the file `public_key` names: the file is read, checked and re-serialised (see [[CLI Reference]]). If one badge's `public_key` holds a private key, is not a public key, or is not the public half of its `private_key`, the command exits before creating the output directory and publishes nothing.
 
 URLs in the metadata are resolved against `publish_url` from `[issuer]`, so set that to where the folder will live. After running, configure your web server to serve the output folder at exactly that `publish_url`.
 
@@ -109,7 +111,9 @@ openbadges-publish -c ./config/config.ini -o ./public -V 3
 
 produces, under the output directory:
 - `did.json` — the issuer's did:web document (one `verificationMethod` per badge, built from each badge's public key). Served automatically at `<publish_url>/did.json`; for a bare-host DID serve it at `/.well-known/did.json`.
-- Per opted-in badge: `badge_N/revocation.jwt` and/or `badge_N/suspension.jwt` (the signed Bitstring Status List credentials) and a copy of the public key as `verify.pem`.
+- Per opted-in badge: `badge_N/revocation.jwt` and/or `badge_N/suspension.jwt` (the signed Bitstring Status List credentials) and the badge's public key as `verify.pem`.
+
+A badge whose `public_key` holds a private key, is not a public key, or is not the public half of its `private_key` is skipped as a whole: it is left out of `did.json`, nothing is written for it, and the command exits `2` (see [[CLI Reference]]).
 
 To revoke, suspend or unsuspend, pass the credential's jti (printed and logged by the signer) or the recipient email, then re-upload the folder:
 

@@ -244,6 +244,11 @@ Generates the static files an issuer must host, and (for OB3) manages credential
 
 The output directory is created with a `0o077` umask.
 
+`verify.pem` (and, for OB 2.0, `publicKeyPem` in `key.json`) is the badge's public key, validated and re-serialised as a `BEGIN PUBLIC KEY` (SubjectPublicKeyInfo) PEM; the file `public_key` names is never copied. That file must be an RSA, EC or Ed25519 public key (any PEM flavour, PKCS#1 `BEGIN RSA PUBLIC KEY` included), must not contain a private key, and, when the badge's `private_key` is readable on this machine, must be its public half. Otherwise the key is refused and nothing is published for the badge:
+
+- **OB1/OB2** exit `1` before the output directory is created, so one refused badge publishes none. A `public_key` file that cannot be read is the same clean exit.
+- **OB3** skips the badge as a whole: it is left out of `did.json`, no file is written for it, it is listed under `skipped` and the exit status is `2`, whether or not it has `status_lists`. Its status lists are not regenerated either: a `--revoke` still records the change in the registry, but the published list only carries it once the config is fixed and the command re-run. When no badge is left to publish the exit status is `1` and nothing is written. A badge whose key files do not exist yet is, as before, only left out of `did.json` (with `status_lists`, its lists are still written when its private key is there, and it is reported as skipped, exit `2`, for the missing `verify.pem`). A refused badge's files from an earlier run are **not** removed from an existing output directory: if an earlier version published a private key as `verify.pem`, delete it from the server and replace the key pair.
+
 ### Synopsis
 
 ```sh
