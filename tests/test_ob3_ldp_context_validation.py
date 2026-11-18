@@ -2439,11 +2439,90 @@ class TestNodeDescribedTwice:
 
 # ── two spellings of one statement, read as one by the model ────────────────
 
+def _wrapped(find, key):
+    def change(document):
+        find(document)[key] = [find(document)[key]]
+    return change
+
+
+def _twice(find, key):
+    def change(document):
+        value = find(document)[key]
+        find(document)[key] = [value, copy.deepcopy(value)]
+    return change
+
+
+def _unwrapped(find, key):
+    def change(document):
+        (find(document)[key],) = find(document)[key]
+    return change
+
+
+def _criteria_twice(document):
+    criteria = _achievement(document)['criteria']
+    _achievement(document)['criteria'] = [
+        criteria, dict(criteria, narrative=[criteria['narrative']])]
+
+
+def _image_twice(document):
+    image = _achievement(document)['image']
+    _achievement(document)['image'] = [image, dict(image, type=[image['type']])]
+
+
+def _issuer_of(document):
+    return document['issuer']
+
+
+def _subject_of(document):
+    return document['credentialSubject']
+
+
+def _document(document):
+    return document
+
+
+# what a holder does to the spelling of the signed Complete example
+RESPELLINGS = {
+    'criteria in an array': _wrapped(_achievement, 'criteria'),
+    'criteria twice': _twice(_achievement, 'criteria'),
+    'criteria twice, the narrative of one in an array': _criteria_twice,
+    'criteria narrative in an array': _wrapped(
+        lambda doc: _achievement(doc)['criteria'], 'narrative'),
+    'achievement image in an array': _wrapped(_achievement, 'image'),
+    'achievement image twice': _twice(_achievement, 'image'),
+    'achievement image twice, the type of one in an array': _image_twice,
+    'issuer image in an array': _wrapped(_issuer_of, 'image'),
+    'creditsEarned in an array': _wrapped(_subject_of, 'creditsEarned'),
+    'creditsEarned twice': _twice(_subject_of, 'creditsEarned'),
+    'creditsAvailable in an array': _wrapped(_achievement, 'creditsAvailable'),
+    'description in an array': _wrapped(_achievement, 'description'),
+    'description twice': _twice(_achievement, 'description'),
+    'achievementType in an array': _wrapped(_achievement, 'achievementType'),
+    'issuer name in an array': _wrapped(_issuer_of, 'name'),
+    'issuer name twice': _twice(_issuer_of, 'name'),
+    'issuer url in an array': _wrapped(_issuer_of, 'url'),
+    'issuer email in an array': _wrapped(_issuer_of, 'email'),
+    'credential name in an array': _wrapped(_document, 'name'),
+    'resultDescription out of its array': _unwrapped(
+        _achievement, 'resultDescription'),
+    'identifier out of its array': _unwrapped(_subject_of, 'identifier'),
+    'alignment out of its array': _unwrapped(_achievement, 'alignment'),
+    'evidence out of its array': _unwrapped(_document, 'evidence'),
+    'evidence genre in an array': _wrapped(
+        lambda doc: doc['evidence'][0], 'genre'),
+    'result status in an array': _wrapped(
+        lambda doc: doc['credentialSubject']['result'][0], 'status'),
+    'alignment targetCode in an array': _wrapped(
+        lambda doc: _achievement(doc)['alignment'][0], 'targetCode'),
+}
+
+
 class TestSpellingsReadAsOne:
     """Context validation takes the spellings JSON-LD treats as one for one
-    (a node reference as an object with its id alone or as a bare IRI), so
-    a holder can exchange them under a valid proof; the model must read them
-    as one too."""
+    (a node reference as an object with its id alone or as a bare IRI; a
+    value and the one-entry array of it), and a value written twice is the
+    same statement once, so a holder can exchange them under a valid proof;
+    the model must read them as one too."""
 
     def test_image_given_as_a_bare_iri(self, issuer):
         priv, pub, did, vm = issuer
@@ -2472,6 +2551,75 @@ class TestSpellingsReadAsOne:
         credential = OB3LdpVerifier().verify(
             add_data_integrity_proof(document, priv, vm))
         assert credential.issuer.image_url == 'https://issuer.example/logo.png'
+
+    @staticmethod
+    def _shown(credential):
+        return repr(replace(credential, raw=None))
+
+    @pytest.mark.parametrize('respell', sorted(RESPELLINGS))
+    def test_respelled_member_reads_the_same(self, complete, respell):
+        # A value, its one-entry array and the value written twice are the
+        # same statements: the holder of the Complete example re-spells a
+        # member, the proof stays valid, and the model must not change.
+        signed, verifier, _ = complete
+        respelled = copy.deepcopy(signed)
+        RESPELLINGS[respell](respelled)
+        assert respelled != signed
+        verify_data_integrity_proof(respelled, verifier.pubkey_pem)
+        assert self._shown(verifier.verify(respelled)) == self._shown(
+            verifier.verify(signed))
+
+    def test_repeated_entry_of_a_list_is_shown_twice(self, complete):
+        # Open, and exactly this: where the model reads a LIST, an entry
+        # can be written twice under the same proof, and the model lists it
+        # twice. Nothing is removed or altered. A scalar and a node with an
+        # id repeat as they are; a node without an id only under a blank
+        # node label shared by the two copies (its bare copy is a second
+        # blank node, which the signature does not cover).
+        signed, verifier, _ = complete
+        pub = verifier.pubkey_pem
+        repeated = copy.deepcopy(signed)
+        _achievement(repeated)['tag'].append('research')
+        repeated['evidence'].append(copy.deepcopy(repeated['evidence'][0]))
+        verify_data_integrity_proof(repeated, pub)
+        credential = verifier.verify(repeated)
+        assert credential.achievement.tags == [
+            'research', 'computer science', 'research']
+        assert [e.id for e in credential.evidence] == [EVIDENCE_ID, EVIDENCE_ID]
+
+        for find in (lambda doc: _achievement(doc)['alignment'],
+                     lambda doc: doc['credentialSubject']['result'],
+                     lambda doc: doc['credentialSubject']['identifier']):
+            repeated = copy.deepcopy(signed)
+            assert 'id' not in find(repeated)[0]
+            find(repeated).append(copy.deepcopy(find(repeated)[0]))
+            with pytest.raises(OB3VerificationError, match='signature mismatch'):
+                verify_data_integrity_proof(repeated, pub)
+            _rejected(repeated, 'signature mismatch', verifier)
+
+        repeated = copy.deepcopy(signed)
+        alignments = _achievement(repeated)['alignment']
+        alignments[0]['id'] = '_:a'
+        alignments.append(copy.deepcopy(alignments[0]))
+        verify_data_integrity_proof(repeated, pub)
+        assert len(verifier.verify(signed).achievement.alignments) == 1
+        assert len(verifier.verify(repeated).achievement.alignments) == 2
+
+    def test_every_member_the_model_reads_is_in_one_of_the_lists(self):
+        # The guard: tests/test_ob3_credential.py exercises each member in
+        # both spellings, by these four lists. A member the model starts
+        # reading has to be put in one of them -- read as one value, read
+        # as a list, read from either already, or refused as an array --
+        # which is the decision this makes visible.
+        from test_ob3_credential import (EITHER_ALREADY, MANY_VALUES,
+                                         ONE_VALUE, REFUSED_AS_ARRAY, _rich_vc)
+        reads: dict = {}
+        OpenBadgeCredential.from_vc_document(_spied(_rich_vc(), (), reads))
+        read = {(path, key) for path, keys in reads.items() for key in keys
+                if key not in ('id', '@context')}
+        listed = ONE_VALUE + MANY_VALUES + EITHER_ALREADY + REFUSED_AS_ARRAY
+        assert len(set(listed)) == len(listed)
+        assert read == set(listed)
 
 
 # ── a blank node label where the model reads an identifier ──────────────────

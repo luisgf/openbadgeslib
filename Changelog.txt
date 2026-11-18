@@ -75,6 +75,45 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     different images of one node or an image only in the description the
     model does not read are refused (#350)
 
+  - fix(ob3): a value, the one-entry array of it and the value written twice
+    are read as one by the model. In JSON-LD the values of a property are a
+    set, so `"criteria": {...}`, `"criteria": [{...}]` and
+    `"criteria": [{...}, {...}]` with the same object twice are the same
+    statements, but `OpenBadgeCredential.from_vc_document` read most members
+    in one shape only. On the Data Integrity path a holder could use it:
+    context validation takes a value and its one-entry array for one
+    spelling (conforming credentials write `"type": ["Profile"]`), and a
+    repeated value changes nothing signed, so with the proof still valid a
+    `criteria` or an `image` in an array read as none (`criteria_narrative`
+    `''`, `image_url` None), `creditsEarned` / `creditsAvailable` in an
+    array as None, a one-entry `resultDescription`, `identifier` or `result`
+    written as the bare object as an empty list, a one-entry `tag` written
+    as a string as that string, and a string in an array (the credential
+    `name`, the issuer's `name`, `url` and `email`, the achievement's
+    `description` and `achievementType`, the `narrative` of `criteria`, the
+    optional members of an evidence, a result, a result description, an
+    alignment or an identifier) as a list where the model declares a `str`.
+    On the JWT-VC path, where every byte is signed, an issuer that wrote the
+    other spelling got the same. Now a member the model reads as one value
+    is read from the value, from its one-entry array, and from an array
+    whose entries are all that same value (numbers compared by value, a
+    boolean never equal to a number; for an `image`, entries that name one
+    id, as objects or bare IRIs); a member it reads as a list is read from
+    a single value too. Nothing that verified is refused and no verdict
+    changes: `alignment`, `evidence`, `credentialStatus`, `endorsementJwt`
+    and `credentialSubject` already read both shapes, and the members that
+    refuse an array (`issuer`, `achievement`, `validFrom` / `validUntil`,
+    and the required strings: the achievement's `name`, an alignment's
+    `targetName` and `targetUrl`, an identifier's `identityHash`,
+    `identityType` and `hashed`, a result description's `name` and
+    `resultType`) refuse it as before. Not changed: an array of values that
+    really differ, which only an issuer can sign, is read as before (no
+    criteria, no image, no credits; a list for a string), and where the
+    model reads a list (`tag`, `evidence`, `alignment`, `identifier`, ...)
+    a holder can still write an entry twice, which then shows twice: a
+    scalar or a node with an id as it is, a node without id under a blank
+    node label on eddsa-rdfc-2022 (#351)
+
 * v4.6.4 - 2026-11-18
 
   - security(ldp): on CPython 3.11 and 3.12 the JSON-LD to RDF conversion may

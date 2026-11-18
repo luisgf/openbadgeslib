@@ -138,9 +138,9 @@ class Alignment:
         return cls(
             target_name=_require(data, "targetName", "alignment"),
             target_url=_require(data, "targetUrl", "alignment"),
-            target_framework=data.get("targetFramework"),
-            target_code=data.get("targetCode"),
-            target_description=data.get("targetDescription"),
+            target_framework=_one(data.get("targetFramework")),
+            target_code=_one(data.get("targetCode")),
+            target_description=_one(data.get("targetDescription")),
         )
 
 
@@ -171,11 +171,11 @@ class Evidence:
     def from_dict(cls, data: dict[str, Any]) -> "Evidence":
         return cls(
             id=data.get("id"),
-            narrative=data.get("narrative"),
-            name=data.get("name"),
-            description=data.get("description"),
-            genre=data.get("genre"),
-            audience=data.get("audience"),
+            narrative=_one(data.get("narrative")),
+            name=_one(data.get("name")),
+            description=_one(data.get("description")),
+            genre=_one(data.get("genre")),
+            audience=_one(data.get("audience")),
         )
 
 
@@ -233,7 +233,7 @@ class IdentityObject:
             identity_hash=_require(data, "identityHash", "identifier"),
             identity_type=_require(data, "identityType", "identifier"),
             hashed=hashed,
-            salt=data.get("salt"),
+            salt=_one(data.get("salt")),
         )
 
 
@@ -263,10 +263,10 @@ class Result:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Result":
         return cls(
-            value=data.get("value"),
-            status=data.get("status"),
-            achieved_level=data.get("achievedLevel"),
-            result_description=data.get("resultDescription"),
+            value=_one(data.get("value")),
+            status=_one(data.get("status")),
+            achieved_level=_one(data.get("achievedLevel")),
+            result_description=_one(data.get("resultDescription")),
             alignments=_alignment_list(data.get("alignment")),
         )
 
@@ -319,10 +319,10 @@ class ResultDescription:
             name=_require(data, "name", "resultDescription"),
             result_type=_require(data, "resultType", "resultDescription"),
             allowed_values=allowed_values,
-            required_value=data.get("requiredValue"),
-            required_level=data.get("requiredLevel"),
-            value_min=data.get("valueMin"),
-            value_max=data.get("valueMax"),
+            required_value=_one(data.get("requiredValue")),
+            required_level=_one(data.get("requiredLevel")),
+            value_min=_one(data.get("valueMin")),
+            value_max=_one(data.get("valueMax")),
             alignments=_alignment_list(data.get("alignment")),
         )
 
@@ -562,9 +562,9 @@ class OpenBadgeCredential:
             issuer_data = _as_dict(issuer_raw, "vc.issuer")
             issuer = Issuer(
                 id=_require(issuer_data, "id", "vc.issuer"),
-                name=issuer_data.get("name", ""),
-                url=issuer_data.get("url"),
-                email=issuer_data.get("email"),
+                name=_one(issuer_data.get("name", "")),
+                url=_one(issuer_data.get("url")),
+                email=_one(issuer_data.get("email")),
                 image_url=_image_id(issuer_data.get("image")),
                 endorsement_jwts=_string_list(issuer_data.get("endorsementJwt")),
             )
@@ -579,21 +579,21 @@ class OpenBadgeCredential:
 
         ach_data = _as_dict(subj.get("achievement"),
                             "vc.credentialSubject.achievement")
-        criteria = _as_dict_or_empty(ach_data.get("criteria"))
-        rd_raw = ach_data.get("resultDescription")
+        rd_raw = _many(ach_data.get("resultDescription"))
         result_descriptions = [ResultDescription.from_dict(r) for r in rd_raw
                                if isinstance(r, dict)] \
             if isinstance(rd_raw, list) else []
         achievement = Achievement(
             id=_require(ach_data, "id", "vc.credentialSubject.achievement"),
             name=_require(ach_data, "name", "vc.credentialSubject.achievement"),
-            description=ach_data.get("description", ""),
-            criteria_narrative=criteria.get("narrative", ""),
+            description=_one(ach_data.get("description", "")),
+            criteria_narrative=_narrative(ach_data.get("criteria")),
             image_url=_image_id(ach_data.get("image")),
-            tags=ach_data.get("tag", []),
+            tags=_many(ach_data.get("tag", [])),
             endorsement_jwts=_string_list(ach_data.get("endorsementJwt")),
-            achievement_type=ach_data.get("achievementType"),
-            credits_available=_float_or_none(ach_data.get("creditsAvailable")),
+            achievement_type=_one(ach_data.get("achievementType")),
+            credits_available=_float_or_none(
+                _one(ach_data.get("creditsAvailable"))),
             alignments=_alignment_list(ach_data.get("alignment")),
             result_descriptions=result_descriptions,
         )
@@ -627,7 +627,7 @@ class OpenBadgeCredential:
             credential_status = []
 
         # credentialSubject.identifier: zero or more hashed/plaintext identities.
-        identifier_raw = subj.get("identifier")
+        identifier_raw = _many(subj.get("identifier"))
         identifiers = [IdentityObject.from_dict(i) for i in identifier_raw
                        if isinstance(i, dict)] \
             if isinstance(identifier_raw, list) else []
@@ -646,17 +646,17 @@ class OpenBadgeCredential:
 
         # credentialSubject.result: measured outcomes (each may link to an
         # achievement resultDescription); creditsEarned pairs with creditsAvailable.
-        result_raw = subj.get("result")
+        result_raw = _many(subj.get("result"))
         results = [Result.from_dict(r) for r in result_raw
                    if isinstance(r, dict)] if isinstance(result_raw, list) else []
-        credits_earned = _float_or_none(subj.get("creditsEarned"))
+        credits_earned = _float_or_none(_one(subj.get("creditsEarned")))
 
         credential = cls(
             id=_require(vc, "id", "vc"),
             issuer=issuer,
             recipient_id=recipient_id,
             achievement=achievement,
-            name=vc.get("name"),
+            name=_one(vc.get("name")),
             issuance_date=issuance_date,
             expiration_date=expiration_date,
             evidence_url=evidence_url,
@@ -679,16 +679,87 @@ def _as_dict_or_empty(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _one(value: Any) -> Any:
+    """A member the model reads as ONE value: *value* itself, or -- when it
+    is an array whose entries are all the same value -- that value.
+
+    In JSON-LD the values of a property are a set: ``x``, ``[x]`` and
+    ``[x, x]`` are the same statement, Data Integrity context validation
+    takes ``x`` and ``[x]`` for one spelling (conforming credentials write
+    ``"type": ["Profile"]``) and a repeated value changes nothing signed, so
+    a holder can exchange them under a valid proof. Read as three different
+    things, the re-spelled member went missing from the model (a criteria, a
+    creditsEarned) or changed type (a name as a list).
+
+    An array of values that really differ is none of that -- only the issuer
+    can sign one -- and is returned as it is, for the caller to treat as it
+    always did; so is an empty array."""
+    if (isinstance(value, list) and value
+            and all(_same(value[0], other) for other in value[1:])):
+        return value[0]
+    return value
+
+
+def _same(one: Any, other: Any) -> bool:
+    """Whether two JSON values are one value: equal, with a bool never equal
+    to a number (``true`` is not ``1``) and numbers compared by value (``42``
+    and ``42.0`` are one xsd:float literal)."""
+    if isinstance(one, bool) or isinstance(other, bool):
+        return one is other
+    if isinstance(one, (int, float)) and isinstance(other, (int, float)):
+        return one == other
+    if isinstance(one, dict) and isinstance(other, dict):
+        return one.keys() == other.keys() and all(
+            _same(one[key], other[key]) for key in one)
+    if isinstance(one, list) and isinstance(other, list):
+        return len(one) == len(other) and all(map(_same, one, other))
+    return type(one) is type(other) and bool(one == other)
+
+
+def _many(value: Any) -> Any:
+    """A member the model reads as a LIST: a single value (an object, a
+    string) as the list of it, the other spelling of the same statement (see
+    _one). A list, and nothing at all (None), are returned as they are."""
+    return value if value is None or isinstance(value, list) else [value]
+
+
+def _narrative(criteria: Any) -> Any:
+    """The ``narrative`` of an achievement's ``criteria``: of the Criteria
+    object, or of an array of them when they all carry the same one -- the
+    criteria in a one-entry array, or written twice (see _one).
+
+    The narrative of each entry is read first and those are compared, not
+    the entries: two objects of one criteria may differ in a spelling
+    nobody reads (``"type": "Criteria"`` against ``["Criteria"]``, the
+    narrative itself against its one-entry array) and are the same
+    statements all the same. Narratives that differ, as anything that is no
+    object, are no narrative, as before."""
+    entries = criteria if isinstance(criteria, list) else [criteria]
+    narratives = [_one(_as_dict_or_empty(entry).get("narrative", ""))
+                  for entry in entries]
+    return narratives[0] if narratives and all(
+        _same(narratives[0], other) for other in narratives[1:]) else ""
+
+
 def _image_id(value: Any) -> Any:
     """The id of an OB 3.0 ``image`` member: the ``id`` of an Image object,
-    or the string itself when the image is given as a bare IRI.
+    or the string itself when the image is given as a bare IRI; of an array,
+    the id its entries all name.
 
     ``"image": "https://..."`` and ``"image": {"id": "https://..."}`` are one
     statement in JSON-LD (the term is ``@type: @id``), and Data Integrity
     context validation takes them for one spelling, so the model must read
     them as one: read only from the object, a holder could re-spell an image
     signed with its id alone and the verified credential lost it. ``type``
-    and ``caption`` exist only in the object form and are not read."""
+    and ``caption`` exist only in the object form and are not read. The same
+    goes for the array spellings (see _one): ``[image]``, and the image
+    written twice, as an object or as its bare IRI. Entries that name
+    different images, or none, are no image."""
+    if isinstance(value, list):
+        ids = [None if isinstance(entry, list) else _image_id(entry)
+               for entry in value]
+        return ids[0] if ids and all(_same(ids[0], other)
+                                     for other in ids[1:]) else None
     if isinstance(value, dict):
         return value.get("id")
     if isinstance(value, str) and value:

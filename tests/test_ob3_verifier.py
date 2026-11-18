@@ -723,6 +723,27 @@ class TestRawPassthrough:
         assert credential.issuer.image_url == 'https://example.com/logo.png'
         assert credential.achievement.image_url == 'https://example.com/badge.svg'
 
+    def test_respelled_members_are_reported(
+        self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential
+    ):
+        # A value, its one-entry array and a one-entry array's single value
+        # are one statement: an issuer that writes the other spelling gets
+        # the same verified credential.
+        plain = ob3_rsa_verifier.verify(
+            ob3_rsa_signer.sign_payload(ob3_credential.to_jwt_payload()))
+        payload = ob3_credential.to_jwt_payload()
+        achievement = payload['credentialSubject']['achievement']
+        achievement['criteria'] = [achievement['criteria']]
+        achievement['description'] = [achievement['description']]
+        achievement['image'] = [achievement['image']]
+        payload['issuer']['name'] = [payload['issuer']['name']]
+        payload['name'] = [payload['name'], payload['name']]
+        credential = ob3_rsa_verifier.verify(ob3_rsa_signer.sign_payload(payload))
+        assert credential.achievement == plain.achievement
+        assert credential.issuer == plain.issuer
+        assert credential.name == plain.name
+        assert isinstance(credential.issuer.name, str)
+
     def test_raw_excluded_from_equality(self, ob3_credential):
         from dataclasses import replace
         a = replace(ob3_credential)

@@ -1,4 +1,6 @@
 """Tests for the OpenBadges 3.0 credential data model."""
+import copy
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
@@ -314,6 +316,226 @@ class TestFromVcDocument:
             'id': 'https://x.example/logo.png', 'type': 'Image'}
         assert doc['credentialSubject']['achievement']['image'] == {
             'id': 'https://x.example/badge.png', 'type': 'Image'}
+
+
+# ── a value, its one-entry array and the value written twice ──────────────────
+
+_ALIGNMENT = {'type': ['Alignment'], 'targetName': 'Competency',
+              'targetUrl': 'https://f.example/1', 'targetFramework': 'F',
+              'targetCode': 'c1', 'targetDescription': 'd'}
+
+
+def _rich_vc():
+    """A credential document with every member the model reads, each list
+    with one entry."""
+    doc = _make_credential(
+        id='urn:uuid:00000000-0000-0000-0000-0000000000c1',
+        expiration_date=datetime(2099, 1, 1, tzinfo=timezone.utc)).to_vc()
+    doc['name'] = 'A badge'
+    doc['endorsementJwt'] = ['a.b.c']
+    doc['credentialStatus'] = [{
+        'id': 'https://issuer.example.com/status/1#5',
+        'type': 'BitstringStatusListEntry', 'statusPurpose': 'revocation',
+        'statusListIndex': '5',
+        'statusListCredential': 'https://issuer.example.com/status/1'}]
+    doc['issuer'].update(
+        url='https://issuer.example.com/home', email='i@issuer.example.com',
+        image={'id': 'https://issuer.example.com/logo.png', 'type': 'Image'},
+        endorsementJwt=['d.e.f'])
+    subject = doc['credentialSubject']
+    subject['creditsEarned'] = 3.5
+    subject['identifier'] = [{
+        'type': 'IdentityObject', 'identityHash': 'user@example.com',
+        'identityType': 'emailAddress', 'hashed': False, 'salt': 's'}]
+    subject['result'] = [{
+        'type': ['Result'], 'value': 'A', 'status': 'Completed',
+        'achievedLevel': 'urn:level:1', 'resultDescription': 'urn:rd:1',
+        'alignment': [dict(_ALIGNMENT)]}]
+    subject['achievement'].update(
+        image={'id': 'https://example.com/a/1.png', 'type': 'Image'},
+        tag=['one'], achievementType='Badge', creditsAvailable=4.0,
+        alignment=[dict(_ALIGNMENT)], endorsementJwt=['g.h.i'],
+        resultDescription=[{
+            'id': 'urn:rd:1', 'type': ['ResultDescription'], 'name': 'Grade',
+            'resultType': 'LetterGrade', 'allowedValue': ['A'],
+            'requiredValue': 'C', 'requiredLevel': 'urn:level:1',
+            'valueMin': 'D', 'valueMax': 'A',
+            'alignment': [dict(_ALIGNMENT)]}])
+    doc['evidence'] = [{
+        'id': 'https://example.com/e/1', 'type': ['Evidence'],
+        'narrative': 'n', 'name': 'e', 'description': 'd', 'genre': 'g',
+        'audience': 'a'}]
+    return doc
+
+
+def _at(doc, path):
+    for key in path:
+        doc = doc[key]
+        doc = doc[0] if isinstance(doc, list) else doc
+    return doc
+
+
+def _shown(doc):
+    """The model of *doc*, written out: its values and their Python types."""
+    return repr(replace(OpenBadgeCredential.from_vc_document(doc), raw=None))
+
+
+_ACH = ('credentialSubject', 'achievement')
+# the three places an alignment is read at
+_ALIGNMENTS = (_ACH + ('alignment',), _ACH + ('resultDescription', 'alignment'),
+               ('credentialSubject', 'result', 'alignment'))
+# read as one value, and silently read wrong from an array before the fix
+ONE_VALUE = [
+    ((), 'name'),
+    (('issuer',), 'name'), (('issuer',), 'url'), (('issuer',), 'email'),
+    (('issuer',), 'image'),
+    (('credentialSubject',), 'creditsEarned'),
+    (_ACH, 'description'), (_ACH, 'criteria'), (_ACH + ('criteria',), 'narrative'),
+    (_ACH, 'image'), (_ACH, 'achievementType'), (_ACH, 'creditsAvailable'),
+    (_ACH + ('resultDescription',), 'requiredValue'),
+    (_ACH + ('resultDescription',), 'requiredLevel'),
+    (_ACH + ('resultDescription',), 'valueMin'),
+    (_ACH + ('resultDescription',), 'valueMax'),
+    (('credentialSubject', 'identifier'), 'salt'),
+    (('credentialSubject', 'result'), 'value'),
+    (('credentialSubject', 'result'), 'status'),
+    (('credentialSubject', 'result'), 'achievedLevel'),
+    (('credentialSubject', 'result'), 'resultDescription'),
+    (('evidence',), 'narrative'), (('evidence',), 'name'),
+    (('evidence',), 'description'), (('evidence',), 'genre'),
+    (('evidence',), 'audience'),
+] + [(alignment, key) for alignment in _ALIGNMENTS
+     for key in ('targetFramework', 'targetCode', 'targetDescription')]
+# read as a list, and silently read as nothing (or as a str) from one value
+MANY_VALUES = [
+    (_ACH, 'tag'), (_ACH, 'resultDescription'),
+    (('credentialSubject',), 'identifier'), (('credentialSubject',), 'result'),
+]
+# read from a value and from a list of them alike, before and after
+EITHER_ALREADY = [
+    ((), 'credentialSubject'), ((), 'evidence'), ((), 'credentialStatus'),
+    ((), 'endorsementJwt'), (('issuer',), 'endorsementJwt'),
+    (_ACH, 'endorsementJwt'), (_ACH, 'alignment'),
+    (_ACH + ('resultDescription',), 'alignment'),
+    (_ACH + ('resultDescription',), 'allowedValue'),
+    (('credentialSubject', 'result'), 'alignment'),
+]
+# read as one value, and refused when given as an array: before and after
+REFUSED_AS_ARRAY = [
+    ((), 'issuer'), ((), 'validFrom'), ((), 'validUntil'),
+    (('credentialSubject',), 'achievement'), (_ACH, 'name'),
+    (_ACH + ('resultDescription',), 'name'),
+    (_ACH + ('resultDescription',), 'resultType'),
+    (('credentialSubject', 'identifier'), 'identityHash'),
+    (('credentialSubject', 'identifier'), 'identityType'),
+    (('credentialSubject', 'identifier'), 'hashed'),
+] + [(alignment, key) for alignment in _ALIGNMENTS
+     for key in ('targetName', 'targetUrl')]
+
+
+class TestSpellingsReadAsOne:
+    """In JSON-LD ``x``, ``[x]`` and ``[x, x]`` are one statement. The model
+    reads them as one, so re-spelling a member -- which a holder can do under
+    a valid Data Integrity proof -- neither drops it nor changes its type."""
+
+    @pytest.mark.parametrize('path, key', ONE_VALUE)
+    def test_one_value_from_its_array(self, path, key):
+        plain = _rich_vc()
+        value = _at(plain, path)[key]
+        for spelling in ([value], [value, copy.deepcopy(value)]):
+            respelled = _rich_vc()
+            _at(respelled, path)[key] = spelling
+            assert _shown(respelled) == _shown(plain)
+
+    @pytest.mark.parametrize('path, key', MANY_VALUES + EITHER_ALREADY)
+    def test_list_from_a_single_value(self, path, key):
+        plain = _rich_vc()
+        value = _at(plain, path)[key]
+        respelled = _rich_vc()
+        if isinstance(value, list):
+            (_at(respelled, path)[key],) = value
+        else:                           # the credentialSubject
+            _at(respelled, path)[key] = [value]
+        assert _shown(respelled) == _shown(plain)
+
+    @pytest.mark.parametrize('path, key', REFUSED_AS_ARRAY)
+    def test_refusals_are_unchanged(self, path, key):
+        # Failing closed on the other spelling is not the defect: these
+        # refused it before and still do.
+        respelled = _rich_vc()
+        _at(respelled, path)[key] = [_at(respelled, path)[key]]
+        with pytest.raises(ValueError):
+            OpenBadgeCredential.from_vc_document(respelled)
+
+    def test_values_that_differ_are_read_as_before(self):
+        # Only an issuer can sign two different values of one member; the
+        # model reads those as it always did, site by site.
+        doc = _rich_vc()
+        achievement = doc['credentialSubject']['achievement']
+        achievement['criteria'] = [{'narrative': 'one'}, {'narrative': 'two'}]
+        achievement['image'] = ['https://x.example/1.png', 'https://x.example/2.png']
+        achievement['creditsAvailable'] = [1.0, 2.0]
+        achievement['description'] = ['one', 'two']
+        doc['issuer']['name'] = ['one', {'@value': 'one', '@language': 'en'}]
+        restored = OpenBadgeCredential.from_vc_document(doc)
+        assert restored.achievement.criteria_narrative == ''
+        assert restored.achievement.image_url is None
+        assert restored.achievement.credits_available is None
+        assert restored.achievement.description == ['one', 'two']
+        assert restored.issuer.name == ['one', {'@value': 'one', '@language': 'en'}]
+
+    @pytest.mark.parametrize('image, image_url', [
+        ([{'id': 'urn:i', 'type': 'Image'}], 'urn:i'),
+        (['urn:i'], 'urn:i'),
+        ([{'id': 'urn:i', 'type': 'Image'}, 'urn:i', {'id': 'urn:i'}], 'urn:i'),
+        # two objects of one image that differ in a spelling nobody reads
+        ([{'id': 'urn:i', 'type': 'Image', 'caption': 'c'},
+          {'id': 'urn:i', 'type': ['Image'], 'caption': ['c']}], 'urn:i'),
+        (['urn:i', 'urn:j'], None),
+        (['urn:i', {'type': 'Image'}], None),
+        ([['urn:i']], None),
+        ([], None),
+    ])
+    def test_image_in_an_array(self, image, image_url):
+        doc = _rich_vc()
+        doc['issuer']['image'] = image
+        doc['credentialSubject']['achievement']['image'] = image
+        restored = OpenBadgeCredential.from_vc_document(doc)
+        assert restored.issuer.image_url == image_url
+        assert restored.achievement.image_url == image_url
+
+    @pytest.mark.parametrize('criteria, narrative', [
+        ([{'narrative': 'n'}], 'n'),
+        ([{'narrative': 'n'}, {'narrative': 'n'}], 'n'),
+        # two objects of one criteria that differ in a spelling nobody reads
+        ([{'id': '_:c', 'type': 'Criteria', 'narrative': 'n'},
+          {'id': '_:c', 'type': ['Criteria'], 'narrative': ['n']}], 'n'),
+        ({'narrative': ['n', 'n']}, 'n'),
+        # really different, or not a criteria at all: none, as before
+        ([{'narrative': 'n'}, {'narrative': 'm'}], ''),
+        ([{'narrative': 'n'}, 'urn:criteria'], ''),
+        ([{'narrative': 'n'}, [{'narrative': 'n'}]], ''),
+        ([], ''), ('urn:criteria', ''), (None, ''), ({}, ''),
+    ])
+    def test_criteria_in_an_array(self, criteria, narrative):
+        doc = _rich_vc()
+        doc['credentialSubject']['achievement']['criteria'] = criteria
+        restored = OpenBadgeCredential.from_vc_document(doc)
+        assert restored.achievement.criteria_narrative == narrative
+
+    def test_what_counts_as_the_same_value(self):
+        from openbadgeslib.ob3.credential import _many, _one, _same
+        assert _same(42, 42.0) and _same('a', 'a') and _same(None, None)
+        assert not _same(True, 1) and not _same(1, True) and _same(True, True)
+        assert not _same('1', 1) and not _same('a', ['a'])
+        assert _same({'a': [1, {'b': 2}]}, {'a': [1.0, {'b': 2}]})
+        assert not _same({'a': 1}, {'a': 1, 'b': 2})
+        assert not _same([1, 2], [1]) and not _same([1, 2], [2, 1])
+        assert _one([4.0, 4]) == 4.0 and _one(['a']) == 'a'
+        assert _one([]) == [] and _one(['a', 'b']) == ['a', 'b']
+        assert _one([True, 1]) == [True, 1]
+        assert _many('a') == ['a'] and _many({'a': 1}) == [{'a': 1}]
+        assert _many(['a']) == ['a'] and _many(None) is None
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
