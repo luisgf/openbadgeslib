@@ -179,16 +179,19 @@
 # under the same signature, the compacted form keeps the label, and the model
 # reads it as the id of the credential, of the issuer, of the subject
 # (recipient_id) or of a status entry. A label is refused in those four
-# positions, of the credential and of every embedded one, in whatever JSON
-# spelling ("id", "@id", a bare reference, an entry of an array). Only
-# there: openvc-core's ecdsa-sd-2023 derive writes a label on every node of a
-# presentation that has no id (the criteria of every badge this library
-# issues), so a rule for all nodes would refuse those presentations. For the
-# same reason, when the proof is an ecdsa-sd-2023 one (*derived*) only the
-# credential's and the issuer's ids are held to it -- OB 3.0 requires those,
-# so a label there never comes from a conforming credential -- and a subject
-# or status entry, whose id is optional, keeps the label the delegate gave
-# it: that presentation verifies, and its model still shows the label.
+# positions (and the achievement's), of the credential and of every embedded
+# one, in whatever JSON spelling ("id", "@id", a bare reference, an entry of an
+# array). Only there: openvc-core's ecdsa-sd-2023 derive writes a label on
+# every node of a presentation that has no id (the criteria of every badge this
+# library issues), so a rule for all nodes would refuse those presentations.
+# For the same reason, when the proof is an ecdsa-sd-2023 one (*derived*) only
+# the credential's and the issuer's ids are held to it -- OB 3.0 requires
+# those, so a label there never comes from a conforming credential -- and a
+# subject or status entry, whose id is optional, keeps the label the delegate
+# gave it: that presentation verifies, and OB3LdpVerifier.verify builds the
+# model from a copy without it, so no label is reported as a recipient or a
+# status id. The id of credentialSubject.achievement, which OB 3.0 requires, is
+# held to the rule on both suites, as is a bare reference there.
 #
 # OB 3.0 adaptations (the 1EdTech "Complete OpenBadgeCredential" example must
 # validate):
@@ -465,19 +468,29 @@ def _reject_blank_node_ids(credential: dict[str, Any], what: str,
                            derived: bool) -> None:
     """Refuse a blank node label as the id of *credential* (compact JSON, as
     the model reads it), of its issuer, of a credentialSubject or of a
-    credentialStatus entry: the proof does not cover it (see the module
-    comment). With *derived*, an ecdsa-sd-2023 presentation, only where
-    OB 3.0 requires an id: the delegate labels every node that has none.
+    credentialStatus entry, or of the achievement of a credentialSubject: the
+    proof does not cover it (see the module comment). With *derived*, an
+    ecdsa-sd-2023 presentation, the subject's and the status entry's own ids
+    are exempt, since the delegate labels every node that has none; the
+    credential's, the issuer's and the achievement's, which OB 3.0 requires,
+    are not.
 
     A few dictionary reads on a credential already at hand, before any
     JSON-LD processing; nothing is walked."""
     _reject_blank_node_id(credential, what, "its id")
     for key, whose, required in _IDENTIFIED:
-        if derived and not required:
-            continue
         value = credential.get(key)
         for node in (value if isinstance(value, list) else [value]):
-            _reject_blank_node_id(node, what, whose)
+            if required or not derived:
+                _reject_blank_node_id(node, what, whose)
+            # OB 3.0 requires Achievement.id, so a label there is refused on
+            # both suites: a presentation of a conforming credential has none.
+            if key == "credentialSubject" and isinstance(node, dict):
+                achievement = node.get("achievement")
+                for ach in (achievement if isinstance(achievement, list)
+                            else [achievement]):
+                    _reject_blank_node_id(
+                        ach, what, "the id of its achievement")
 
 
 def _reject_blank_node_id(node: Any, what: str, whose: str) -> None:

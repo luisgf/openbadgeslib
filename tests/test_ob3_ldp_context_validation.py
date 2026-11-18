@@ -2822,6 +2822,79 @@ class TestBlankNodeIds:
 
 # ── ecdsa-sd-2023: validated before the delegation; openvc version guard ────
 
+class TestAchievementBlankNodeId:
+    """OB 3.0 requires Achievement.id, and the model enforces it: a
+    credential signed without one is refused. A label added after signing is
+    not part of the dataset, so it must not turn that refusal into an
+    acceptance (#349)."""
+
+    @pytest.fixture()
+    def keys(self, ed25519_keypair):
+        priv, pub = ed25519_keypair
+        return priv, pub, _did_vm(pub)[1], OB3LdpVerifier(pubkey_pem=pub)
+
+    def _signed_without_id(self, keys):
+        priv, _, vm, _ = keys
+        document = _credential(_did_vm(keys[1])[0]).to_vc()
+        del document['credentialSubject']['achievement']['id']
+        return add_data_integrity_proof(document, priv, vm)
+
+    def test_label_added_after_signing_is_refused(self, keys, monkeypatch):
+        signed = self._signed_without_id(keys)
+        _rejected(signed, 'missing required field', keys[3])        # control
+        labelled = copy.deepcopy(signed)
+        labelled['credentialSubject']['achievement']['id'] = '_:a1'
+        verify_data_integrity_proof(labelled, keys[1])               # same dataset
+        _rejected(labelled, "credential has the blank node label '_:a1' as the "
+                            "id of its achievement", keys[3])
+        # What the rule closes: without it the model reported the label.
+        monkeypatch.setattr(cv, '_reject_blank_node_ids', lambda *args: None)
+        assert keys[3].verify(labelled).achievement.id == '_:a1'
+
+    @pytest.mark.parametrize('shape', ['array-subject', 'array-achievement',
+                                       '@id', 'bare'])
+    def test_every_spelling(self, shape):
+        document = _credential(PINNED_ISSUER).to_vc()
+        subject = document['credentialSubject']
+        achievement = subject['achievement']
+        if shape == 'array-subject':
+            achievement['id'] = '_:a1'
+            document['credentialSubject'] = [subject]
+        elif shape == 'array-achievement':
+            subject['achievement'] = [dict(achievement, id='_:a1')]
+        elif shape == '@id':
+            achievement['@id'] = '_:a1'
+        else:
+            subject['achievement'] = '_:a1'
+        for derived in (False, True):          # both suites
+            with pytest.raises(OB3VerificationError,
+                               match="'_:a1' as the id of its achievement"):
+                cv._reject_blank_node_ids(document, 'credential', derived)
+
+    @pytest.mark.parametrize('derived', [False, True])
+    def test_embedded_credential_is_held_to_it(self, derived):
+        endorsement = {'type': ['VerifiableCredential', 'EndorsementCredential'],
+                       'credentialSubject': {
+                           'achievement': {'id': '_:a1'}}}
+        with pytest.raises(OB3VerificationError, match="endorsement.*'_:a1' as "
+                           "the id of its achievement"):
+            cv._reject_blank_node_ids(endorsement, 'endorsement at /e', derived)
+
+    @pytest.mark.parametrize('derived', [False, True])
+    def test_real_ids_and_unlabelled_nodes_are_unaffected(self, derived):
+        document = _credential(PINNED_ISSUER).to_vc()
+        document['credentialSubject']['achievement']['criteria'] = {
+            'id': '_:b0', 'narrative': 'n'}
+        cv._reject_blank_node_ids(document, 'credential', derived)
+        document['credentialSubject']['achievement'] = {'type': ['Achievement']}
+        cv._reject_blank_node_ids(document, 'credential', derived)
+
+    def test_unmodified_credential_verifies(self, issuer):
+        priv, _, did, _ = issuer
+        signed = OB3LdpSigner(priv).sign(_credential(did))
+        assert OB3LdpVerifier().verify(signed).achievement.id.startswith('https:')
+
+
 class TestEcdsaSd:
     @pytest.fixture()
     def derived(self, ob3_credential):

@@ -114,6 +114,14 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     scalar or a node with an id as it is, a node without id under a blank
     node label on eddsa-rdfc-2022 (#351)
 
+  - security(ldp): a blank node label (`_:x`) is refused as the `id` of
+    `credentialSubject.achievement` on both Data Integrity suites (OB 3.0
+    requires it, and a label added after signing was reported as the
+    achievement id). On ecdsa-sd-2023 the returned credential is built
+    without the label a subject or a status entry carries, so the holder
+    cannot choose the status entry id or a `recipient_id` the model
+    reports (#349)
+
 * v4.6.4 - 2026-11-18
 
   - security(ldp): on CPython 3.11 and 3.12 the JSON-LD to RDF conversion may

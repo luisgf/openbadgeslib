@@ -1076,6 +1076,29 @@ def _sd_disclosed_statements(doc: dict[str, Any], proof: dict[str, Any],
     return statements, mandatory
 
 
+def _without_blank_node_ids(doc: dict[str, Any]) -> dict[str, Any]:
+    """A shallow copy of *doc* whose ``credentialSubject`` and
+    ``credentialStatus`` entries carry no ``id`` that is a blank node label
+    (``_:x``), for the model to be built from: such a label is not signed, and
+    on an ecdsa-sd-2023 presentation it is legitimate (the delegate writes one
+    on every node that has no id), so the model must not report it as the
+    recipient or as a status entry id. *doc*, the verified document, is not
+    modified; what the status check reads (``statusListCredential``,
+    ``statusListIndex``) is untouched."""
+    out = dict(doc)
+    for key in ('credentialSubject', 'credentialStatus'):
+        value = out.get(key)
+        nodes = value if isinstance(value, list) else [value]
+        cleaned = [
+            {k: v for k, v in n.items()
+             if not (k == 'id' and isinstance(v, str) and v.startswith('_:'))}
+            if isinstance(n, dict) else n
+            for n in nodes]
+        if value is not None:
+            out[key] = cleaned if isinstance(value, list) else cleaned[0]
+    return out
+
+
 class OB3LdpVerifier:
     """Verifies OpenBadges 3.0 credentials secured with a Data Integrity
     (Linked Data Proof) embedded proof — cryptosuites eddsa-rdfc-2022 and,
@@ -1160,9 +1183,10 @@ class OB3LdpVerifier:
         the credential, of its issuer, of a ``credentialSubject`` or of a
         ``credentialStatus`` entry (with ``ecdsa-sd-2023``, whose
         presentations carry the labels the delegate writes on nodes without
-        an id, of the credential or of its issuer only), or anything the RDF
-        conversion drops (relative or malformed IRIs, undefined terms) is
-        rejected.
+        an id, of the credential or of its issuer only; there the model is
+        built without the label a subject or a status entry carries), or
+        anything the RDF conversion drops (relative or malformed IRIs,
+        undefined terms) is rejected.
         """
         doc = self._parse_document(document)
         # Before anything reads or processes it, JSON-LD processor included.
@@ -1204,7 +1228,12 @@ class OB3LdpVerifier:
         _check_json_ld_form(doc, proof, document_loader())
 
         try:
-            credential = OpenBadgeCredential.from_vc_document(doc)
+            # With ecdsa-sd-2023, where such a label is legitimate (and the
+            # holder's to choose), the model is built without it. With
+            # eddsa-rdfc-2022 context validation has already refused one.
+            credential = OpenBadgeCredential.from_vc_document(
+                _without_blank_node_ids(doc)
+                if proof.get('cryptosuite') == 'ecdsa-sd-2023' else doc)
         except (KeyError, ValueError, TypeError) as exc:
             raise OB3VerificationError(
                 "Malformed credential document: %s" % exc) from exc

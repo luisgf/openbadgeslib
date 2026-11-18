@@ -305,6 +305,89 @@ class TestEcdsaSdVerify:
             with pytest.raises(OB3VerificationError, match='omitted validFrom'):
                 verifier.verify(hidden)
 
+    def test_blank_node_label_is_not_reported_by_the_model(self, ob3_credential):
+        # The delegate labels a status entry signed without an id, and the
+        # holder can rewrite the label: the presentation verifies either way
+        # and the model reports no id (#349). What the status check reads
+        # is untouched, and the verified document is not modified.
+        from dataclasses import replace
+        _require_ldp_sd()
+        entry = {k: v for k, v in _STATUS_ENTRY.items() if k != 'id'}
+        derived, pub_pem, _ = _issue_and_derive(
+            replace(_lifecycle_credential(ob3_credential),
+                    credential_status=[entry]), selective=[])
+        verifier = OB3LdpVerifier(pubkey_pem=pub_pem)
+        assert derived['credentialStatus']['id'].startswith('_:')  # premise
+        assert verifier.verify(derived).credential_status == [entry]
+        doc = copy.deepcopy(derived)
+        doc['credentialStatus']['id'] = '_:holderchosen'
+        before = copy.deepcopy(doc)
+        assert verifier.verify(doc).credential_status == [entry]
+        assert doc == before
+        # an array-valued credentialStatus reads the same
+        doc['credentialStatus'] = [doc['credentialStatus']]
+        assert verifier.verify(doc).credential_status == [entry]
+
+    def test_revocation_is_still_reported_with_a_labelled_entry(
+            self, ob3_credential):
+        import json
+        from dataclasses import replace
+        from test_ob3_status import _encoded_list
+        _require_ldp_sd()
+        entry = {k: v for k, v in _STATUS_ENTRY.items() if k != 'id'}
+        derived, pub_pem, _ = _issue_and_derive(
+            replace(_lifecycle_credential(ob3_credential),
+                    credential_status=[entry]), selective=[])
+        assert derived['credentialStatus']['id'].startswith('_:')
+
+        def download(url, *args, **kwargs):
+            return json.dumps({
+                '@context': ['https://www.w3.org/ns/credentials/v2'],
+                'id': url,
+                'type': ['VerifiableCredential', 'BitstringStatusListCredential'],
+                'credentialSubject': {
+                    'id': url + '#list', 'type': 'BitstringStatusList',
+                    'statusPurpose': 'revocation',
+                    'encodedList': _encoded_list([0])}}).encode()
+
+        with pytest.raises(OB3VerificationError, match="status 'revocation' is set at index 0"):
+            OB3LdpVerifier(pubkey_pem=pub_pem).verify(
+                derived, check_status=True, download=download,
+                verify_status_list=False)
+
+    def test_achievement_id_is_never_a_label_on_a_presentation(
+            self, ob3_credential):
+        # What makes refusing a label there safe on this suite: the delegate
+        # labels nodes that have no id, and OB 3.0 requires Achievement.id.
+        _require_ldp_sd()
+        derived, pub_pem, _ = _issue_and_derive(
+            _lifecycle_credential(ob3_credential), selective=[])
+        achievement = derived['credentialSubject']['achievement']
+        assert not achievement['id'].startswith('_:')
+        assert achievement['criteria']['id'].startswith('_:')   # still labelled
+        verifier = OB3LdpVerifier(pubkey_pem=pub_pem)
+        assert verifier.verify(derived).achievement.id == achievement['id']
+
+        forged = copy.deepcopy(derived)
+        forged['credentialSubject']['achievement']['id'] = '_:a1'
+        with pytest.raises(OB3VerificationError,
+                           match="'_:a1' as the id of its achievement"):
+            verifier.verify(forged)
+
+    def test_identifier_only_subject_cannot_be_derived(self, ob3_credential):
+        # Not testable: openvc-core 1.35.0 cannot derive a presentation of a
+        # credential whose subject has no id, so there is no presentation
+        # on which expected_recipient='_:...' could match. If it learns to,
+        # this fails and the expected_recipient test belongs here.
+        from dataclasses import replace
+        from openbadgeslib.ob3 import IdentityObject
+        _require_ldp_sd()
+        credential = replace(
+            _lifecycle_credential(ob3_credential), recipient_id=None,
+            identifiers=[IdentityObject.create('alice@example.com')])
+        with pytest.raises(Exception, match='no matching base signature'):
+            _issue_and_derive(credential, selective=[])
+
     def test_registered_in_cryptosuites(self):
         from openbadgeslib.ob3.ldp import _CRYPTOSUITES
         assert 'ecdsa-sd-2023' in _CRYPTOSUITES
