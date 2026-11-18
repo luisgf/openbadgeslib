@@ -4,7 +4,7 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
-* v4.6.5 - unreleased
+* v4.6.5 - 2026-11-18
 
   - security(ldp): every description of a node the returned credential is
     read from must agree with the one it is read from. RDF has one node per
