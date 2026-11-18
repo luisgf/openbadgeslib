@@ -4,6 +4,59 @@ OpenBadgesLib - Changelog
 Newest first. Dates are ISO 8601 (YYYY-MM-DD).
 
 
+* v4.6.5 - unreleased
+
+  - security(ldp): every description of a node the returned credential is
+    read from must agree with the one it is read from. RDF has one node per
+    id however many JSON objects describe it, and a Data Integrity signature
+    covers the node, so a signed member can sit in any of them, while
+    `OB3LdpVerifier.verify` reads each member from one fixed object. The
+    1EdTech Complete example describes two nodes twice in the credential
+    itself (the issuer again as `achievement.creator`, a `criteria` with the
+    achievement's id), and a holder can write any node that has an id as two
+    entries of the array that holds it. Without touching the signature, the
+    holder of such a badge could move the achievement's `description` into
+    `criteria` (or the `narrative` of `criteria` onto the achievement), leave
+    the issuer's `name`, `url`, `email` and `image` only in `creator`, split
+    `credentialSubject` so that `result`, `identifier` and `creditsEarned`
+    sat in the entry the model does not read, or exchange two values of one
+    member: the returned credential lacked them (an empty description, an
+    issuer without name, no results) or showed the other value. Validity,
+    status, recipient and issuer verdicts were not affected. Now, for the
+    issuer, each `credentialSubject`, its achievement, and the `criteria`,
+    `alignment`, `resultDescription`, `result`, `identifier` and `evidence`
+    nodes the model reads, every other object with the same id anywhere in
+    the document, embedded endorsements included, must carry for each member
+    the model reads there either nothing or exactly the same value(s); a
+    value that is itself one of those nodes is the same when its id and what
+    the model reads of it are. A member the model does not read is free, so
+    the Complete example, endorsements of the achievement or of the issuer,
+    and the shape this library issues (no `creator`, a `criteria` without
+    id) verify as before.
+    Compatibility: a credential whose issuer gives such a node two different
+    values for a member the model reads, or gives the member only outside
+    the object the model reads it from, is refused. That is an `issuer`
+    written as a bare IRI, or with fewer of `name`, `url`, `email`, `image`
+    and `endorsementJwt` than an `achievement.creator` (or any other
+    description) of the same id in the same credential, which is the very
+    document a holder gets by cutting a twice-described issuer down; a
+    self-issued badge whose subject and issuer objects carry different
+    `image` values; and an ecdsa-sd-2023 presentation that reveals a member
+    of a twice-described node only at the other pointer
+    (`/credentialSubject/achievement/creator/name` without `/issuer/name`).
+    The remedy for an issuer is to describe the node where the model reads
+    it, and for a holder to reveal the member there; the refusal names the
+    node, the member and both places. `OB3LdpSigner` holds what it emits to
+    the same rule and raises `ErrorSigningFile` for what 4.6.4 issued and
+    verified when the caller gives two of the nodes one id and different
+    members: two `Evidence` or two `ResultDescription` entries with the same
+    id that differ (or one of which lacks a member the other has), an
+    `Evidence` with the id of the achievement or of the issuer, an
+    achievement with the issuer's id and another `name`. A self-issued badge
+    (the recipient id equal to the issuer id) is issued as before. The
+    low-level functions, which check the proof alone, and the JWT-VC path,
+    where every byte is signed, are unchanged (#348)
+
 * v4.6.4 - 2026-11-18
 
   - security(ldp): on CPython 3.11 and 3.12 the JSON-LD to RDF conversion may

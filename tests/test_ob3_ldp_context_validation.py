@@ -1704,6 +1704,693 @@ class TestEndorsementSubjectRelocation:
                   % SUBJECT_MEMBER, verifier)
 
 
+# ── a node the model reads, described in more than one place ────────────────
+
+TWICE = 'in more than one place'
+ACH = '/credentialSubject/achievement'
+SUBJECT_ID = 'did:example:ebfeb1f712ebc6f1c276e12ec21'
+CRITERIA_ID = 'https://university.example/achievements/degree/criteria'
+EVIDENCE_ID = CRED_ID + '/evidence/1'
+IDS = 'https://university.example/nodes/'
+
+
+def _not_read_at(member, read_at, found_at):
+    return re.escape("its %s is not at '%s', where the model reads it, but at "
+                     "'%s'" % (member, read_at, found_at))
+
+
+def _not_the_same(member, read_at, other):
+    return re.escape("its %s at '%s', where the model reads it, is not the "
+                     "same as at '%s'" % (member, read_at, other))
+
+
+def _small_profile():
+    return {'id': ISSUER_ID, 'type': ['Profile'], 'name': 'Example University',
+            'url': 'https://university.example',
+            'email': 'registrar@university.example',
+            'image': {'id': 'https://university.example/logo.png',
+                      'type': 'Image', 'caption': 'Logo'}}
+
+
+def _description_into_criteria(document):
+    achievement = _achievement(document)
+    achievement['criteria']['description'] = achievement.pop('description')
+
+
+def _issuer_member_left_in_creator(member):
+    def change(document):
+        del document['issuer'][member]
+    return change
+
+
+def _narrative_into_achievement(document):
+    achievement = _achievement(document)
+    achievement['narrative'] = achievement['criteria'].pop('narrative')
+
+
+def _narrative_into_achievement_bare_criteria(document):
+    _narrative_into_achievement(document)
+    _achievement(document)['criteria'] = ACH_ID
+
+
+def _achievement_members_into_criteria(document):
+    achievement = _achievement(document)
+    achievement['criteria']['type'] = ['Achievement']
+    for member in ('tag', 'alignment', 'achievementType', 'creditsAvailable',
+                   'resultDescription'):
+        achievement['criteria'][member] = achievement.pop(member)
+
+
+def _issuer_image_as_a_reference(document):
+    document['issuer']['image'] = {'id': document['issuer']['image']['id']}
+
+
+# what a holder does to the signed Complete example: (the change, the refusal)
+RELOCATIONS = {
+    'description into criteria': (
+        _description_into_criteria,
+        _not_read_at('description', ACH, ACH + '/criteria')),
+    'issuer name left in creator': (
+        _issuer_member_left_in_creator('name'),
+        _not_read_at('name', '/issuer', ACH + '/creator')),
+    'issuer url left in creator': (
+        _issuer_member_left_in_creator('url'),
+        _not_read_at('url', '/issuer', ACH + '/creator')),
+    'issuer email left in creator': (
+        _issuer_member_left_in_creator('email'),
+        _not_read_at('email', '/issuer', ACH + '/creator')),
+    'issuer image left in creator': (
+        _issuer_member_left_in_creator('image'),
+        _not_read_at('image', '/issuer', ACH + '/creator')),
+    'issuer image a reference, described in creator': (
+        _issuer_image_as_a_reference,
+        _not_the_same('image', '/issuer', ACH + '/creator')),
+    'narrative into the achievement': (
+        _narrative_into_achievement,
+        _not_read_at('narrative', ACH + '/criteria', ACH)),
+    'narrative into the achievement, criteria a bare IRI': (
+        _narrative_into_achievement_bare_criteria,
+        _not_read_at('narrative', ACH + '/criteria', ACH)),
+    'achievement members into criteria': (
+        _achievement_members_into_criteria,
+        _not_read_at('achievementType', ACH, ACH + '/criteria')),
+}
+
+
+def _identified_document():
+    """The complete document with an id on every node the model reads, and
+    each of those nodes named once more by a ``related`` entry of the
+    achievement that carries no member the model reads: a second description
+    as legitimate as an endorsement's subject."""
+    document = _complete_document()
+    subject = document['credentialSubject']
+    achievement = subject['achievement']
+    del achievement['creator']
+    achievement['criteria']['id'] = CRITERIA_ID
+    achievement['alignment'][0]['id'] = IDS + 'alignment'
+    achievement['resultDescription'][0]['alignment'][0]['id'] = IDS + 'rd-alignment'
+    subject['result'][0]['id'] = IDS + 'result'
+    subject['result'][0]['alignment'][0]['id'] = IDS + 'result-alignment'
+    subject['identifier'][0]['id'] = IDS + 'identifier'
+    achievement['related'] = [
+        {'id': node_id, 'type': ['Related'], 'inLanguage': 'en', 'version': '1'}
+        for node_id in (ISSUER_ID, SUBJECT_ID, ACH_ID, CRITERIA_ID, RD_ID,
+                        EVIDENCE_ID, IDS + 'alignment', IDS + 'rd-alignment',
+                        IDS + 'result', IDS + 'result-alignment',
+                        IDS + 'identifier')]
+    return document
+
+
+# position the model reads a node at: (the node there, a member it reads from
+# it, where a refusal says it reads it, the model's value for it)
+POSITIONS = {
+    'issuer': (
+        lambda doc: doc['issuer'], 'email', '/issuer',
+        lambda cred: cred.issuer.email, 'registrar@university.example'),
+    'credentialSubject': (
+        lambda doc: doc['credentialSubject'], 'creditsEarned',
+        '/credentialSubject', lambda cred: cred.credits_earned, 42.0),
+    'achievement': (
+        _achievement, 'tag', ACH,
+        lambda cred: cred.achievement.tags, ['research', 'computer science']),
+    'criteria': (
+        lambda doc: _achievement(doc)['criteria'], 'narrative', ACH + '/criteria',
+        lambda cred: cred.achievement.criteria_narrative, '# Degree Requirements'),
+    'achievement alignment': (
+        lambda doc: _achievement(doc)['alignment'][0], 'targetCode',
+        ACH + '/alignment/0',
+        lambda cred: cred.achievement.alignments[0].target_code, 'degree'),
+    'resultDescription': (
+        lambda doc: _achievement(doc)['resultDescription'][0], 'requiredValue',
+        ACH + '/resultDescription/0',
+        lambda cred: cred.achievement.result_descriptions[0].required_value, 'C'),
+    'resultDescription alignment': (
+        lambda doc: _achievement(doc)['resultDescription'][0]['alignment'][0],
+        'targetFramework', ACH + '/resultDescription/0/alignment/0',
+        lambda cred: cred.achievement.result_descriptions[0].alignments[0]
+        .target_framework, 'Programme Catalog'),
+    'result': (
+        lambda doc: doc['credentialSubject']['result'][0], 'status',
+        '/credentialSubject/result/0',
+        lambda cred: cred.results[0].status, 'Completed'),
+    'result alignment': (
+        lambda doc: doc['credentialSubject']['result'][0]['alignment'][0],
+        'targetDescription', '/credentialSubject/result/0/alignment/0',
+        lambda cred: cred.results[0].alignments[0].target_description,
+        'Degree programmes.'),
+    'identifier': (
+        lambda doc: doc['credentialSubject']['identifier'][0], 'salt',
+        '/credentialSubject/identifier/0',
+        lambda cred: cred.identifiers[0].salt, 'not-used'),
+    'evidence': (
+        lambda doc: doc['evidence'][0], 'genre', '/evidence/0',
+        lambda cred: cred.evidence[0].genre, 'Research'),
+}
+
+
+class _Spy(dict):
+    """A JSON object that notes every key read from it, by where it is."""
+
+    def __init__(self, data, path, reads):
+        super().__init__({key: _spied(value, path + (key,), reads)
+                          for key, value in data.items()})
+        self._note = lambda key: reads.setdefault(path, set()).add(key)
+
+    def get(self, key, default=None):
+        self._note(key)
+        return super().get(key, default)
+
+    def __getitem__(self, key):
+        self._note(key)
+        return super().__getitem__(key)
+
+
+def _spied(value, path, reads):
+    if isinstance(value, dict):
+        return _Spy(value, path, reads)
+    if isinstance(value, list):
+        return [_spied(item, path, reads) for item in value]
+    return value
+
+
+def _table_positions(reads, path=()):
+    """position -> the keys _MODEL_READS says the model reads from a node
+    there."""
+    positions = {path: set(reads)} if path and reads else {}
+    for key, below in reads.items():
+        positions.update(_table_positions(below, path + (key,)))
+    return positions
+
+
+class TestNodeDescribedTwice:
+    """RDF has one node per id, however many JSON objects describe it, and
+    the signature covers the node: a member can sit in any of them. The model
+    reads each member from one fixed object. The 1EdTech Complete example
+    describes two nodes twice in the credential itself (the issuer again as
+    achievement.creator, a criteria with the achievement's id), and any node
+    with an id can be split over two entries of the array that holds it, so
+    a holder could leave what the model reads only in the object it does not
+    read, or exchange two values. Every description of a node the model
+    reads must agree with the one it reads on each member it reads."""
+
+    @pytest.fixture()
+    def keys(self, ed25519_keypair):
+        """(sign, public key, pinned verifier)"""
+        priv, pub = ed25519_keypair
+        _, vm = _did_vm(pub)
+        return (lambda document: add_data_integrity_proof(document, priv, vm),
+                pub, OB3LdpVerifier(pubkey_pem=pub))
+
+    @staticmethod
+    def _moved(signed, pub, change):
+        """*signed* after *change*, not signed again: the same dataset under
+        the same proof, as the low-level check confirms."""
+        moved = copy.deepcopy(signed)
+        change(moved)
+        verify_data_integrity_proof(moved, pub)
+        return moved
+
+    def test_complete_example_shows_what_was_signed(self, keys):
+        sign, _, verifier = keys
+        credential = verifier.verify(sign(_complete_document()))
+        assert credential.issuer.name == 'Example University'
+        assert credential.issuer.url == 'https://university.example'
+        assert credential.issuer.email == 'registrar@university.example'
+        assert credential.issuer.image_url == 'https://university.example/logo.png'
+        achievement = credential.achievement
+        assert achievement.description == 'University Degree Description'
+        assert achievement.criteria_narrative == '# Degree Requirements'
+        assert achievement.tags == ['research', 'computer science']
+
+    @pytest.mark.parametrize('relocation', sorted(RELOCATIONS))
+    def test_relocation_is_refused(self, keys, relocation):
+        sign, pub, verifier = keys
+        change, refusal = RELOCATIONS[relocation]
+        moved = self._moved(sign(_complete_document()), pub, change)
+        with pytest.raises(OB3VerificationError, match=TWICE) as refused:
+            _check(moved)
+        assert re.search(refusal, str(refused.value)), str(refused.value)
+        _rejected(moved, refusal, verifier)
+
+    def test_relocations_verified_before_the_fix(self, keys, monkeypatch):
+        # What the rule is for: without it each of them verifies, and the
+        # model no longer shows what the issuer signed.
+        sign, pub, verifier = keys
+        monkeypatch.setattr(cv, '_check_read_in_place', lambda *args: None)
+        signed = sign(_complete_document())
+        moved = self._moved(signed, pub, _description_into_criteria)
+        assert verifier.verify(moved).achievement.description == ''
+        moved = self._moved(signed, pub, _narrative_into_achievement)
+        assert verifier.verify(moved).achievement.criteria_narrative == ''
+        moved = copy.deepcopy(signed)
+        for member in ('name', 'url', 'email'):
+            del moved['issuer'][member]
+        verify_data_integrity_proof(moved, pub)
+        issuer = verifier.verify(moved).issuer
+        assert (issuer.name, issuer.url, issuer.email) == ('', None, None)
+
+    def test_two_values_are_refused_whichever_is_shown(self, keys):
+        # The cost: a credential whose issuer gives one node two values for a
+        # member the model reads is refused as signed, since exchanging them
+        # is the same dataset and the model would report the other one.
+        sign, pub, verifier = keys
+        document = _complete_document()
+        _achievement(document)['creator']['name'] = 'Another Name'
+        signed = sign(document)
+        refusal = _not_the_same('name', '/issuer', ACH + '/creator')
+        _rejected(signed, refusal, verifier)
+
+        def exchange(doc):
+            creator = _achievement(doc)['creator']
+            doc['issuer']['name'], creator['name'] = (creator['name'],
+                                                      doc['issuer']['name'])
+        exchanged = self._moved(signed, pub, exchange)
+        assert exchanged['issuer']['name'] == 'Another Name'
+        _rejected(exchanged, refusal, verifier)
+
+    def test_issuer_as_a_bare_iri_beside_a_full_creator_is_refused(self, keys):
+        # A recorded decision: this issuer-signed, schema-valid shape cannot
+        # be told from a credential signed with the profile under both
+        # members whose holder cut the issuer down to its id -- the two are
+        # the same document. The issuer has to describe itself under
+        # ``issuer``, where the model reads it.
+        sign, pub, verifier = keys
+        both = _complete_document()
+        both['issuer'] = _small_profile()
+        _achievement(both)['creator'] = _small_profile()
+        signed_both = sign(both)
+        assert verifier.verify(signed_both).issuer.name == 'Example University'
+
+        bare = _complete_document()
+        bare['issuer'] = ISSUER_ID
+        _achievement(bare)['creator'] = _small_profile()
+        signed_bare = sign(bare)
+
+        def cut(doc):
+            doc['issuer'] = ISSUER_ID
+        stripped = self._moved(signed_both, pub, cut)
+        assert ({k: v for k, v in stripped.items() if k != 'proof'}
+                == {k: v for k, v in signed_bare.items() if k != 'proof'})
+        for document in (signed_bare, stripped):
+            _rejected(document, r"describes the node '%s' %s, and %s"
+                      % (re.escape(ISSUER_ID), TWICE,
+                         _not_read_at('image', '/issuer', ACH + '/creator')),
+                      verifier)
+
+    def test_poorer_issuer_than_creator_is_refused(self, keys):
+        # The same for an issuer object with fewer of the members the model
+        # reads than another description of it.
+        sign, _, verifier = keys
+        document = _complete_document()
+        document['issuer'] = {'id': ISSUER_ID, 'type': ['Profile'],
+                              'name': 'Example University'}
+        _achievement(document)['creator'] = _small_profile()
+        _rejected(sign(document),
+                  _not_read_at('image', '/issuer', ACH + '/creator'), verifier)
+
+    def test_poorer_second_description_verifies(self, keys):
+        # Another description may carry fewer members, or none: a creator
+        # with the name only, a ``source`` that only names the issuer.
+        sign, _, verifier = keys
+        document = _complete_document()
+        _achievement(document)['creator'] = {
+            'id': ISSUER_ID, 'type': ['Profile'], 'name': 'Example University'}
+        document['credentialSubject']['source'] = {'id': ISSUER_ID,
+                                                   'type': ['Profile']}
+        credential = verifier.verify(sign(document))
+        assert credential.issuer.email == 'registrar@university.example'
+
+    def test_order_of_the_values_is_not_compared(self, keys):
+        # The values of a property are a set in the dataset.
+        sign, _, verifier = keys
+        document = _complete_document()
+        document['issuer']['endorsementJwt'] = ['a.b.c', 'd.e.f']
+        _achievement(document)['creator']['endorsementJwt'] = ['d.e.f', 'a.b.c']
+        credential = verifier.verify(sign(document))
+        assert credential.issuer.endorsement_jwts == ['a.b.c', 'd.e.f']
+        _achievement(document)['creator']['endorsementJwt'] = ['d.e.f']
+        _rejected(sign(document), _not_the_same('endorsementJwt', '/issuer',
+                                                ACH + '/creator'), verifier)
+
+    def test_values_are_compared_as_canonical_json(self):
+        def values(items, below=None):
+            return cv._values(items, below)
+        assert values([{'@value': True}]) != values([{'@value': 1}])
+        assert values([{'@value': 1}]) != values([{'@value': 1.0}])
+        assert values([{'a': 1, 'b': 2}, 'x']) == values(['x', {'b': 2, 'a': 1}])
+        assert values({'@id': 'x'}) == values([{'@id': 'x'}])
+        # Of a node the model reads members of: its id and those members.
+        below = {'urn:read': ('read', {})}
+        node = {'@id': 'urn:n', 'urn:read': [{'@value': 1}], 'urn:other': [1]}
+        assert values([node], below) == values(
+            [{'@id': 'urn:n', 'urn:read': [{'@value': 1}]}], below)
+        assert values([node], below) != values([dict(node, **{'@id': 'urn:m'})], below)
+        assert values([node], below) != values(
+            [dict(node, **{'urn:read': [{'@value': 2}]})], below)
+        assert values([node], below) != values([node])
+        # a literal, a list or a graph under such a member is compared whole
+        for keyword in ('@value', '@list', '@graph'):
+            assert values([{keyword: [1], 'urn:other': 1}], below) != values(
+                [{keyword: [1], 'urn:other': 2}], below)
+
+    def test_second_description_without_what_the_model_reads_verifies(self, keys):
+        sign, _, verifier = keys
+        credential = verifier.verify(sign(_identified_document()))
+        for _, _, _, shown, value in POSITIONS.values():
+            assert shown(credential) == value
+
+    @pytest.mark.parametrize('position', sorted(POSITIONS))
+    def test_member_moved_out_of_any_position_is_refused(self, keys, position):
+        sign, pub, verifier = keys
+        find, member, read_at, _, _ = POSITIONS[position]
+
+        def move(doc):
+            node = find(doc)
+            other = next(entry for entry in _achievement(doc)['related']
+                         if entry['id'] == node['id'])
+            # a type the node has brings the scoped context that spells the
+            # member; stating it twice is the same dataset
+            types = node.get('type', [])
+            other['type'] += [types] if isinstance(types, str) else types
+            other[member] = node.pop(member)
+        signed = sign(_identified_document())
+        moved = self._moved(signed, pub, move)
+        assert member not in find(moved)
+        _rejected(moved, r"describes the node '%s' %s, and its %s is not at "
+                         r"'%s', where the model reads it, but at "
+                         r"'%s/related/\d+'"
+                  % (re.escape(find(moved)['id']), TWICE, member, read_at, ACH),
+                  verifier)
+
+    def test_identical_descriptions_verify(self, keys):
+        # The same node described twice with the same members: every node
+        # under the subject, by a second, equal entry; the evidence likewise;
+        # the issuer as the creator (as in the example).
+        sign, _, verifier = keys
+        document = _identified_document()
+        del _achievement(document)['related']
+        document['credentialSubject'] = [
+            document['credentialSubject'],
+            copy.deepcopy(document['credentialSubject'])]
+        document['evidence'] = document['evidence'] + copy.deepcopy(
+            document['evidence'])
+        credential = verifier.verify(sign(document))
+        assert credential.credits_earned == 42.0
+        assert [e.genre for e in credential.evidence] == ['Research', 'Research']
+
+    def test_unread_member_of_a_value_is_no_reason_to_refuse(self, keys):
+        # A member that is itself a node the model reads is compared by what
+        # the model reads of it: a second description of the subject whose
+        # achievement lacks fieldOfStudy, and whose alignment lacks
+        # targetType, shows the same model whichever is read.
+        sign, _, verifier = keys
+        document = _identified_document()
+        del _achievement(document)['related']
+        second = copy.deepcopy(document['credentialSubject'])
+        del second['achievement']['fieldOfStudy']
+        del second['achievement']['alignment'][0]['targetType']
+        document['credentialSubject'] = [document['credentialSubject'], second]
+        credential = verifier.verify(sign(document))
+        assert credential.achievement.alignments[0].target_code == 'degree'
+        # ... but not a member the model reads of it
+        # (the subject, the achievement and the alignment each say so; which
+        # is named first is not pinned)
+        del second['achievement']['alignment'][0]['targetCode']
+        _rejected(sign(document), r"%s, and its (achievement at "
+                  r"'/credentialSubject/0'|alignment at '%s'|targetCode is "
+                  r"not at '/credentialSubject/1/achievement/alignment/0')"
+                  % (TWICE, '/credentialSubject/0/achievement'), verifier)
+
+    def test_node_split_over_two_array_entries_is_refused(self, keys):
+        # No second description by the issuer is needed where the model
+        # accepts an array: the holder writes the node twice, each entry
+        # with part of it. The model reads the first credentialSubject only.
+        sign, pub, verifier = keys
+        signed = sign(_complete_document())
+        assert verifier.verify(signed).credits_earned == 42.0
+
+        def split(doc):
+            subject = doc['credentialSubject']
+            doc['credentialSubject'] = [subject, {
+                'id': subject['id'], 'type': ['AchievementSubject'],
+                'creditsEarned': subject.pop('creditsEarned'),
+                'result': subject.pop('result'),
+                'identifier': subject.pop('identifier')}]
+        moved = self._moved(signed, pub, split)
+        _rejected(moved, r"describes the node '%s' %s, and its \w+ is not at "
+                         r"'/credentialSubject/[01]', where the model reads it, "
+                         r"but at '/credentialSubject/[01]'"
+                  % (re.escape(SUBJECT_ID), TWICE), verifier)
+
+        def split_evidence(doc):
+            first = doc['evidence'][0]
+            doc['evidence'].append({'id': first['id'], 'type': ['Evidence'],
+                                    'narrative': first.pop('narrative')})
+        _rejected(self._moved(signed, pub, split_evidence),
+                  _not_read_at('narrative', '/evidence/0', '/evidence/1'),
+                  verifier)
+
+        # A node without an id is split the same way under a blank node
+        # label, which is as good as an id inside one document.
+        def split_result(doc):
+            first = doc['credentialSubject']['result'][0]
+            first['id'] = '_:r'
+            doc['credentialSubject']['result'].append(
+                {'id': '_:r', 'type': ['Result'], 'status': first.pop('status')})
+        assert verifier.verify(signed).results[0].status == 'Completed'
+        _rejected(self._moved(signed, pub, split_result),
+                  r"describes the node '_:r' %s, and its \w+ is not at "
+                  r"'/credentialSubject/result/[02]', where the model reads it"
+                  % TWICE, verifier)
+
+    def test_description_inside_an_embedded_credential_counts(self, keys):
+        # The issuer endorses itself: the endorsement's own issuer is one
+        # more description of the node, inside a credential validated on its
+        # own, and the member cannot be left there either.
+        sign, pub, verifier = keys
+        document = _complete_document()
+        del _achievement(document)['creator']
+        document['endorsement'][0]['issuer'] = {
+            'id': ISSUER_ID, 'type': ['Profile'], 'name': 'Example University'}
+        signed = sign(document)
+        assert verifier.verify(signed).issuer.url == 'https://university.example'
+
+        def move(doc):
+            doc['endorsement'][0]['issuer']['url'] = doc['issuer'].pop('url')
+        _rejected(self._moved(signed, pub, move),
+                  _not_read_at('url', '/issuer', '/endorsement/0/issuer'),
+                  verifier)
+
+    def test_self_issued_badge(self, keys):
+        # The subject is the issuer: one node under issuer and under
+        # credentialSubject, each object with its own members.
+        sign, pub, verifier = keys
+        document = _complete_document()
+        document['credentialSubject']['id'] = ISSUER_ID
+        # The cost: the subject's image and the issuer's are two images of
+        # one node, and which is the issuer's logo is not signed.
+        _rejected(sign(document),
+                  _not_the_same('image', '/issuer', '/credentialSubject'),
+                  verifier)
+        del document['credentialSubject']['image']
+        signed = sign(document)
+        credential = verifier.verify(signed)
+        assert credential.recipient_id == credential.issuer.id == ISSUER_ID
+        assert (credential.credits_earned, len(credential.results)) == (42.0, 2)
+
+        def into_the_issuer(doc):
+            issuer, subject = doc['issuer'], doc['credentialSubject']
+            issuer['type'] = issuer['type'] + subject['type']
+            issuer['creditsEarned'] = subject.pop('creditsEarned')
+            issuer['result'] = subject.pop('result')
+        _rejected(self._moved(signed, pub, into_the_issuer),
+                  _not_read_at('creditsEarned', '/credentialSubject', '/issuer'),
+                  verifier)
+
+        def into_the_subject(doc):
+            doc['credentialSubject']['name'] = doc['issuer'].pop('name')
+        _rejected(self._moved(signed, pub, into_the_subject),
+                  _not_read_at('name', '/issuer', '/credentialSubject'), verifier)
+
+    def test_endorsements_verify(self, keys):
+        # An achievement-level endorsement of the achievement and a
+        # credential-level one of the issuer: a subject carries no member
+        # the model reads, so it agrees with any description.
+        sign, _, verifier = keys
+        document = _complete_document()
+        ENDORSED['achievement'][1](document)['id'] = ACH_ID
+        assert ENDORSED['issuer'][1](document)['id'] == ISSUER_ID
+        credential = verifier.verify(sign(document))
+        assert credential.achievement.description == 'University Degree Description'
+        assert credential.issuer.name == 'Example University'
+
+    def test_library_issued_credential_is_unaffected(self, issuer):
+        # What this library issues describes no node twice: no creator, a
+        # criteria without id.
+        priv, _, did, _ = issuer
+        alignment = Alignment(target_name='n', target_url='https://f.example/1',
+                              target_code='c')
+        signed = OB3LdpSigner(priv).sign(_credential(
+            did,
+            issuer=Issuer(id=did, name='Real Issuer', url='https://issuer.example',
+                          email='i@issuer.example',
+                          image_url='https://issuer.example/logo.png'),
+            achievement=Achievement(
+                id='https://issuer.example/achievements/attendance',
+                name='Attendance', description='d', criteria_narrative='c',
+                image_url='https://issuer.example/a.png', tags=['t'],
+                alignments=[alignment],
+                result_descriptions=[ResultDescription(
+                    id='urn:uuid:00000000-0000-0000-0000-0000000000b1',
+                    name='Grade', result_type='LetterGrade',
+                    alignments=[alignment])]),
+            evidence=[Evidence(id='https://issuer.example/e/1', narrative='n')],
+            results=[Result(value='A', alignments=[alignment])],
+            identifiers=list(HASHED_IDENTITY)))
+        criteria = _achievement(signed)['criteria']
+        assert 'id' not in criteria and 'creator' not in _achievement(signed)
+        credential = OB3LdpVerifier().verify(signed)
+        assert credential.achievement.criteria_narrative == 'c'
+        assert credential.issuer.email == 'i@issuer.example'
+
+    def test_signer_does_not_issue_two_values_for_a_node(self, issuer):
+        priv, _, did, _ = issuer
+        evidence = [Evidence(id='https://issuer.example/e/1', name='one'),
+                    Evidence(id='https://issuer.example/e/1', name='another')]
+        with pytest.raises(ErrorSigningFile, match=TWICE):
+            OB3LdpSigner(priv).sign(_credential(did, evidence=evidence))
+
+    def test_table_is_what_the_model_reads(self):
+        # Both ways: a member the model starts reading must get the rule, and
+        # a member it does not read must never be a reason to refuse.
+        reads: dict = {}
+        document = _identified_document()
+        OpenBadgeCredential.from_vc_document(_spied(document, (), reads))
+        below = {path: keys - {'id'} for path, keys in reads.items() if path}
+        # (credentialStatus entries are kept as they are, for the status
+        # check, and have a rule of their own)
+        assert {path[0] for path in below} == set(cv._MODEL_READS)
+        assert ({path: keys for path, keys in below.items() if keys}
+                == _table_positions(cv._MODEL_READS))
+        # a node read for its id alone has no member, so no rule: the images
+        assert {path for path, keys in below.items() if not keys} == {
+            ('issuer', 'image'), ('credentialSubject', 'achievement', 'image')}
+
+    def test_table_by_iri_is_derived_from_the_pinned_contexts(self):
+        ob = 'https://purl.imsglobal.org/spec/vc/ob/vocab.html#'
+        reads = cv._model_reads()
+        assert set(reads) == {VC + 'issuer', VC + 'credentialSubject',
+                              VC + 'evidence'}
+        key, issuer = reads[VC + 'issuer']
+        assert key == 'issuer'
+        assert {iri: below for iri, below in issuer.items()} == {
+            'https://schema.org/name': ('name', {}),
+            'https://schema.org/url': ('url', {}),
+            'https://schema.org/email': ('email', {}),
+            ob + 'endorsementJwt': ('endorsementJwt', {}),
+            # the term is also the alias of the Image type
+            ob + 'image': ('image', {}), ob + 'Image': ('image', {}),
+        }
+        _, subject = reads[VC + 'credentialSubject']
+        _, achievement = subject[ob + 'achievement']
+        assert achievement['https://schema.org/keywords'] == ('tag', {})
+        assert achievement[ob + 'Criteria'] == (
+            'criteria', {ob + 'narrative': ('narrative', {})})
+
+        def keys(reads):
+            for key, below in reads.values():
+                yield key
+                yield from keys(below)
+
+        def terms(reads):
+            for key, below in reads.items():
+                yield key
+                yield from terms(below)
+        assert set(keys(reads)) == set(terms(cv._MODEL_READS))
+
+    def test_refusal_points_into_the_document(self):
+        # _where follows the document where it can; where the document is
+        # not the compact form of the expansion it goes on by the terms.
+        ob = 'https://purl.imsglobal.org/spec/vc/ob/vocab.html#'
+        node: dict = {'@id': 'urn:x'}
+        root = {VC + 'credentialSubject': [
+            {'@id': 'urn:s', ob + 'achievement': [
+                {'@id': 'urn:a', ob + 'Criteria': [{'@id': 'urn:c'}, node]}]}]}
+        document = {'credentialSubject': [
+            {'id': 'urn:s', 'achievement': {
+                'id': 'urn:a', 'criteria': [{'id': 'urn:c'}, {'id': 'urn:x'}]}}]}
+        assert cv._where(document, root, node) == repr(
+            '/credentialSubject/0/achievement/criteria/1')
+        assert cv._where({'credentialSubject': 'urn:s'}, root, node) == repr(
+            '/credentialSubject/achievement/criteria/1')
+        assert cv._where(document, {'urn:p': [node]}, node) == repr('/urn:p')
+        assert cv._where(document, root, {'@id': 'urn:x'}) == repr('/')
+
+    def test_ecdsa_sd_member_revealed_only_at_the_other_pointer(self):
+        # Selective disclosure reveals a statement at the JSON pointer the
+        # holder selects. For a node described twice the same statement has
+        # two pointers, and one revealed only where the model does not read
+        # it is the relocated member: the presentation is refused, and the
+        # holder reveals it at the pointer the model reads.
+        from test_ob3_ldp_ecdsa_sd import _p256_pem_pair, _require_ldp_sd
+        _require_ldp_sd()
+        from openvc.keys import P256SigningKey
+        from openvc.proof.ecdsa_sd import EcdsaSdProofSuite
+        from openbadgeslib.ob3.contexts import bundled_contexts
+
+        priv, pub = _p256_pem_pair()
+        did, vm = _did_vm(pub)
+        document = _credential(
+            did, issuer=Issuer(id=did, name='Real Issuer',
+                               url='https://issuer.example'),
+            expiration_date=datetime(2099, 1, 1, tzinfo=UTC),
+            credential_status=[dict(STATUS_ENTRY)]).to_vc()
+        _achievement(document)['creator'] = dict(document['issuer'])
+        suite, contexts = EcdsaSdProofSuite(), bundled_contexts()
+        base = suite.add_base_proof(
+            document, signing_key=P256SigningKey.from_pem(priv, kid=vm),
+            verification_method=vm, extra_contexts=contexts,
+            mandatory_pointers=['/id', '/type', '/validFrom', '/validUntil',
+                                '/credentialStatus', '/issuer/id',
+                                '/issuer/type', '/credentialSubject'])
+
+        def derive(*selective):
+            return suite.derive_proof(base, selective_pointers=list(selective),
+                                      extra_contexts=contexts)
+        shown = derive('/issuer/name', '/issuer/url')
+        credential = OB3LdpVerifier().verify(shown)
+        assert (credential.issuer.name, credential.issuer.url) == (
+            'Real Issuer', 'https://issuer.example')
+
+        hidden = derive()
+        assert set(hidden['issuer']) == {'id', 'type'}
+        assert _achievement(hidden)['creator']['name'] == 'Real Issuer'
+        verify_data_integrity_proof(hidden, pub)
+        _rejected(hidden, _not_read_at('name', '/issuer', ACH + '/creator'))
+        _rejected(derive('/issuer/name'),
+                  _not_read_at('url', '/issuer', ACH + '/creator'))
+
+
 # ── a blank node label where the model reads an identifier ──────────────────
 
 PINNED_ISSUER = 'https://issuer.example/i'

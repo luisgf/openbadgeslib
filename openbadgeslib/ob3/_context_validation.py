@@ -132,12 +132,44 @@
 # subject's EndorsementSubject type: a type is a statement about the node
 # too, and moves out with endorsementComment as the description moves in.
 # The cost: an endorsement whose subject carries an extension member is
-# refused. A node the issuer describes twice in the credential itself (the
-# issuer again as achievement.creator, a criteria with the achievement's id,
-# both in the credential the tests model on the 1EdTech example) is NOT
-# covered: the two descriptions differ there by design, so neither a
-# "described once" nor an "exact copy" rule holds, and a member the model
-# reads can still be left only in the other.
+# refused.
+#
+# The same holds with no endorsement (_check_read_in_place). A node is
+# described twice in the credential itself when the issuer writes it twice
+# (the issuer again as achievement.creator and a criteria with the
+# achievement's id, both in the credential the tests model on the 1EdTech
+# example; the subject of a self-issued badge, which is its issuer), and any
+# node with an id -- or with a blank node label, as good as one inside a
+# document -- can be split by the holder over two entries of the array that
+# holds it (credentialSubject: [{id: S, achievement}, {id: S, result}], of
+# which the model reads the first). Such descriptions differ by design, so
+# neither a "described once" nor an "exact copy" rule holds; the rule is by
+# member. For every node the model reads members from at a fixed position
+# (_MODEL_READS: the issuer, each credentialSubject, its achievement, the
+# criteria, alignments, resultDescriptions, results and identifiers under
+# them, each evidence), every other node object with the same @id anywhere in
+# the document, inside an embedded credential too, carries for each of those
+# members either nothing or the value(s) the position carries: compared as
+# canonical JSON of the expanded form -- of a value that is itself a node the
+# model reads members of, its id and those members; of any other, the whole
+# value -- and the values of one member as a set (their order is not
+# signed). So a member cannot be left
+# only where the model does not read it -- moved there, or deleted from the
+# object it is read from -- and a node cannot have two values for it to
+# exchange. A member the model does not read is free: the creator may carry
+# other endorsements than the issuer, and a criteria with the achievement's
+# id adds only its narrative, which is read from the criteria and so may not
+# sit on the achievement object either. The check runs once, on the document
+# the model is built from, after every other rule. The cost: a credential
+# whose issuer gives such a node two different values for a member the model
+# reads, or the member only outside the object it is read from, is refused.
+# That is ``issuer`` as a bare IRI (or with fewer of those members) beside a
+# ``creator`` with the same id that has them -- the very document a holder
+# gets by cutting a twice-described issuer down to its id --, a self-issued
+# badge whose subject and issuer objects each carry an ``image``, and an
+# ecdsa-sd-2023 presentation that reveals such a member only at the other
+# pointer. A node of which the model reads the id alone (an ``image``) has
+# no member to hold in place, and no rule.
 #
 # Fifth (_reject_blank_node_ids), a blank node label is no identifier. It is
 # not part of the dataset -- canonicalization relabels blank nodes -- so
@@ -353,7 +385,13 @@ def _check_form(document: dict[str, Any], loader: _Loader, jsonld: Any, *,
     if "@graph" in node:
         raise OB3VerificationError(
             "the %s uses a top-level @graph, which is not accepted" % what)
-    _check_expanded(node, node.get("@id"), what, top=True, embedded=depth > 0)
+    # Only the document the model is built from has the positions it reads
+    # (a proof configuration has none of them, an embedded credential is not
+    # modelled); its walk reaches into the credentials it embeds.
+    described: Optional[_Described] = {} if depth == 0 else None
+    _check_expanded(node, node.get("@id"), what, top=True, embedded=depth > 0,
+                    reads=_model_reads() if depth == 0 else None,
+                    described=described)
     _check_status_in_place(node, what)
 
     compacted = _jsonld_call(jsonld.compact, what, expanded,
@@ -389,6 +427,11 @@ def _check_form(document: dict[str, Any], loader: _Loader, jsonld: Any, *,
     for path, credential in embedded:
         _check_embedded(credential, path, loader, jsonld, what=what,
                         depth=depth + 1, derived=derived)
+
+    # Last, so every rule above keeps its own refusal: by now the document,
+    # and each credential it embeds, is known to be in compacted form.
+    if described:
+        _check_read_in_place(described, node, document, what)
 
 
 def _check_embedded(credential: dict[str, Any], path: _Path, loader: _Loader,
@@ -589,17 +632,23 @@ def _is_node_iri(value: Any) -> bool:
 
 
 def _check_expanded(value: Any, top_id: Any, what: str, *, top: bool = False,
-                    via: Optional[str] = None, embedded: bool = False) -> None:
+                    via: Optional[str] = None, embedded: bool = False,
+                    reads: Optional["_Reads"] = None,
+                    described: Optional["_Described"] = None) -> None:
     """Walk the expanded form: refuse the keywords that detach statements from
     their node, a nested re-description of the document's own node, and
     anything the RDF conversion would silently drop -- so the dataset holds
     exactly what the JSON says. *via* is the predicate that led here.
     *embedded* marks the walk of an embedded credential, whose subject may
     carry only the members of an EndorsementSubject (see the module
-    comment)."""
+    comment). With *described*, every node object below the top one that has
+    an ``@id`` is noted in it, together with *reads*: the members the model
+    reads from a node in this position, if it reads any
+    (_check_read_in_place)."""
     if isinstance(value, list):
         for item in value:
-            _check_expanded(item, top_id, what, via=via, embedded=embedded)
+            _check_expanded(item, top_id, what, via=via, embedded=embedded,
+                            reads=reads, described=described)
         return
     if not isinstance(value, dict):
         return
@@ -626,6 +675,8 @@ def _check_expanded(value: Any, top_id: Any, what: str, *, top: bool = False,
         raise OB3VerificationError(
             "the %s's own node %s is described again inside it"
             % (what, _brief(top_id)))
+    if described is not None and not top and "@id" in value:
+        described.setdefault(value["@id"], []).append((value, reads))
     subject = embedded and via == _CREDENTIAL_SUBJECT
     for key, item in value.items():
         if not key.startswith("@") and not _is_predicate(key):
@@ -639,8 +690,193 @@ def _check_expanded(value: Any, top_id: Any, what: str, *, top: bool = False,
                 "endorses, signed all the same there, would be out of the "
                 "object the model reads it from" % (what, _brief(key)))
         if key not in ("@id", "@type"):
+            below = reads.get(key) if reads else None
             _check_expanded(item, top_id, what, embedded=embedded,
-                            via=None if key.startswith("@") else key)
+                            via=None if key.startswith("@") else key,
+                            reads=below[1] if below else None,
+                            described=described)
+
+
+# ── a node the model reads, described in more than one place ────────────────
+
+# What OpenBadgeCredential.from_vc_document reads below the credential's own
+# node (ob3/credential.py; a test compares this table with what it really
+# reads, in both directions): the compact key of a member -> the keys read
+# from the node(s) under it, in turn. An empty mapping is a value read as it
+# is, or a node of which only the id is read (an ``image``): no members, so
+# no rule. The credential's own node and its credentialStatus entries have
+# rules of their own and are not listed.
+_ALIGNMENT_READS: Mapping[str, Any] = MappingProxyType({
+    "targetName": {}, "targetUrl": {}, "targetFramework": {},
+    "targetCode": {}, "targetDescription": {}})
+_MODEL_READS: Mapping[str, Any] = MappingProxyType({
+    "issuer": {"name": {}, "url": {}, "email": {}, "image": {},
+               "endorsementJwt": {}},
+    "credentialSubject": {
+        "identifier": {"identityHash": {}, "identityType": {}, "hashed": {},
+                       "salt": {}},
+        "result": {"value": {}, "status": {}, "achievedLevel": {},
+                   "resultDescription": {}, "alignment": _ALIGNMENT_READS},
+        "creditsEarned": {},
+        "achievement": {
+            "name": {}, "description": {}, "criteria": {"narrative": {}},
+            "image": {}, "tag": {}, "endorsementJwt": {},
+            "achievementType": {}, "creditsAvailable": {},
+            "alignment": _ALIGNMENT_READS,
+            "resultDescription": {
+                "name": {}, "resultType": {}, "allowedValue": {},
+                "requiredValue": {}, "requiredLevel": {}, "valueMin": {},
+                "valueMax": {}, "alignment": _ALIGNMENT_READS},
+        },
+    },
+    "evidence": {"narrative": {}, "name": {}, "description": {}, "genre": {},
+                 "audience": {}},
+})
+
+# _MODEL_READS by predicate: IRI -> (the model's key, the same for the
+# node(s) under it).
+_Reads = Mapping[str, Tuple[str, Any]]
+# @id -> every node object of the expanded form that carries it, each with
+# what the model reads from it there (None or empty: nothing).
+_Described = Dict[str, List[Tuple[Dict[str, Any], Optional[_Reads]]]]
+
+
+@functools.lru_cache(maxsize=1)
+def _model_reads() -> _Reads:
+    """_MODEL_READS for the expanded form. A key stands for every IRI some
+    pinned context defines it as, in any scope (``image`` is also the Image
+    type's alias): a superset, like _key_iris, so the rule fails closed
+    whatever scoped context the node's types bring."""
+    return _reads_by_iri(_MODEL_READS)
+
+
+def _reads_by_iri(reads: Mapping[str, Any]) -> _Reads:
+    names = _type_synonyms()
+    return {iri: (key, _reads_by_iri(below))
+            for key, below in reads.items() for iri in names[key]}
+
+
+def _check_read_in_place(described: _Described, root: Dict[str, Any],
+                         document: Dict[str, Any], what: str) -> None:
+    """Refuse a node the model reads members from that is described in more
+    than one place, unless every description that carries one of those
+    members carries the same value(s) for it, the one the model reads
+    included (see the module comment). *described* is what _check_expanded
+    collected over *root*, the expanded form of *document*.
+
+    Nothing is walked again: only the node objects that share an ``@id`` with
+    one the model reads are looked at, and of those only the members it
+    reads."""
+    for node_id, places in described.items():
+        if len(places) < 2:
+            continue
+        for member in sorted({iri for _, reads in places if reads
+                              for iri in reads}):
+            carriers = [node for node, _ in places if node.get(member)]
+            if not carriers:
+                continue
+            readers = [(node, reads[member]) for node, reads in places
+                       if reads and member in reads]
+            for reader, (key, below) in readers:
+                if not reader.get(member):
+                    raise OB3VerificationError(
+                        "the %s describes the node %s in more than one place, "
+                        "and its %s is not at %s, where the model reads it, "
+                        "but at %s: the signature covers the node, not which "
+                        "JSON object carries each of its members, so what "
+                        "was signed would not be shown; describe the node "
+                        "where the model reads it"
+                        % (what, _brief(node_id), key,
+                           _where(document, root, reader),
+                           _where(document, root, carriers[0])))
+            reader, (key, below) = readers[0]
+            shown = _values(reader[member], below)
+            for carrier in carriers:
+                if _values(carrier[member], below) != shown:
+                    raise OB3VerificationError(
+                        "the %s describes the node %s in more than one place, "
+                        "and its %s at %s, where the model reads it, is not "
+                        "the same as at %s: the signature covers the node, "
+                        "not which JSON object carries each value, so either "
+                        "could be shown as the signed one; give the node the "
+                        "same %s wherever it is described"
+                        % (what, _brief(node_id), key,
+                           _where(document, root, reader),
+                           _where(document, root, carrier), key))
+
+
+def _values(items: Any, below: Optional[_Reads]) -> FrozenSet[Any]:
+    """What the model reads of the values of a member of an expanded node
+    object, as a set: the order of the values of a property is not signed.
+    *below* is what it reads from a node under that member (_Reads), if it
+    reads members of it."""
+    return frozenset(_read_of(item, below) for item in
+                     (items if isinstance(items, list) else [items]))
+
+
+def _read_of(item: Any, below: Optional[_Reads]) -> Any:
+    """What the model reads of one value: the value whole, in canonical JSON
+    (so true/1 and 1/1.0 stay distinct), unless it is a node the model reads
+    members of -- then its id and those members, the same way. What the
+    model does not read of such a node (the ``targetType`` of an alignment)
+    is no reason to tell two descriptions apart; a member moved between two
+    objects of that node is refused on the node's own account, since the one
+    under the position the model reads is itself a node it reads."""
+    if not below or not isinstance(item, dict) or any(
+            key.startswith("@") and key not in ("@id", "@type") for key in item):
+        return _canonical(item)
+    return (item.get("@id"), tuple(
+        (member, _values(item[member], inner))
+        for member, (_, inner) in sorted(below.items()) if item.get(member)))
+
+
+def _where(document: Any, root: Any, node: Dict[str, Any]) -> str:
+    """A JSON pointer into *document* to the object that expanded to *node*,
+    an object of its expanded form *root*. Only run to word a refusal, on a
+    document already known to be in compacted form, so a step of the
+    expanded path is a key the pinned contexts spell that IRI with and an
+    array holds its entries in the same order; where the document has
+    another shape the pointer goes on by the terms, as an approximation."""
+    value: Any = document
+    path: _Path = ()
+    for step in _path_to(root, node, ()) or ():
+        if isinstance(step, int):
+            # Expansion wraps every value in an array; compaction unwraps
+            # the ones with a single entry.
+            if isinstance(value, list) and step < len(value):
+                value, path = value[step], path + (step,)
+            elif step:
+                value, path = None, path + (step,)
+            continue
+        terms = _term_spellings().get(step, frozenset())
+        key = next((key for key in value if key == step or key in terms),
+                   None) if isinstance(value, dict) else None
+        if key is None:
+            # A property is spelled lowerCamelCase, and sorts after the type
+            # alias that shares its IRI (Criteria / criteria).
+            value, path = None, path + (max(terms) if terms else step,)
+        else:
+            value, path = value[key], path + (key,)
+    return _brief(_pointer(path))
+
+
+def _path_to(value: Any, node: Dict[str, Any], path: _Path) -> Optional[_Path]:
+    """The keys and indexes that lead from *value* (expanded form) to the
+    object *node* itself, or None."""
+    if value is node:
+        return path
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            found = _path_to(item, node, path + (index,))
+            if found is not None:
+                return found
+    elif isinstance(value, dict) and "@value" not in value:
+        for key, item in value.items():
+            if key not in ("@id", "@type"):
+                found = _path_to(item, node, path + (key,))
+                if found is not None:
+                    return found
+    return None
 
 
 def _check_status_in_place(node: dict[str, Any], what: str) -> None:
