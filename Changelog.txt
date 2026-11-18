@@ -57,6 +57,24 @@ Newest first. Dates are ISO 8601 (YYYY-MM-DD).
     low-level functions, which check the proof alone, and the JWT-VC path,
     where every byte is signed, are unchanged (#348)
 
+  - fix(ob3): an `image` given as a string is read as the image's id.
+    `"image": "https://..."` is the same JSON-LD statement as
+    `"image": {"id": "https://..."}`, but the model read an image only from
+    the object, so `Issuer.image_url` and `Achievement.image_url` were None
+    for an issuer that wrote the bare IRI, on the JWT-VC and the Data
+    Integrity path alike. On the Data Integrity path a holder could cause
+    it: context validation takes the two spellings for one, so an image
+    signed with its `id` alone (no `type`, no `caption`) could be re-spelled
+    as a string under the same proof, and the verified credential lost it;
+    so could a typed image whose node is described somewhere else in the
+    credential. Nothing is refused that verified before and `to_vc` still
+    writes the object. With the string read, the rule of #348 above compares
+    an `image` between two descriptions of the issuer or of the achievement
+    by the id it names, which is all the model reads of it: an image named
+    in one and described (`type`, `caption`) in the other verifies, two
+    different images of one node or an image only in the description the
+    model does not read are refused (#350)
+
 * v4.6.4 - 2026-11-18
 
   - security(ldp): on CPython 3.11 and 3.12 the JSON-LD to RDF conversion may

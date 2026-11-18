@@ -19,6 +19,7 @@ import re
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
+from types import MappingProxyType
 
 import pytest
 
@@ -1761,10 +1762,6 @@ def _achievement_members_into_criteria(document):
         achievement['criteria'][member] = achievement.pop(member)
 
 
-def _issuer_image_as_a_reference(document):
-    document['issuer']['image'] = {'id': document['issuer']['image']['id']}
-
-
 # what a holder does to the signed Complete example: (the change, the refusal)
 RELOCATIONS = {
     'description into criteria': (
@@ -1782,9 +1779,6 @@ RELOCATIONS = {
     'issuer image left in creator': (
         _issuer_member_left_in_creator('image'),
         _not_read_at('image', '/issuer', ACH + '/creator')),
-    'issuer image a reference, described in creator': (
-        _issuer_image_as_a_reference,
-        _not_the_same('image', '/issuer', ACH + '/creator')),
     'narrative into the achievement': (
         _narrative_into_achievement,
         _not_read_at('narrative', ACH + '/criteria', ACH)),
@@ -1897,9 +1891,16 @@ def _table_positions(reads, path=()):
     """position -> the keys _MODEL_READS says the model reads from a node
     there."""
     positions = {path: set(reads)} if path and reads else {}
-    for key, below in reads.items():
+    for key, below in (reads or {}).items():
         positions.update(_table_positions(below, path + (key,)))
     return positions
+
+
+def _read_for_the_id(reads, path=()):
+    """The positions _MODEL_READS marks as a node read for its id alone."""
+    return {found for key, below in reads.items()
+            for found in ({path + (key,)} if below is None
+                          else _read_for_the_id(below, path + (key,)))}
 
 
 class TestNodeDescribedTwice:
@@ -2040,6 +2041,43 @@ class TestNodeDescribedTwice:
         credential = verifier.verify(sign(document))
         assert credential.issuer.email == 'registrar@university.example'
 
+    def test_image_is_compared_by_the_id_the_model_reads(self, keys):
+        # The model reads the id of an image and nothing else, from the
+        # object and from the bare IRI alike, so an issuer whose image is
+        # only named in one description and described in the other shows
+        # the same image either way ...
+        sign, pub, verifier = keys
+        logo = 'https://university.example/logo.png'
+        document = _complete_document()
+        document['issuer']['image'] = {'id': logo}
+        signed = sign(document)
+        assert verifier.verify(signed).issuer.image_url == logo
+
+        def as_a_string(doc):
+            doc['issuer']['image'] = logo
+        assert verifier.verify(
+            self._moved(signed, pub, as_a_string)).issuer.image_url == logo
+
+        # ... and a holder who cuts a described image down to its id, in
+        # either spelling, changes nothing the model shows
+        def cut(spelling):
+            def change(doc):
+                doc['issuer']['image'] = spelling
+            return change
+        described = sign(_complete_document())
+        for spelling in ({'id': logo}, logo):
+            moved = self._moved(described, pub, cut(spelling))
+            assert verifier.verify(moved).issuer.image_url == logo
+
+        # Two images of one node are still two values of a member the model
+        # reads, and an image only in the other description is still not
+        # where the model reads it.
+        document = _complete_document()
+        _achievement(document)['creator']['image'] = {
+            'id': 'https://university.example/seal.png', 'type': 'Image'}
+        _rejected(sign(document),
+                  _not_the_same('image', '/issuer', ACH + '/creator'), verifier)
+
     def test_order_of_the_values_is_not_compared(self, keys):
         # The values of a property are a set in the dataset.
         sign, _, verifier = keys
@@ -2053,7 +2091,7 @@ class TestNodeDescribedTwice:
                                                 ACH + '/creator'), verifier)
 
     def test_values_are_compared_as_canonical_json(self):
-        def values(items, below=None):
+        def values(items, below=MappingProxyType({})):
             return cv._values(items, below)
         assert values([{'@value': True}]) != values([{'@value': 1}])
         assert values([{'@value': 1}]) != values([{'@value': 1.0}])
@@ -2068,10 +2106,15 @@ class TestNodeDescribedTwice:
         assert values([node], below) != values(
             [dict(node, **{'urn:read': [{'@value': 2}]})], below)
         assert values([node], below) != values([node])
+        # Of a node the model reads for its id alone: that id.
+        assert values([node], None) == values([{'@id': 'urn:n'}], None)
+        assert values([node], None) != values([{'@id': 'urn:m'}], None)
+        assert values([{'urn:other': [1]}], None) == values([{'urn:other': [2]}], None)
         # a literal, a list or a graph under such a member is compared whole
         for keyword in ('@value', '@list', '@graph'):
-            assert values([{keyword: [1], 'urn:other': 1}], below) != values(
-                [{keyword: [1], 'urn:other': 2}], below)
+            for reads in (below, None):
+                assert values([{keyword: [1], 'urn:other': 1}], reads) != values(
+                    [{keyword: [1], 'urn:other': 2}], reads)
 
     def test_second_description_without_what_the_model_reads_verifies(self, keys):
         sign, _, verifier = keys
@@ -2292,9 +2335,11 @@ class TestNodeDescribedTwice:
         assert {path[0] for path in below} == set(cv._MODEL_READS)
         assert ({path: keys for path, keys in below.items() if keys}
                 == _table_positions(cv._MODEL_READS))
-        # a node read for its id alone has no member, so no rule: the images
+        # a node read for its id alone has no member, so no rule of its
+        # own, and is marked so in the table: the images
         assert {path for path, keys in below.items() if not keys} == {
-            ('issuer', 'image'), ('credentialSubject', 'achievement', 'image')}
+            ('issuer', 'image'), ('credentialSubject', 'achievement', 'image')
+        } == _read_for_the_id(cv._MODEL_READS)
 
     def test_table_by_iri_is_derived_from_the_pinned_contexts(self):
         ob = 'https://purl.imsglobal.org/spec/vc/ob/vocab.html#'
@@ -2308,8 +2353,9 @@ class TestNodeDescribedTwice:
             'https://schema.org/url': ('url', {}),
             'https://schema.org/email': ('email', {}),
             ob + 'endorsementJwt': ('endorsementJwt', {}),
-            # the term is also the alias of the Image type
-            ob + 'image': ('image', {}), ob + 'Image': ('image', {}),
+            # the term is also the alias of the Image type; None: a node
+            # read for its id alone
+            ob + 'image': ('image', None), ob + 'Image': ('image', None),
         }
         _, subject = reads[VC + 'credentialSubject']
         _, achievement = subject[ob + 'achievement']
@@ -2320,12 +2366,12 @@ class TestNodeDescribedTwice:
         def keys(reads):
             for key, below in reads.values():
                 yield key
-                yield from keys(below)
+                yield from keys(below or {})
 
         def terms(reads):
             for key, below in reads.items():
                 yield key
-                yield from terms(below)
+                yield from terms(below or {})
         assert set(keys(reads)) == set(terms(cv._MODEL_READS))
 
     def test_refusal_points_into_the_document(self):
@@ -2389,6 +2435,43 @@ class TestNodeDescribedTwice:
         _rejected(hidden, _not_read_at('name', '/issuer', ACH + '/creator'))
         _rejected(derive('/issuer/name'),
                   _not_read_at('url', '/issuer', ACH + '/creator'))
+
+
+# ── two spellings of one statement, read as one by the model ────────────────
+
+class TestSpellingsReadAsOne:
+    """Context validation takes the spellings JSON-LD treats as one for one
+    (a node reference as an object with its id alone or as a bare IRI), so
+    a holder can exchange them under a valid proof; the model must read them
+    as one too."""
+
+    def test_image_given_as_a_bare_iri(self, issuer):
+        priv, pub, did, vm = issuer
+        badge = 'https://issuer.example/achievements/attendance.png'
+        logo = 'https://issuer.example/logo.png'
+        document = _credential(did).to_vc()
+        _achievement(document)['image'] = {'id': badge}
+        document['issuer']['image'] = {'id': logo}
+        signed = add_data_integrity_proof(document, priv, vm)
+        credential = OB3LdpVerifier().verify(signed)
+        assert (credential.achievement.image_url, credential.issuer.image_url) == (
+            badge, logo)
+
+        respelled = copy.deepcopy(signed)                    # not signed again
+        _achievement(respelled)['image'] = badge
+        respelled['issuer']['image'] = logo
+        verify_data_integrity_proof(respelled, pub)          # the same dataset
+        credential = OB3LdpVerifier().verify(respelled)
+        assert (credential.achievement.image_url, credential.issuer.image_url) == (
+            badge, logo)
+
+    def test_issuer_signed_string_image(self, issuer):
+        priv, _, did, vm = issuer
+        document = _credential(did).to_vc()
+        document['issuer']['image'] = 'https://issuer.example/logo.png'
+        credential = OB3LdpVerifier().verify(
+            add_data_integrity_proof(document, priv, vm))
+        assert credential.issuer.image_url == 'https://issuer.example/logo.png'
 
 
 # ── a blank node label where the model reads an identifier ──────────────────

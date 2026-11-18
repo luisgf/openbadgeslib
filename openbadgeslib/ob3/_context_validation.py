@@ -169,7 +169,9 @@
 # badge whose subject and issuer objects each carry an ``image``, and an
 # ecdsa-sd-2023 presentation that reveals such a member only at the other
 # pointer. A node of which the model reads the id alone (an ``image``) has
-# no member to hold in place, and no rule.
+# no member to hold in place and no rule of its own; as a member of the
+# issuer or of the achievement it is compared by that id, which the model
+# reads from the object and from the bare IRI alike.
 #
 # Fifth (_reject_blank_node_ids), a blank node label is no identifier. It is
 # not part of the dataset -- canonicalization relabels blank nodes -- so
@@ -703,14 +705,16 @@ def _check_expanded(value: Any, top_id: Any, what: str, *, top: bool = False,
 # node (ob3/credential.py; a test compares this table with what it really
 # reads, in both directions): the compact key of a member -> the keys read
 # from the node(s) under it, in turn. An empty mapping is a value read as it
-# is, or a node of which only the id is read (an ``image``): no members, so
-# no rule. The credential's own node and its credentialStatus entries have
-# rules of their own and are not listed.
+# is; None is a node read for its id alone (an ``image``, whether it is
+# written as an object or as a bare IRI): it has no members, so no rule of
+# its own, and as a member it is compared by the id it names. The
+# credential's own node and its credentialStatus entries have rules of
+# their own and are not listed.
 _ALIGNMENT_READS: Mapping[str, Any] = MappingProxyType({
     "targetName": {}, "targetUrl": {}, "targetFramework": {},
     "targetCode": {}, "targetDescription": {}})
 _MODEL_READS: Mapping[str, Any] = MappingProxyType({
-    "issuer": {"name": {}, "url": {}, "email": {}, "image": {},
+    "issuer": {"name": {}, "url": {}, "email": {}, "image": None,
                "endorsementJwt": {}},
     "credentialSubject": {
         "identifier": {"identityHash": {}, "identityType": {}, "hashed": {},
@@ -720,7 +724,7 @@ _MODEL_READS: Mapping[str, Any] = MappingProxyType({
         "creditsEarned": {},
         "achievement": {
             "name": {}, "description": {}, "criteria": {"narrative": {}},
-            "image": {}, "tag": {}, "endorsementJwt": {},
+            "image": None, "tag": {}, "endorsementJwt": {},
             "achievementType": {}, "creditsAvailable": {},
             "alignment": _ALIGNMENT_READS,
             "resultDescription": {
@@ -752,7 +756,7 @@ def _model_reads() -> _Reads:
 
 def _reads_by_iri(reads: Mapping[str, Any]) -> _Reads:
     names = _type_synonyms()
-    return {iri: (key, _reads_by_iri(below))
+    return {iri: (key, None if below is None else _reads_by_iri(below))
             for key, below in reads.items() for iri in names[key]}
 
 
@@ -808,8 +812,8 @@ def _check_read_in_place(described: _Described, root: Dict[str, Any],
 def _values(items: Any, below: Optional[_Reads]) -> FrozenSet[Any]:
     """What the model reads of the values of a member of an expanded node
     object, as a set: the order of the values of a property is not signed.
-    *below* is what it reads from a node under that member (_Reads), if it
-    reads members of it."""
+    *below* is what it reads from a node under that member (_Reads): empty
+    for a value read as it is, None for a node read for its id alone."""
     return frozenset(_read_of(item, below) for item in
                      (items if isinstance(items, list) else [items]))
 
@@ -817,14 +821,18 @@ def _values(items: Any, below: Optional[_Reads]) -> FrozenSet[Any]:
 def _read_of(item: Any, below: Optional[_Reads]) -> Any:
     """What the model reads of one value: the value whole, in canonical JSON
     (so true/1 and 1/1.0 stay distinct), unless it is a node the model reads
-    members of -- then its id and those members, the same way. What the
-    model does not read of such a node (the ``targetType`` of an alignment)
-    is no reason to tell two descriptions apart; a member moved between two
-    objects of that node is refused on the node's own account, since the one
-    under the position the model reads is itself a node it reads."""
-    if not below or not isinstance(item, dict) or any(
+    members of -- then its id and those members, the same way -- or a node
+    it reads for its id alone (*below* is None) -- then that id. What the
+    model does not read of such a node (the ``targetType`` of an alignment,
+    the ``caption`` of an image) is no reason to tell two descriptions
+    apart; a member moved between two objects of that node is refused on the
+    node's own account, since the one under the position the model reads is
+    itself a node it reads."""
+    if below == {} or not isinstance(item, dict) or any(
             key.startswith("@") and key not in ("@id", "@type") for key in item):
         return _canonical(item)
+    if below is None:
+        return (item.get("@id"),)
     return (item.get("@id"), tuple(
         (member, _values(item[member], inner))
         for member, (_, inner) in sorted(below.items()) if item.get(member)))

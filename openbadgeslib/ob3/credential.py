@@ -565,7 +565,7 @@ class OpenBadgeCredential:
                 name=issuer_data.get("name", ""),
                 url=issuer_data.get("url"),
                 email=issuer_data.get("email"),
-                image_url=_as_dict_or_empty(issuer_data.get("image")).get("id"),
+                image_url=_image_id(issuer_data.get("image")),
                 endorsement_jwts=_string_list(issuer_data.get("endorsementJwt")),
             )
 
@@ -580,7 +580,6 @@ class OpenBadgeCredential:
         ach_data = _as_dict(subj.get("achievement"),
                             "vc.credentialSubject.achievement")
         criteria = _as_dict_or_empty(ach_data.get("criteria"))
-        image = _as_dict_or_empty(ach_data.get("image"))
         rd_raw = ach_data.get("resultDescription")
         result_descriptions = [ResultDescription.from_dict(r) for r in rd_raw
                                if isinstance(r, dict)] \
@@ -590,7 +589,7 @@ class OpenBadgeCredential:
             name=_require(ach_data, "name", "vc.credentialSubject.achievement"),
             description=ach_data.get("description", ""),
             criteria_narrative=criteria.get("narrative", ""),
-            image_url=image.get("id"),
+            image_url=_image_id(ach_data.get("image")),
             tags=ach_data.get("tag", []),
             endorsement_jwts=_string_list(ach_data.get("endorsementJwt")),
             achievement_type=ach_data.get("achievementType"),
@@ -678,6 +677,23 @@ class OpenBadgeCredential:
 def _as_dict_or_empty(value: Any) -> dict[str, Any]:
     """Return value if it is a dict, else an empty dict (optional sub-objects)."""
     return value if isinstance(value, dict) else {}
+
+
+def _image_id(value: Any) -> Any:
+    """The id of an OB 3.0 ``image`` member: the ``id`` of an Image object,
+    or the string itself when the image is given as a bare IRI.
+
+    ``"image": "https://..."`` and ``"image": {"id": "https://..."}`` are one
+    statement in JSON-LD (the term is ``@type: @id``), and Data Integrity
+    context validation takes them for one spelling, so the model must read
+    them as one: read only from the object, a holder could re-spell an image
+    signed with its id alone and the verified credential lost it. ``type``
+    and ``caption`` exist only in the object form and are not read."""
+    if isinstance(value, dict):
+        return value.get("id")
+    if isinstance(value, str) and value:
+        return value
+    return None
 
 
 def _json_number(value: float) -> Union[int, float]:

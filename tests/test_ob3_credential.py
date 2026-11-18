@@ -277,6 +277,44 @@ class TestFromVcDocument:
         with pytest.raises(ValueError):
             OpenBadgeCredential.from_vc_document(doc2)
 
+    @staticmethod
+    def _with_images(issuer_image, achievement_image):
+        doc = _make_credential().to_vc()
+        doc['issuer']['image'] = issuer_image
+        doc['credentialSubject']['achievement']['image'] = achievement_image
+        return OpenBadgeCredential.from_vc_document(doc)
+
+    def test_image_given_as_a_string_is_its_id(self):
+        # "image": X and "image": {"id": X} are one statement in JSON-LD.
+        restored = self._with_images('https://x.example/logo.png',
+                                     'https://x.example/badge.png')
+        assert restored.issuer.image_url == 'https://x.example/logo.png'
+        assert restored.achievement.image_url == 'https://x.example/badge.png'
+
+    def test_image_object_is_read_as_before(self):
+        restored = self._with_images(
+            {'id': 'https://x.example/logo.png', 'type': 'Image', 'caption': 'c'},
+            {'id': 'https://x.example/badge.png'})
+        assert restored.issuer.image_url == 'https://x.example/logo.png'
+        assert restored.achievement.image_url == 'https://x.example/badge.png'
+
+    @pytest.mark.parametrize('image', [
+        None, '', 5, True, {}, {'type': 'Image', 'caption': 'no id'}])
+    def test_anything_else_is_no_image(self, image):
+        restored = self._with_images(image, image)
+        assert restored.issuer.image_url is None
+        assert restored.achievement.image_url is None
+
+    def test_string_image_is_not_what_is_emitted(self):
+        # Only the read is wider: an image is still written as an object.
+        restored = self._with_images('https://x.example/logo.png',
+                                     'https://x.example/badge.png')
+        doc = restored.to_vc()
+        assert doc['issuer']['image'] == {
+            'id': 'https://x.example/logo.png', 'type': 'Image'}
+        assert doc['credentialSubject']['achievement']['image'] == {
+            'id': 'https://x.example/badge.png', 'type': 'Image'}
+
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 

@@ -710,6 +710,19 @@ class TestRawPassthrough:
         alignment = credential.raw['credentialSubject']['achievement']['alignment']
         assert alignment[0]['targetName'] == 'Competency X'
 
+    def test_image_given_as_a_string_is_reported(
+        self, ob3_rsa_signer, ob3_rsa_verifier, ob3_credential
+    ):
+        # An issuer that writes the image as a bare IRI (the same statement
+        # as an object with that id) gets it in the verified credential.
+        payload = ob3_credential.to_jwt_payload()
+        payload['issuer']['image'] = 'https://example.com/logo.png'
+        payload['credentialSubject']['achievement']['image'] = (
+            'https://example.com/badge.svg')
+        credential = ob3_rsa_verifier.verify(ob3_rsa_signer.sign_payload(payload))
+        assert credential.issuer.image_url == 'https://example.com/logo.png'
+        assert credential.achievement.image_url == 'https://example.com/badge.svg'
+
     def test_raw_excluded_from_equality(self, ob3_credential):
         from dataclasses import replace
         a = replace(ob3_credential)
